@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Search,
   Filter,
@@ -18,6 +19,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useDemoMode } from "@/components/AppGate";
+import { useNLSearch } from "@/hooks/useNLSearch";
 import type { Transaction } from "@/lib/mockData";
 
 const categories = ["All", "Entertainment", "Transport", "Groceries", "Dining", "Shopping", "Health & Fitness", "Utilities", "Travel"];
@@ -209,6 +211,7 @@ const nlExamples = [
 ];
 
 export default function TransactionsPage() {
+  const searchParams = useSearchParams();
   const { transactions, linked, loading } = useTransactions();
   const isDemo = useDemoMode();
   const [searchQuery, setSearchQuery] = useState("");
@@ -216,6 +219,16 @@ export default function TransactionsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [nlHint, setNlHint] = useState(0);
+  const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(searchQuery, transactions);
+
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q) setSearchQuery(decodeURIComponent(q));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchQuery.trim()) setSelectedCategory("All");
+  }, [searchQuery]);
 
   if (linked && loading) {
     return (
@@ -228,15 +241,9 @@ export default function TransactionsPage() {
     );
   }
 
-  const filtered = transactions.filter((tx) => {
-    const matchSearch =
-      !searchQuery ||
-      tx.merchant.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.rawDescription.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchCat = selectedCategory === "All" || tx.category === selectedCategory;
-    return matchSearch && matchCat;
-  });
+  const filtered = selectedCategory === "All"
+    ? nlFiltered
+    : nlFiltered.filter((tx) => tx.category === selectedCategory);
 
   return (
     <div className="max-w-4xl mx-auto px-8 py-8">
@@ -259,9 +266,23 @@ export default function TransactionsPage() {
         <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions this month</p>
       </div>
 
+      {searchQuery && (nlLoading || nlAnswer) && (
+        <div className="mb-5 rounded-2xl bg-[#EEF7F2] border border-[#D1EAE0] px-5 py-4">
+          {nlLoading ? (
+            <p className="text-sm text-[#2D5A44]/60">Searching...</p>
+          ) : (
+            <p className="text-sm text-[#2D5A44] leading-relaxed">{nlAnswer}</p>
+          )}
+        </div>
+      )}
+
       <div className="relative mb-5">
         <div className="absolute left-4 top-1/2 -translate-y-1/2">
-          <Search size={16} className="text-[#3D8E62]" />
+          {nlLoading ? (
+            <div className="w-4 h-4 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          ) : (
+            <Search size={16} className="text-[#3D8E62]" />
+          )}
         </div>
         <input
           type="text"

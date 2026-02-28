@@ -30,6 +30,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      router.push(`/app/transactions?q=${encodeURIComponent(searchQuery.trim())}`);
+    } else {
       router.push("/app/transactions");
     }
   };
