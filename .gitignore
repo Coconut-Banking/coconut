@@ -8,11 +8,15 @@ node_modules
 out
 build
 dist
+tsconfig.tsbuildinfo
 
 # env
 .env
 .env.local
 .env.*.local
+
+# plaid token (dev persistence, never commit)
+.plaid-token.json
 
 # debug
 npm-debug.log*
