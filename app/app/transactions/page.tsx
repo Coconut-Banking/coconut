@@ -22,7 +22,26 @@ import { useDemoMode } from "@/components/AppGate";
 import { useNLSearch } from "@/hooks/useNLSearch";
 import type { Transaction } from "@/lib/mockData";
 
-const categories = ["All", "Entertainment", "Transport", "Groceries", "Dining", "Shopping", "Health & Fitness", "Utilities", "Travel"];
+// Display labels for known Plaid primary categories
+const CATEGORY_LABEL: Record<string, string> = {
+  "FOOD AND DRINK": "Food & Drink",
+  "GROCERIES": "Groceries",
+  "ENTERTAINMENT": "Entertainment",
+  "TRANSPORTATION": "Transport",
+  "TRAVEL": "Travel",
+  "SHOPPING": "Shopping",
+  "GENERAL MERCHANDISE": "Shopping",
+  "GENERAL SERVICES": "Services",
+  "PERSONAL CARE": "Personal Care",
+  "HEALTHCARE": "Health",
+  "RENT AND UTILITIES": "Utilities",
+  "HOME IMPROVEMENT": "Home",
+  "LOAN PAYMENTS": "Loans",
+  "INCOME": "Income",
+  "TRANSFER IN": "Transfer In",
+  "TRANSFER OUT": "Transfer Out",
+  "OTHER": "Other",
+};
 
 function MerchantAvatar({ name, color }: { name: string; color: string }) {
   return (
@@ -241,6 +260,11 @@ export default function TransactionsPage() {
     );
   }
 
+  // Build unique category tabs from actual transaction data
+  const categoryTabs = ["All", ...Array.from(
+    new Set(transactions.map((tx) => tx.category))
+  ).sort()];
+
   const filtered = selectedCategory === "All"
     ? nlFiltered
     : nlFiltered.filter((tx) => tx.category === selectedCategory);
@@ -305,7 +329,7 @@ export default function TransactionsPage() {
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-            {categories.map((cat) => (
+            {categoryTabs.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
@@ -315,7 +339,7 @@ export default function TransactionsPage() {
                     : "bg-white border border-gray-200 text-gray-600 hover:border-gray-300"
                 }`}
               >
-                {cat}
+                {cat === "All" ? "All" : (CATEGORY_LABEL[cat] ?? cat)}
               </button>
             ))}
           </div>
@@ -431,8 +455,8 @@ export default function TransactionsPage() {
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
                 >
-                  {categories.map((c) => (
-                    <option key={c}>{c}</option>
+                  {categoryTabs.map((c) => (
+                    <option key={c} value={c}>{c === "All" ? "All" : (CATEGORY_LABEL[c] ?? c)}</option>
                   ))}
                 </select>
               </div>

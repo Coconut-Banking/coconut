@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
-import { getPlaidAccessToken } from "@/lib/plaid-client";
+import { auth } from "@clerk/nextjs/server";
+import { getPlaidTokenForUser } from "@/lib/transaction-sync";
 
 export async function GET() {
-  const linked = Boolean(getPlaidAccessToken());
-  return NextResponse.json({ linked });
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ linked: false });
+
+  try {
+    const token = await getPlaidTokenForUser(userId);
+    return NextResponse.json({ linked: Boolean(token) });
+  } catch {
+    return NextResponse.json({ linked: false });
+  }
 }
