@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { computeBalances, getSuggestedSettlements } from "@/lib/split-balances";
 import { canAccessGroup } from "@/lib/group-access";
@@ -20,10 +20,32 @@ export async function GET(
   const allowed = await canAccessGroup(userId, id);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { data: members } = await db
+  let { data: members } = await db
     .from("group_members")
     .select("id, user_id, email, display_name")
     .eq("group_id", id);
+
+  // Backfill owner email for existing groups where owner has user_id but no email
+  const ownerId = group.owner_id as string;
+  const ownerMember = (members ?? []).find((m) => m.user_id === ownerId && !m.email);
+  if (ownerMember && ownerId) {
+    try {
+      const client = await clerkClient();
+      const ownerUser = await client.users.getUser(ownerId);
+      const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
+      if (ownerEmail) {
+        await db
+          .from("group_members")
+          .update({ email: ownerEmail })
+          .eq("id", ownerMember.id);
+        members = (members ?? []).map((m) =>
+          m.id === ownerMember.id ? { ...m, email: ownerEmail } : m
+        );
+      }
+    } catch {
+      // Ignore Clerk errors (e.g. no secret key in dev)
+    }
+  }
 
   const { data: splitsRaw } = await db
     .from("split_transactions")

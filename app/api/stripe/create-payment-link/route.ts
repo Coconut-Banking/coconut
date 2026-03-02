@@ -48,7 +48,10 @@ export async function POST(req: NextRequest) {
     metadata.receiver_member_id = body.receiverMemberId;
   }
 
-  const baseUrl = process.env.APP_URL || req.nextUrl.origin;
+  let baseUrl = process.env.APP_URL || req.nextUrl.origin;
+  if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+    baseUrl = `https://${baseUrl}`;
+  }
 
   try {
     const session = await stripe.checkout.sessions.create({

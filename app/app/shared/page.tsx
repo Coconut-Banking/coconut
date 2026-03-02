@@ -146,7 +146,7 @@ export default function SharedPage() {
           );
           window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
         } else {
-          alert(`Add ${name}'s email for the fallback, or add STRIPE_SECRET_KEY to .env.local for Stripe links.`);
+          alert(`Add ${name}'s email for the fallback, or configure STRIPE_SECRET_KEY (Vercel → Environment Variables) for Stripe links.`);
         }
       }
     } finally {

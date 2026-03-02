@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 
@@ -55,10 +55,13 @@ export async function POST(req: NextRequest) {
   }
 
   const displayName = body.ownerDisplayName ?? "You";
+  const ownerUser = await currentUser();
+  const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
   await db.from("group_members").insert({
     group_id: group.id,
     user_id: userId,
     display_name: displayName,
+    email: ownerEmail,
   });
 
   return NextResponse.json(group);
