@@ -173,30 +173,18 @@ function normalize(s: string): string {
 }
 
 function applyFilters(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  query: any,
+  query: unknown,
   intent: SearchIntent,
   clerkUserId: string
-) {
-  query = query
-    .eq("clerk_user_id", clerkUserId)
-    .gte("date", intent.date_start)
-    .lte("date", intent.date_end);
-
-  if (intent.merchant) {
-    query = query.ilike("normalized_merchant", `%${normalize(intent.merchant)}%`);
-  }
-  if (intent.category) {
-    query = query.ilike("primary_category", `%${intent.category.toUpperCase()}%`);
-  }
-  // Amounts stored as negative for expenses; amount_gt/lt are absolute thresholds
-  if (intent.amount_gt !== null) {
-    query = query.lte("amount", -intent.amount_gt);
-  }
-  if (intent.amount_lt !== null) {
-    query = query.gte("amount", -intent.amount_lt);
-  }
-  return query;
+): PromiseLike<{ data: unknown; error: unknown; count?: number }> {
+  type Builder = { eq: (...a: unknown[]) => Builder; gte: (...a: unknown[]) => Builder; lte: (...a: unknown[]) => Builder; ilike: (...a: unknown[]) => Builder };
+  const q = query as Builder;
+  let b: Builder = q.eq("clerk_user_id", clerkUserId).gte("date", intent.date_start).lte("date", intent.date_end);
+  if (intent.merchant) b = b.ilike("normalized_merchant", `%${normalize(intent.merchant)}%`);
+  if (intent.category) b = b.ilike("primary_category", `%${intent.category.toUpperCase()}%`);
+  if (intent.amount_gt !== null) b = b.lte("amount", -intent.amount_gt);
+  if (intent.amount_lt !== null) b = b.gte("amount", -intent.amount_lt);
+  return b as unknown as PromiseLike<{ data: unknown; error: unknown; count?: number }>;
 }
 
 async function runStructuredQuery(
@@ -299,11 +287,12 @@ async function runStructuredQuery(
     clerkUserId
   );
   if (error) throw error;
+  const rows = (data ?? []) as DBTransaction[];
   return {
     metric: "list",
-    transactions: (data ?? []) as DBTransaction[],
+    transactions: rows,
     total: null,
-    count: (data ?? []).length,
+    count: rows.length,
     breakdown: null,
     topMerchants: null,
   };
