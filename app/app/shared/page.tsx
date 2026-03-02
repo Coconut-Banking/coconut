@@ -57,6 +57,11 @@ export default function SharedPage() {
     if (!selectedId && !selectedPersonKey && showRealUI) refetchSummary();
   }, [selectedId, selectedPersonKey, showRealUI, refetchSummary]);
 
+  // Clear payment link when switching group/person
+  useEffect(() => {
+    setPaymentLink(null);
+  }, [selectedId, selectedPersonKey]);
+
   // When returning from Stripe checkout, refetch after short delay (webhook may still be processing)
   useEffect(() => {
     if (searchParams.get("stripe") !== "success" || !showRealUI) return;
@@ -118,6 +123,7 @@ export default function SharedPage() {
 
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
+  const [paymentLink, setPaymentLink] = useState<string | null>(null);
 
   const requestPayment = async (
     email: string | null,
@@ -143,6 +149,7 @@ export default function SharedPage() {
       const data = await res.json();
 
       if (res.ok && data.url) {
+        setPaymentLink(data.url);
         await navigator.clipboard.writeText(data.url);
         const payLink = `Pay here: ${data.url}`;
         if (email) {
@@ -152,7 +159,6 @@ export default function SharedPage() {
           );
           window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
         }
-        alert(`Payment link copied! Send it to ${name} to collect $${amount.toFixed(2)}.`);
       } else {
         if (email) {
           const subject = encodeURIComponent(`Payment request: $${amount.toFixed(2)} for ${groupName}`);
@@ -460,9 +466,30 @@ export default function SharedPage() {
                   </div>
                 </div>
 
-                {personDetail.balance !== 0 && (
+                {(personDetail.balance !== 0 || paymentLink) && (
                   <div className="mb-6">
                     <h3 className="text-sm font-semibold text-gray-700 mb-3">Settle</h3>
+                    {paymentLink && (
+                      <div className="mb-4 p-4 rounded-xl bg-[#EEF7F2] border border-[#C3E0D3]">
+                        <p className="text-xs text-[#2D7A52] font-medium mb-2">Payment link — copy and send to the person who owes</p>
+                        <div className="flex gap-2">
+                          <input
+                            readOnly
+                            value={paymentLink}
+                            className="flex-1 px-3 py-2 text-sm bg-white border border-[#D1EAE0] rounded-lg truncate font-mono text-gray-700"
+                          />
+                          <button
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(paymentLink);
+                            }}
+                            className="px-4 py-2 rounded-lg bg-[#3D8E62] text-white text-sm font-medium shrink-0 hover:bg-[#2D7A52]"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {personDetail.balance !== 0 && (
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-4 rounded-xl bg-white border border-gray-200">
                       <span className="text-sm">
                         {personDetail.balance > 0 ? (
@@ -541,6 +568,7 @@ export default function SharedPage() {
                         </button>
                       </div>
                     </div>
+                    )}
                   </div>
                 )}
 
@@ -611,9 +639,29 @@ export default function SharedPage() {
               </div>
 
               {/* Settle — simple, one action per row */}
-              {detail.suggestions.length > 0 && (
+              {(detail.suggestions.length > 0 || paymentLink) && (
                 <div className="mb-6">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Settle</h3>
+                  {paymentLink && (
+                    <div className="mb-4 p-4 rounded-xl bg-[#EEF7F2] border border-[#C3E0D3]">
+                      <p className="text-xs text-[#2D7A52] font-medium mb-2">Payment link — copy and send to the person who owes</p>
+                      <div className="flex gap-2">
+                        <input
+                          readOnly
+                          value={paymentLink}
+                          className="flex-1 px-3 py-2 text-sm bg-white border border-[#D1EAE0] rounded-lg truncate font-mono text-gray-700"
+                        />
+                        <button
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(paymentLink);
+                          }}
+                          className="px-4 py-2 rounded-lg bg-[#3D8E62] text-white text-sm font-medium shrink-0 hover:bg-[#2D7A52]"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     {detail.suggestions.map((s) => {
                       const amICreditor = s.toMember?.user_id === user?.id;
