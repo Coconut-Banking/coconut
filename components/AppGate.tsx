@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 
 const DEMO_KEY = "coconut_demo";
 
@@ -21,36 +22,19 @@ export function setDemoMode(enabled: boolean): void {
 
 export function AppGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [status, setStatus] = useState<"checking" | "allowed" | "denied">("checking");
+  const { isLoaded, isSignedIn } = useAuth();
+  const [plaidStatus, setPlaidStatus] = useState<"checking" | "linked" | "unlinked">("checking");
 
   useEffect(() => {
-    let cancelled = false;
+    if (!isLoaded || !isSignedIn) return;
     fetch("/api/plaid/status")
       .then((res) => res.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.linked) {
-          setStatus("allowed");
-          return;
-        }
-        const isDemo = typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true";
-        setStatus(isDemo ? "allowed" : "denied");
-      })
-      .catch(() => {
-        if (!cancelled) {
-          const isDemo = typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true";
-          setStatus(isDemo ? "allowed" : "denied");
-        }
-      });
-    return () => { cancelled = true; };
-  }, []);
+      .then((data) => setPlaidStatus(data.linked ? "linked" : "unlinked"))
+      .catch(() => setPlaidStatus("unlinked"));
+  }, [isLoaded, isSignedIn]);
 
-  useEffect(() => {
-    if (status !== "denied") return;
-    router.replace("/");
-  }, [status, router]);
-
-  if (status === "checking") {
+  // Clerk middleware handles unauthenticated redirect, but handle loading state here
+  if (!isLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
         <div className="flex flex-col items-center gap-4">
@@ -61,7 +45,27 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (status === "denied") {
+  if (!isSignedIn) {
+    router.replace("/login");
+    return null;
+  }
+
+  // Signed in — check if they have Plaid linked or are in demo mode
+  if (plaidStatus === "checking") {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Loading your data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const isDemo = typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true";
+
+  if (plaidStatus === "unlinked" && !isDemo) {
+    router.replace("/connect");
     return null;
   }
 

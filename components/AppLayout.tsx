@@ -11,8 +11,10 @@ import {
   Search,
   Bell,
   ChevronDown,
+  LogOut,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useUser, useClerk } from "@clerk/nextjs";
 
 const navItems = [
   { href: "/app/dashboard", label: "Overview", icon: LayoutDashboard, end: true },
@@ -26,6 +28,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [searchQuery, setSearchQuery] = useState("");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const { user } = useUser();
+  const { signOut } = useClerk();
+
+  const displayName = user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "You";
+  const displayEmail = user?.primaryEmailAddress?.emailAddress || "";
+  const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,17 +92,32 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="px-3 py-4 border-t border-[#E8EAEC]">
-          <button className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+        <div className="px-3 py-4 border-t border-[#E8EAEC] relative" ref={userMenuRef}>
+          <button
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#3D8E62] to-[#5BAE82] flex items-center justify-center text-white text-xs font-semibold shrink-0">
-              JD
+              {initials}
             </div>
             <div className="flex-1 text-left min-w-0">
-              <div className="text-sm font-medium text-gray-900 truncate">Jamie Doe</div>
-              <div className="text-xs text-gray-400 truncate">jamie@example.com</div>
+              <div className="text-sm font-medium text-gray-900 truncate">{displayName}</div>
+              <div className="text-xs text-gray-400 truncate">{displayEmail}</div>
             </div>
-            <ChevronDown size={14} className="text-gray-400 shrink-0" />
+            <ChevronDown size={14} className={`text-gray-400 shrink-0 transition-transform ${userMenuOpen ? "rotate-180" : ""}`} />
           </button>
+
+          {userMenuOpen && (
+            <div className="absolute bottom-full left-3 right-3 mb-1 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
+              <button
+                onClick={() => signOut(() => router.push("/"))}
+                className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-lg"
+              >
+                <LogOut size={14} />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
