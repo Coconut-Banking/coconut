@@ -21,4 +21,3 @@ To have deploys triggered when **anyone** pushes to the org repo:
 4. Grant Vercel access to the Coconut-Banking org if prompted
 
 Then any team member with push access to Coconut-Banking will trigger deploys.
-# Test sync 1772481990
