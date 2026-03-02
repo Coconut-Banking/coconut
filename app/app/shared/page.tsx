@@ -124,6 +124,14 @@ export default function SharedPage() {
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [paymentLink, setPaymentLink] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const copyPaymentLink = async () => {
+    if (!paymentLink) return;
+    await navigator.clipboard.writeText(paymentLink);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
 
   const requestPayment = async (
     email: string | null,
@@ -652,12 +660,10 @@ export default function SharedPage() {
                           className="flex-1 px-3 py-2 text-sm bg-white border border-[#D1EAE0] rounded-lg truncate font-mono text-gray-700"
                         />
                         <button
-                          onClick={async () => {
-                            await navigator.clipboard.writeText(paymentLink);
-                          }}
+                          onClick={copyPaymentLink}
                           className="px-4 py-2 rounded-lg bg-[#3D8E62] text-white text-sm font-medium shrink-0 hover:bg-[#2D7A52]"
                         >
-                          Copy
+                          {linkCopied ? "Copied!" : "Copy"}
                         </button>
                       </div>
                     </div>
