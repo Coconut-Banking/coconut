@@ -60,6 +60,7 @@ function toUITransaction(t: SearchResponse["transactions"][number]): Transaction
   const merchant = t.merchant_name || t.raw_name || "Unknown";
   return {
     id: t.plaid_transaction_id,
+    dbId: t.id,
     merchant,
     rawDescription: t.raw_name || "",
     amount: t.amount,
