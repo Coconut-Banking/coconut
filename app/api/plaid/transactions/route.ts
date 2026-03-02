@@ -61,6 +61,7 @@ export async function GET() {
       const merchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       return {
         id: tx.plaid_transaction_id as string,
+        dbId: tx.id as string,
         merchant,
         rawDescription: (tx.raw_name || "") as string,
         amount: tx.amount as number,

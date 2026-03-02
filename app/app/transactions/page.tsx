@@ -54,9 +54,98 @@ function MerchantAvatar({ name, color }: { name: string; color: string }) {
   );
 }
 
+type SplitMode = "person" | "group";
+
 function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
   const [note, setNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [showAddToShared, setShowAddToShared] = useState(false);
+  const [splitMode, setSplitMode] = useState<SplitMode>("person");
+  const [people, setPeople] = useState<{ displayName: string; groupId: string; groupName: string; memberId: string; memberCount: number }[]>([]);
+  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
+  const [selectedPerson, setSelectedPerson] = useState<{ groupId: string; memberId: string; displayName: string } | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [members, setMembers] = useState<{ id: string; display_name: string }[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [newPersonName, setNewPersonName] = useState("");
+  const [addingNewPerson, setAddingNewPerson] = useState(false);
+
+  const loadPeopleAndGroups = async () => {
+    const res = await fetch("/api/groups/people");
+    if (res.ok) {
+      const data = await res.json();
+      setPeople(data.people ?? []);
+      setGroups(data.groups ?? []);
+    }
+  };
+
+  const loadGroupMembers = async (groupId: string) => {
+    setMembers([]);
+    const res = await fetch(`/api/groups/${groupId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setMembers(data.members ?? []);
+    }
+  };
+
+  const createPersonAndGroup = async (): Promise<string | null> => {
+    if (!newPersonName.trim()) return null;
+    setAddingNewPerson(true);
+    try {
+      const createRes = await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newPersonName.trim(), ownerDisplayName: "You" }),
+      });
+      const group = await createRes.json();
+      if (!createRes.ok || !group.id) return null;
+      const addRes = await fetch(`/api/groups/${group.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: newPersonName.trim() }),
+      });
+      if (!addRes.ok) return null;
+      setNewPersonName("");
+      await loadPeopleAndGroups();
+      return group.id;
+    } finally {
+      setAddingNewPerson(false);
+    }
+  };
+
+  const effectiveGroupId = splitMode === "person" && selectedPerson ? selectedPerson.groupId : selectedGroupId;
+  const canSubmit = tx.dbId && effectiveGroupId && members.length > 0;
+
+  const handleAddToShared = async () => {
+    if (!canSubmit) return;
+    const groupId = effectiveGroupId!;
+    const totalAmount = Math.abs(tx.amount);
+    const sharePerPerson = Math.floor((totalAmount / members.length) * 100) / 100;
+    const remainder = Math.round((totalAmount - sharePerPerson * members.length) * 100) / 100;
+    const shares = members.map((m, i) => ({
+      memberId: m.id,
+      amount: i === 0 ? sharePerPerson + remainder : sharePerPerson,
+    }));
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/split-transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupId,
+          transactionId: tx.dbId,
+          shares,
+        }),
+      });
+      if (res.ok) {
+        setShowAddToShared(false);
+        setSelectedPerson(null);
+        setSelectedGroupId(null);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <>
@@ -163,6 +252,23 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
                   </div>
                 </button>
               )}
+              {tx.dbId && (
+                <button
+                  onClick={() => {
+                    setShowAddToShared(true);
+                    loadPeopleAndGroups();
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                    <Share2 size={15} className="text-[#3D8E62]" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium">Add to shared</div>
+                    <div className="text-xs opacity-70">Split with a person or group</div>
+                  </div>
+                </button>
+              )}
               <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left">
                 <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
                   <RefreshCw size={15} className="text-gray-500" />
@@ -218,6 +324,181 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
           </div>
         </div>
       </motion.div>
+
+      {/* Add to Shared modal */}
+      <AnimatePresence>
+        {showAddToShared && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/30 z-[60] flex items-end sm:items-center justify-center p-4"
+            onClick={() => setShowAddToShared(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden"
+            >
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-base font-semibold">Add to shared</h3>
+                <button
+                  onClick={() => setShowAddToShared(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSplitMode("person");
+                        setSelectedPerson(null);
+                        setSelectedGroupId(null);
+                        setMembers([]);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "person" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                    >
+                      Person
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSplitMode("group");
+                        setSelectedPerson(null);
+                        setSelectedGroupId(null);
+                        setMembers([]);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "group" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                    >
+                      Group
+                    </button>
+                  </div>
+                  {splitMode === "person" ? (
+                    <>
+                      <label className="text-sm font-medium text-gray-700 block mb-2">Split with</label>
+                      <select
+                        value={selectedPerson ? `${selectedPerson.groupId}-${selectedPerson.memberId}` : ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) {
+                            setSelectedPerson(null);
+                            setMembers([]);
+                            return;
+                          }
+                          const p = people.find((x) => `${x.groupId}-${x.memberId}` === val);
+                          if (p) {
+                            setSelectedPerson({ groupId: p.groupId, memberId: p.memberId, displayName: p.displayName });
+                            loadGroupMembers(p.groupId);
+                          }
+                        }}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                      >
+                        <option value="">Choose a person...</option>
+                        {people.map((p) => (
+                          <option key={`${p.groupId}-${p.memberId}`} value={`${p.groupId}-${p.memberId}`}>
+                            {p.displayName}{p.memberCount > 2 ? ` (${p.groupName})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          value={newPersonName}
+                          onChange={(e) => setNewPersonName(e.target.value)}
+                          placeholder="Or add new person..."
+                          className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const gid = await createPersonAndGroup();
+                            if (gid) {
+                              setSelectedPerson({ groupId: gid, memberId: "", displayName: newPersonName.trim() });
+                              loadGroupMembers(gid);
+                            }
+                          }}
+                          disabled={!newPersonName.trim() || addingNewPerson}
+                          className="px-3 py-2 rounded-lg bg-gray-100 text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
+                        >
+                          {addingNewPerson ? "Adding…" : "Add"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <label className="text-sm font-medium text-gray-700 block mb-2">Select group</label>
+                      <select
+                        value={selectedGroupId ?? ""}
+                        onChange={(e) => {
+                          const id = e.target.value || null;
+                          setSelectedGroupId(id);
+                          if (id) loadGroupMembers(id);
+                          else setMembers([]);
+                        }}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                      >
+                        <option value="">Choose a group...</option>
+                        {groups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                  {splitMode === "person" && people.length === 0 && !newPersonName && (
+                    <p className="mt-1.5 text-xs text-gray-500">
+                      Add a person above or create a group from Shared first.
+                    </p>
+                  )}
+                  {splitMode === "group" && groups.length === 0 && (
+                    <p className="mt-1.5 text-xs text-gray-500">
+                      No groups yet. Create one from the Shared page or add a person above.
+                    </p>
+                  )}
+                </div>
+                {members.length > 0 && (
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Equal split</div>
+                    <div className="text-xs text-gray-500 mb-2">
+                      ${Math.abs(tx.amount).toFixed(2)} ÷ {members.length} = $
+                      {(Math.abs(tx.amount) / members.length).toFixed(2)} each
+                    </div>
+                    <ul className="space-y-1">
+                      {members.map((m) => (
+                        <li key={m.id} className="text-sm text-gray-600 flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-[#3D8E62]" />
+                          {m.display_name}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-gray-100 flex gap-2">
+                <button
+                  onClick={() => setShowAddToShared(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddToShared}
+                  disabled={!canSubmit || submitting}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#3D8E62] rounded-xl hover:bg-[#2D7A52] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? "Adding…" : "Add to group"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

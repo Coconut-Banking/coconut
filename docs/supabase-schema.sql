@@ -107,3 +107,66 @@ as $$
   order by embedding <=> p_embedding
   limit p_limit;
 $$;
+
+-- ============================================================
+-- Shared Expenses & Settlement
+-- ============================================================
+
+create table if not exists groups (
+  id         uuid primary key default gen_random_uuid(),
+  owner_id   text not null,
+  name       text not null,
+  created_at timestamptz default now()
+);
+create index if not exists groups_owner_idx on groups(owner_id);
+
+create table if not exists group_members (
+  id           uuid primary key default gen_random_uuid(),
+  group_id     uuid not null references groups(id) on delete cascade,
+  user_id      text,
+  email        text,
+  display_name text not null,
+  created_at   timestamptz default now(),
+  unique(group_id, email)
+);
+create index if not exists group_members_group_idx on group_members(group_id);
+create index if not exists group_members_user_idx on group_members(user_id);
+
+create table if not exists split_transactions (
+  id               uuid primary key default gen_random_uuid(),
+  group_id         uuid not null references groups(id) on delete cascade,
+  transaction_id   uuid not null references transactions(id) on delete cascade,
+  created_by       text not null,
+  created_at       timestamptz default now(),
+);
+-- Prevent duplicate (same tx in same group twice) - run after deleting any duplicates:
+-- alter table split_transactions add constraint split_transactions_group_tx_unique unique(group_id, transaction_id);
+create index if not exists split_transactions_group_idx on split_transactions(group_id);
+
+create table if not exists split_shares (
+  id                  uuid primary key default gen_random_uuid(),
+  split_transaction_id uuid not null references split_transactions(id) on delete cascade,
+  member_id            uuid not null references group_members(id) on delete cascade,
+  amount               numeric(14,2) not null,
+  unique(split_transaction_id, member_id)
+);
+create index if not exists split_shares_split_idx on split_shares(split_transaction_id);
+
+create table if not exists settlements (
+  id                 uuid primary key default gen_random_uuid(),
+  group_id           uuid not null references groups(id) on delete cascade,
+  payer_member_id    uuid not null references group_members(id) on delete restrict,
+  receiver_member_id uuid not null references group_members(id) on delete restrict,
+  amount             numeric(14,2) not null,
+  method             text not null default 'manual',
+  status             text not null default 'completed',
+  external_reference text,
+  created_at         timestamptz default now()
+);
+create index if not exists settlements_group_idx on settlements(group_id);
+
+alter table groups          enable row level security;
+alter table group_members   enable row level security;
+alter table split_transactions enable row level security;
+alter table split_shares    enable row level security;
+alter table settlements    enable row level security;

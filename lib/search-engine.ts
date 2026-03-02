@@ -18,7 +18,7 @@ const openai = process.env.OPENAI_API_KEY
 // ─── Intent schema ────────────────────────────────────────────────────────────
 
 export interface SearchIntent {
-  metric: "sum" | "count" | "list" | "breakdown";
+  metric: "sum" | "count" | "list" | "breakdown" | "top_merchant";
   date_start: string;   // YYYY-MM-DD
   date_end: string;     // YYYY-MM-DD
   merchant: string | null;
@@ -49,15 +49,21 @@ function defaultIntent(): SearchIntent {
 function validateIntent(raw: unknown): SearchIntent | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const METRICS = ["sum", "count", "list", "breakdown"];
+  const METRICS = ["sum", "count", "list", "breakdown", "top_merchant"];
   if (!METRICS.includes(r.metric as string)) return null;
   if (typeof r.date_start !== "string" || typeof r.date_end !== "string") return null;
+  const merchant = typeof r.merchant === "string" && r.merchant.toLowerCase() !== "null"
+    ? r.merchant
+    : null;
+  const category = typeof r.category === "string" && r.category.toLowerCase() !== "null"
+    ? r.category
+    : null;
   return {
     metric: r.metric as SearchIntent["metric"],
     date_start: r.date_start as string,
     date_end: r.date_end as string,
-    merchant: typeof r.merchant === "string" ? r.merchant : null,
-    category: typeof r.category === "string" ? r.category : null,
+    merchant,
+    category,
     amount_gt: typeof r.amount_gt === "number" ? r.amount_gt : null,
     amount_lt: typeof r.amount_lt === "number" ? r.amount_lt : null,
   };
@@ -73,7 +79,7 @@ Today: ${todayStr}
 
 Schema:
 {
-  "metric": "sum | count | list | breakdown",
+  "metric": "sum | count | list | breakdown | top_merchant",
   "date_start": "YYYY-MM-DD",
   "date_end": "YYYY-MM-DD",
   "merchant": "string or null",
@@ -87,6 +93,7 @@ metric definitions:
 - count: user wants number of transactions (e.g. "how many times did I go to X")
 - list: user wants to see transactions (e.g. "show me my uber rides", "coffee last week")
 - breakdown: user wants spending by category (e.g. "spending by category", "where does my money go")
+- top_merchant: user wants which merchant/place they visited most in a category (e.g. "which restaurant do I eat the most from", "where do I get coffee most"). Use category for the filter (FOOD_AND_DRINK, GROCERIES, etc). merchant MUST be null for top_merchant.
 
 Plaid primary categories (use exact strings):
 FOOD_AND_DRINK, GROCERIES, ENTERTAINMENT, TRAVEL, TRANSPORTATION, GENERAL_MERCHANDISE,
@@ -103,6 +110,10 @@ Date rules:
 - "yesterday" → yesterday only
 - "today" → today only
 - If no date mentioned → last 30 days
+
+Examples for top_merchant:
+- "which restaurant do I eat the most from" → {"metric":"top_merchant","date_start":"...","date_end":"...","merchant":null,"category":"FOOD_AND_DRINK"}
+- "where do I get coffee most" → {"metric":"top_merchant","date_start":"...","date_end":"...","merchant":null,"category":"FOOD_AND_DRINK"}
 
 Amount rules:
 - "over $50" → amount_gt: 50
@@ -150,6 +161,7 @@ export interface SearchResult {
   total: number | null;       // for sum
   count: number | null;       // for count / sum
   breakdown: { category: string; total: number; count: number }[] | null;
+  topMerchants: { merchant: string; count: number }[] | null;  // for top_merchant
   answer: string;
   usedVectorFallback: boolean;
 }
@@ -162,7 +174,7 @@ function normalize(s: string): string {
 
 function applyFilters(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  query: ReturnType<ReturnType<typeof getSupabase>["from"]>,
+  query: any,
   intent: SearchIntent,
   clerkUserId: string
 ) {
@@ -193,6 +205,42 @@ async function runStructuredQuery(
 ): Promise<Omit<SearchResult, "answer" | "usedVectorFallback">> {
   const db = getSupabase();
 
+  if (intent.metric === "top_merchant") {
+    const intentForQuery = {
+      ...intent,
+      merchant: null as string | null,
+      category: intent.category ?? "FOOD_AND_DRINK",
+    };
+    const { data, error } = await applyFilters(
+      db.from("transactions").select(
+        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      ).lt("amount", 0).order("date", { ascending: false }),
+      intentForQuery,
+      clerkUserId
+    );
+    if (error) throw error;
+    const rows = (data ?? []) as DBTransaction[];
+    const byMerchant = new Map<string, number>();
+    for (const r of rows) {
+      const name = (r.merchant_name || r.raw_name || "Unknown").trim();
+      if (!name) continue;
+      byMerchant.set(name, (byMerchant.get(name) ?? 0) + 1);
+    }
+    const sorted = Array.from(byMerchant.entries())
+      .map(([merchant, count]) => ({ merchant, count }))
+      .sort((a, b) => b.count - a.count);
+    const top = sorted[0];
+    const ties = sorted.filter((s) => s.count === top?.count);
+    return {
+      metric: "top_merchant",
+      transactions: rows,
+      total: null,
+      count: rows.length,
+      breakdown: null,
+      topMerchants: ties.length > 0 ? ties : (top ? [top] : []),
+    };
+  }
+
   if (intent.metric === "count") {
     const { data, count, error } = await applyFilters(
       db.from("transactions").select(
@@ -203,7 +251,7 @@ async function runStructuredQuery(
       clerkUserId
     );
     if (error) throw error;
-    return { metric: "count", transactions: (data ?? []) as DBTransaction[], total: null, count: count ?? 0, breakdown: null };
+    return { metric: "count", transactions: (data ?? []) as DBTransaction[], total: null, count: count ?? 0, breakdown: null, topMerchants: null };
   }
 
   if (intent.metric === "sum") {
@@ -217,7 +265,7 @@ async function runStructuredQuery(
     if (error) throw error;
     const rows = (data ?? []) as DBTransaction[];
     const total = rows.reduce((s, r) => s + Math.abs(r.amount), 0);
-    return { metric: "sum", transactions: rows, total, count: rows.length, breakdown: null };
+    return { metric: "sum", transactions: rows, total, count: rows.length, breakdown: null, topMerchants: null };
   }
 
   if (intent.metric === "breakdown") {
@@ -239,7 +287,7 @@ async function runStructuredQuery(
     const breakdown = Array.from(map.entries())
       .map(([category, v]) => ({ category, ...v }))
       .sort((a, b) => b.total - a.total);
-    return { metric: "breakdown", transactions: rows, total: null, count: rows.length, breakdown };
+    return { metric: "breakdown", transactions: rows, total: null, count: rows.length, breakdown, topMerchants: null };
   }
 
   // list
@@ -257,6 +305,7 @@ async function runStructuredQuery(
     total: null,
     count: (data ?? []).length,
     breakdown: null,
+    topMerchants: null,
   };
 }
 
@@ -314,6 +363,13 @@ function generateAnswer(result: Omit<SearchResult, "answer" | "usedVectorFallbac
     ? `in ${intent.category.replace(/_/g, " ").toLowerCase()}`
     : "";
 
+  if (result.metric === "top_merchant") {
+    const tm = result.topMerchants ?? [];
+    if (tm.length === 0) return `No restaurant/food transactions found ${period}.`;
+    if (tm.length === 1) return `${tm[0].merchant} (${tm[0].count} visit${tm[0].count === 1 ? "" : "s"})`;
+    const names = tm.map((m) => m.merchant).join(", ");
+    return `${names} are tied (${tm[0].count} visit${tm[0].count === 1 ? "" : "s"} each)`;
+  }
   if (result.metric === "sum") {
     if (!result.count) return `No expenses found ${subject} ${period}.`;
     return `You spent ${fmt(result.total ?? 0)} ${subject} ${period} across ${result.count} transaction${result.count === 1 ? "" : "s"}.`;
@@ -335,6 +391,14 @@ function generateAnswer(result: Omit<SearchResult, "answer" | "usedVectorFallbac
 
 export async function search(clerkUserId: string, query: string): Promise<SearchResult> {
   const intent = await extractIntent(query);
+  const filtersDesc = [
+    intent.merchant && `merchant ILIKE '%${normalize(intent.merchant)}%'`,
+    intent.category && `primary_category ILIKE '%${intent.category}%'`,
+    intent.date_start && intent.date_end && `date ${intent.date_start}..${intent.date_end}`,
+    intent.amount_gt != null && `amount <= -${intent.amount_gt}`,
+    intent.amount_lt != null && `amount >= -${intent.amount_lt}`,
+  ].filter(Boolean).join(", ");
+  console.log("[nl-search] query:", JSON.stringify(query), "| intent:", JSON.stringify(intent), "| effective filters:", filtersDesc || "(date range only)");
 
   const hasStructuredFilters =
     intent.merchant !== null ||
@@ -377,6 +441,7 @@ export async function search(clerkUserId: string, query: string): Promise<Search
       total: null,
       count: 0,
       breakdown: null,
+      topMerchants: null,
       answer: "Search failed. Please try again.",
       usedVectorFallback: false,
     };

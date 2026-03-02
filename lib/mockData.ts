@@ -1,5 +1,6 @@
 export interface Transaction {
   id: string;
+  dbId?: string;
   merchant: string;
   rawDescription: string;
   amount: number;

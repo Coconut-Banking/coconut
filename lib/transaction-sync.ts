@@ -110,7 +110,7 @@ export async function syncTransactionsForUser(
       cursor,
       count: 500,
     });
-    allTxs.push(...(resp.data.added as Array<Record<string, unknown>>));
+    allTxs.push(...(resp.data.added as unknown as Array<Record<string, unknown>>));
     cursor = resp.data.next_cursor;
     hasMore = resp.data.has_more;
   }

@@ -12,6 +12,8 @@ import {
   Bell,
   ChevronDown,
   LogOut,
+  Menu,
+  X,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
@@ -29,6 +31,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [searchQuery, setSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { user } = useUser();
   const { signOut } = useClerk();
@@ -58,8 +61,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen bg-[#F7FAF8] overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-56 flex flex-col bg-white border-r border-[#E8EAEC] shrink-0">
+      {/* Sidebar — hidden on small screens for responsive layout */}
+      <aside className="hidden md:flex w-56 flex-col bg-white border-r border-[#E8EAEC] shrink-0">
         <div className="px-5 py-5 border-b border-[#E8EAEC]">
           <Link href="/" className="flex items-center gap-2.5 group cursor-pointer">
             <div className="w-7 h-7 rounded-lg bg-[#3D8E62] flex items-center justify-center shrink-0">
@@ -121,9 +124,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-[#E8EAEC] px-6 py-3 flex items-center gap-4 shrink-0">
-          <form onSubmit={handleSearch} className="flex-1 max-w-xl">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header className="bg-white border-b border-[#E8EAEC] px-4 sm:px-6 py-3 flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setMobileNavOpen(true)}
+            className="md:hidden w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-50 text-gray-600"
+            aria-label="Open menu"
+          >
+            <Menu size={20} />
+          </button>
+          <form onSubmit={handleSearch} className="flex-1 min-w-0 max-w-xl">
             <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -143,10 +153,61 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto min-w-0">
           {children}
         </main>
       </div>
+
+      {/* Mobile nav overlay */}
+      {mobileNavOpen && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 bg-black/30 z-40"
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="md:hidden fixed inset-y-0 left-0 w-64 bg-white border-r border-[#E8EAEC] z-50 flex flex-col shadow-xl">
+            <div className="px-5 py-5 border-b border-[#E8EAEC] flex items-center justify-between">
+              <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileNavOpen(false)}>
+                <div className="w-7 h-7 rounded-lg bg-[#3D8E62] flex items-center justify-center shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
+                    <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <span className="text-[15px] font-semibold text-gray-900 tracking-tight">Coconut</span>
+              </Link>
+              <button
+                onClick={() => setMobileNavOpen(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+              {navItems.map(({ href, label, icon: Icon, end }) => {
+                const isActive = end ? (pathname === href || pathname === "/app") : pathname.startsWith(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setMobileNavOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
+                      isActive
+                        ? "bg-[#EEF7F2] text-[#3D8E62] font-medium"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                  >
+                    <Icon size={18} className={isActive ? "text-[#3D8E62]" : "text-gray-400"} />
+                    {label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </aside>
+        </>
+      )}
     </div>
   );
 }
