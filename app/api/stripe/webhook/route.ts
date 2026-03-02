@@ -39,6 +39,15 @@ export async function POST(req: NextRequest) {
     const session = event.data.object as Stripe.Checkout.Session;
     const { group_id, payer_member_id, receiver_member_id } = session.metadata ?? {};
 
+    console.log("[stripe-webhook] checkout.session", {
+      hasMetadata: !!(group_id && payer_member_id && receiver_member_id),
+      group_id,
+      payer_member_id,
+      receiver_member_id,
+      payment_status: session.payment_status,
+      amount_total: session.amount_total,
+    });
+
     if (group_id && payer_member_id && receiver_member_id && session.payment_status === "paid") {
       const db = getSupabase();
 
@@ -53,13 +62,15 @@ export async function POST(req: NextRequest) {
       const amountCents = session.amount_total ?? 0;
       const amount = amountCents / 100;
 
-      const { maxAmount, allowed } = await getMaxSettlementAllowed(
+      const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
         group_id,
         payer_member_id,
         receiver_member_id
       );
 
-      if (allowed && maxAmount > 0) {
+      if (!allowed || maxAmount <= 0) {
+        console.warn("[stripe-webhook] settlement not allowed:", { allowed, maxAmount, reason });
+      } else {
         const amountToInsert = Math.min(amount, maxAmount);
         const { error } = await db.from("settlements").insert({
           group_id,
@@ -73,8 +84,17 @@ export async function POST(req: NextRequest) {
 
         if (error) {
           console.error("[stripe-webhook] settlement insert failed:", error);
+        } else {
+          console.log("[stripe-webhook] settlement recorded", { group_id, amount: amountToInsert });
         }
       }
+    } else {
+      console.warn("[stripe-webhook] missing metadata or not paid:", {
+        hasGroup: !!group_id,
+        hasPayer: !!payer_member_id,
+        hasReceiver: !!receiver_member_id,
+        payment_status: session.payment_status,
+      });
     }
   }
 

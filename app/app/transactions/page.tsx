@@ -302,7 +302,13 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
                   <button className="mt-1.5 text-xs text-[#3D8E62] font-medium">Save note</button>
                 </div>
               )}
-              <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left">
+              <button
+                onClick={() => {
+                  setShowAddToShared(true);
+                  loadPeopleAndGroups();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left"
+              >
                 <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
                   <Share2 size={15} className="text-gray-500" />
                 </div>

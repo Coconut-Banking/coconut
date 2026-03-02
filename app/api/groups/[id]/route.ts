@@ -148,6 +148,7 @@ export async function GET(
 
   const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
   return NextResponse.json({
+    ...group,
     group,
     isOwner: group.owner_id === userId,
     members: members ?? [],

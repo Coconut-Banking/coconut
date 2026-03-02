@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useGroupsSummary, useGroupDetail, usePersonDetail } from "@/hooks/useGroups";
 import { useDemoMode } from "@/components/AppGate";
@@ -32,6 +33,8 @@ function MemberAvatar({ name, color }: { name: string; color: string }) {
 }
 
 export default function SharedPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPersonKey, setSelectedPersonKey] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -53,6 +56,18 @@ export default function SharedPage() {
   useEffect(() => {
     if (!selectedId && !selectedPersonKey && showRealUI) refetchSummary();
   }, [selectedId, selectedPersonKey, showRealUI, refetchSummary]);
+
+  // When returning from Stripe checkout, refetch after short delay (webhook may still be processing)
+  useEffect(() => {
+    if (searchParams.get("stripe") !== "success" || !showRealUI) return;
+    const t = setTimeout(() => {
+      refetchSummary();
+      if (selectedId) refetchDetail();
+      if (selectedPersonKey) refetchPersonDetail();
+      router.replace("/app/shared");
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [searchParams, showRealUI, refetchSummary, refetchDetail, refetchPersonDetail, selectedId, selectedPersonKey, router]);
 
   const createGroup = async () => {
     if (!newGroupName.trim()) return;
@@ -543,7 +558,7 @@ export default function SharedPage() {
               {/* Group header */}
               <div className="flex items-center justify-between gap-4 mb-6">
                 <div className="min-w-0">
-                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{detail.name}</h2>
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{detail.name ?? "Shared expenses"}</h2>
                   <p className="text-sm text-gray-500">
                     {detail.members.length} members · ${detail.totalSpend.toFixed(2)} total
                   </p>
@@ -605,9 +620,9 @@ export default function SharedPage() {
                       const amIDebtor = s.fromMember?.user_id === user?.id;
                       const primaryAction =
                         amICreditor
-                          ? { label: "Request", onClick: () => requestPayment(s.fromMember?.email ?? null, s.fromMember?.display_name ?? "them", s.amount, detail.name, { groupId: detail.id, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId }) }
+                          ? { label: "Request", onClick: () => requestPayment(s.fromMember?.email ?? null, s.fromMember?.display_name ?? "them", s.amount, detail.name ?? "shared expenses", { groupId: detail.id ?? selectedId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId }) }
                           : amIDebtor
-                            ? { label: "Send", onClick: () => sendPayment(s.toMember?.email ?? null, s.toMember?.display_name ?? "them", s.amount, detail.name) }
+                            ? { label: "Send", onClick: () => sendPayment(s.toMember?.email ?? null, s.toMember?.display_name ?? "them", s.amount, detail.name ?? "shared expenses") }
                             : null;
                       return (
                         <div
