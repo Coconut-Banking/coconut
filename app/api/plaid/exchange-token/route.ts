@@ -18,15 +18,12 @@ export async function POST(request: NextRequest) {
     const response = await client.itemPublicTokenExchange({ public_token });
     const { access_token, item_id } = response.data;
 
-    // Persist token to Supabase (per user, replaces .plaid-token.json)
     await savePlaidToken(userId, access_token, item_id);
 
-    // Sync transactions to Supabase (blocking — user waits for this)
     const { synced, error: syncError } = await syncTransactionsForUser(userId);
     if (syncError) console.warn("[exchange-token] sync warning:", syncError);
     console.log(`[exchange-token] synced ${synced} transactions for ${userId}`);
 
-    // Embed in background — don't block the HTTP response
     embedTransactionsForUser(userId).catch((e) =>
       console.error("[exchange-token] background embed failed:", e)
     );
