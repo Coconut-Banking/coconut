@@ -16,10 +16,12 @@ function buildEmbedText(row: {
   primary_category?: string | null;
   amount: number;
   date: string;
+  receiptItems?: string | null;
 }): string {
   const merchant = row.merchant_name || row.raw_name || "";
   const category = (row.primary_category || "").replace(/_/g, " ").toLowerCase();
-  return `${merchant} ${category} $${Math.abs(row.amount).toFixed(2)} ${row.date}`.trim();
+  const items = row.receiptItems || "";
+  return `${merchant} ${category} ${items} $${Math.abs(row.amount).toFixed(2)} ${row.date}`.replace(/\s+/g, " ").trim();
 }
 
 async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
@@ -190,4 +192,48 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
     }
   }
   console.log(`[embed] finished embedding ${rows.length} transactions for ${clerkUserId}`);
+}
+
+/** Re-embed transactions that have receipt data attached so search picks up line items. */
+export async function reEmbedWithReceipts(clerkUserId: string, transactionIds: string[]): Promise<void> {
+  if (!openai || transactionIds.length === 0) return;
+  const db = getSupabase();
+
+  const { data: txRows } = await db
+    .from("transactions")
+    .select("id, merchant_name, raw_name, primary_category, amount, date")
+    .in("id", transactionIds);
+
+  if (!txRows || txRows.length === 0) return;
+
+  // Fetch receipt line items for these transactions
+  const { data: receipts } = await db
+    .from("email_receipts")
+    .select("transaction_id, line_items")
+    .in("transaction_id", transactionIds);
+
+  const receiptMap = new Map<string, string>();
+  for (const r of receipts || []) {
+    if (!r.transaction_id || !r.line_items) continue;
+    const items = (r.line_items as Array<{ name: string }>)
+      .map((i) => i.name)
+      .join(" ");
+    receiptMap.set(r.transaction_id, items);
+  }
+
+  const texts = txRows.map((t) =>
+    buildEmbedText({ ...t, receiptItems: receiptMap.get(t.id) || null })
+  );
+  const embeddings = await embedBatch(texts);
+
+  for (let i = 0; i < txRows.length; i++) {
+    const emb = embeddings[i];
+    if (emb) {
+      await db
+        .from("transactions")
+        .update({ embedding: JSON.stringify(emb) })
+        .eq("id", txRows[i].id);
+    }
+  }
+  console.log(`[embed] re-embedded ${txRows.length} transactions with receipt data`);
 }

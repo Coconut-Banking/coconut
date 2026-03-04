@@ -170,3 +170,39 @@ alter table group_members   enable row level security;
 alter table split_transactions enable row level security;
 alter table split_shares    enable row level security;
 alter table settlements    enable row level security;
+
+-- ============================================================
+-- Gmail Receipt Integration
+-- ============================================================
+
+create table if not exists gmail_connections (
+  id              uuid primary key default gen_random_uuid(),
+  clerk_user_id   text not null unique,
+  access_token    text not null,
+  refresh_token   text not null,
+  token_expiry    timestamptz,
+  email           text,
+  last_scan_at    timestamptz,
+  created_at      timestamptz default now()
+);
+create index if not exists gmail_connections_user_idx on gmail_connections(clerk_user_id);
+
+create table if not exists email_receipts (
+  id                uuid primary key default gen_random_uuid(),
+  clerk_user_id     text not null,
+  gmail_message_id  text not null unique,
+  transaction_id    uuid references transactions(id),
+  merchant          text,
+  order_date        date,
+  total_amount      numeric(14,2),
+  line_items        jsonb,
+  raw_subject       text,
+  raw_from          text,
+  parsed_at         timestamptz default now()
+);
+create index if not exists email_receipts_user_idx  on email_receipts(clerk_user_id);
+create index if not exists email_receipts_tx_idx    on email_receipts(transaction_id);
+create index if not exists email_receipts_gmail_idx on email_receipts(gmail_message_id);
+
+alter table gmail_connections enable row level security;
+alter table email_receipts    enable row level security;

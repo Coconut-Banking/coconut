@@ -25,6 +25,7 @@ export interface SearchIntent {
   category: string | null;  // Plaid primary category, e.g. FOOD_AND_DRINK
   amount_gt: number | null; // absolute value threshold
   amount_lt: number | null;
+  receipt_item: string | null; // specific item from receipt (e.g. "golf clubs", "kale")
 }
 
 // ─── Intent extraction ────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ function defaultIntent(): SearchIntent {
     category: null,
     amount_gt: null,
     amount_lt: null,
+    receipt_item: null,
   };
 }
 
@@ -58,6 +60,9 @@ function validateIntent(raw: unknown): SearchIntent | null {
   const category = typeof r.category === "string" && r.category.toLowerCase() !== "null"
     ? r.category
     : null;
+  const receipt_item = typeof r.receipt_item === "string" && r.receipt_item.toLowerCase() !== "null"
+    ? r.receipt_item
+    : null;
   return {
     metric: r.metric as SearchIntent["metric"],
     date_start: r.date_start as string,
@@ -66,6 +71,7 @@ function validateIntent(raw: unknown): SearchIntent | null {
     category,
     amount_gt: typeof r.amount_gt === "number" ? r.amount_gt : null,
     amount_lt: typeof r.amount_lt === "number" ? r.amount_lt : null,
+    receipt_item,
   };
 }
 
@@ -85,8 +91,15 @@ Schema:
   "merchant": "string or null",
   "category": "PLAID_CATEGORY or null",
   "amount_gt": number or null,
-  "amount_lt": number or null
+  "amount_lt": number or null,
+  "receipt_item": "string or null"
 }
+
+receipt_item rules:
+- If the user asks about a specific product or item (not a store/merchant), extract it as receipt_item
+- Examples: "golf equipment" → receipt_item: "golf", "how much on protein powder" → receipt_item: "protein powder"
+- "groceries" or "food" are categories, NOT receipt items. Only use receipt_item for specific products.
+- If the query is about a merchant or category only, receipt_item should be null
 
 metric definitions:
 - sum: user wants total amount spent (e.g. "how much did I spend on X")
@@ -393,16 +406,18 @@ export async function search(clerkUserId: string, query: string): Promise<Search
     intent.merchant !== null ||
     intent.category !== null ||
     intent.amount_gt !== null ||
-    intent.amount_lt !== null;
+    intent.amount_lt !== null ||
+    intent.receipt_item !== null;
 
   try {
     const structured = await runStructuredQuery(clerkUserId, intent);
 
-    // Use vector fallback only when: list query, no structured filters, and results are empty
+    // Use vector fallback when: list query with no/few results, or receipt_item search
+    // Receipt item queries benefit from vector search since embeddings now contain item names
     const shouldFallback =
       intent.metric === "list" &&
-      !hasStructuredFilters &&
-      structured.transactions.length === 0;
+      ((!hasStructuredFilters && structured.transactions.length === 0) ||
+       (intent.receipt_item !== null && structured.transactions.length === 0));
 
     if (shouldFallback) {
       const vectorResults = await runVectorSearch(clerkUserId, query, intent);
