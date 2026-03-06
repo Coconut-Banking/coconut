@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
+// @vitest-environment node
+import { describe, it, expect } from "vitest";
 import { parseReceiptEmail } from "./receipt-parser";
 
 // These tests call the real OpenAI API (gpt-4o-mini) and require OPENAI_API_KEY.
