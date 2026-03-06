@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle } from "lucide-react";
+import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useDemoMode } from "@/components/AppGate";
+import { useGmail } from "@/hooks/useGmail";
 
 const DEMO_BANKS = [
   { id: "chase", name: "Chase", accounts: "Checking ••••4821, Savings ••••7203", color: "#117ACA", connected: "Mar 1, 2026" },
@@ -14,6 +15,7 @@ const DEMO_BANKS = [
 const sections = [
   { id: "profile", label: "Profile", icon: User },
   { id: "banks", label: "Connected Banks", icon: CreditCard },
+  { id: "email", label: "Email Receipts", icon: Mail },
   { id: "security", label: "Security", icon: Shield },
   { id: "data", label: "Data & Export", icon: Database },
 ];
@@ -27,6 +29,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { linked } = useTransactions();
   const isDemo = useDemoMode();
+  const gmail = useGmail();
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
@@ -218,6 +221,109 @@ export default function SettingsPage() {
                   <Shield size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
                   <p className="text-sm text-[#2D5A44]">
                     Coconut connects via read-only access. We never store your banking credentials, and cannot initiate any transactions.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {activeSection === "email" && (
+              <div className="space-y-4">
+                <div className="bg-white rounded-2xl border border-gray-100 p-6">
+                  <h2 className="text-sm font-semibold text-gray-900 mb-1">Email Receipts</h2>
+                  <p className="text-xs text-gray-400 mb-5">
+                    Connect your Gmail to automatically scan for purchase receipts and enrich your transaction data.
+                  </p>
+
+                  {gmail.loading ? (
+                    <div className="py-6 text-center text-sm text-gray-500">Loading...</div>
+                  ) : !gmail.connected ? (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-3">
+                        <Mail size={20} className="text-gray-400" />
+                      </div>
+                      <p className="text-sm text-gray-600 mb-1">No email connected</p>
+                      <p className="text-xs text-gray-400 mb-4">
+                        Connect Gmail to find itemized receipts from Amazon, Walmart, and more.
+                      </p>
+                      <button
+                        onClick={gmail.connect}
+                        className="bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                      >
+                        Connect Gmail
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl">
+                        <div className="w-10 h-10 rounded-xl bg-[#EEF7F2] flex items-center justify-center shrink-0">
+                          <Mail size={16} className="text-[#3D8E62]" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-gray-900">{gmail.email || "Gmail"}</div>
+                          <div className="text-xs text-gray-400">
+                            {gmail.lastScan
+                              ? `Last scanned ${new Date(gmail.lastScan).toLocaleDateString()}`
+                              : "Not yet scanned"}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1 text-xs text-[#3D8E62]">
+                            <CheckCircle2 size={12} />
+                            Connected
+                          </div>
+                          <button
+                            onClick={gmail.disconnect}
+                            className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1.5 border border-red-100 rounded-lg hover:border-red-200 transition-colors"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={gmail.scan}
+                        disabled={gmail.scanning}
+                        className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                      >
+                        {gmail.scanning ? (
+                          <>
+                            <Loader2 size={15} className="animate-spin" />
+                            Scanning...
+                          </>
+                        ) : (
+                          "Scan for receipts"
+                        )}
+                      </button>
+
+                      {gmail.tokenError && (
+                        <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+                          <p className="text-sm text-red-700 mb-2">
+                            Gmail access has expired. Please reconnect to continue scanning.
+                          </p>
+                          <button
+                            onClick={() => { gmail.disconnect().then(() => gmail.connect()); }}
+                            className="text-xs font-medium text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
+                          >
+                            Reconnect Gmail
+                          </button>
+                        </div>
+                      )}
+
+                      {gmail.scanResult && (
+                        <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3">
+                          <p className="text-sm text-[#2D5A44]">
+                            Found <span className="font-semibold">{gmail.scanResult.scanned}</span> receipt{gmail.scanResult.scanned !== 1 ? "s" : ""},
+                            matched <span className="font-semibold">{gmail.scanResult.matched}</span> to transactions.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-2xl px-5 py-4 flex items-start gap-3">
+                  <Shield size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                  <p className="text-sm text-[#2D5A44]">
+                    Coconut only reads receipt emails from known retailers. We never access personal messages, drafts, or sent mail.
                   </p>
                 </div>
               </div>

@@ -1,3 +1,18 @@
+export interface ReceiptLineItem {
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  category: string;
+}
+
+export interface TransactionReceipt {
+  line_items: ReceiptLineItem[];
+  total_amount: number;
+  merchant: string;
+  order_date: string;
+}
+
 export interface Transaction {
   id: string;
   dbId?: string;
@@ -13,6 +28,7 @@ export interface Transaction {
   splitWith?: string;
   location?: string;
   merchantColor: string;
+  receipt?: TransactionReceipt;
 }
 
 export const transactions: Transaction[] = [

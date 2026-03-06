@@ -11,7 +11,7 @@ export async function GET() {
     const { data, error } = await db
       .from("transactions")
       .select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, email_receipts(line_items, total_amount, merchant, order_date)"
       )
       .eq("clerk_user_id", userId)
       .order("date", { ascending: false })
@@ -59,6 +59,9 @@ export async function GET() {
     const mapped = (data ?? []).map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const merchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+      // email_receipts is a one-to-many relation; take the first match if any
+      const receipts = tx.email_receipts as Array<{ line_items: unknown; total_amount: number; merchant: string; order_date: string }> | null;
+      const receipt = receipts && receipts.length > 0 ? receipts[0] : null;
       return {
         id: tx.plaid_transaction_id as string,
         dbId: tx.id as string,
@@ -72,6 +75,14 @@ export async function GET() {
         isRecurring: false,
         hasSplitSuggestion: false,
         merchantColor: hashColor(merchant),
+        ...(receipt ? {
+          receipt: {
+            line_items: receipt.line_items as Array<{ name: string; quantity: number; unit_price: number; total: number; category: string }>,
+            total_amount: receipt.total_amount,
+            merchant: receipt.merchant,
+            order_date: receipt.order_date,
+          },
+        } : {}),
       };
     });
 
