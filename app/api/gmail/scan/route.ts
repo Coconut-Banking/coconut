@@ -11,6 +11,9 @@ export async function POST() {
     return NextResponse.json(result);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Scan failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Detect auth/token errors so the UI can prompt reconnection
+    const isAuthError = message.includes("invalid_grant") || message.includes("Token has been") || message.includes("401");
+    const status = isAuthError ? 403 : 500;
+    return NextResponse.json({ error: message, authError: isAuthError }, { status });
   }
 }

@@ -1,7 +1,31 @@
 import { getSupabase } from "./supabase";
 
-function normalizeMerchant(s: string): string {
+export function normalizeMerchant(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+export function extractKeyword(merchant: string): string | null {
+  const normalized = normalizeMerchant(merchant);
+  const keyword = normalized.split(" ")[0];
+  return keyword && keyword.length >= 3 ? keyword : null;
+}
+
+/** Score and rank transaction candidates against a receipt. Returns best match ID or null. */
+export function scoreCandidates(
+  candidates: Array<{ id: string; amount: number; date: string }>,
+  receiptAmount: number,
+  receiptDate: string | null
+): string | null {
+  const scored = candidates
+    .map((tx) => ({
+      id: tx.id,
+      amountDiff: Math.abs(Math.abs(Number(tx.amount)) - receiptAmount),
+      dateDiff: receiptDate ? Math.abs(new Date(tx.date).getTime() - new Date(receiptDate).getTime()) : 0,
+    }))
+    .filter((s) => s.amountDiff <= 1.0)
+    .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
+
+  return scored.length > 0 ? scored[0].id : null;
 }
 
 /**
@@ -27,10 +51,8 @@ export async function matchReceiptsToTransactions(
   for (const receipt of receipts) {
     if (!receipt.merchant || !receipt.total_amount) continue;
 
-    const normalizedMerchant = normalizeMerchant(receipt.merchant);
-    // Extract the core merchant keyword (e.g., "amazon" from "Amazon.com")
-    const keyword = normalizedMerchant.split(" ")[0];
-    if (!keyword || keyword.length < 3) continue;
+    const keyword = extractKeyword(receipt.merchant);
+    if (!keyword) continue;
 
     const receiptAmount = Math.abs(Number(receipt.total_amount));
     const receiptDate = receipt.order_date;
@@ -56,21 +78,12 @@ export async function matchReceiptsToTransactions(
     const { data: candidates } = await query;
     if (!candidates || candidates.length === 0) continue;
 
-    // Find best match by amount (within $1 tolerance), then closest date
-    const scored = candidates
-      .map((tx) => ({
-        id: tx.id,
-        amountDiff: Math.abs(Math.abs(Number(tx.amount)) - receiptAmount),
-        dateDiff: receiptDate ? Math.abs(new Date(tx.date).getTime() - new Date(receiptDate).getTime()) : 0,
-      }))
-      .filter((s) => s.amountDiff <= 1.0)
-      .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
-
-    if (scored.length === 0) continue;
+    const bestMatchId = scoreCandidates(candidates as Array<{ id: string; amount: number; date: string }>, receiptAmount, receiptDate);
+    if (!bestMatchId) continue;
 
     await db
       .from("email_receipts")
-      .update({ transaction_id: scored[0].id })
+      .update({ transaction_id: bestMatchId })
       .eq("id", receipt.id);
 
     matched++;

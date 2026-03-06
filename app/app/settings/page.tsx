@@ -295,6 +295,20 @@ export default function SettingsPage() {
                         )}
                       </button>
 
+                      {gmail.tokenError && (
+                        <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+                          <p className="text-sm text-red-700 mb-2">
+                            Gmail access has expired. Please reconnect to continue scanning.
+                          </p>
+                          <button
+                            onClick={() => { gmail.disconnect().then(() => gmail.connect()); }}
+                            className="text-xs font-medium text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors"
+                          >
+                            Reconnect Gmail
+                          </button>
+                        </div>
+                      )}
+
                       {gmail.scanResult && (
                         <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3">
                           <p className="text-sm text-[#2D5A44]">

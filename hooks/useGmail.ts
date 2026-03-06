@@ -9,6 +9,7 @@ interface GmailState {
   loading: boolean;
   scanning: boolean;
   scanResult: { scanned: number; matched: number } | null;
+  tokenError: boolean;
 }
 
 export function useGmail() {
@@ -19,6 +20,7 @@ export function useGmail() {
     loading: true,
     scanning: false,
     scanResult: null,
+    tokenError: false,
   });
 
   const fetchStatus = useCallback(async () => {
@@ -61,10 +63,17 @@ export function useGmail() {
   }, []);
 
   const scan = useCallback(async () => {
-    setState((prev) => ({ ...prev, scanning: true, scanResult: null }));
+    setState((prev) => ({ ...prev, scanning: true, scanResult: null, tokenError: false }));
     try {
       const res = await fetch("/api/gmail/scan", { method: "POST" });
-      if (!res.ok) throw new Error("Scan failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (body.authError) {
+          setState((prev) => ({ ...prev, scanning: false, tokenError: true }));
+          return;
+        }
+        throw new Error("Scan failed");
+      }
       const data = await res.json();
       setState((prev) => ({
         ...prev,

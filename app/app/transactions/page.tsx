@@ -15,6 +15,7 @@ import {
   StickyNote,
   Share2,
   Zap,
+  ReceiptText,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -227,6 +228,31 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
               </div>
             )}
           </div>
+          {tx.receipt && tx.receipt.line_items && tx.receipt.line_items.length > 0 && (
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <ReceiptText size={12} className="text-amber-500" />
+                Receipt Items
+              </h4>
+              <div className="space-y-2">
+                {tx.receipt.line_items.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-700">{item.name}</span>
+                      {item.quantity > 1 && (
+                        <span className="text-xs text-gray-400">x{item.quantity}</span>
+                      )}
+                    </div>
+                    <span className="text-sm font-medium text-gray-900">${item.total.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-500">Receipt total</span>
+                <span className="text-sm font-bold text-gray-900">${tx.receipt.total_amount.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
           {tx.location && (
             <div className="mx-6 my-4 rounded-xl overflow-hidden border border-gray-100 h-28 bg-gradient-to-br from-[#EEF7F2] to-[#E8F0EC] flex items-center justify-center">
               <div className="text-center">
@@ -654,6 +680,12 @@ export default function TransactionsPage() {
                             <span>Split</span>
                           </div>
                         )}
+                        {tx.receipt && (
+                          <div className="flex items-center gap-1 bg-amber-50 text-amber-600 text-xs px-2 py-0.5 rounded-full">
+                            <ReceiptText size={9} />
+                            <span>Receipt</span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${tx.categoryColor}`}>{tx.category}</span>
@@ -707,6 +739,22 @@ export default function TransactionsPage() {
                               <div className="text-xs text-gray-400 mb-0.5">Split suggestion</div>
                               <div className="text-xs text-[#3D8E62] font-medium">
                                 Split with {tx.splitWith} — ${(Math.abs(tx.amount) / 2).toFixed(2)} each
+                              </div>
+                            </div>
+                          )}
+                          {tx.receipt && tx.receipt.line_items && tx.receipt.line_items.length > 0 && (
+                            <div className="col-span-2">
+                              <div className="text-xs text-gray-400 mb-1">Receipt items</div>
+                              <div className="space-y-0.5">
+                                {tx.receipt.line_items.slice(0, 5).map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-xs text-gray-600">
+                                    <span>{item.name}{item.quantity > 1 ? ` x${item.quantity}` : ""}</span>
+                                    <span className="font-medium">${item.total.toFixed(2)}</span>
+                                  </div>
+                                ))}
+                                {tx.receipt.line_items.length > 5 && (
+                                  <div className="text-xs text-gray-400">+{tx.receipt.line_items.length - 5} more items</div>
+                                )}
                               </div>
                             </div>
                           )}
