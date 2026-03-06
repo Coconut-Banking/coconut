@@ -203,10 +203,23 @@ export function useReceiptSplit() {
     (itemId: string) => {
       setAssignments((prev) => {
         const next = new Map(prev);
-        next.set(
-          itemId,
-          people.map((p) => ({ name: p.name, memberId: p.memberId }))
+        const current = next.get(itemId) ?? [];
+
+        // Check if everyone is already assigned
+        const everyoneAssigned = people.every((person) =>
+          current.some((a) => a.name.toLowerCase() === person.name.toLowerCase())
         );
+
+        if (everyoneAssigned) {
+          // If everyone is assigned, clear all assignments (deselect)
+          next.set(itemId, []);
+        } else {
+          // Otherwise, assign everyone
+          next.set(
+            itemId,
+            people.map((p) => ({ name: p.name, memberId: p.memberId }))
+          );
+        }
         return next;
       });
     },

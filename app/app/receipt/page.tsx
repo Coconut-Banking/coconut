@@ -13,9 +13,11 @@ import {
   RotateCcw,
   Receipt,
   Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useReceiptSplit, type Step } from "@/hooks/useReceiptSplit";
 import type { ReceiptItem } from "@/lib/receipt-split";
 
@@ -618,6 +620,67 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
 function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
   const grandTotal = rs.personShares.reduce((s, p) => s + p.totalOwed, 0);
+  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+  const [finishing, setFinishing] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const [groupBalances, setGroupBalances] = useState<Array<{
+    memberId: string;
+    name: string;
+    paid: number;
+    owed: number;
+    total: number;
+  }>>([]);
+  const [suggestions, setSuggestions] = useState<Array<{
+    fromName: string;
+    toName: string;
+    amount: number;
+  }>>([]);
+  const router = useRouter();
+
+  // Fetch available groups
+  useEffect(() => {
+    fetch("/api/groups")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.groups) {
+          setGroups(data.groups);
+          if (data.groups.length === 1) {
+            setSelectedGroupId(data.groups[0].id);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleFinish = async () => {
+    if (!selectedGroupId || !rs.receiptId) return;
+
+    setFinishing(true);
+    try {
+      const res = await fetch(`/api/receipt/${rs.receiptId}/finish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId: selectedGroupId }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setFinished(true);
+        setGroupBalances(data.balances || []);
+        setSuggestions(data.suggestions || []);
+
+        // Don't redirect immediately - let user see the balances
+      } else {
+        alert(data.error || "Failed to save to group");
+        setFinishing(false);
+      }
+    } catch (e) {
+      alert("Failed to save to group");
+      setFinishing(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -671,12 +734,146 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         ))}
       </div>
 
+      {/* Save to Group */}
+      {groups.length > 0 && !finished && (
+        <div className="bg-[#EEF7F2] border border-[#3D8E62]/20 rounded-2xl p-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <p className="text-sm font-medium text-gray-900">
+                Save to Shared Expenses
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Add this receipt split to your group expenses
+              </p>
+            </div>
+            <Users size={16} className="text-[#3D8E62] mt-0.5" />
+          </div>
+
+          <div className="space-y-3">
+            {groups.length > 1 && (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+              >
+                <option value="">Select a group...</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={handleFinish}
+              disabled={!selectedGroupId || finishing}
+              className="w-full px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {finishing ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check size={14} />
+                  Finish & Add to Group
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {finished && (
+        <div className="space-y-4">
+          {/* Success message */}
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <CheckCircle2 size={20} className="text-green-600" />
+              <p className="text-sm font-medium text-green-900">
+                Receipt added to group expenses!
+              </p>
+            </div>
+
+            {/* Updated balances */}
+            {groupBalances.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-2">
+                  Updated Group Balances
+                </p>
+                <div className="space-y-1">
+                  {groupBalances.map((balance) => {
+                    const isOwed = balance.total > 0;
+                    const amount = Math.abs(balance.total);
+                    return (
+                      <div
+                        key={balance.memberId}
+                        className="flex items-center justify-between px-3 py-2 bg-white rounded-lg"
+                      >
+                        <span className="text-sm font-medium text-gray-700">
+                          {balance.name}
+                        </span>
+                        <span className={`text-sm font-semibold ${
+                          isOwed ? "text-green-600" : amount > 0.01 ? "text-red-600" : "text-gray-400"
+                        }`}>
+                          {isOwed ? "+" : amount > 0.01 ? "-" : ""}${amount.toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Settlement suggestions */}
+            {suggestions.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-green-100">
+                <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-2">
+                  Who Owes Whom
+                </p>
+                <div className="space-y-1">
+                  {suggestions.map((s, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-xs text-gray-600">
+                      <span className="font-medium">{s.fromName}</span>
+                      <span>→</span>
+                      <span className="font-medium">{s.toName}</span>
+                      <span className="text-green-700 font-semibold">
+                        ${s.amount.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Navigation */}
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => router.push("/app/shared")}
+              className="px-6 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors"
+            >
+              View All Expenses
+            </button>
+            <button
+              onClick={rs.reset}
+              className="px-4 py-2.5 border border-gray-200 text-sm font-medium text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              New Receipt
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="space-y-3 pt-2">
         <div className="flex items-center gap-3">
           <button
             onClick={() => rs.setStep("assign")}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            disabled={finishing || finished}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50"
           >
             <ChevronLeft size={14} />
             Back
@@ -684,7 +881,8 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           <div className="flex-1" />
           <button
             onClick={rs.reset}
-            className="flex items-center gap-1.5 px-4 py-2.5 border border-gray-200 text-sm font-medium text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
+            disabled={finishing}
+            className="flex items-center gap-1.5 px-4 py-2.5 border border-gray-200 text-sm font-medium text-gray-600 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
             <RotateCcw size={14} />
             New Receipt
