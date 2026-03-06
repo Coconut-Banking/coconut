@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   RefreshCw,
   Users,
+  Receipt,
   Settings,
   Search,
   Bell,
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/app/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/app/subscriptions", label: "Subscriptions", icon: RefreshCw },
   { href: "/app/shared", label: "Shared", icon: Users },
+  { href: "/app/receipt", label: "Split Receipt", icon: Receipt },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 
