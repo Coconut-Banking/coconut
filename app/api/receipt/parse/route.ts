@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     const mockId = `mock-${Date.now()}`;
     const mockResponse = {
       id: mockId,
-      clerk_user_id: testUserId,
+      clerk_user_id: userId,
       merchant_name: parsed.merchant_name,
       receipt_date: parsed.date,
       subtotal: parsed.subtotal,
