@@ -14,12 +14,14 @@ import {
   Receipt,
   Loader2,
   CheckCircle2,
+  FileDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useReceiptSplit, type Step } from "@/hooks/useReceiptSplit";
 import type { ReceiptItem } from "@/lib/receipt-split";
+import { exportReceiptSplitPdf } from "@/lib/receipt-pdf";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -222,6 +224,14 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 /* ─────────────────── Step 2: Review Items ─────────────────── */
 
 function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
+  const syncSubtotalFromItems = (items: typeof rs.editItems) => {
+    const sum = items.reduce((s, i) => s + i.totalPrice, 0);
+    rs.setEditSubtotal(Math.round(sum * 100) / 100);
+    rs.setEditTotal(
+      Math.round((sum + rs.editTax + rs.editTip) * 100) / 100
+    );
+  };
+
   const updateItem = (index: number, field: keyof ReceiptItem, value: string) => {
     rs.setEditItems((prev) => {
       const next = [...prev];
@@ -240,12 +250,17 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         item.totalPrice = Number(value) || 0;
       }
       next[index] = item;
+      syncSubtotalFromItems(next);
       return next;
     });
   };
 
   const removeItem = (index: number) => {
-    rs.setEditItems((prev) => prev.filter((_, i) => i !== index));
+    rs.setEditItems((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      syncSubtotalFromItems(next);
+      return next;
+    });
   };
 
   const addItem = () => {
@@ -268,6 +283,12 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
       Math.round((sum + rs.editTax + rs.editTip) * 100) / 100
     );
   };
+
+  // Keep Total in sync when Subtotal, Tax, or Tip change
+  useEffect(() => {
+    const total = Math.round((rs.editSubtotal + rs.editTax + rs.editTip) * 100) / 100;
+    rs.setEditTotal(total);
+  }, [rs.editSubtotal, rs.editTax, rs.editTip]);
 
   return (
     <div className="space-y-6">
@@ -373,7 +394,13 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <input
               type="number"
               value={rs.editSubtotal}
-              onChange={(e) => rs.setEditSubtotal(Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 0;
+                rs.setEditSubtotal(v);
+                rs.setEditTotal(
+                  Math.round((v + rs.editTax + rs.editTip) * 100) / 100
+                );
+              }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
             />
@@ -388,7 +415,13 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <input
               type="number"
               value={rs.editTax}
-              onChange={(e) => rs.setEditTax(Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 0;
+                rs.setEditTax(v);
+                rs.setEditTotal(
+                  Math.round((rs.editSubtotal + v + rs.editTip) * 100) / 100
+                );
+              }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
             />
@@ -403,7 +436,13 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <input
               type="number"
               value={rs.editTip}
-              onChange={(e) => rs.setEditTip(Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 0;
+                rs.setEditTip(v);
+                rs.setEditTotal(
+                  Math.round((rs.editSubtotal + rs.editTax + v) * 100) / 100
+                );
+              }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
             />
@@ -411,18 +450,14 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         </div>
         <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-900">Total</span>
-          <div className="relative w-28">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-              $
-            </span>
-            <input
-              type="number"
-              value={rs.editTotal}
-              onChange={(e) => rs.setEditTotal(Number(e.target.value) || 0)}
-              className="w-full text-right text-sm font-semibold border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
-              step={0.01}
-            />
-          </div>
+          <span className="text-sm font-semibold text-gray-900">
+            $
+            {(
+              Math.round(
+                (rs.editSubtotal + rs.editTax + rs.editTip) * 100
+              ) / 100
+            ).toFixed(2)}
+          </span>
         </div>
       </div>
 
@@ -694,6 +729,23 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           )}
           Total: ${grandTotal.toFixed(2)} (incl. tax & tip)
         </p>
+      </div>
+
+      {/* Export PDF */}
+      <div className="flex justify-center">
+        <button
+          onClick={() =>
+            exportReceiptSplitPdf(
+              rs.editMerchant,
+              rs.personShares,
+              `receipt-split-${(rs.editMerchant || "receipt").replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`
+            )
+          }
+          className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          <FileDown size={16} />
+          Export PDF
+        </button>
       </div>
 
       {/* Per-person cards */}
