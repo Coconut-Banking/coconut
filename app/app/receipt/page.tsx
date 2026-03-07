@@ -15,6 +15,7 @@ import {
   Loader2,
   CheckCircle2,
   FileDown,
+  Send,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
@@ -159,9 +160,6 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <Loader2 size={32} className="text-[#3D8E62] animate-spin" />
             <p className="text-sm font-medium text-gray-700">
               Scanning receipt...
-            </p>
-            <p className="text-xs text-gray-400">
-              GPT-4o is reading your receipt
             </p>
           </div>
         ) : (
@@ -667,11 +665,69 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
     total: number;
   }>>([]);
   const [suggestions, setSuggestions] = useState<Array<{
+    fromMemberId: string;
+    toMemberId: string;
     fromName: string;
     toName: string;
     amount: number;
   }>>([]);
+  const [groupName, setGroupName] = useState("");
+  const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
+  const [requestingPayment, setRequestingPayment] = useState<string | null>(null);
+  const [paymentLinkCopied, setPaymentLinkCopied] = useState(false);
   const router = useRouter();
+
+  const handleRequestPayment = async (s: {
+    fromMemberId: string;
+    toMemberId: string;
+    fromName: string;
+    toName: string;
+    amount: number;
+  }) => {
+    const key = `${s.fromMemberId}-${s.toMemberId}`;
+    setRequestingPayment(key);
+    try {
+      const res = await fetch("/api/stripe/create-payment-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: s.amount,
+          description: `${rs.editMerchant || "Receipt"} split`,
+          recipientName: s.fromName,
+          groupId: selectedGroupId,
+          payerMemberId: s.fromMemberId,
+          receiverMemberId: s.toMemberId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        await navigator.clipboard.writeText(data.url);
+        setPaymentLinkCopied(true);
+        setTimeout(() => setPaymentLinkCopied(false), 2000);
+        const payerEmail = members.find((m) => m.id === s.fromMemberId)?.email ?? null;
+        if (payerEmail) {
+          const subject = encodeURIComponent(`Payment request: $${s.amount.toFixed(2)} for ${groupName || "receipt split"}`);
+          const body = encodeURIComponent(
+            `Hey!\n\nYou owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}.\n\nPay here: ${data.url}\n\nThanks!`
+          );
+          window.location.href = `mailto:${payerEmail}?subject=${subject}&body=${body}`;
+        }
+      } else {
+        const payerEmail = members.find((m) => m.id === s.fromMemberId)?.email ?? null;
+        if (payerEmail) {
+          const subject = encodeURIComponent(`Payment request: $${s.amount.toFixed(2)} for ${groupName || "receipt split"}`);
+          const body = encodeURIComponent(
+            `Hey!\n\nYou owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}.\n\nPlease pay via Venmo, Cash App, Zelle, or another method.\n\nThanks!`
+          );
+          window.location.href = `mailto:${payerEmail}?subject=${subject}&body=${body}`;
+        } else {
+          alert("Add their email in the group to send a payment request, or configure Stripe for payment links.");
+        }
+      }
+    } finally {
+      setRequestingPayment(null);
+    }
+  };
 
   // Fetch available groups
   useEffect(() => {
@@ -705,6 +761,8 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         setFinished(true);
         setGroupBalances(data.balances || []);
         setSuggestions(data.suggestions || []);
+        setGroupName(data.groupName || "");
+        setMembers(data.members || []);
 
         // Don't redirect immediately - let user see the balances
       } else {
@@ -786,6 +844,25 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         ))}
       </div>
 
+      {/* No groups — prompt to create */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm font-medium text-gray-700">
+            Create a group to track and settle
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5 mb-3">
+            Save this split to shared expenses and request payments from friends.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="w-full px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            <Users size={14} />
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
+
       {/* Save to Group */}
       {groups.length > 0 && !finished && (
         <div className="bg-[#EEF7F2] border border-[#3D8E62]/20 rounded-2xl p-4">
@@ -838,6 +915,71 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         </div>
       )}
 
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+          <p className="text-sm font-medium text-amber-900">
+            Create a group to track and settle
+          </p>
+          <p className="text-xs text-amber-700 mt-0.5">
+            Save this split to shared expenses and request payments from friends.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="mt-3 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
+
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm text-gray-600 mb-3">
+            Create a group to save this split and collect payments.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="w-full px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            <Users size={16} />
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
+
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm text-gray-600 mb-2">
+            Create a group to save this split and collect payments.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            <Users size={16} />
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
+
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm text-gray-600 mb-2">
+            Create a group to save this split and collect payments.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="text-sm font-medium text-[#3D8E62] hover:text-[#2D7A52] transition-colors"
+          >
+            Go to Shared Expenses →
+          </button>
+        </div>
+      )}
+
       {finished && (
         <div className="space-y-4">
           {/* Success message */}
@@ -879,24 +1021,43 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               </div>
             )}
 
-            {/* Settlement suggestions */}
+            {/* Settlement suggestions with Request payment */}
             {suggestions.length > 0 && (
               <div className="mt-3 pt-3 border-t border-green-100">
                 <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-2">
                   Who Owes Whom
                 </p>
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {suggestions.map((s, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs text-gray-600">
-                      <span className="font-medium">{s.fromName}</span>
-                      <span>→</span>
-                      <span className="font-medium">{s.toName}</span>
-                      <span className="text-green-700 font-semibold">
-                        ${s.amount.toFixed(2)}
+                    <div key={idx} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-600">
+                        <span className="font-medium">{s.fromName}</span>
+                        <span> → </span>
+                        <span className="font-medium">{s.toName}</span>
+                        <span className="text-green-700 font-semibold ml-1">
+                          ${s.amount.toFixed(2)}
+                        </span>
                       </span>
+                      <button
+                        onClick={() => handleRequestPayment(s)}
+                        disabled={requestingPayment !== null}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-[#3D8E62] hover:bg-[#EEF7F2] rounded-lg transition-colors disabled:opacity-50 shrink-0"
+                      >
+                        {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <>
+                            <Send size={12} />
+                            Request payment
+                          </>
+                        )}
+                      </button>
                     </div>
                   ))}
                 </div>
+                {paymentLinkCopied && (
+                  <p className="text-xs text-[#3D8E62] mt-2">Payment link copied!</p>
+                )}
               </div>
             )}
           </div>
