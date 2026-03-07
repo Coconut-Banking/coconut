@@ -31,19 +31,31 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabase();
 
+  // Normalize date to YYYY-MM-DD for PostgreSQL (handles "8/9/2025", "2025-08-09", etc.)
+  let receiptDate: string | null = null;
+  if (parsed.date) {
+    const d = new Date(parsed.date);
+    if (!isNaN(d.getTime())) {
+      receiptDate = d.toISOString().slice(0, 10);
+    }
+  }
+
+  // Skip storing large images to avoid DB row size limits (~1MB)
+  const imagePayload = base64.length < 800_000 ? `data:${mimeType};base64,${base64}` : null;
+
   try {
     // Save receipt scan
     const { data: receipt, error: receiptErr } = await db
       .from("receipt_scans")
       .insert({
         clerk_user_id: userId,
-        merchant_name: parsed.merchant_name,
-        receipt_date: parsed.date,
+        merchant_name: parsed.merchant_name ?? "Unknown",
+        receipt_date: receiptDate,
         subtotal: parsed.subtotal,
         tax: parsed.tax,
         tip: parsed.tip,
         total: parsed.total,
-        image_base64: `data:${mimeType};base64,${base64}`,
+        image_base64: imagePayload,
         status: "parsed",
       })
       .select("id")
@@ -51,7 +63,15 @@ export async function POST(req: NextRequest) {
 
     if (receiptErr || !receipt) {
       console.error("Database save failed:", receiptErr);
-      return NextResponse.json({ error: "Failed to save receipt" }, { status: 500 });
+      const msg = receiptErr?.message ?? "Unknown error";
+      return NextResponse.json(
+        {
+          error: "Failed to save receipt",
+          details: msg,
+          hint: msg.includes("does not exist") ? "Run docs/supabase-migration-receipt-split.sql in Supabase SQL Editor" : undefined,
+        },
+        { status: 500 }
+      );
     }
 
     // Save items

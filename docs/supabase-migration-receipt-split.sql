@@ -44,7 +44,11 @@ create table if not exists receipt_assignments (
 );
 create index if not exists receipt_assignments_item_idx on receipt_assignments(receipt_item_id);
 
--- 4. RLS
+-- 4. RLS (service role bypasses; these allow anon/authenticated if needed)
 alter table receipt_scans      enable row level security;
 alter table receipt_items       enable row level security;
 alter table receipt_assignments enable row level security;
+
+create policy "receipt_scans_all" on receipt_scans for all using (true) with check (true);
+create policy "receipt_items_all" on receipt_items for all using (true) with check (true);
+create policy "receipt_assignments_all" on receipt_assignments for all using (true) with check (true);
