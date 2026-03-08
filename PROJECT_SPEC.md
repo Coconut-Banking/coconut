@@ -1,6 +1,6 @@
 # Coconut — Project Spec
 
-Personal finance app (like Rocket Money): transactions, natural-language search, receipt splitting, shared groups, subscriptions, Plaid integration.
+Personal finance app (like Rocket Money). For implementation patterns, see `docs/IMPLEMENTATION_GUIDE.md`.: transactions, natural-language search, receipt splitting, shared groups, subscriptions, Plaid integration.
 
 ## Stack
 

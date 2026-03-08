@@ -1,6 +1,6 @@
 # Agent guardrails for coconut-ai-worker
 
-This file guides autonomous agents (e.g. coconut-ai-worker) that implement changes and open PRs.
+This file guides autonomous agents (e.g. coconut-ai-worker) that implement changes and open PRs. Read `docs/IMPLEMENTATION_GUIDE.md` for patterns and mindset. Read `PROJECT_SPEC.md` for structure and design.
 
 ## Required validation (must pass before PR)
 
@@ -45,6 +45,10 @@ All new or modified UI must match the existing theme. Keep it **modern and polis
 - **Motion**: Use `motion/react` for subtle animations (e.g. `motion.div` with `initial`/`animate`) where it improves UX — but don't overdo it.
 
 Do **not** introduce new color schemes, generic Bootstrap-style UI, or cluttered layouts. Match existing pages (dashboard, transactions, settings) in tone and structure.
+
+## Execution mindset
+
+Act like a senior engineer in Cursor: read first, plan, then code. Reuse existing patterns. Keep diffs minimal. Add tests for new logic. If validation fails, fix the code — don't disable checks.
 
 ## Sensitive areas
 
