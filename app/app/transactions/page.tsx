@@ -794,7 +794,7 @@ export default function TransactionsPage() {
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-2">Type</div>
                 <div className="space-y-1.5">
-                  {"All", "Recurring", "Split", "One-time"].map((type) => (
+                  {["All", "Recurring", "Split", "One-time"].map((type) => (
                     <label key={type} className="flex items-center gap-2 cursor-pointer">
                       <input type="radio" name="type" defaultChecked={type === "All"} className="accent-[#3D8E62]" />
                       <span className="text-xs text-gray-600">{type}</span>
