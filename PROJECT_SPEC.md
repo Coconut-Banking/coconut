@@ -28,8 +28,21 @@ Personal finance app (like Rocket Money): transactions, natural-language search,
 
 - **Imports**: Use `@/` alias (e.g. `import { x } from "@/lib/..."`)
 - **API routes**: `app/api/[resource]/route.ts` or `app/api/[resource]/[id]/route.ts`
-- **Styling**: Tailwind; primary green `#3D8E62` / `bg-[#3D8E62]`
 - **Migrations**: Add SQL files to `docs/`; run manually in Supabase
+
+## Design system (match this exactly for new UI)
+
+| Element | Classes / values |
+|---------|------------------|
+| Primary | `#3D8E62` |
+| Primary hover | `#2D7A52` |
+| Light green bg | `#EEF7F2` |
+| Green border | `#C3E0D3` |
+| Card | `bg-white rounded-2xl border border-gray-100 p-6` |
+| Button primary | `bg-[#3D8E62] hover:bg-[#2D7A52] text-white rounded-xl px-5 py-2.5` |
+| Input | `rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#3D8E62]/20` |
+| Font | Inter (globals.css) |
+| Motion | `motion/react` for subtle animations |
 
 ## Validation commands
 

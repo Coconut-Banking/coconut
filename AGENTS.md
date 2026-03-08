@@ -28,6 +28,24 @@ Do **not** skip or disable these. Fix issues instead.
 
 Use conventional commits: `feat:`, `fix:`, `refactor:`, etc. For issue-driven work: `feat: implement issue #123` or similar.
 
+## UI and design
+
+All new or modified UI must match the existing theme. Keep it **modern and polished**.
+
+- **Primary color**: `#3D8E62` (buttons, links, accents, active states)
+- **Hover**: `#2D7A52` (darker green for buttons)
+- **Light green**: `#EEF7F2` (backgrounds), `#C3E0D3` (borders)
+- **Cards**: `bg-white rounded-2xl border border-gray-100`, generous padding
+- **Inputs**: `rounded-xl border border-gray-200`, focus `ring-2 ring-[#3D8E62]/20`
+- **Buttons (primary)**: `bg-[#3D8E62] hover:bg-[#2D7A52] text-white rounded-xl px-5 py-2.5`
+- **Rounded corners**: `rounded-xl` (medium), `rounded-2xl` (cards/containers)
+- **Font**: Inter (system default)
+- **Typography**: Clean hierarchy; avoid generic gray-on-white. Use the green accent for interactive elements.
+- **Spacing**: Consistent gaps (`gap-4`, `gap-6`), padding (`p-4`, `p-6`)
+- **Motion**: Use `motion/react` for subtle animations (e.g. `motion.div` with `initial`/`animate`) where it improves UX — but don't overdo it.
+
+Do **not** introduce new color schemes, generic Bootstrap-style UI, or cluttered layouts. Match existing pages (dashboard, transactions, settings) in tone and structure.
+
 ## Sensitive areas
 
 - **Auth** (Clerk): Be careful with sign-in/sign-out flows
