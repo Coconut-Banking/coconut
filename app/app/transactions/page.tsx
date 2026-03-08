@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Search,
@@ -533,32 +534,42 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
   );
 }
 
-const nlExamples = [
-  "Find that Uber from last month",
-  "Coffee in January",
-  "Dinner with Alex",
-  "Subscriptions over $10",
-];
+// Real-time client-side filter: match query against merchant, category, description, date, amount (no LLM)
+function filterTransactionsByQuery<T extends Transaction>(list: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter((tx) => {
+    const merchant = (tx.merchant ?? "").toLowerCase();
+    const category = (tx.category ?? "").toLowerCase();
+    const raw = (tx.rawDescription ?? "").toLowerCase();
+    const dateStr = (tx.dateStr ?? "").toLowerCase();
+    const amountStr = `${Math.abs(tx.amount)}`.toLowerCase();
+    return (
+      merchant.includes(q) ||
+      category.includes(q) ||
+      raw.includes(q) ||
+      dateStr.includes(q) ||
+      amountStr.includes(q)
+    );
+  });
+}
 
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const { transactions, linked, loading } = useTransactions();
   const isDemo = useDemoMode();
-  const [searchQuery, setSearchQuery] = useState("");
+  // Semantic search: from URL (top bar submit). Triggers NL/LLM search.
+  const semanticQuery = searchParams.get("q") ? decodeURIComponent(searchParams.get("q")!) : "";
+  // Real-time filter: page search bar. Client-side only, no LLM.
+  const [filterQuery, setFilterQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [nlHint, setNlHint] = useState(0);
-  const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(searchQuery, transactions);
+  const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
 
   useEffect(() => {
-    const q = searchParams.get("q");
-    if (q) setSearchQuery(decodeURIComponent(q));
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (searchQuery.trim()) setSelectedCategory("All");
-  }, [searchQuery]);
+    if (filterQuery.trim()) setSelectedCategory("All");
+  }, [filterQuery]);
 
   if (linked && loading) {
     return (
@@ -571,14 +582,19 @@ export default function TransactionsPage() {
     );
   }
 
-  // Build unique category tabs from actual transaction data
-  const categoryTabs = ["All", ...Array.from(
-    new Set(transactions.map((tx) => tx.category))
-  ).sort()];
-
+  // Base list: semantic result when top-bar query is set, otherwise all transactions
+  const baseList = semanticQuery.trim() ? nlFiltered : transactions;
+  // Real-time filter (page search bar): client-side, no LLM
+  const filteredBySearch = filterTransactionsByQuery(baseList, filterQuery);
+  // Category filter
   const filtered = selectedCategory === "All"
-    ? nlFiltered
-    : nlFiltered.filter((tx) => tx.category === selectedCategory);
+    ? filteredBySearch
+    : filteredBySearch.filter((tx) => tx.category === selectedCategory);
+
+  // Build unique category tabs from actual transaction data (use baseList so categories reflect current view)
+  const categoryTabs = ["All", ...Array.from(
+    new Set(baseList.map((tx) => tx.category))
+  ).sort()];
 
   return (
     <div className="max-w-4xl mx-auto px-8 py-8">
@@ -601,35 +617,40 @@ export default function TransactionsPage() {
         <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions loaded</p>
       </div>
 
-      {searchQuery && (nlLoading || nlAnswer) && (
+      {/* Semantic search banner: only when query came from top bar (URL) */}
+      {semanticQuery && (nlLoading || nlAnswer) && (
         <div className="mb-5 rounded-2xl bg-[#EEF7F2] border border-[#D1EAE0] px-5 py-4">
           {nlLoading ? (
             <p className="text-sm text-[#2D5A44]/60">Searching...</p>
           ) : (
             <p className="text-sm text-[#2D5A44] leading-relaxed">{nlAnswer}</p>
           )}
+          <div className="mt-2 text-xs text-[#2D5A44]/80">
+            <Link
+              href="/app/transactions"
+              className="text-[#3D8E62] underline hover:no-underline"
+            >
+              Clear semantic search
+            </Link>
+          </div>
         </div>
       )}
 
+      {/* Real-time filter bar: instant client-side filter, no LLM */}
       <div className="relative mb-5">
         <div className="absolute left-4 top-1/2 -translate-y-1/2">
-          {nlLoading ? (
-            <div className="w-4 h-4 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
-          ) : (
-            <Search size={16} className="text-[#3D8E62]" />
-          )}
+          <Search size={16} className="text-[#3D8E62]" />
         </div>
         <input
           type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={nlExamples[nlHint % nlExamples.length]}
-          onFocus={() => setNlHint((n) => n + 1)}
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          placeholder="Filter by name, category, amount..."
           className="w-full pl-11 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
         />
-        {searchQuery && (
+        {filterQuery && (
           <button
-            onClick={() => setSearchQuery("")}
+            onClick={() => setFilterQuery("")}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
           >
             <X size={15} />
@@ -659,7 +680,8 @@ export default function TransactionsPage() {
               <div className="text-center py-12 text-gray-400 text-sm">
                 {nlAnswer || "No transactions found"}
                 <div className="mt-2 text-xs text-gray-500">
-                  Try a different search or <button onClick={() => setSearchQuery("")} className="text-[#3D8E62] underline">clear the search box</button>.
+                  Try a different filter or <button onClick={() => setFilterQuery("")} className="text-[#3D8E62] underline">clear the filter</button>
+                  {semanticQuery && <> or <Link href="/app/transactions" className="text-[#3D8E62] underline">clear semantic search</Link></>}.
                 </div>
               </div>
             ) : (
@@ -805,7 +827,7 @@ export default function TransactionsPage() {
               <button
                 onClick={() => {
                   setSelectedCategory("All");
-                  setSearchQuery("");
+                  setFilterQuery("");
                 }}
                 className="w-full text-xs text-gray-500 hover:text-gray-700 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
