@@ -431,7 +431,7 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
                       >
                         <option value="">Choose a person...</option>
                         {people.map((p) => (
-                          <option key={`${p.groupId}-${p.memberId}`} value={`${p.groupId}-${p.memberId}`}>
+                          <option key={`${p.groupId}-${p.memberId}`} value={`${p.groupId}-${p.memberId}`}> 
                             {p.displayName}{p.memberCount > 2 ? ` (${p.groupName})` : ""}
                           </option>
                         ))}
@@ -656,7 +656,12 @@ export default function TransactionsPage() {
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
             {filtered.length === 0 ? (
-              <div className="text-center py-12 text-gray-400 text-sm">No transactions found</div>
+              <div className="text-center py-12 text-gray-400 text-sm">
+                {nlAnswer || "No transactions found"}
+                <div className="mt-2 text-xs text-gray-500">
+                  Try a different search or <button onClick={() => setSearchQuery("")} className="text-[#3D8E62] underline">clear the search box</button>.
+                </div>
+              </div>
             ) : (
               filtered.map((tx, i) => (
                 <div key={tx.id}>
