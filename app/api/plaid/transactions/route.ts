@@ -89,7 +89,10 @@ export async function POST() {
 
   const { syncTransactionsForUser, embedTransactionsForUser } = await import("@/lib/transaction-sync");
   const { synced, error } = await syncTransactionsForUser(userId);
-  embedTransactionsForUser(userId).catch(() => {});
   if (error) return NextResponse.json({ error }, { status: 500 });
-  return NextResponse.json({ synced });
+  embedTransactionsForUser(userId).catch(() => {});
+  const { detectSubscriptionsForUser, saveDetectedSubscriptions } = await import("@/lib/subscription-detect");
+  const detected = await detectSubscriptionsForUser(userId);
+  await saveDetectedSubscriptions(userId, detected);
+  return NextResponse.json({ synced, detected: detected.length });
 }

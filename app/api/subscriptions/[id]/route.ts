@@ -1,0 +1,32 @@
+import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { getSupabase } from "@/lib/supabase";
+
+export async function PATCH(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await params;
+  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  try {
+    const body = await _req.json().catch(() => ({}));
+    const status = body?.status as string | undefined;
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (status && ["active", "cancelled", "paused", "dismissed"].includes(status)) updates.status = status;
+    const db = getSupabase();
+    const { data, error } = await db
+      .from("subscriptions")
+      .update(updates)
+      .eq("id", id)
+      .eq("clerk_user_id", userId)
+      .select("id, status")
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+  }
+}

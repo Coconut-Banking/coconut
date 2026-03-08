@@ -69,6 +69,24 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
   const [submitting, setSubmitting] = useState(false);
   const [newPersonName, setNewPersonName] = useState("");
   const [addingNewPerson, setAddingNewPerson] = useState(false);
+  const [markingSubscription, setMarkingSubscription] = useState(false);
+
+  const handleMarkAsSubscription = async () => {
+    if (!tx.dbId) return;
+    setMarkingSubscription(true);
+    try {
+      const res = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId: tx.dbId }),
+      });
+      if (res.ok) {
+        onClose();
+      }
+    } finally {
+      setMarkingSubscription(false);
+    }
+  };
 
   const loadPeopleAndGroups = async () => {
     const res = await fetch("/api/groups/people");
@@ -269,15 +287,21 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
                   </div>
                 </button>
               )}
-              <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left">
-                <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
-                  <RefreshCw size={15} className="text-gray-500" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium">Mark as subscription</div>
-                  <div className="text-xs text-gray-400">Track this as a recurring charge</div>
-                </div>
-              </button>
+              {tx.dbId && (
+                <button
+                  onClick={handleMarkAsSubscription}
+                  disabled={markingSubscription}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left disabled:opacity-60"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                    <RefreshCw size={15} className={markingSubscription ? "animate-spin" : "text-[#3D8E62]"} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium">Mark as subscription</div>
+                    <div className="text-xs opacity-70">Add to your subscriptions list</div>
+                  </div>
+                </button>
+              )}
               <button
                 onClick={() => setAddingNote(!addingNote)}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left"
