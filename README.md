@@ -1,1 +1,1 @@
-Coconut Web App
+Coconut Web and Mobile App
