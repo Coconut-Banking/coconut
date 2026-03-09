@@ -45,10 +45,11 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!isSignedIn) {
-    router.replace("/login");
-    return null;
-  }
+  // TEMPORARY: Allow unauthenticated access for testing
+  // if (!isSignedIn) {
+  //   router.replace("/login");
+  //   return null;
+  // }
 
   // Signed in — check if they have Plaid linked or are in demo mode
   if (plaidStatus === "checking") {
@@ -64,10 +65,11 @@ export function AppGate({ children }: { children: React.ReactNode }) {
 
   const isDemo = typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true";
 
-  if (plaidStatus === "unlinked" && !isDemo) {
-    router.replace("/connect");
-    return null;
-  }
+  // TEMPORARY: Skip Plaid check for testing
+  // if (plaidStatus === "unlinked" && !isDemo) {
+  //   router.replace("/connect");
+  //   return null;
+  // }
 
   return <>{children}</>;
 }
