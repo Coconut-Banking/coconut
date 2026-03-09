@@ -2,20 +2,35 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 
+const DEMO_USER_ID = "demo-sandbox-user";
+
 export async function GET() {
   const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const effectiveUserId = userId ?? DEMO_USER_ID;
 
   try {
     const db = getSupabase();
-    const { data, error } = await db
+    let { data, error } = await db
       .from("transactions")
       .select(
         "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
       )
-      .eq("clerk_user_id", userId)
+      .eq("clerk_user_id", effectiveUserId)
       .order("date", { ascending: false })
       .limit(2000);
+
+    if (userId && (!data || data.length === 0)) {
+      const demo = await db
+        .from("transactions")
+        .select(
+          "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+        )
+        .eq("clerk_user_id", DEMO_USER_ID)
+        .order("date", { ascending: false })
+        .limit(2000);
+      data = demo.data;
+      error = demo.error;
+    }
 
     if (error) throw error;
 
