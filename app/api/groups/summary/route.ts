@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { computeBalances } from "@/lib/split-balances";
 import { getAccessibleGroupIds } from "@/lib/group-access";
+import { getUserId } from "@/lib/auth";
 
 export async function GET() {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getSupabase();

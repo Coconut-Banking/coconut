@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
+import { getUserId } from "@/lib/auth";
 
 export async function GET() {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getSupabase();
@@ -35,7 +36,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
