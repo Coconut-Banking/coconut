@@ -92,16 +92,10 @@ function ConnectBankContent() {
     }
   }, [searchParams]);
 
-  // Require sign-in so Plaid token is stored for the same user as the app
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (!isSignedIn) {
-      const returnTo = `/connect${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
-      router.replace(`/login?redirect_url=${encodeURIComponent(returnTo)}`);
-    }
-  }, [isLoaded, isSignedIn, router, searchParams]);
+  const returnToConnect = `/connect${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
 
   useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
     let cancelled = false;
     fetch("/api/plaid/create-link-token", { method: "POST" })
       .then((res) => res.json())
@@ -121,7 +115,7 @@ function ConnectBankContent() {
         if (!cancelled) setError(err.message ?? "Failed to load");
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   const onSuccess = useCallback(
     async (publicToken: string) => {
@@ -165,7 +159,58 @@ function ConnectBankContent() {
     }
   }, [receivedRedirectUri, linkToken, ready, open]);
 
-  if (!isLoaded || !isSignedIn) {
+  // Not signed in — show connect page with sign-in prompt (no redirect to separate login page)
+  if (isLoaded && !isSignedIn) {
+    return (
+      <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
+        <div className="px-8 py-5 flex items-center gap-4 border-b border-gray-100 bg-white">
+          <Link href="/" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800">
+            <ArrowLeft size={16} /> Back
+          </Link>
+          <div className="flex items-center gap-2.5 mx-auto">
+            <div className="w-6 h-6 rounded-md bg-[#3D8E62] flex items-center justify-center">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white"/>
+              </svg>
+            </div>
+            <span className="text-sm font-semibold text-gray-700">Coconut</span>
+          </div>
+          <div className="w-12" />
+        </div>
+        <div className="flex-1 flex items-start justify-center px-4 py-10">
+          <div className="w-full max-w-md">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 pt-6 pb-4 border-b border-gray-100">
+                <h1 className="text-xl font-bold text-gray-900 mb-1">Connect your bank</h1>
+                <p className="text-sm text-gray-500">
+                  Sign in to link your bank to your account. Your connection will sync with the app.
+                </p>
+              </div>
+              <div className="px-6 py-6">
+                <Link
+                  href={`/login?redirect_url=${encodeURIComponent(returnToConnect)}`}
+                  className="block w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  Sign in to continue
+                  <ChevronRight size={15} />
+                </Link>
+              </div>
+              <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-center gap-4">
+                <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                  <Shield size={12} className="text-[#3D8E62]" /> 256-bit encryption
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                  <Lock size={12} className="text-[#3D8E62]" /> Read-only access
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
     return (
       <div className="min-h-screen bg-[#F7FAF8] flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
