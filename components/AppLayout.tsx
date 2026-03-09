@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Users,
   Receipt,
+  Mail,
   Settings,
   Search,
   Bell,
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/app/subscriptions", label: "Subscriptions", icon: RefreshCw },
   { href: "/app/shared", label: "Shared", icon: Users },
   { href: "/app/receipt", label: "Split Receipt", icon: Receipt },
+  { href: "/app/email-receipts", label: "Email Receipts", icon: Mail },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 

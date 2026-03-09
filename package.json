@@ -17,6 +17,7 @@
   "dependencies": {
     "@clerk/nextjs": "^6.39.0",
     "@supabase/supabase-js": "^2.98.0",
+    "googleapis": "^171.4.0",
     "jspdf": "^4.2.0",
     "lucide-react": "^0.487.0",
     "motion": "^12.23.24",
