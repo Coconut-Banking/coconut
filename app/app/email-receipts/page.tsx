@@ -16,6 +16,8 @@ interface Receipt {
     name: string;
     quantity: number;
     price: number;
+    unit_price?: number;
+    total?: number;
   }>;
   raw_subject: string;
   raw_from: string;
