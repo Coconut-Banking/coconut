@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   distributeExtras,
   computePersonShares,
@@ -20,6 +20,9 @@ export function useReceiptSplit() {
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<
+    "uploading" | "reading" | "extracting" | "cleaning"
+  >("uploading");
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Review step editable fields
@@ -27,6 +30,7 @@ export function useReceiptSplit() {
   const [editSubtotal, setEditSubtotal] = useState(0);
   const [editTax, setEditTax] = useState(0);
   const [editTip, setEditTip] = useState(0);
+  const [editOtherFees, setEditOtherFees] = useState<Array<{ name: string; amount: number }>>([]);
   const [editTotal, setEditTotal] = useState(0);
   const [editMerchant, setEditMerchant] = useState("");
 
@@ -44,6 +48,22 @@ export function useReceiptSplit() {
 
   // Saving state
   const [saving, setSaving] = useState(false);
+
+  // Progress stages while parsing (upload → OCR → clean) so user sees activity
+  useEffect(() => {
+    if (!uploading) return;
+    setUploadStage("uploading");
+    const stages: Array<"uploading" | "reading" | "extracting" | "cleaning"> = [
+      "reading",
+      "extracting",
+      "cleaning",
+    ];
+    let i = 0;
+    const iv = setInterval(() => {
+      if (i < stages.length) setUploadStage(stages[i++]);
+    }, 2000);
+    return () => clearInterval(iv);
+  }, [uploading]);
 
   const uploadReceipt = useCallback(async (file: File) => {
     setUploading(true);
@@ -89,6 +109,13 @@ export function useReceiptSplit() {
       setEditSubtotal(Number(data.subtotal));
       setEditTax(Number(data.tax));
       setEditTip(Number(data.tip));
+      const fees = Array.isArray(data.other_fees)
+        ? data.other_fees.map((f: { name: string; amount: number }) => ({
+            name: String(f.name ?? ""),
+            amount: Number(f.amount ?? 0),
+          }))
+        : [];
+      setEditOtherFees(fees);
       setEditTotal(Number(data.total));
       setEditMerchant(data.merchant_name ?? "");
       setStep("review");
@@ -116,6 +143,7 @@ export function useReceiptSplit() {
           subtotal: editSubtotal,
           tax: editTax,
           tip: editTip,
+          other_fees: editOtherFees,
           total: editTotal,
           merchant_name: editMerchant,
         }),
@@ -140,7 +168,8 @@ export function useReceiptSplit() {
         );
       setEditItems(serverItems);
 
-      const withExtras = distributeExtras(serverItems, editSubtotal, editTax, editTip);
+      const otherFeesTotal = editOtherFees.reduce((s, f) => s + f.amount, 0);
+      const withExtras = distributeExtras(serverItems, editSubtotal, editTax, editTip, otherFeesTotal);
       setItemsWithExtras(withExtras);
       setStep("assign");
     } catch {
@@ -148,7 +177,7 @@ export function useReceiptSplit() {
     } finally {
       setSaving(false);
     }
-  }, [receiptId, editItems, editSubtotal, editTax, editTip, editTotal, editMerchant]);
+  }, [receiptId, editItems, editSubtotal, editTax, editTip, editOtherFees, editTotal, editMerchant]);
 
   const addPerson = useCallback(
     (name: string, memberId: string | null = null) => {
@@ -264,6 +293,7 @@ export function useReceiptSplit() {
     setEditSubtotal(0);
     setEditTax(0);
     setEditTip(0);
+    setEditOtherFees([]);
     setEditTotal(0);
     setEditMerchant("");
     setPeople([]);
@@ -274,11 +304,12 @@ export function useReceiptSplit() {
 
   return {
     step, setStep,
-    receiptId, imagePreview, uploading, uploadError, uploadReceipt,
+    receiptId, imagePreview, uploading, uploadStage, uploadError, uploadReceipt,
     editItems, setEditItems,
     editSubtotal, setEditSubtotal,
     editTax, setEditTax,
     editTip, setEditTip,
+    editOtherFees, setEditOtherFees,
     editTotal, setEditTotal,
     editMerchant, setEditMerchant,
     confirmItems,

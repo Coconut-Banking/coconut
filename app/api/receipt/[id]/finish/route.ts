@@ -49,7 +49,7 @@ export async function POST(
   // Verify user has access to the group
   const { data: group } = await db
     .from("groups")
-    .select("id, owner_id")
+    .select("id, owner_id, name")
     .eq("id", groupId)
     .single();
 
@@ -57,10 +57,10 @@ export async function POST(
     return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
 
-  // Get group members
+  // Get group members (include email for payment requests)
   const { data: members } = await db
     .from("group_members")
-    .select("id, display_name, user_id")
+    .select("id, display_name, user_id, email")
     .eq("group_id", groupId);
 
   if (!members || members.length === 0) {
@@ -249,11 +249,19 @@ export async function POST(
     toName: memberMap.get(s.toMemberId) || "Unknown"
   }));
 
+  const groupName = (group as { name?: string }).name || "Shared expenses";
+
   return NextResponse.json({
     ok: true,
     transactionId: transaction.id,
     splitId: splitTx.id,
     groupId: groupId,
+    groupName,
+    members: members.map((m) => ({
+      id: m.id,
+      displayName: m.display_name || "Unknown",
+      email: m.email ?? null,
+    })),
     balances: balancesWithNames,
     suggestions: suggestionsWithNames,
   });

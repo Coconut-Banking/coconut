@@ -101,7 +101,9 @@ export async function syncTransactionsForUser(
   );
 
   // Fetch all transactions from Plaid via cursor sync
-  const allTxs: Array<Record<string, unknown>> = [];
+  const allAdded: Array<Record<string, unknown>> = [];
+  const allModified: Array<Record<string, unknown>> = [];
+  const allRemovedIds: string[] = [];
   let cursor: string | undefined;
   let hasMore = true;
   while (hasMore) {
@@ -110,12 +112,31 @@ export async function syncTransactionsForUser(
       cursor,
       count: 500,
     });
-    allTxs.push(...(resp.data.added as unknown as Array<Record<string, unknown>>));
+    allAdded.push(...(resp.data.added as unknown as Array<Record<string, unknown>>));
+    allModified.push(...(resp.data.modified as unknown as Array<Record<string, unknown>>));
+    const removed = resp.data.removed as unknown as Array<{ transaction_id?: string }>;
+    if (Array.isArray(removed)) {
+      for (const r of removed) {
+        const id = typeof r === "string" ? r : r?.transaction_id;
+        if (id) allRemovedIds.push(id);
+      }
+    }
     cursor = resp.data.next_cursor;
     hasMore = resp.data.has_more;
   }
 
-  if (allTxs.length === 0) return { synced: 0 };
+  // Delete removed transactions (e.g. pending that posted — prevents duplicates)
+  if (allRemovedIds.length > 0) {
+    const { error: delErr } = await db
+      .from("transactions")
+      .delete()
+      .eq("clerk_user_id", clerkUserId)
+      .in("plaid_transaction_id", allRemovedIds);
+    if (delErr) console.error("[sync] delete removed error:", delErr.message);
+  }
+
+  const allTxs = [...allAdded, ...allModified];
+  if (allTxs.length === 0 && allRemovedIds.length === 0) return { synced: 0 };
 
   const rows = allTxs.map((tx) => {
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";

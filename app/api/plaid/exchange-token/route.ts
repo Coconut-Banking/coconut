@@ -3,9 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { savePlaidToken, syncTransactionsForUser, embedTransactionsForUser } from "@/lib/transaction-sync";
 
+const DEMO_USER_ID = "demo-sandbox-user";
+
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const effectiveUserId = userId ?? DEMO_USER_ID;
 
   const body = await request.json();
   const { public_token } = body as { public_token?: string };
@@ -18,13 +20,13 @@ export async function POST(request: NextRequest) {
     const response = await client.itemPublicTokenExchange({ public_token });
     const { access_token, item_id } = response.data;
 
-    await savePlaidToken(userId, access_token, item_id);
+    await savePlaidToken(effectiveUserId, access_token, item_id);
 
-    const { synced, error: syncError } = await syncTransactionsForUser(userId);
+    const { synced, error: syncError } = await syncTransactionsForUser(effectiveUserId);
     if (syncError) console.warn("[exchange-token] sync warning:", syncError);
-    console.log(`[exchange-token] synced ${synced} transactions for ${userId}`);
+    console.log(`[exchange-token] synced ${synced} transactions for ${effectiveUserId}`);
 
-    embedTransactionsForUser(userId).catch((e) =>
+    embedTransactionsForUser(effectiveUserId).catch((e) =>
       console.error("[exchange-token] background embed failed:", e)
     );
 

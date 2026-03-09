@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Shield, RefreshCw, Users, Sparkles, Lock, Star, ChevronRight, Check } from "lucide-react";
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
-import { setDemoMode } from "@/components/AppGate";
 
 const searchExamples = [
   "Find that Uber from last month",
@@ -192,15 +191,6 @@ export default function LandingPage() {
             <span className="text-[15px] font-semibold text-white tracking-tight">Coconut</span>
           </Link>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => {
-                setDemoMode(true);
-                router.push("/app/dashboard");
-              }}
-              className="text-sm text-white/60 hover:text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Demo
-            </button>
             <button onClick={() => router.push("/login")} className="text-sm text-white/60 hover:text-white px-4 py-2 rounded-lg transition-colors">
               Sign in
             </button>
@@ -255,15 +245,6 @@ export default function LandingPage() {
               >
                 Connect your bank
                 <ArrowRight size={15} />
-              </button>
-              <button
-                onClick={() => {
-                  setDemoMode(true);
-                  router.push("/app/dashboard");
-                }}
-                className="flex items-center gap-2 text-white/50 hover:text-white/80 text-sm transition-colors"
-              >
-                See live demo <ChevronRight size={14} />
               </button>
             </div>
           </motion.div>
@@ -495,15 +476,6 @@ export default function LandingPage() {
             >
               Connect your bank
               <ArrowRight size={15} />
-            </button>
-            <button
-              onClick={() => {
-                setDemoMode(true);
-                router.push("/app/dashboard");
-              }}
-              className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 px-6 py-3.5 rounded-xl text-sm font-medium transition-all duration-200"
-            >
-              See demo
             </button>
           </div>
         </motion.div>

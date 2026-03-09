@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { computeBalances, getSuggestedSettlements } from "@/lib/split-balances";
 import { getAccessibleGroupIds } from "@/lib/group-access";
+import { getUserId } from "@/lib/auth";
 
 /**
  * GET /api/groups/person?key=xxx
@@ -10,7 +10,7 @@ import { getAccessibleGroupIds } from "@/lib/group-access";
  * Key = user_id | email | groupId-memberId (for deduping)
  */
 export async function GET(req: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const key = req.nextUrl.searchParams.get("key");

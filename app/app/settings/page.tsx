@@ -4,13 +4,7 @@ import { useState, useEffect } from "react";
 import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
-import { useDemoMode } from "@/components/AppGate";
 import { useGmail } from "@/hooks/useGmail";
-
-const DEMO_BANKS = [
-  { id: "chase", name: "Chase", accounts: "Checking ••••4821, Savings ••••7203", color: "#117ACA", connected: "Mar 1, 2026" },
-  { id: "amex", name: "American Express", accounts: "Platinum ••••9012", color: "#016FD0", connected: "Jan 15, 2026" },
-];
 
 const sections = [
   { id: "profile", label: "Profile", icon: User },
@@ -28,30 +22,27 @@ export default function SettingsPage() {
   const [twoFA, setTwoFA] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const { linked } = useTransactions();
-  const isDemo = useDemoMode();
   const gmail = useGmail();
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
 
   useEffect(() => {
-    if (linked && !isDemo) {
+    if (linked) {
       fetch("/api/plaid/accounts")
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => data && setPlaidAccounts(data))
         .catch(() => {});
     }
-  }, [linked, isDemo]);
+  }, [linked]);
 
-  const banks = linked && !isDemo
-    ? (plaidAccounts?.accounts ?? []).map((a) => ({
-        id: a.account_id,
-        name: a.name || "Account",
-        accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
-        color: "#3D8E62",
-        connected: "Connected",
-      }))
-    : DEMO_BANKS;
+  const banks = (plaidAccounts?.accounts ?? []).map((a) => ({
+    id: a.account_id,
+    name: a.name || "Account",
+    accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
+    color: "#3D8E62",
+    connected: "Connected",
+  }));
 
   const handleSave = () => {
     setSaved(true);

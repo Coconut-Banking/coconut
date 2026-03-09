@@ -1,0 +1,93 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+
+export interface Subscription {
+  id: string;
+  merchant: string;
+  amount: number;
+  frequency: string;
+  lastCharged: string;
+  nextDue: string;
+  category: string;
+  transactionCount: number;
+  status: string;
+}
+
+const MERCHANT_COLORS = ["#E50914", "#1DB954", "#00674B", "#FF9900", "#003366", "#7BB848", "#555555", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F", "#1A1A1A", "#4A90D9"];
+
+function hashColor(str: string): string {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
+  return MERCHANT_COLORS[Math.abs(h) % MERCHANT_COLORS.length];
+}
+
+function fmtDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+export function useSubscriptions() {
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [detecting, setDetecting] = useState(false);
+
+  const fetchSubs = useCallback(async () => {
+    const res = await fetch("/api/subscriptions");
+    if (!res.ok) return;
+    const data = await res.json();
+    setSubscriptions(Array.isArray(data) ? data : []);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSubs().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [fetchSubs]);
+
+  const detect = useCallback(async () => {
+    setDetecting(true);
+    try {
+      const res = await fetch("/api/subscriptions", { method: "POST" });
+      if (res.ok) await fetchSubs();
+    } finally {
+      setDetecting(false);
+    }
+  }, [fetchSubs]);
+
+  const dismiss = useCallback(async (id: string) => {
+    const res = await fetch(`/api/subscriptions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "dismissed" }),
+    });
+    if (res.ok) setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  const totalMonthly = subscriptions.reduce((acc, s) => {
+    if (s.frequency === "monthly") return acc + s.amount;
+    if (s.frequency === "yearly") return acc + s.amount / 12;
+    if (s.frequency === "weekly") return acc + s.amount * 4.33;
+    if (s.frequency === "biweekly") return acc + s.amount * 2.17;
+    return acc + s.amount;
+  }, 0);
+
+  return {
+    subscriptions: subscriptions.map((s) => ({
+      ...s,
+      merchantColor: hashColor(s.merchant),
+      lastChargedStr: fmtDate(s.lastCharged),
+      nextDueStr: fmtDate(s.nextDue),
+    })),
+    totalMonthly,
+    totalAnnual: totalMonthly * 12,
+    loading,
+    detecting,
+    detect,
+    dismiss,
+    refetch: fetchSubs,
+  };
+}

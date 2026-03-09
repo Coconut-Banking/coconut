@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Search,
@@ -18,9 +19,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
-import { useDemoMode } from "@/components/AppGate";
 import { useNLSearch } from "@/hooks/useNLSearch";
-import type { Transaction } from "@/lib/mockData";
+import type { UITransaction } from "@/lib/transaction-types";
 
 // Display labels for known Plaid primary categories
 const CATEGORY_LABEL: Record<string, string> = {
@@ -56,7 +56,7 @@ function MerchantAvatar({ name, color }: { name: string; color: string }) {
 
 type SplitMode = "person" | "group";
 
-function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
+function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => void }) {
   const [note, setNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [showAddToShared, setShowAddToShared] = useState(false);
@@ -69,6 +69,24 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
   const [submitting, setSubmitting] = useState(false);
   const [newPersonName, setNewPersonName] = useState("");
   const [addingNewPerson, setAddingNewPerson] = useState(false);
+  const [markingSubscription, setMarkingSubscription] = useState(false);
+
+  const handleMarkAsSubscription = async () => {
+    if (!tx.dbId) return;
+    setMarkingSubscription(true);
+    try {
+      const res = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId: tx.dbId }),
+      });
+      if (res.ok) {
+        onClose();
+      }
+    } finally {
+      setMarkingSubscription(false);
+    }
+  };
 
   const loadPeopleAndGroups = async () => {
     const res = await fetch("/api/groups/people");
@@ -269,15 +287,21 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
                   </div>
                 </button>
               )}
-              <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left">
-                <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
-                  <RefreshCw size={15} className="text-gray-500" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium">Mark as subscription</div>
-                  <div className="text-xs text-gray-400">Track this as a recurring charge</div>
-                </div>
-              </button>
+              {tx.dbId && (
+                <button
+                  onClick={handleMarkAsSubscription}
+                  disabled={markingSubscription}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left disabled:opacity-60"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                    <RefreshCw size={15} className={markingSubscription ? "animate-spin" : "text-[#3D8E62]"} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium">Mark as subscription</div>
+                    <div className="text-xs opacity-70">Add to your subscriptions list</div>
+                  </div>
+                </button>
+              )}
               <button
                 onClick={() => setAddingNote(!addingNote)}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left"
@@ -407,7 +431,7 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
                       >
                         <option value="">Choose a person...</option>
                         {people.map((p) => (
-                          <option key={`${p.groupId}-${p.memberId}`} value={`${p.groupId}-${p.memberId}`}>
+                          <option key={`${p.groupId}-${p.memberId}`} value={`${p.groupId}-${p.memberId}`}> 
                             {p.displayName}{p.memberCount > 2 ? ` (${p.groupName})` : ""}
                           </option>
                         ))}
@@ -509,32 +533,41 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
   );
 }
 
-const nlExamples = [
-  "Find that Uber from last month",
-  "Coffee in January",
-  "Dinner with Alex",
-  "Subscriptions over $10",
-];
+// Real-time client-side filter: match query against merchant, category, description, date, amount (no LLM)
+function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter((tx) => {
+    const merchant = (tx.merchant ?? "").toLowerCase();
+    const category = (tx.category ?? "").toLowerCase();
+    const raw = (tx.rawDescription ?? "").toLowerCase();
+    const dateStr = (tx.dateStr ?? "").toLowerCase();
+    const amountStr = `${Math.abs(tx.amount)}`.toLowerCase();
+    return (
+      merchant.includes(q) ||
+      category.includes(q) ||
+      raw.includes(q) ||
+      dateStr.includes(q) ||
+      amountStr.includes(q)
+    );
+  });
+}
 
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const { transactions, linked, loading } = useTransactions();
-  const isDemo = useDemoMode();
-  const [searchQuery, setSearchQuery] = useState("");
+  // Semantic search: from URL (top bar submit). Triggers NL/LLM search.
+  const semanticQuery = searchParams.get("q") ? decodeURIComponent(searchParams.get("q")!) : "";
+  // Real-time filter: page search bar. Client-side only, no LLM.
+  const [filterQuery, setFilterQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [nlHint, setNlHint] = useState(0);
-  const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(searchQuery, transactions);
+  const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
+  const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
 
   useEffect(() => {
-    const q = searchParams.get("q");
-    if (q) setSearchQuery(decodeURIComponent(q));
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (searchQuery.trim()) setSelectedCategory("All");
-  }, [searchQuery]);
+    if (filterQuery.trim()) setSelectedCategory("All");
+  }, [filterQuery]);
 
   if (linked && loading) {
     return (
@@ -547,29 +580,28 @@ export default function TransactionsPage() {
     );
   }
 
-  // Build unique category tabs from actual transaction data
-  const categoryTabs = ["All", ...Array.from(
-    new Set(transactions.map((tx) => tx.category))
-  ).sort()];
-
+  // Base list: semantic result when top-bar query is set, otherwise all transactions
+  const baseList = semanticQuery.trim() ? nlFiltered : transactions;
+  // Real-time filter (page search bar): client-side, no LLM
+  const filteredBySearch = filterTransactionsByQuery(baseList, filterQuery);
+  // Category filter
   const filtered = selectedCategory === "All"
-    ? nlFiltered
-    : nlFiltered.filter((tx) => tx.category === selectedCategory);
+    ? filteredBySearch
+    : filteredBySearch.filter((tx) => tx.category === selectedCategory);
+
+  // Build unique category tabs from actual transaction data (use baseList so categories reflect current view)
+  const categoryTabs = ["All", ...Array.from(
+    new Set(baseList.map((tx) => tx.category))
+  ).sort()];
 
   return (
     <div className="max-w-4xl mx-auto px-8 py-8">
-      {(linked || isDemo) && (
+      {linked && (
         <div className="mb-4 flex items-center gap-2">
-          {linked ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
-              Live from linked account
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1">
-              Demo mode
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
+            Live from linked account
+          </span>
         </div>
       )}
       <div className="mb-6">
@@ -577,35 +609,40 @@ export default function TransactionsPage() {
         <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions loaded</p>
       </div>
 
-      {searchQuery && (nlLoading || nlAnswer) && (
+      {/* Semantic search banner: only when query came from top bar (URL) */}
+      {semanticQuery && (nlLoading || nlAnswer) && (
         <div className="mb-5 rounded-2xl bg-[#EEF7F2] border border-[#D1EAE0] px-5 py-4">
           {nlLoading ? (
             <p className="text-sm text-[#2D5A44]/60">Searching...</p>
           ) : (
             <p className="text-sm text-[#2D5A44] leading-relaxed">{nlAnswer}</p>
           )}
+          <div className="mt-2 text-xs text-[#2D5A44]/80">
+            <Link
+              href="/app/transactions"
+              className="text-[#3D8E62] underline hover:no-underline"
+            >
+              Clear semantic search
+            </Link>
+          </div>
         </div>
       )}
 
+      {/* Real-time filter bar: instant client-side filter, no LLM */}
       <div className="relative mb-5">
         <div className="absolute left-4 top-1/2 -translate-y-1/2">
-          {nlLoading ? (
-            <div className="w-4 h-4 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
-          ) : (
-            <Search size={16} className="text-[#3D8E62]" />
-          )}
+          <Search size={16} className="text-[#3D8E62]" />
         </div>
         <input
           type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={nlExamples[nlHint % nlExamples.length]}
-          onFocus={() => setNlHint((n) => n + 1)}
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          placeholder="Filter by name, category, amount..."
           className="w-full pl-11 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
         />
-        {searchQuery && (
+        {filterQuery && (
           <button
-            onClick={() => setSearchQuery("")}
+            onClick={() => setFilterQuery("")}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
           >
             <X size={15} />
@@ -632,7 +669,13 @@ export default function TransactionsPage() {
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
             {filtered.length === 0 ? (
-              <div className="text-center py-12 text-gray-400 text-sm">No transactions found</div>
+              <div className="text-center py-12 text-gray-400 text-sm">
+                {nlAnswer || "No transactions found"}
+                <div className="mt-2 text-xs text-gray-500">
+                  Try a different filter or <button onClick={() => setFilterQuery("")} className="text-[#3D8E62] underline">clear the filter</button>
+                  {semanticQuery && <> or <Link href="/app/transactions" className="text-[#3D8E62] underline">clear semantic search</Link></>}.
+                </div>
+              </div>
             ) : (
               filtered.map((tx, i) => (
                 <div key={tx.id}>
@@ -776,7 +819,7 @@ export default function TransactionsPage() {
               <button
                 onClick={() => {
                   setSelectedCategory("All");
-                  setSearchQuery("");
+                  setFilterQuery("");
                 }}
                 className="w-full text-xs text-gray-500 hover:text-gray-700 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >

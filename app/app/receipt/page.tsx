@@ -14,12 +14,15 @@ import {
   Receipt,
   Loader2,
   CheckCircle2,
+  FileDown,
+  Send,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useReceiptSplit, type Step } from "@/hooks/useReceiptSplit";
 import type { ReceiptItem } from "@/lib/receipt-split";
+import { exportReceiptSplitPdf } from "@/lib/receipt-pdf";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -156,10 +159,13 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           <div className="flex flex-col items-center gap-3">
             <Loader2 size={32} className="text-[#3D8E62] animate-spin" />
             <p className="text-sm font-medium text-gray-700">
-              Scanning receipt...
-            </p>
-            <p className="text-xs text-gray-400">
-              GPT-4o is reading your receipt
+              {rs.uploadStage === "uploading"
+                ? "Uploading image..."
+                : rs.uploadStage === "reading"
+                ? "Reading receipt..."
+                : rs.uploadStage === "extracting"
+                ? "Extracting items..."
+                : "Cleaning up..."}
             </p>
           </div>
         ) : (
@@ -222,6 +228,16 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 /* ─────────────────── Step 2: Review Items ─────────────────── */
 
 function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
+  const otherFeesSum = rs.editOtherFees.reduce((s, f) => s + f.amount, 0);
+  const computedTotal = () =>
+    Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100;
+
+  const syncSubtotalFromItems = (items: typeof rs.editItems) => {
+    const sum = Math.round(items.reduce((s, i) => s + i.totalPrice, 0) * 100) / 100;
+    rs.setEditSubtotal(sum);
+    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
+  };
+
   const updateItem = (index: number, field: keyof ReceiptItem, value: string) => {
     rs.setEditItems((prev) => {
       const next = [...prev];
@@ -240,12 +256,17 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         item.totalPrice = Number(value) || 0;
       }
       next[index] = item;
+      syncSubtotalFromItems(next);
       return next;
     });
   };
 
   const removeItem = (index: number) => {
-    rs.setEditItems((prev) => prev.filter((_, i) => i !== index));
+    rs.setEditItems((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      syncSubtotalFromItems(next);
+      return next;
+    });
   };
 
   const addItem = () => {
@@ -264,10 +285,14 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
   const recalcSubtotal = () => {
     const sum = rs.editItems.reduce((s, i) => s + i.totalPrice, 0);
     rs.setEditSubtotal(Math.round(sum * 100) / 100);
-    rs.setEditTotal(
-      Math.round((sum + rs.editTax + rs.editTip) * 100) / 100
-    );
+    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
   };
+
+  // Keep Total in sync when Subtotal, Tax, Tip, or Other fees change
+  useEffect(() => {
+    const total = Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100;
+    rs.setEditTotal(total);
+  }, [rs.editSubtotal, rs.editTax, rs.editTip, rs.editOtherFees]);
 
   return (
     <div className="space-y-6">
@@ -373,7 +398,11 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <input
               type="number"
               value={rs.editSubtotal}
-              onChange={(e) => rs.setEditSubtotal(Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 0;
+                rs.setEditSubtotal(v);
+                rs.setEditTotal(Math.round((v + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
+              }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
             />
@@ -388,7 +417,11 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <input
               type="number"
               value={rs.editTax}
-              onChange={(e) => rs.setEditTax(Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 0;
+                rs.setEditTax(v);
+                rs.setEditTotal(Math.round((rs.editSubtotal + v + rs.editTip + otherFeesSum) * 100) / 100);
+              }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
             />
@@ -403,26 +436,75 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <input
               type="number"
               value={rs.editTip}
-              onChange={(e) => rs.setEditTip(Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 0;
+                rs.setEditTip(v);
+                rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + v + otherFeesSum) * 100) / 100);
+              }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
             />
           </div>
         </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Other fees</span>
+            <button
+              onClick={() => rs.setEditOtherFees((prev) => [...prev, { name: "", amount: 0 }])}
+              className="text-xs font-medium text-[#3D8E62] hover:text-[#2D7A52]"
+            >
+              + Add
+            </button>
+          </div>
+          {rs.editOtherFees.map((fee, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-2">
+                <input
+                  value={fee.name}
+                  onChange={(e) => {
+                    rs.setEditOtherFees((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], name: e.target.value };
+                      return next;
+                    });
+                  }}
+                  className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 min-w-0"
+                  placeholder="Fee name"
+                />
+                <div className="relative w-24 flex items-center gap-1">
+                  <span className="text-xs text-gray-400">$</span>
+                  <input
+                    type="number"
+                    value={fee.amount}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) || 0;
+                      rs.setEditOtherFees((prev) => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], amount: v };
+                        return next;
+                      });
+                      rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount + v) * 100) / 100);
+                    }}
+                    className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20"
+                    step={0.01}
+                  />
+                  <button
+                    onClick={() => {
+                      rs.setEditOtherFees((prev) => prev.filter((_, i) => i !== idx));
+                      rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount) * 100) / 100);
+                    }}
+                    className="w-6 h-6 flex shrink-0 items-center justify-center rounded hover:bg-red-50 text-gray-300 hover:text-red-500"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
         <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-900">Total</span>
-          <div className="relative w-28">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-              $
-            </span>
-            <input
-              type="number"
-              value={rs.editTotal}
-              onChange={(e) => rs.setEditTotal(Number(e.target.value) || 0)}
-              className="w-full text-right text-sm font-semibold border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
-              step={0.01}
-            />
-          </div>
+          <span className="text-sm font-semibold text-gray-900">
+            ${computedTotal().toFixed(2)}
+          </span>
         </div>
       </div>
 
@@ -632,11 +714,69 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
     total: number;
   }>>([]);
   const [suggestions, setSuggestions] = useState<Array<{
+    fromMemberId: string;
+    toMemberId: string;
     fromName: string;
     toName: string;
     amount: number;
   }>>([]);
+  const [groupName, setGroupName] = useState("");
+  const [members, setMembers] = useState<Array<{ id: string; displayName: string; email: string | null }>>([]);
+  const [requestingPayment, setRequestingPayment] = useState<string | null>(null);
+  const [paymentLinkCopied, setPaymentLinkCopied] = useState(false);
   const router = useRouter();
+
+  const handleRequestPayment = async (s: {
+    fromMemberId: string;
+    toMemberId: string;
+    fromName: string;
+    toName: string;
+    amount: number;
+  }) => {
+    const key = `${s.fromMemberId}-${s.toMemberId}`;
+    setRequestingPayment(key);
+    try {
+      const res = await fetch("/api/stripe/create-payment-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: s.amount,
+          description: `${rs.editMerchant || "Receipt"} split`,
+          recipientName: s.fromName,
+          groupId: selectedGroupId,
+          payerMemberId: s.fromMemberId,
+          receiverMemberId: s.toMemberId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        await navigator.clipboard.writeText(data.url);
+        setPaymentLinkCopied(true);
+        setTimeout(() => setPaymentLinkCopied(false), 2000);
+        const payerEmail = members.find((m) => m.id === s.fromMemberId)?.email ?? null;
+        if (payerEmail) {
+          const subject = encodeURIComponent(`Payment request: $${s.amount.toFixed(2)} for ${groupName || "receipt split"}`);
+          const body = encodeURIComponent(
+            `Hey!\n\nYou owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}.\n\nPay here: ${data.url}\n\nThanks!`
+          );
+          window.location.href = `mailto:${payerEmail}?subject=${subject}&body=${body}`;
+        }
+      } else {
+        const payerEmail = members.find((m) => m.id === s.fromMemberId)?.email ?? null;
+        if (payerEmail) {
+          const subject = encodeURIComponent(`Payment request: $${s.amount.toFixed(2)} for ${groupName || "receipt split"}`);
+          const body = encodeURIComponent(
+            `Hey!\n\nYou owe me $${s.amount.toFixed(2)} for ${groupName || "our receipt split"}.\n\nPlease pay via Venmo, Cash App, Zelle, or another method.\n\nThanks!`
+          );
+          window.location.href = `mailto:${payerEmail}?subject=${subject}&body=${body}`;
+        } else {
+          alert("Add their email in the group to send a payment request, or configure Stripe for payment links.");
+        }
+      }
+    } finally {
+      setRequestingPayment(null);
+    }
+  };
 
   // Fetch available groups
   useEffect(() => {
@@ -670,6 +810,8 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         setFinished(true);
         setGroupBalances(data.balances || []);
         setSuggestions(data.suggestions || []);
+        setGroupName(data.groupName || "");
+        setMembers(data.members || []);
 
         // Don't redirect immediately - let user see the balances
       } else {
@@ -694,6 +836,23 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           )}
           Total: ${grandTotal.toFixed(2)} (incl. tax & tip)
         </p>
+      </div>
+
+      {/* Export PDF */}
+      <div className="flex justify-center">
+        <button
+          onClick={() =>
+            exportReceiptSplitPdf(
+              rs.editMerchant,
+              rs.personShares,
+              `receipt-split-${(rs.editMerchant || "receipt").replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`
+            )
+          }
+          className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          <FileDown size={16} />
+          Export PDF
+        </button>
       </div>
 
       {/* Per-person cards */}
@@ -733,6 +892,25 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           </div>
         ))}
       </div>
+
+      {/* No groups — prompt to create */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm font-medium text-gray-700">
+            Create a group to track and settle
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5 mb-3">
+            Save this split to shared expenses and request payments from friends.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="w-full px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            <Users size={14} />
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
 
       {/* Save to Group */}
       {groups.length > 0 && !finished && (
@@ -786,6 +964,71 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         </div>
       )}
 
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+          <p className="text-sm font-medium text-amber-900">
+            Create a group to track and settle
+          </p>
+          <p className="text-xs text-amber-700 mt-0.5">
+            Save this split to shared expenses and request payments from friends.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="mt-3 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
+
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm text-gray-600 mb-3">
+            Create a group to save this split and collect payments.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="w-full px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            <Users size={16} />
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
+
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm text-gray-600 mb-2">
+            Create a group to save this split and collect payments.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            <Users size={16} />
+            Go to Shared Expenses
+          </button>
+        </div>
+      )}
+
+      {/* No groups — prompt to create one */}
+      {groups.length === 0 && !finished && (
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <p className="text-sm text-gray-600 mb-2">
+            Create a group to save this split and collect payments.
+          </p>
+          <button
+            onClick={() => router.push("/app/shared")}
+            className="text-sm font-medium text-[#3D8E62] hover:text-[#2D7A52] transition-colors"
+          >
+            Go to Shared Expenses →
+          </button>
+        </div>
+      )}
+
       {finished && (
         <div className="space-y-4">
           {/* Success message */}
@@ -827,24 +1070,43 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               </div>
             )}
 
-            {/* Settlement suggestions */}
+            {/* Settlement suggestions with Request payment */}
             {suggestions.length > 0 && (
               <div className="mt-3 pt-3 border-t border-green-100">
                 <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-2">
                   Who Owes Whom
                 </p>
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {suggestions.map((s, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs text-gray-600">
-                      <span className="font-medium">{s.fromName}</span>
-                      <span>→</span>
-                      <span className="font-medium">{s.toName}</span>
-                      <span className="text-green-700 font-semibold">
-                        ${s.amount.toFixed(2)}
+                    <div key={idx} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-600">
+                        <span className="font-medium">{s.fromName}</span>
+                        <span> → </span>
+                        <span className="font-medium">{s.toName}</span>
+                        <span className="text-green-700 font-semibold ml-1">
+                          ${s.amount.toFixed(2)}
+                        </span>
                       </span>
+                      <button
+                        onClick={() => handleRequestPayment(s)}
+                        disabled={requestingPayment !== null}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-[#3D8E62] hover:bg-[#EEF7F2] rounded-lg transition-colors disabled:opacity-50 shrink-0"
+                      >
+                        {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <>
+                            <Send size={12} />
+                            Request payment
+                          </>
+                        )}
+                      </button>
                     </div>
                   ))}
                 </div>
+                {paymentLinkCopied && (
+                  <p className="text-xs text-[#3D8E62] mt-2">Payment link copied!</p>
+                )}
               </div>
             )}
           </div>

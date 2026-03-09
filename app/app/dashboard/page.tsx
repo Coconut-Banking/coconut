@@ -1,29 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { TrendingDown, RefreshCw, Users, DollarSign, ArrowRight, Sparkles } from "lucide-react";
+import { TrendingDown, RefreshCw, Users, DollarSign, ArrowRight } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
-import { useDemoMode } from "@/components/AppGate";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-
-// Demo-only constants. When linked, we derive from transactions or show empty.
-const DEMO_SPENDING = [
-  { month: "Sep", amount: 1420 },
-  { month: "Oct", amount: 1890 },
-  { month: "Nov", amount: 2210 },
-  { month: "Dec", amount: 3150 },
-  { month: "Jan", amount: 1680 },
-  { month: "Feb", amount: 1847 },
-];
-const DEMO_CATEGORIES = [
-  { name: "Groceries", amount: 287, color: "#3D8E62", pct: 16 },
-  { name: "Dining", amount: 214, color: "#4A6CF7", pct: 12 },
-  { name: "Entertainment", amount: 181, color: "#9B59B6", pct: 10 },
-  { name: "Transport", amount: 156, color: "#E8507A", pct: 8 },
-  { name: "Shopping", amount: 540, color: "#F59E0B", pct: 29 },
-  { name: "Other", amount: 469, color: "#CBD5E1", pct: 25 },
-];
 
 function MerchantAvatar({ name, color }: { name: string; color: string }) {
   return (
@@ -86,12 +67,8 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
 export default function DashboardPage() {
   const router = useRouter();
   const { transactions, linked, loading } = useTransactions();
-  const isDemo = useDemoMode();
   const recentTransactions = transactions.slice(0, 5);
-
-  const { spendingData, categoryData, monthlySpend } = isDemo
-    ? { spendingData: DEMO_SPENDING, categoryData: DEMO_CATEGORIES, monthlySpend: 1847 }
-    : deriveFromTransactions(transactions);
+  const { spendingData, categoryData, monthlySpend } = deriveFromTransactions(transactions);
 
   if (linked && loading) {
     return (
@@ -106,18 +83,12 @@ export default function DashboardPage() {
 
   return (
     <div className="px-8 py-8 max-w-5xl mx-auto">
-      {(linked || isDemo) && (
+      {linked && (
         <div className="mb-4 flex items-center gap-2">
-          {linked ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
-              Live from linked account
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1">
-              Demo mode
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
+            Live from linked account
+          </span>
         </div>
       )}
       <div className="mb-7">
@@ -138,15 +109,10 @@ export default function DashboardPage() {
             <TrendingDown size={15} className="text-red-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            {linked ? `$${monthlySpend.toLocaleString()}` : "$1,847"}
+            ${monthlySpend.toLocaleString()}
           </div>
           <div className="text-xs text-gray-500 mb-2">Monthly Spend</div>
-          {linked && <div className="text-xs text-gray-400">From transactions</div>}
-          {!linked && (
-            <div className="text-xs font-medium px-2 py-0.5 rounded-full inline-block bg-red-50 text-red-600">
-              +12%
-            </div>
-          )}
+          <div className="text-xs text-gray-400">From transactions</div>
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -171,10 +137,9 @@ export default function DashboardPage() {
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 mb-3">
             <Users size={15} className="text-blue-500" />
           </div>
-          <div className="text-xl font-bold text-gray-900 mb-0.5">{linked ? "—" : "$312.40"}</div>
+          <div className="text-xl font-bold text-gray-900 mb-0.5">—</div>
           <div className="text-xs text-gray-500 mb-2">Shared Expenses</div>
-          {linked && <div className="text-xs text-gray-400">Coming soon</div>}
-          {!linked && <div className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">2 active spaces</div>}
+          <a href="/app/shared" className="text-xs text-[#3D8E62] hover:underline">View →</a>
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -185,10 +150,9 @@ export default function DashboardPage() {
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#EEF7F2] mb-3">
             <DollarSign size={15} className="text-[#3D8E62]" />
           </div>
-          <div className="text-xl font-bold text-gray-900 mb-0.5">{linked ? "—" : "+$453"}</div>
+          <div className="text-xl font-bold text-gray-900 mb-0.5">—</div>
           <div className="text-xs text-gray-500 mb-2">Net Cash Flow</div>
-          {linked && <div className="text-xs text-gray-400">Coming soon</div>}
-          {!linked && <div className="text-xs bg-[#EEF7F2] text-[#3D8E62] px-2 py-0.5 rounded-full">-8%</div>}
+          <div className="text-xs text-gray-400">Coming soon</div>
         </motion.div>
       </div>
 
@@ -307,52 +271,9 @@ export default function DashboardPage() {
 
         <div className="col-span-2 space-y-3">
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1">Smart Insights</div>
-          {linked ? (
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6 text-center">
-              <p className="text-sm text-gray-500">Subscription alerts, split reminders, and duplicate detection coming soon.</p>
-            </div>
-          ) : (
-            <>
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <RefreshCw size={13} className="text-amber-600" />
-                  <span className="text-xs font-semibold text-amber-900">Price increase</span>
-                </div>
-                <p className="text-xs text-amber-700 leading-relaxed">Netflix went from $13.32 → $15.99. That&apos;s <strong>+$32.04/yr</strong>.</p>
-                <div className="flex gap-2 mt-3">
-                  <button className="text-xs bg-white border border-amber-200 text-amber-700 px-2.5 py-1.5 rounded-lg hover:bg-amber-50 transition-colors">Keep</button>
-                  <button className="text-xs bg-amber-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-amber-700 transition-colors">Cancel</button>
-                </div>
-              </div>
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Users size={13} className="text-blue-600" />
-                  <span className="text-xs font-semibold text-blue-900">Alex owes you</span>
-                </div>
-                <p className="text-xs text-blue-700 leading-relaxed">From Weekend Trip · <strong>$86.00</strong> unsettled across 3 transactions.</p>
-                <button onClick={() => router.push("/app/shared")} className="mt-3 text-xs bg-blue-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-blue-700 transition-colors">
-                  Settle up →
-                </button>
-              </div>
-              <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Sparkles size={13} className="text-red-500" />
-                  <span className="text-xs font-semibold text-red-900">Duplicate found</span>
-                </div>
-                <p className="text-xs text-red-700 leading-relaxed">Two Adobe CC charges detected. You may be paying twice.</p>
-                <button onClick={() => router.push("/app/subscriptions")} className="mt-3 text-xs bg-red-500 text-white px-2.5 py-1.5 rounded-lg hover:bg-red-600 transition-colors">
-                  Review →
-                </button>
-              </div>
-              <div className="bg-[#EEF7F2] border border-[#D1EAE0] rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Sparkles size={13} className="text-[#3D8E62]" />
-                  <span className="text-xs font-semibold text-[#2D5A44]">Auto-cleaned</span>
-                </div>
-                <p className="text-xs text-[#4A7A62] leading-relaxed">8 merchant names normalized this week. No more AMZN MKTP US*.</p>
-              </div>
-            </>
-          )}
+          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6 text-center">
+            <p className="text-sm text-gray-500">Subscription alerts, split reminders, and duplicate detection coming soon.</p>
+          </div>
         </div>
       </div>
     </div>

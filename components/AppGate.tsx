@@ -4,21 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 
-const DEMO_KEY = "coconut_demo";
-
-export function useDemoMode(): boolean {
-  const [isDemo, setIsDemo] = useState(false);
-  useEffect(() => {
-    setIsDemo(typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true");
-  }, []);
-  return isDemo;
-}
-
-export function setDemoMode(enabled: boolean): void {
-  if (typeof window === "undefined") return;
-  if (enabled) localStorage.setItem(DEMO_KEY, "true");
-  else localStorage.removeItem(DEMO_KEY);
-}
+const SKIP_AUTH = process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 
 export function AppGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -26,15 +12,14 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   const [plaidStatus, setPlaidStatus] = useState<"checking" | "linked" | "unlinked">("checking");
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (SKIP_AUTH || !isLoaded || !isSignedIn) return;
     fetch("/api/plaid/status")
       .then((res) => res.json())
       .then((data) => setPlaidStatus(data.linked ? "linked" : "unlinked"))
       .catch(() => setPlaidStatus("unlinked"));
   }, [isLoaded, isSignedIn]);
 
-  // Clerk middleware handles unauthenticated redirect, but handle loading state here
-  if (!isLoaded) {
+  if (!SKIP_AUTH && !isLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
         <div className="flex flex-col items-center gap-4">
@@ -45,13 +30,15 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // TEMPORARY: Allow unauthenticated access for testing
-  // if (!isSignedIn) {
-  //   router.replace("/login");
-  //   return null;
-  // }
+  if (!SKIP_AUTH && !isSignedIn) {
+    router.replace("/login");
+    return null;
+  }
 
-  // Signed in — check if they have Plaid linked or are in demo mode
+  if (SKIP_AUTH) {
+    return <>{children}</>;
+  }
+
   if (plaidStatus === "checking") {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
@@ -63,13 +50,10 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const isDemo = typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true";
-
-  // TEMPORARY: Skip Plaid check for testing
-  // if (plaidStatus === "unlinked" && !isDemo) {
-  //   router.replace("/connect");
-  //   return null;
-  // }
+  if (plaidStatus === "unlinked") {
+    router.replace("/connect");
+    return null;
+  }
 
   return <>{children}</>;
 }

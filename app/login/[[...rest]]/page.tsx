@@ -4,9 +4,15 @@ import { auth } from "@clerk/nextjs/server";
 import { Shield, Lock } from "lucide-react";
 import { redirect } from "next/navigation";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ redirect_url?: string }>;
+}) {
   const { userId } = await auth();
-  if (userId) redirect("/connect");
+  const { redirect_url } = await searchParams;
+  const fallbackRedirect = redirect_url ?? "/connect";
+  if (userId) redirect(fallbackRedirect.startsWith("/") ? fallbackRedirect : "/connect");
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
@@ -26,8 +32,8 @@ export default async function LoginPage() {
         <SignIn
           routing="path"
           path="/login"
-          fallbackRedirectUrl="/connect"
-          signUpFallbackRedirectUrl="/connect"
+          fallbackRedirectUrl={fallbackRedirect}
+          signUpFallbackRedirectUrl={fallbackRedirect}
           appearance={{
             variables: {
               colorPrimary: "#3D8E62",
