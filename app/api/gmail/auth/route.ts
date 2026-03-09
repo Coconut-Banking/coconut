@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getAuthUrl } from "@/lib/google-auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const { userId } = await auth();
   console.log("[Gmail Auth] Starting OAuth flow for user:", userId);
 
@@ -12,7 +12,8 @@ export async function GET() {
   }
 
   try {
-    const authUrl = getAuthUrl(userId);
+    const redirect = request.nextUrl.searchParams.get("redirect") || undefined;
+    const authUrl = getAuthUrl(userId, redirect);
     console.log("[Gmail Auth] Generated auth URL:", authUrl);
     return NextResponse.json({ authUrl });
   } catch (e) {

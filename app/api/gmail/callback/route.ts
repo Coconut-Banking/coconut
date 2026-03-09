@@ -2,22 +2,34 @@ import { NextRequest, NextResponse } from "next/server";
 import { exchangeCode, saveGmailTokens, getOAuth2Client } from "@/lib/google-auth";
 import { google } from "googleapis";
 
+function parseOAuthState(raw: string): { userId: string; redirect?: string } {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.userId) return parsed;
+  } catch {
+    // Legacy format: state is just the clerkUserId string
+  }
+  return { userId: raw };
+}
+
 export async function GET(request: NextRequest) {
   console.log("[Gmail Callback] Starting OAuth callback processing");
 
   const code = request.nextUrl.searchParams.get("code");
-  const clerkUserId = request.nextUrl.searchParams.get("state");
+  const rawState = request.nextUrl.searchParams.get("state");
 
   console.log("[Gmail Callback] Received:", {
     hasCode: !!code,
-    clerkUserId,
+    rawState,
     codeLength: code?.length
   });
 
-  if (!code || !clerkUserId) {
+  if (!code || !rawState) {
     console.error("[Gmail Callback] Missing code or state");
     return NextResponse.redirect(new URL("/app/email-receipts?error=missing_params", request.url));
   }
+
+  const { userId: clerkUserId, redirect: mobileRedirect } = parseOAuthState(rawState);
 
   try {
     console.log("[Gmail Callback] Exchanging code for tokens...");
@@ -28,7 +40,6 @@ export async function GET(request: NextRequest) {
       expiryDate: tokens.expiry_date
     });
 
-    // Get the user's email from Gmail profile
     let email: string | undefined;
     try {
       console.log("[Gmail Callback] Fetching user email...");
@@ -46,10 +57,20 @@ export async function GET(request: NextRequest) {
     await saveGmailTokens(clerkUserId, tokens, email);
     console.log("[Gmail Callback] Tokens saved successfully");
 
-    // Redirect to email-receipts page with success message
+    if (mobileRedirect) {
+      const url = `${mobileRedirect}?connected=true`;
+      console.log("[Gmail Callback] Redirecting to mobile app:", url);
+      return NextResponse.redirect(url);
+    }
+
     return NextResponse.redirect(new URL("/app/email-receipts?connected=true", request.url));
   } catch (e) {
     console.error("[Gmail Callback] Token exchange failed:", e);
+
+    if (mobileRedirect) {
+      return NextResponse.redirect(`${mobileRedirect}?error=auth_failed`);
+    }
+
     return NextResponse.redirect(new URL("/app/email-receipts?error=auth_failed", request.url));
   }
 }
