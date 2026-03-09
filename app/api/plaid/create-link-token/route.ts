@@ -39,6 +39,13 @@ export async function POST() {
     return NextResponse.json({ link_token: response.data.link_token });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to create link token";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const hint =
+      message.toLowerCase().includes("redirect") || message.includes("400")
+        ? ` Add ${redirectUri} to Plaid Dashboard → API → Allowed redirect URIs.`
+        : "";
+    return NextResponse.json(
+      { error: message + hint },
+      { status: 500 }
+    );
   }
 }
