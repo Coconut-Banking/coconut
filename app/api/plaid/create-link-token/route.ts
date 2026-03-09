@@ -44,7 +44,17 @@ export async function POST() {
         ? ` Add ${redirectUri} to Plaid Dashboard → API → Allowed redirect URIs.`
         : "";
     return NextResponse.json(
-      { error: message + hint },
+      {
+        error: message + hint,
+        _debug: {
+          redirect_uri: redirectUri,
+          base_url_from: process.env.APP_URL
+            ? "APP_URL"
+            : process.env.VERCEL_URL
+              ? "VERCEL_URL"
+              : "fallback",
+        },
+      },
       { status: 500 }
     );
   }

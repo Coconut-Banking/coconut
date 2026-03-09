@@ -97,7 +97,11 @@ function ConnectBankContent() {
       .then((data) => {
         if (cancelled) return;
         if (data.error) {
-          setError(data.error);
+          const debugHint =
+            data._debug?.redirect_uri
+              ? `\n\nExact URI we sent: "${data._debug.redirect_uri}"`
+              : "";
+          setError(data.error + debugHint);
           return;
         }
         setLinkToken(data.link_token ?? null);
