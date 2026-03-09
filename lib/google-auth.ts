@@ -13,13 +13,16 @@ export function getOAuth2Client() {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-export function getAuthUrl(clerkUserId: string): string {
+export function getAuthUrl(clerkUserId: string, mobileRedirect?: string): string {
   const client = getOAuth2Client();
+  const state = mobileRedirect
+    ? JSON.stringify({ userId: clerkUserId, redirect: mobileRedirect })
+    : clerkUserId;
   return client.generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,
     prompt: "consent",
-    state: clerkUserId,
+    state,
   });
 }
 
