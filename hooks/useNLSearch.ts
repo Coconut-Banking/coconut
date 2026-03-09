@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import type { Transaction } from "@/lib/mockData";
+import type { UITransaction } from "@/lib/transaction-types";
 
 const DEBOUNCE_MS = 500;
 
@@ -25,7 +25,7 @@ interface SearchResponse {
 }
 
 // Map DB transaction row to UI Transaction shape
-function toUITransaction(t: SearchResponse["transactions"][number]): Transaction {
+function toUITransaction(t: SearchResponse["transactions"][number]): UITransaction {
   const CATEGORY_COLORS: Record<string, string> = {
     ENTERTAINMENT: "bg-purple-100 text-purple-700",
     RESTAURANTS: "bg-orange-100 text-orange-700",
@@ -71,10 +71,10 @@ function toUITransaction(t: SearchResponse["transactions"][number]): Transaction
     isRecurring: false,
     hasSplitSuggestion: false,
     merchantColor: hashColor(merchant),
-  } as Transaction;
+  } as UITransaction;
 }
 
-export function useNLSearch<T extends Transaction>(
+export function useNLSearch<T extends UITransaction>(
   query: string,
   fallbackTransactions: T[]
 ): {

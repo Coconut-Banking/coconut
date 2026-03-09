@@ -14,23 +14,24 @@ export interface ReceiptItemWithExtras extends ReceiptItem {
 }
 
 /**
- * Distribute tax and tip proportionally across line items.
+ * Distribute tax, tip, and other fees proportionally across line items.
  *
  * Formula per item:
  *   proportion = item.totalPrice / subtotal
- *   extra = proportion * (tax + tip)
+ *   extra = proportion * (tax + tip + otherFeesTotal)
  *   finalPrice = totalPrice + extra
  *
  * The last item absorbs any rounding remainder so the sum of
- * all finalPrices === subtotal + tax + tip exactly.
+ * all finalPrices === subtotal + tax + tip + otherFeesTotal exactly.
  */
 export function distributeExtras(
   items: ReceiptItem[],
   subtotal: number,
   tax: number,
-  tip: number
+  tip: number,
+  otherFeesTotal: number = 0
 ): ReceiptItemWithExtras[] {
-  const extraPool = tax + tip;
+  const extraPool = tax + tip + otherFeesTotal;
 
   if (subtotal === 0 || extraPool === 0) {
     return items.map((item) => ({

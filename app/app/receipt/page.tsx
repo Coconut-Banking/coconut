@@ -159,7 +159,13 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           <div className="flex flex-col items-center gap-3">
             <Loader2 size={32} className="text-[#3D8E62] animate-spin" />
             <p className="text-sm font-medium text-gray-700">
-              Scanning receipt...
+              {rs.uploadStage === "uploading"
+                ? "Uploading image..."
+                : rs.uploadStage === "reading"
+                ? "Reading receipt..."
+                : rs.uploadStage === "extracting"
+                ? "Extracting items..."
+                : "Cleaning up..."}
             </p>
           </div>
         ) : (
@@ -222,12 +228,14 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 /* ─────────────────── Step 2: Review Items ─────────────────── */
 
 function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
+  const otherFeesSum = rs.editOtherFees.reduce((s, f) => s + f.amount, 0);
+  const computedTotal = () =>
+    Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100;
+
   const syncSubtotalFromItems = (items: typeof rs.editItems) => {
-    const sum = items.reduce((s, i) => s + i.totalPrice, 0);
-    rs.setEditSubtotal(Math.round(sum * 100) / 100);
-    rs.setEditTotal(
-      Math.round((sum + rs.editTax + rs.editTip) * 100) / 100
-    );
+    const sum = Math.round(items.reduce((s, i) => s + i.totalPrice, 0) * 100) / 100;
+    rs.setEditSubtotal(sum);
+    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
   };
 
   const updateItem = (index: number, field: keyof ReceiptItem, value: string) => {
@@ -277,16 +285,14 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
   const recalcSubtotal = () => {
     const sum = rs.editItems.reduce((s, i) => s + i.totalPrice, 0);
     rs.setEditSubtotal(Math.round(sum * 100) / 100);
-    rs.setEditTotal(
-      Math.round((sum + rs.editTax + rs.editTip) * 100) / 100
-    );
+    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
   };
 
-  // Keep Total in sync when Subtotal, Tax, or Tip change
+  // Keep Total in sync when Subtotal, Tax, Tip, or Other fees change
   useEffect(() => {
-    const total = Math.round((rs.editSubtotal + rs.editTax + rs.editTip) * 100) / 100;
+    const total = Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100;
     rs.setEditTotal(total);
-  }, [rs.editSubtotal, rs.editTax, rs.editTip]);
+  }, [rs.editSubtotal, rs.editTax, rs.editTip, rs.editOtherFees]);
 
   return (
     <div className="space-y-6">
@@ -395,9 +401,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               onChange={(e) => {
                 const v = Number(e.target.value) || 0;
                 rs.setEditSubtotal(v);
-                rs.setEditTotal(
-                  Math.round((v + rs.editTax + rs.editTip) * 100) / 100
-                );
+                rs.setEditTotal(Math.round((v + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
               }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
@@ -416,9 +420,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               onChange={(e) => {
                 const v = Number(e.target.value) || 0;
                 rs.setEditTax(v);
-                rs.setEditTotal(
-                  Math.round((rs.editSubtotal + v + rs.editTip) * 100) / 100
-                );
+                rs.setEditTotal(Math.round((rs.editSubtotal + v + rs.editTip + otherFeesSum) * 100) / 100);
               }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
@@ -437,24 +439,71 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               onChange={(e) => {
                 const v = Number(e.target.value) || 0;
                 rs.setEditTip(v);
-                rs.setEditTotal(
-                  Math.round((rs.editSubtotal + rs.editTax + v) * 100) / 100
-                );
+                rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + v + otherFeesSum) * 100) / 100);
               }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               step={0.01}
             />
           </div>
         </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Other fees</span>
+            <button
+              onClick={() => rs.setEditOtherFees((prev) => [...prev, { name: "", amount: 0 }])}
+              className="text-xs font-medium text-[#3D8E62] hover:text-[#2D7A52]"
+            >
+              + Add
+            </button>
+          </div>
+          {rs.editOtherFees.map((fee, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-2">
+                <input
+                  value={fee.name}
+                  onChange={(e) => {
+                    rs.setEditOtherFees((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], name: e.target.value };
+                      return next;
+                    });
+                  }}
+                  className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 min-w-0"
+                  placeholder="Fee name"
+                />
+                <div className="relative w-24 flex items-center gap-1">
+                  <span className="text-xs text-gray-400">$</span>
+                  <input
+                    type="number"
+                    value={fee.amount}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) || 0;
+                      rs.setEditOtherFees((prev) => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], amount: v };
+                        return next;
+                      });
+                      rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount + v) * 100) / 100);
+                    }}
+                    className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20"
+                    step={0.01}
+                  />
+                  <button
+                    onClick={() => {
+                      rs.setEditOtherFees((prev) => prev.filter((_, i) => i !== idx));
+                      rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount) * 100) / 100);
+                    }}
+                    className="w-6 h-6 flex shrink-0 items-center justify-center rounded hover:bg-red-50 text-gray-300 hover:text-red-500"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
         <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-900">Total</span>
           <span className="text-sm font-semibold text-gray-900">
-            $
-            {(
-              Math.round(
-                (rs.editSubtotal + rs.editTax + rs.editTip) * 100
-              ) / 100
-            ).toFixed(2)}
+            ${computedTotal().toFixed(2)}
           </span>
         </div>
       </div>

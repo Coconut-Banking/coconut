@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback } from "react";
 import { Shield, Lock, CheckCircle2, ArrowLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { usePlaidLink } from "react-plaid-link";
-import { setDemoMode } from "@/components/AppGate";
 
 type Step = "link" | "connected";
 
@@ -180,10 +179,7 @@ export default function ConnectBankPage() {
                     We&apos;re importing your transactions. This usually takes under a minute.
                   </p>
                   <button
-                    onClick={() => {
-                      setDemoMode(false);
-                      router.push("/app/dashboard");
-                    }}
+                    onClick={() => router.push("/app/dashboard")}
                     className="w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
                     View your dashboard

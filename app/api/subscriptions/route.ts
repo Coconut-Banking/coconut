@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
-import { detectSubscriptionsForUser, saveDetectedSubscriptions } from "@/lib/subscription-detect";
+import {
+  detectSubscriptionsForUser,
+  saveDetectedSubscriptions,
+  deleteExcludedSubscriptions,
+} from "@/lib/subscription-detect";
 
 function addMonth(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00");
@@ -39,9 +43,10 @@ export async function POST(req: Request) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ added: true });
     }
+    const removed = await deleteExcludedSubscriptions(userId);
     const detected = await detectSubscriptionsForUser(userId);
     await saveDetectedSubscriptions(userId, detected);
-    return NextResponse.json({ detected: detected.length });
+    return NextResponse.json({ detected: detected.length, removed });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }

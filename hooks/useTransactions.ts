@@ -1,18 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { transactions as mockTransactions } from "@/lib/mockData";
-import type { Transaction } from "@/lib/mockData";
+import type { UITransaction } from "@/lib/transaction-types";
 
-const DEMO_KEY = "coconut_demo";
-
-function isDemoMode(): boolean {
-  if (typeof window === "undefined") return false;
-  return localStorage.getItem(DEMO_KEY) === "true";
-}
+export type Transaction = UITransaction;
 
 export function useTransactions() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<UITransaction[]>([]);
   const [linked, setLinked] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -24,9 +18,6 @@ export function useTransactions() {
       .then((data) => {
         if (cancelled) return;
         if (!data.linked) {
-          if (isDemoMode()) {
-            setTransactions(mockTransactions);
-          }
           setLoading(false);
           return;
         }
@@ -40,11 +31,8 @@ export function useTransactions() {
       .then((data) => {
         if (cancelled) return;
         if (Array.isArray(data)) {
-          setTransactions(data as Transaction[]);
+          setTransactions(data as UITransaction[]);
         }
-      })
-      .catch(() => {
-        if (!cancelled && isDemoMode()) setTransactions(mockTransactions);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

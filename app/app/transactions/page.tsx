@@ -19,9 +19,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
-import { useDemoMode } from "@/components/AppGate";
 import { useNLSearch } from "@/hooks/useNLSearch";
-import type { Transaction } from "@/lib/mockData";
+import type { UITransaction } from "@/lib/transaction-types";
 
 // Display labels for known Plaid primary categories
 const CATEGORY_LABEL: Record<string, string> = {
@@ -57,7 +56,7 @@ function MerchantAvatar({ name, color }: { name: string; color: string }) {
 
 type SplitMode = "person" | "group";
 
-function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
+function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => void }) {
   const [note, setNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [showAddToShared, setShowAddToShared] = useState(false);
@@ -535,7 +534,7 @@ function TransactionDrawer({ tx, onClose }: { tx: Transaction; onClose: () => vo
 }
 
 // Real-time client-side filter: match query against merchant, category, description, date, amount (no LLM)
-function filterTransactionsByQuery<T extends Transaction>(list: T[], query: string): T[] {
+function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: string): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return list;
   return list.filter((tx) => {
@@ -557,14 +556,13 @@ function filterTransactionsByQuery<T extends Transaction>(list: T[], query: stri
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const { transactions, linked, loading } = useTransactions();
-  const isDemo = useDemoMode();
   // Semantic search: from URL (top bar submit). Triggers NL/LLM search.
   const semanticQuery = searchParams.get("q") ? decodeURIComponent(searchParams.get("q")!) : "";
   // Real-time filter: page search bar. Client-side only, no LLM.
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
   const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
 
   useEffect(() => {
@@ -598,18 +596,12 @@ export default function TransactionsPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-8 py-8">
-      {(linked || isDemo) && (
+      {linked && (
         <div className="mb-4 flex items-center gap-2">
-          {linked ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
-              Live from linked account
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1">
-              Demo mode
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
+            Live from linked account
+          </span>
         </div>
       )}
       <div className="mb-6">

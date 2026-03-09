@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
 
   try {
     // Save receipt scan
+    const otherFees = Array.isArray(parsed.other_fees)
+      ? parsed.other_fees
+      : [];
     const { data: receipt, error: receiptErr } = await db
       .from("receipt_scans")
       .insert({
@@ -54,6 +57,7 @@ export async function POST(req: NextRequest) {
         subtotal: parsed.subtotal,
         tax: parsed.tax,
         tip: parsed.tip,
+        other_fees: otherFees,
         total: parsed.total,
         image_base64: imagePayload,
         status: "parsed",
@@ -97,31 +101,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(full);
   } catch (error) {
-    // If anything fails, return mock data so the UI can still be tested
     console.error("Error in receipt parse route:", error);
-
-    const mockId = `mock-${Date.now()}`;
-    const mockResponse = {
-      id: mockId,
-      clerk_user_id: userId,
-      merchant_name: parsed.merchant_name,
-      receipt_date: parsed.date,
-      subtotal: parsed.subtotal,
-      tax: parsed.tax,
-      tip: parsed.tip,
-      total: parsed.total,
-      status: "parsed",
-      receipt_items: parsed.items.map((item: any, idx: number) => ({
-        id: `item-${idx + 1}`,
-        receipt_id: mockId,
-        name: item.name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-        sort_order: idx,
-      })),
-    };
-
-    return NextResponse.json(mockResponse);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to parse receipt" },
+      { status: 500 }
+    );
   }
 }

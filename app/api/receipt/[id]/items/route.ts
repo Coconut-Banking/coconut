@@ -14,7 +14,7 @@ export async function PUT(
 
   const { id } = await params;
   const body = await req.json();
-  const { items, subtotal, tax, tip, total, merchant_name } = body;
+  const { items, subtotal, tax, tip, total, merchant_name, other_fees } = body;
 
   const db = getSupabase();
 
@@ -31,16 +31,17 @@ export async function PUT(
   }
 
   // Update receipt totals
-  await db
-    .from("receipt_scans")
-    .update({
-      subtotal,
-      tax,
-      tip,
-      total,
-      ...(merchant_name ? { merchant_name } : {}),
-    })
-    .eq("id", id);
+  const updatePayload: Record<string, unknown> = {
+    subtotal,
+    tax,
+    tip,
+    total,
+    ...(merchant_name ? { merchant_name } : {}),
+  };
+  if (Array.isArray(other_fees)) {
+    updatePayload.other_fees = other_fees;
+  }
+  await db.from("receipt_scans").update(updatePayload).eq("id", id);
 
   // Replace all items
   await db.from("receipt_items").delete().eq("receipt_id", id);

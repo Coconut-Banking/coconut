@@ -1,8 +1,27 @@
 /**
  * Subscription detection — find recurring charges from transaction history.
+ * Excludes bills (rent, utilities, transfers, etc.) per docs/SUBSCRIPTIONS_PLAN.md.
  */
 
 import { getSupabase } from "./supabase";
+import { shouldExcludeAsSubscription } from "./subscription-config";
+
+export async function deleteExcludedSubscriptions(clerkUserId: string): Promise<number> {
+  const db = getSupabase();
+  const { data: rows } = await db
+    .from("subscriptions")
+    .select("id, merchant_name, primary_category")
+    .eq("clerk_user_id", clerkUserId)
+    .eq("status", "active");
+  if (!rows?.length) return 0;
+  const toDelete = rows.filter((r) =>
+    shouldExcludeAsSubscription(r.primary_category, r.merchant_name ?? "", "")
+  );
+  if (toDelete.length === 0) return 0;
+  const ids = toDelete.map((r) => r.id);
+  await db.from("subscriptions").delete().in("id", ids);
+  return ids.length;
+}
 
 export type SubscriptionFrequency = "weekly" | "biweekly" | "monthly" | "yearly";
 
@@ -106,9 +125,12 @@ export async function detectSubscriptionsForUser(clerkUserId: string): Promise<D
     if (!frequency) continue;
 
     const lastTx = list[0];
+    const merchant = lastTx.merchant_name || lastTx.raw_name || lastTx.normalized_merchant || "Unknown";
+    const rawName = (lastTx.raw_name || "").trim();
+    if (shouldExcludeAsSubscription(lastTx.primary_category, merchant, rawName)) continue;
+
     const avgDays = dayDiffs.reduce((s, d) => s + d, 0) / dayDiffs.length;
     const nextDue = addDays(lastTx.date, Math.round(avgDays));
-    const merchant = lastTx.merchant_name || lastTx.raw_name || lastTx.normalized_merchant || "Unknown";
     const normalized =
       (lastTx.normalized_merchant || merchant.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim()) as string;
 

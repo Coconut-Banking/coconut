@@ -15,7 +15,7 @@ export async function GET() {
       )
       .eq("clerk_user_id", userId)
       .order("date", { ascending: false })
-      .limit(500);
+      .limit(2000);
 
     if (error) throw error;
 

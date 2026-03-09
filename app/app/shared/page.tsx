@@ -16,7 +16,6 @@ import { useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useGroupsSummary, useGroupDetail, usePersonDetail } from "@/hooks/useGroups";
-import { useDemoMode } from "@/components/AppGate";
 import { useTransactions } from "@/hooks/useTransactions";
 
 const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F"];
@@ -49,8 +48,7 @@ export default function SharedPage() {
   const { summary, loading, refetch: refetchSummary } = useGroupsSummary();
   const { detail, loading: detailLoading, refetch: refetchDetail } = useGroupDetail(selectedId);
   const { detail: personDetail, loading: personDetailLoading, refetch: refetchPersonDetail } = usePersonDetail(selectedPersonKey);
-  const isDemo = useDemoMode();
-  const showRealUI = linked && !isDemo;
+  const showRealUI = linked;
 
   // Refetch summary when returning to main list so balances stay in sync
   useEffect(() => {

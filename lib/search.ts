@@ -1,16 +1,23 @@
+/**
+ * Simple keyword search over transactions.
+ * For user-scoped semantic search, use lib/search-engine and /api/nl-search.
+ * This module is deprecated for server use; search-engine handles auth + DB.
+ */
 import type { Transaction } from "./types";
-import { getTransactions } from "./data";
 
-// Simple semantic-ish search: keyword match + category awareness (no API key required).
-// When OPENAI_API_KEY is set, we use embeddings in the API route instead.
-export function searchTransactions(query: string, limit = 20): Transaction[] {
-  const transactions = getTransactions();
+export function searchTransactions(
+  transactions: Transaction[],
+  query: string,
+  limit = 20
+): Transaction[] {
   const q = query.toLowerCase().trim();
   if (!q) return transactions.slice(0, limit);
 
   const keywords = q.split(/\s+/);
   const scored = transactions.map((t) => {
-    const text = [t.merchant, t.category, t.rawDescription].join(" ").toLowerCase();
+    const text = [t.merchant, t.category, (t as { rawDescription?: string }).rawDescription ?? ""]
+      .join(" ")
+      .toLowerCase();
     let score = 0;
     for (const kw of keywords) {
       if (text.includes(kw)) score += 2;

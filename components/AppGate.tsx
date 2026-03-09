@@ -4,22 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 
-const DEMO_KEY = "coconut_demo";
-
-export function useDemoMode(): boolean {
-  const [isDemo, setIsDemo] = useState(false);
-  useEffect(() => {
-    setIsDemo(typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true");
-  }, []);
-  return isDemo;
-}
-
-export function setDemoMode(enabled: boolean): void {
-  if (typeof window === "undefined") return;
-  if (enabled) localStorage.setItem(DEMO_KEY, "true");
-  else localStorage.removeItem(DEMO_KEY);
-}
-
 export function AppGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
@@ -33,7 +17,6 @@ export function AppGate({ children }: { children: React.ReactNode }) {
       .catch(() => setPlaidStatus("unlinked"));
   }, [isLoaded, isSignedIn]);
 
-  // Clerk middleware handles unauthenticated redirect, but handle loading state here
   if (!isLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
@@ -50,7 +33,6 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  // Signed in — check if they have Plaid linked or are in demo mode
   if (plaidStatus === "checking") {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
@@ -62,9 +44,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const isDemo = typeof window !== "undefined" && localStorage.getItem(DEMO_KEY) === "true";
-
-  if (plaidStatus === "unlinked" && !isDemo) {
+  if (plaidStatus === "unlinked") {
     router.replace("/connect");
     return null;
   }
