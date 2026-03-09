@@ -4,9 +4,11 @@ import { getPlaidClient } from "@/lib/plaid-client";
 import { getPlaidConfig } from "@/lib/plaid";
 import { Products, CountryCode } from "plaid";
 
+const DEMO_USER_ID = "demo-sandbox-user";
+
 export async function POST() {
   const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const effectiveUserId = userId ?? DEMO_USER_ID;
 
   const client = getPlaidClient();
   const { isConfigured } = getPlaidConfig();
@@ -19,11 +21,12 @@ export async function POST() {
 
   try {
     const response = await client.linkTokenCreate({
-      user: { client_user_id: userId },
+      user: { client_user_id: effectiveUserId },
       client_name: "Coconut",
       products: [Products.Transactions],
       country_codes: [CountryCode.Us],
       language: "en",
+      transactions: { days_requested: 730 },
     });
     return NextResponse.json({ link_token: response.data.link_token });
   } catch (err: unknown) {
