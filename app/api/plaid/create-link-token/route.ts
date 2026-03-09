@@ -20,10 +20,13 @@ export async function POST() {
   }
 
   // Use redirect flow for OAuth banks (Chase, etc.) — fixes mobile "stuck" when popup fails
-  const baseUrl =
+  let baseUrl =
     process.env.APP_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
     "http://localhost:3000";
+  if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+    baseUrl = `https://${baseUrl}`;
+  }
   const redirectUri = `${baseUrl.replace(/\/$/, "")}/connect`;
 
   try {
