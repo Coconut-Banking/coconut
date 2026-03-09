@@ -13,12 +13,19 @@ function addMonth(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+const DEMO_USER_ID = "demo-sandbox-user";
+
 export async function GET() {
   const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const effectiveUserId = userId ?? DEMO_USER_ID;
   try {
     const db = getSupabase();
-    const { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", userId).eq("status", "active").order("amount", { ascending: false });
+    let { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false });
+    if (userId && (!data || data.length === 0)) {
+      const demo = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", DEMO_USER_ID).eq("status", "active").order("amount", { ascending: false });
+      data = demo.data;
+      error = demo.error;
+    }
     if (error) throw error;
     const subs = (data ?? []).map((s) => ({ id: s.id, merchant: s.merchant_name, amount: Number(s.amount), frequency: s.frequency, lastCharged: s.last_charge_date, nextDue: s.next_due_date, category: (s.primary_category ?? "SUBSCRIPTIONS").replace(/_/g, " "), transactionCount: s.transaction_count ?? 0, status: s.status }));
     return NextResponse.json(subs);
