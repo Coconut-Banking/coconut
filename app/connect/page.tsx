@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Shield, Lock, CheckCircle2, ArrowLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { usePlaidLink } from "react-plaid-link";
@@ -72,6 +73,7 @@ function ConnectedStep() {
 function ConnectBankContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isSignedIn, isLoaded } = useAuth();
   const [step, setStep] = useState<Step>("link");
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +91,15 @@ function ConnectBankContent() {
       sessionStorage.setItem("connect_from_app", "1");
     }
   }, [searchParams]);
+
+  // Require sign-in so Plaid token is stored for the same user as the app
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      const returnTo = `/connect${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+      router.replace(`/login?redirect_url=${encodeURIComponent(returnTo)}`);
+    }
+  }, [isLoaded, isSignedIn, router, searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,6 +164,14 @@ function ConnectBankContent() {
       open();
     }
   }, [receivedRedirectUri, linkToken, ready, open]);
+
+  if (!isLoaded || !isSignedIn) {
+    return (
+      <div className="min-h-screen bg-[#F7FAF8] flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
