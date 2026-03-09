@@ -1,4 +1,5 @@
 # Coconut
+<!-- Test PR for permission verification -->
 
 Personal finance with **semantic search** and **AI** — like Rocket Money, but you can search transactions by meaning and ask questions about your data in plain language.
 
