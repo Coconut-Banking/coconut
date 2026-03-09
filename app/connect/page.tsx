@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { Shield, Lock, CheckCircle2, ArrowLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { usePlaidLink } from "react-plaid-link";
@@ -69,7 +69,7 @@ function ConnectedStep() {
   );
 }
 
-export default function ConnectBankPage() {
+function ConnectBankContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("link");
@@ -248,5 +248,29 @@ export default function ConnectBankPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ConnectFallback() {
+  return (
+    <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
+      <div className="px-8 py-5 flex items-center gap-4 border-b border-gray-100 bg-white">
+        <Link href="/login" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800">
+          <ArrowLeft size={16} /> Back
+        </Link>
+        <div className="flex-1" />
+      </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+      </div>
+    </div>
+  );
+}
+
+export default function ConnectBankPage() {
+  return (
+    <Suspense fallback={<ConnectFallback />}>
+      <ConnectBankContent />
+    </Suspense>
   );
 }
