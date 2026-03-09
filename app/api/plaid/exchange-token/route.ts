@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     if (syncError) console.warn("[exchange-token] sync warning:", syncError);
     console.log(`[exchange-token] synced ${synced} transactions for ${effectiveUserId}`);
 
-    embedTransactionsForUser(userId).catch((e) =>
+    embedTransactionsForUser(effectiveUserId).catch((e) =>
       console.error("[exchange-token] background embed failed:", e)
     );
 
