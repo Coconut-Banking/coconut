@@ -19,6 +19,13 @@ export async function POST() {
     );
   }
 
+  // Use redirect flow for OAuth banks (Chase, etc.) — fixes mobile "stuck" when popup fails
+  const baseUrl =
+    process.env.APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    "http://localhost:3000";
+  const redirectUri = `${baseUrl.replace(/\/$/, "")}/connect`;
+
   try {
     const response = await client.linkTokenCreate({
       user: { client_user_id: effectiveUserId },
@@ -27,6 +34,7 @@ export async function POST() {
       country_codes: [CountryCode.Us],
       language: "en",
       transactions: { days_requested: 730 },
+      redirect_uri: redirectUri,
     });
     return NextResponse.json({ link_token: response.data.link_token });
   } catch (err: unknown) {

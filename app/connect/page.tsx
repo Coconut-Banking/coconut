@@ -1,20 +1,94 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Shield, Lock, CheckCircle2, ArrowLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { usePlaidLink } from "react-plaid-link";
 
 type Step = "link" | "connected";
 
+const APP_DEEP_LINK = "coconut://";
+
+function ConnectedStep() {
+  const router = useRouter();
+  const fromApp =
+    (typeof window !== "undefined" && sessionStorage.getItem("connect_from_app") === "1") ||
+    false;
+
+  useEffect(() => {
+    if (fromApp) {
+      const t = setTimeout(() => {
+        sessionStorage.removeItem("connect_from_app");
+        window.location.href = `${APP_DEEP_LINK}connected`;
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [fromApp]);
+
+  return (
+    <motion.div
+      key="connected"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.4 }}
+    >
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden text-center px-8 py-10">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: "spring", delay: 0.1, stiffness: 200 }}
+          className="w-16 h-16 rounded-full bg-[#EEF7F2] flex items-center justify-center mx-auto mb-4"
+        >
+          <CheckCircle2 size={32} className="text-[#3D8E62]" />
+        </motion.div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Bank connected!</h2>
+        <p className="text-sm text-gray-500 mb-6">
+          We&apos;re importing your transactions. This usually takes under a minute.
+        </p>
+        {fromApp ? (
+          <a
+            href={`${APP_DEEP_LINK}connected`}
+            className="block w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            Return to app
+            <ChevronRight size={15} />
+          </a>
+        ) : (
+          <button
+            onClick={() => router.push("/app/dashboard")}
+            className="w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            View your dashboard
+            <ChevronRight size={15} />
+          </button>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 export default function ConnectBankPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("link");
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isExchanging, setIsExchanging] = useState(false);
+
+  // OAuth return: Plaid redirects back with oauth_state_id — pass to Link for redirect flow
+  const receivedRedirectUri =
+    typeof window !== "undefined" && searchParams.get("oauth_state_id")
+      ? window.location.href
+      : undefined;
+
+  // Preserve from_app across OAuth redirect (Plaid redirect drops query params)
+  useEffect(() => {
+    if (typeof window !== "undefined" && searchParams.get("from_app") === "1") {
+      sessionStorage.setItem("connect_from_app", "1");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,11 +135,20 @@ export default function ConnectBankPage() {
 
   const { open, ready } = usePlaidLink({
     token: linkToken,
+    receivedRedirectUri,
     onSuccess,
     onExit: (err) => {
       if (err) setError((err as { errorMessage?: string })?.errorMessage ?? "Link exited");
     },
   });
+
+  const hasAutoOpened = useRef(false);
+  useEffect(() => {
+    if (receivedRedirectUri && linkToken && ready && !hasAutoOpened.current) {
+      hasAutoOpened.current = true;
+      open();
+    }
+  }, [receivedRedirectUri, linkToken, ready, open]);
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
@@ -159,34 +242,7 @@ export default function ConnectBankPage() {
             )}
 
             {step === "connected" && (
-              <motion.div
-                key="connected"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.4 }}
-              >
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden text-center px-8 py-10">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", delay: 0.1, stiffness: 200 }}
-                    className="w-16 h-16 rounded-full bg-[#EEF7F2] flex items-center justify-center mx-auto mb-4"
-                  >
-                    <CheckCircle2 size={32} className="text-[#3D8E62]" />
-                  </motion.div>
-                  <h2 className="text-xl font-bold text-gray-900 mb-2">Bank connected!</h2>
-                  <p className="text-sm text-gray-500 mb-6">
-                    We&apos;re importing your transactions. This usually takes under a minute.
-                  </p>
-                  <button
-                    onClick={() => router.push("/app/dashboard")}
-                    className="w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                  >
-                    View your dashboard
-                    <ChevronRight size={15} />
-                  </button>
-                </div>
-              </motion.div>
+              <ConnectedStep />
             )}
           </AnimatePresence>
         </div>
