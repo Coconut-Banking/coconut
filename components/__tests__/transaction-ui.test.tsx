@@ -1,28 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { merchantToDomain, AmountDisplay } from "../transaction-ui";
-
-describe("merchantToDomain", () => {
-  it("extracts domain from simple merchant names", () => {
-    expect(merchantToDomain("Starbucks")).toBe("starbucks.com");
-    expect(merchantToDomain("McDonald's")).toBe("mcdonald.com");
-    expect(merchantToDomain("Amazon")).toBe("amazon.com");
-  });
-
-  it("strips trailing numbers and hash", () => {
-    expect(merchantToDomain("Starbucks #12345")).toBe("starbucks.com");
-    expect(merchantToDomain("UBER *TRIP 1234")).toBe("uber.com");
-  });
-
-  it("returns null for empty or invalid input", () => {
-    expect(merchantToDomain("")).toBeNull();
-    expect(merchantToDomain("123")).toBeNull();
-  });
-
-  it("handles multi-word merchants", () => {
-    expect(merchantToDomain("United Airlines")).toBe("united.com");
-  });
-});
+import { render } from "@testing-library/react";
+import { AmountDisplay, MerchantLogo } from "../transaction-ui";
 
 describe("AmountDisplay", () => {
   it("shows + for positive amounts with green class", () => {
@@ -40,5 +18,17 @@ describe("AmountDisplay", () => {
   it("accepts custom className", () => {
     const { container } = render(<AmountDisplay amount={10} className="text-xl" />);
     expect(container.querySelector("span")?.className).toContain("text-xl");
+  });
+});
+
+describe("MerchantLogo", () => {
+  it("renders letter avatar", () => {
+    const { container } = render(<MerchantLogo name="Starbucks" color="#000" />);
+    expect(container.textContent).toBe("S");
+  });
+
+  it("respects size prop", () => {
+    const { container } = render(<MerchantLogo name="Amazon" color="#333" size="lg" />);
+    expect(container.querySelector("div")?.className).toContain("w-14");
   });
 });
