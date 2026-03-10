@@ -35,6 +35,54 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  // Terminal Tap to Pay: PaymentIntent succeeded with settlement metadata
+  if (event.type === "payment_intent.succeeded") {
+    const pi = event.data.object as Stripe.PaymentIntent;
+    const { group_id, payer_member_id, receiver_member_id, source } = pi.metadata ?? {};
+
+    if (source === "terminal" && group_id && payer_member_id && receiver_member_id) {
+      const db = getSupabase();
+
+      const { data: existing } = await db
+        .from("settlements")
+        .select("id")
+        .eq("external_reference", pi.id)
+        .maybeSingle();
+
+      if (existing) return NextResponse.json({ received: true });
+
+      const amountCents = pi.amount_received ?? pi.amount ?? 0;
+      const amount = amountCents / 100;
+
+      const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
+        group_id,
+        payer_member_id,
+        receiver_member_id
+      );
+
+      if (!allowed || maxAmount <= 0) {
+        console.warn("[stripe-webhook] terminal settlement not allowed:", { allowed, maxAmount, reason });
+      } else {
+        const amountToInsert = Math.min(amount, maxAmount);
+        const { error } = await db.from("settlements").insert({
+          group_id,
+          payer_member_id,
+          receiver_member_id,
+          amount: Math.round(amountToInsert * 100) / 100,
+          method: "stripe",
+          status: "completed",
+          external_reference: pi.id,
+        });
+
+        if (error) {
+          console.error("[stripe-webhook] terminal settlement insert failed:", error);
+        } else {
+          console.log("[stripe-webhook] terminal settlement recorded", { group_id, amount: amountToInsert });
+        }
+      }
+    }
+  }
+
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     const session = event.data.object as Stripe.Checkout.Session;
     const { group_id, payer_member_id, receiver_member_id } = session.metadata ?? {};
