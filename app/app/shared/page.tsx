@@ -306,7 +306,7 @@ function AddExpenseModal({
                             isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
                           }`}
                         >
-                          <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[0]} size="sm" />
+                          <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[members.indexOf(m) % MEMBER_COLORS.length]} size="sm" />
                           <span className="text-sm font-medium">Split with {m.display_name}</span>
                           {isSelected && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
                         </button>
@@ -688,9 +688,15 @@ function SharedPageContent() {
         <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
           <Users size={40} className="text-gray-300 mx-auto mb-4" />
           <p className="text-sm font-medium text-gray-600">Connect your bank</p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 mt-1 mb-4">
             Create groups and split transactions from real bank data
           </p>
+          <a
+            href="/connect"
+            className="inline-flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          >
+            Connect bank
+          </a>
         </div>
       </div>
     );
@@ -1130,6 +1136,9 @@ function SharedPageContent() {
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 px-0.5">Groups</p>
                 <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden divide-y divide-gray-50 shadow-sm">
+                  {groupsData.length === 0 && (
+                    <div className="px-5 py-8 text-center text-sm text-gray-500">No groups yet. Create one to split expenses.</div>
+                  )}
                   {groupsData.map((group) => (
                     <motion.div
                       key={group.id}
@@ -1390,32 +1399,30 @@ function PersonRow({
                       </span>
                     </div>
                   ))}
-                  {person.direction !== "settled" && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {person.direction === "owes_you" && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onRemind(); }}
-                          className="text-xs font-semibold text-[#3D8E62] hover:underline"
-                        >
-                          Remind →
-                        </button>
-                      )}
-                      {(person.direction === "owes_you" || person.direction === "you_owe") && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onSettleUp(); }}
-                          className="text-xs font-semibold text-[#3D8E62] hover:underline"
-                        >
-                          Settle up →
-                        </button>
-                      )}
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {person.direction === "owes_you" && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
-                        className="text-xs font-semibold text-gray-500 hover:underline"
+                        onClick={(e) => { e.stopPropagation(); onRemind(); }}
+                        className="text-xs font-semibold text-[#3D8E62] hover:underline"
                       >
-                        View details →
+                        Remind →
                       </button>
-                    </div>
-                  )}
+                    )}
+                    {(person.direction === "owes_you" || person.direction === "you_owe") && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onSettleUp(); }}
+                        className="text-xs font-semibold text-[#3D8E62] hover:underline"
+                      >
+                        Settle up →
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
+                      className="text-xs font-semibold text-gray-500 hover:underline"
+                    >
+                      View details →
+                    </button>
+                  </div>
                 </>
               ) : personDetail ? (
                 <p className="text-xs text-gray-400">All clear between you two.</p>
