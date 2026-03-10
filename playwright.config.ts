@@ -1,4 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
+import { loadEnvConfig } from "@next/env";
+
+loadEnvConfig(process.cwd());
+
+if (!process.env.CLERK_PUBLISHABLE_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+  process.env.CLERK_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+}
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -15,12 +23,10 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: process.env.CI
-    ? {
-        command: "npm run build && npm run start",
-        url: "http://localhost:3000",
-        timeout: 120_000,
-        reuseExistingServer: false,
-      }
-    : undefined,
+  webServer: {
+    command: "npm run build && npm run start",
+    url: "http://localhost:3000",
+    timeout: 120_000,
+    reuseExistingServer: true,
+  },
 });

@@ -1,24 +1,26 @@
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { type Page, test } from "@playwright/test";
+import { existsSync } from "fs";
+import { join } from "path";
 
-const clerkConfigured = !!process.env.CLERK_PUBLISHABLE_KEY;
+const CLERK_READY_MARKER = join(
+  process.cwd(), "node_modules", ".cache", ".clerk-e2e-ready",
+);
 
-/**
- * Injects the Clerk testing token so the browser session is treated as
- * authenticated by the Clerk middleware. Call once per test before navigation.
- */
-export async function authenticatePage(page: Page) {
-  await setupClerkTestingToken({ page });
+function isClerkReady(): boolean {
+  return existsSync(CLERK_READY_MARKER);
 }
 
 /**
  * Navigate to a protected route with authentication.
- * Waits for the page to finish loading after navigation.
- * Skips the test when CLERK_PUBLISHABLE_KEY is not configured.
+ * Skips when clerkSetup() did not complete (missing/invalid keys).
  */
 export async function goAuthenticated(page: Page, path: string) {
-  test.skip(!clerkConfigured, "CLERK_PUBLISHABLE_KEY not set — skipping authenticated test");
-  await authenticatePage(page);
+  test.skip(
+    !isClerkReady(),
+    "Clerk not configured (clerkSetup failed or keys missing) — skipping",
+  );
+  await setupClerkTestingToken({ page });
   await page.goto(path);
   await page.waitForLoadState("domcontentloaded");
 }
