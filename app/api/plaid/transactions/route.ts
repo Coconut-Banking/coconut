@@ -24,6 +24,7 @@ export async function GET() {
       )
       .eq("clerk_user_id", effectiveUserId)
       .order("date", { ascending: false })
+      .order("id", { ascending: false })
       .limit(2000);
 
     if (error) throw error;

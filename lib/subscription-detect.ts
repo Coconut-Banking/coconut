@@ -91,7 +91,8 @@ export async function detectSubscriptionsForUser(clerkUserId: string): Promise<D
     .select("id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category")
     .eq("clerk_user_id", clerkUserId)
     .lt("amount", 0)
-    .order("date", { ascending: false });
+    .order("date", { ascending: false })
+    .order("id", { ascending: false });
 
   if (error || !rows || rows.length < MIN_OCCURRENCES) return [];
 

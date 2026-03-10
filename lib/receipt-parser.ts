@@ -334,7 +334,8 @@ export async function scanGmailForReceipts(
       .from("email_receipts")
       .select("*")
       .in("id", insertedReceiptIds)
-      .order("date", { ascending: false });
+      .order("date", { ascending: false })
+      .order("id", { ascending: false });
     receipts = data || [];
   }
 
