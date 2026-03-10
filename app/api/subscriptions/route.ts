@@ -8,8 +8,18 @@ import {
 } from "@/lib/subscription-detect";
 import { getEffectiveUserId } from "@/lib/demo";
 
-function addMonth(dateStr: string): string {
+function addMonth(dateStr: string | null | undefined): string {
+  if (!dateStr || typeof dateStr !== "string") {
+    const fallback = new Date();
+    fallback.setMonth(fallback.getMonth() + 1);
+    return fallback.toISOString().slice(0, 10);
+  }
   const d = new Date(dateStr + "T12:00:00");
+  if (isNaN(d.getTime())) {
+    const fallback = new Date();
+    fallback.setMonth(fallback.getMonth() + 1);
+    return fallback.toISOString().slice(0, 10);
+  }
   d.setMonth(d.getMonth() + 1);
   return d.toISOString().slice(0, 10);
 }
@@ -23,7 +33,7 @@ export async function GET() {
     const db = getSupabase();
     const { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false });
     if (error) throw error;
-    const subs = (data ?? []).map((s) => ({ id: s.id, merchant: s.merchant_name, amount: Number(s.amount), frequency: s.frequency, lastCharged: s.last_charge_date, nextDue: s.next_due_date, category: (s.primary_category ?? "SUBSCRIPTIONS").replace(/_/g, " "), transactionCount: s.transaction_count ?? 0, status: s.status }));
+    const subs = (data ?? []).map((s) => ({ id: s.id, merchant: s.merchant_name ?? "Unknown", amount: Number(s.amount) || 0, frequency: s.frequency ?? "monthly", lastCharged: s.last_charge_date ?? null, nextDue: s.next_due_date ?? null, category: (s.primary_category ?? "SUBSCRIPTIONS").replace(/_/g, " "), transactionCount: s.transaction_count ?? 0, status: s.status ?? "active" }));
     return NextResponse.json(subs);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });

@@ -11,7 +11,7 @@ function MerchantAvatar({ name, color }: { name: string; color: string }) {
       className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
       style={{ backgroundColor: color }}
     >
-      {name[0]}
+      {name ? name[0] : "?"}
     </div>
   );
 }
@@ -79,7 +79,7 @@ export default function SubscriptionsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-gray-900">{sub.merchant}</div>
                   <div className="flex items-center gap-2 text-xs text-gray-400">
-                    {sub.category} · Last: {sub.lastChargedStr}
+                    {sub.category ?? "—"} · Last: {sub.lastChargedStr ?? "—"}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
