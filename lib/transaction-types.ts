@@ -13,4 +13,5 @@ export interface UITransaction {
   splitWith?: string;
   location?: string;
   merchantColor: string;
+  isPending?: boolean;
 }

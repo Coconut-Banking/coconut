@@ -7,7 +7,12 @@ const DEMO_USER_ID = "demo-sandbox-user";
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
-  const effectiveUserId = userId ?? DEMO_USER_ID;
+  // Production: require real auth, never use demo/sandbox user
+  const effectiveUserId =
+    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  if (!effectiveUserId) {
+    return NextResponse.json({ error: "Sign in to connect your bank" }, { status: 401 });
+  }
 
   let body;
   try {
@@ -27,6 +32,24 @@ export async function POST(request: NextRequest) {
 
     await savePlaidToken(effectiveUserId, access_token, item_id);
 
+    // In production, clear stale/sandbox tx first so only real bank data remains
+    if (process.env.NODE_ENV === "production") {
+      const { getSupabase } = await import("@/lib/supabase");
+      const db = getSupabase();
+      const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
+      const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
+      const { data: toDelete } = await db
+        .from("transactions")
+        .select("id, plaid_transaction_id")
+        .eq("clerk_user_id", effectiveUserId);
+      const idsToDelete = (toDelete ?? [])
+        .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
+        .map((r) => r.id as string)
+        .filter((id) => !protectedIds.has(id));
+      if (idsToDelete.length > 0) {
+        await db.from("transactions").delete().in("id", idsToDelete);
+      }
+    }
     const { synced, error: syncError } = await syncTransactionsForUser(effectiveUserId);
     if (syncError) console.warn("[exchange-token] sync warning:", syncError);
     console.log(`[exchange-token] synced ${synced} transactions for ${effectiveUserId}`);

@@ -1,46 +1,43 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { TrendingDown, RefreshCw, Users, DollarSign, ArrowRight } from "lucide-react";
 import { motion } from "motion/react";
-import { useUser } from "@clerk/nextjs";
 import { useTransactions } from "@/hooks/useTransactions";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-
-function MerchantAvatar({ name, color }: { name: string; color: string }) {
-  return (
-    <div
-      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
-      style={{ backgroundColor: color }}
-    >
-      {name[0]}
-    </div>
-  );
-}
+import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) => {
   if (active && payload && payload.length) {
+    const val = Math.round(payload[0].value * 100) / 100;
     return (
       <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3 py-2">
         <div className="text-xs text-gray-500 mb-0.5">{label}</div>
-        <div className="text-sm font-bold text-gray-900">${payload[0].value.toLocaleString()}</div>
+        <div className="text-sm font-bold text-gray-900">${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
       </div>
     );
   }
   return null;
 };
 
-// Derive spending by month and category from real transactions
+/** Format currency to 2 decimals, avoid floating-point display issues */
+function formatCurrency(n: number): string {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Derive spending by month and category from linked transactions (no demo/sandbox)
 function deriveFromTransactions(transactions: { amount: number; date: string; category?: string }[]) {
   const byMonth: Record<string, number> = {};
   const byCategory: Record<string, number> = {};
   for (const tx of transactions) {
+    const amt = Math.round(Math.abs(tx.amount) * 100) / 100;
     const month = tx.date.slice(0, 7);
     const [y, m] = month.split("-").map(Number);
     const monthKey = new Date(y, m - 1).toLocaleString("en", { month: "short" });
-    byMonth[monthKey] = (byMonth[monthKey] ?? 0) + Math.abs(tx.amount);
+    byMonth[monthKey] = Math.round(((byMonth[monthKey] ?? 0) + amt) * 100) / 100;
     const cat = tx.category ?? "Other";
-    byCategory[cat] = (byCategory[cat] ?? 0) + Math.abs(tx.amount);
+    byCategory[cat] = Math.round(((byCategory[cat] ?? 0) + amt) * 100) / 100;
   }
   const colors = ["#3D8E62", "#4A6CF7", "#9B59B6", "#E8507A", "#F59E0B", "#CBD5E1"];
   const total = Object.values(byCategory).reduce((a, b) => a + b, 0);
@@ -69,6 +66,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user } = useUser();
   const { transactions, linked, loading } = useTransactions();
+  const displayName = user?.firstName || user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "there";
   const recentTransactions = transactions.slice(0, 5);
   const { spendingData, categoryData, monthlySpend } = deriveFromTransactions(transactions);
 
@@ -95,7 +93,7 @@ export default function DashboardPage() {
       )}
       <div className="mb-7">
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-          {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {user?.firstName ?? "there"} ☀️
+          {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {displayName} ☀️
         </h1>
         <p className="text-sm text-gray-500 mt-1">
           {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#3D8E62] font-medium">{transactions.length} transactions</span>
@@ -113,7 +111,7 @@ export default function DashboardPage() {
             <TrendingDown size={15} className="text-red-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            ${monthlySpend.toLocaleString()}
+            ${formatCurrency(monthlySpend)}
           </div>
           <div className="text-xs text-gray-500 mb-2">Monthly Spend</div>
           <div className="text-xs text-gray-400">From transactions</div>
@@ -209,7 +207,7 @@ export default function DashboardPage() {
               <div key={cat.name}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="text-gray-600">{cat.name}</span>
-                  <span className="text-gray-500 font-medium">${cat.amount}</span>
+                  <span className="text-gray-500 font-medium">${formatCurrency(cat.amount)}</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                   <motion.div
@@ -251,7 +249,7 @@ export default function DashboardPage() {
               onClick={() => router.push("/app/transactions")}
               className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
             >
-              <MerchantAvatar name={tx.merchant} color={tx.merchantColor} />
+                    <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
@@ -266,7 +264,7 @@ export default function DashboardPage() {
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${tx.categoryColor}`}>{tx.category}</span>
               </div>
               <div className="text-right shrink-0">
-                <div className="text-sm font-semibold text-gray-900">${Math.abs(tx.amount).toFixed(2)}</div>
+                <AmountDisplay amount={tx.amount} className="text-sm" />
                 <div className="text-xs text-gray-400">{tx.dateStr}</div>
               </div>
             </motion.div>

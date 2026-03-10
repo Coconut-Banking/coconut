@@ -28,6 +28,21 @@ export default function SettingsPage() {
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const disconnectBank = async () => {
+    if (!confirm("Disconnect your bank? You can reconnect anytime to get real transactions.")) return;
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/plaid/disconnect", { method: "POST" });
+      if (res.ok) {
+        if (typeof sessionStorage !== "undefined") sessionStorage.removeItem("tx_prod_sync_done");
+        window.location.href = "/connect";
+      } else alert("Failed to disconnect");
+    } finally {
+      setDisconnecting(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -177,12 +192,9 @@ export default function SettingsPage() {
                 <div className="bg-white rounded-2xl border border-gray-100 p-6">
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-sm font-semibold text-gray-900">Connected banks</h2>
-                    {linked && (
-                      <a href="/connect" className="text-sm text-[#3D8E62] font-medium hover:underline">+ Add account</a>
-                    )}
-                    {!linked && (
-                      <a href="/connect" className="text-sm text-[#3D8E62] font-medium hover:underline">+ Add account</a>
-                    )}
+                    <a href="/connect" className="text-sm text-[#3D8E62] font-medium hover:underline">
+                      {linked ? "+ Add account" : "Connect bank"}
+                    </a>
                   </div>
                   <div className="space-y-3">
                     {banks.length === 0 && linked && !plaidAccounts ? (
@@ -190,30 +202,37 @@ export default function SettingsPage() {
                     ) : banks.length === 0 && linked ? (
                       <div className="py-6 text-center text-sm text-gray-500">No accounts found.</div>
                     ) : (
-                    banks.map((bank) => (
-                      <div key={bank.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl hover:border-gray-200 transition-colors">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
-                          style={{ backgroundColor: bank.color }}
-                        >
-                          {bank.name[0]}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-semibold text-gray-900">{bank.name}</div>
-                          <div className="text-xs text-gray-400">{bank.accounts}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">Connected {bank.connected}</div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <div className="flex items-center gap-1 text-xs text-[#3D8E62]">
-                            <CheckCircle2 size={12} />
-                            Active
+                      <>
+                        {/* Show first 3 accounts as a summary; one Disconnect clears everything */}
+                        {banks.slice(0, 3).map((bank) => (
+                          <div key={bank.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
+                              style={{ backgroundColor: bank.color }}
+                            >
+                              {bank.name[0]}
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-sm font-semibold text-gray-900">{bank.name}</div>
+                              <div className="text-xs text-gray-400">{bank.accounts}</div>
+                            </div>
                           </div>
-                          <button className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1.5 border border-red-100 rounded-lg hover:border-red-200 transition-colors">
-                            Disconnect
+                        ))}
+                        {banks.length > 3 && (
+                          <div className="text-xs text-gray-500 px-4 py-2">
+                            +{banks.length - 3} more accounts
+                          </div>
+                        )}
+                        <div className="pt-2">
+                          <button
+                            onClick={disconnectBank}
+                            disabled={disconnecting}
+                            className="w-full text-sm text-red-600 hover:text-red-700 px-4 py-3 border border-red-200 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+                          >
+                            {disconnecting ? "Disconnecting…" : "Disconnect bank"}
                           </button>
                         </div>
-                      </div>
-                    ))
+                      </>
                     )}
                   </div>
                 </div>

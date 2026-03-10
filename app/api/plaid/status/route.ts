@@ -6,14 +6,15 @@ const DEMO_USER_ID = "demo-sandbox-user";
 
 export async function GET() {
   const { userId } = await auth();
-  // Fall back to demo user when no auth (e.g. testing from app with demo Plaid link)
-  const effectiveUserId = userId ?? DEMO_USER_ID;
+  // Production: require real auth, never use demo/sandbox user
+  const effectiveUserId =
+    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  if (!effectiveUserId) {
+    return NextResponse.json({ linked: false });
+  }
 
   try {
-    let token = await getPlaidTokenForUser(effectiveUserId);
-    if (!token && userId) {
-      token = await getPlaidTokenForUser(DEMO_USER_ID);
-    }
+    const token = await getPlaidTokenForUser(effectiveUserId);
     return NextResponse.json({ linked: Boolean(token) });
   } catch {
     return NextResponse.json({ linked: false });
