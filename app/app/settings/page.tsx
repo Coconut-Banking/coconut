@@ -26,6 +26,19 @@ export default function SettingsPage() {
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const disconnectBank = async () => {
+    if (!confirm("Disconnect your bank? You can reconnect anytime to get real transactions.")) return;
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/plaid/disconnect", { method: "POST" });
+      if (res.ok) window.location.href = "/connect";
+      else alert("Failed to disconnect");
+    } finally {
+      setDisconnecting(false);
+    }
+  };
 
   useEffect(() => {
     if (linked) {
@@ -199,8 +212,12 @@ export default function SettingsPage() {
                             <CheckCircle2 size={12} />
                             Active
                           </div>
-                          <button className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1.5 border border-red-100 rounded-lg hover:border-red-200 transition-colors">
-                            Disconnect
+                          <button
+                            onClick={disconnectBank}
+                            disabled={disconnecting}
+                            className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1.5 border border-red-100 rounded-lg hover:border-red-200 transition-colors disabled:opacity-50"
+                          >
+                            {disconnecting ? "Disconnecting…" : "Disconnect"}
                           </button>
                         </div>
                       </div>

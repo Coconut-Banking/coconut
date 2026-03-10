@@ -589,11 +589,17 @@ export default function TransactionsPage() {
   return (
     <div className="max-w-4xl mx-auto px-8 py-8">
       {linked && (
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
             <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
             Live from linked account
           </span>
+          <Link
+            href="/app/settings"
+            className="text-xs text-[#3D8E62] hover:underline"
+          >
+            Seeing old or duplicate transactions? Disconnect & reconnect in Settings.
+          </Link>
         </div>
       )}
       <div className="mb-6">
