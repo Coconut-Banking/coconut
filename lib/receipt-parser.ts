@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { getGmailClient } from "./google-auth";
 import { getSupabase } from "./supabase";
 import { matchReceiptsToTransactions } from "./receipt-matcher";
+import { GMAIL, AI } from "./config";
 // import { reEmbedWithReceipts } from "./transaction-sync";
 
 const openai = process.env.OPENAI_API_KEY
@@ -58,11 +59,11 @@ export async function parseReceiptEmail(emailBody: string): Promise<{
   }
 
   // Truncate very long emails to stay within token limits - but take more content for better parsing
-  const body = emailBody.length > 12000 ? emailBody.slice(0, 12000) : emailBody;
+  const body = emailBody.length > GMAIL.EMAIL_MAX_CHARS ? emailBody.slice(0, GMAIL.EMAIL_MAX_CHARS) : emailBody;
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: AI.MODEL,
       messages: [{
         role: "user",
         content: `Extract purchase details from this email. Return ONLY valid JSON.
@@ -178,7 +179,7 @@ ${body}`
 
 export async function scanGmailForReceipts(
   clerkUserId: string,
-  daysBack: number = 7,
+  daysBack: number = GMAIL.DEFAULT_SCAN_DAYS,
   detailed: boolean = true,
   forceRescan: boolean = false
 ): Promise<{ scanned: number; found: number; new: number; matched: number; errors: number; receipts?: any[]; error?: string }> {
@@ -207,7 +208,7 @@ export async function scanGmailForReceipts(
   const listResp = await gmail.users.messages.list({
     userId: "me",
     q: query,
-    maxResults: 200, // Get even more emails
+    maxResults: GMAIL.MAX_RESULTS,
   });
 
   const messageIds = (listResp.data.messages || []).map((m) => m.id!).filter(Boolean);

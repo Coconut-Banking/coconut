@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getPlaidConfig } from "@/lib/plaid";
 import { Products, CountryCode } from "plaid";
-
-const DEMO_USER_ID = "demo-sandbox-user";
+import { getEffectiveUserId } from "@/lib/demo";
+import { SYNC } from "@/lib/config";
 
 export async function POST() {
-  const { userId } = await auth();
-  // Production: require real auth, never use demo/sandbox user
-  const effectiveUserId =
-    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Sign in to connect your bank" }, { status: 401 });
   }
@@ -41,7 +37,7 @@ export async function POST() {
       products: [Products.Transactions],
       country_codes: [CountryCode.Us, CountryCode.Ca],
       language: "en",
-      transactions: { days_requested: 730 },
+      transactions: { days_requested: SYNC.PLAID_HISTORY_DAYS },
       redirect_uri: redirectUri,
     });
     return NextResponse.json({ link_token: response.data.link_token });

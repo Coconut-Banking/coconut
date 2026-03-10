@@ -3,7 +3,7 @@
  */
 import type { Transaction as PlaidTransaction } from "plaid";
 
-const CATEGORY_COLORS: Record<string, string> = {
+export const CATEGORY_COLORS: Record<string, string> = {
   ENTERTAINMENT: "bg-purple-100 text-purple-700",
   RESTAURANTS: "bg-orange-100 text-orange-700",
   GROCERIES: "bg-emerald-100 text-emerald-700",
@@ -22,7 +22,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   RENT_AND_UTILITIES: "bg-gray-100 text-gray-700",
 };
 
-const MERCHANT_COLORS = [
+export const MERCHANT_COLORS = [
   "#E50914", "#1DB954", "#00674B", "#FF9900", "#003366", "#7BB848", "#555555",
   "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F", "#1A1A1A", "#4A90D9",
 ];

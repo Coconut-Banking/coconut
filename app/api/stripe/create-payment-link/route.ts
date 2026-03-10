@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
+import { DEFAULT_CURRENCY } from "@/lib/currency";
 
 /**
  * POST /api/stripe/create-payment-link
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
       line_items: [
         {
           price_data: {
-            currency: "usd",
+            currency: DEFAULT_CURRENCY,
             product_data: {
               name: `Payment request${description ? `: ${description}` : ""}`,
               description: body.recipientName ? `Requested from ${body.recipientName}` : undefined,

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
-
-const DEMO_USER_ID = "demo-sandbox-user";
+import { getEffectiveUserId } from "@/lib/demo";
 
 /**
  * POST /api/plaid/wipe
@@ -10,9 +8,7 @@ const DEMO_USER_ID = "demo-sandbox-user";
  * Use when you want to start completely fresh before relinking.
  */
 export async function POST() {
-  const { userId } = await auth();
-  const effectiveUserId =
-    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Sign in to wipe data" }, { status: 401 });
   }

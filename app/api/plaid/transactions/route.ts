@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
+import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
 import {
   needsLLMNormalization,
   normalizeMerchantsWithLLM,
@@ -56,31 +57,6 @@ export async function GET() {
     if (idsToDelete.length > 0) {
       await db.from("transactions").delete().in("id", idsToDelete);
     }
-
-    // Map to UI shape (reuse existing mapper logic inline)
-    const CATEGORY_COLORS: Record<string, string> = {
-      ENTERTAINMENT: "bg-purple-100 text-purple-700",
-      RESTAURANTS: "bg-orange-100 text-orange-700",
-      GROCERIES: "bg-emerald-100 text-emerald-700",
-      TRAVEL: "bg-cyan-100 text-cyan-700",
-      TRANSPORTATION: "bg-blue-100 text-blue-700",
-      SHOPPING: "bg-amber-100 text-amber-700",
-      GENERAL_MERCHANDISE: "bg-amber-100 text-amber-700",
-      UTILITIES: "bg-gray-100 text-gray-700",
-      RENT_AND_UTILITIES: "bg-gray-100 text-gray-700",
-      HEALTHCARE: "bg-pink-100 text-pink-700",
-      FITNESS: "bg-pink-100 text-pink-700",
-      SUBSCRIPTIONS: "bg-purple-100 text-purple-700",
-      PERSONAL_CARE: "bg-indigo-100 text-indigo-700",
-      GENERAL_SERVICES: "bg-slate-100 text-slate-700",
-      FOOD_AND_DRINK: "bg-orange-100 text-orange-700",
-      HOME_IMPROVEMENT: "bg-teal-100 text-teal-700",
-    };
-
-    const MERCHANT_COLORS = [
-      "#E50914", "#1DB954", "#00674B", "#FF9900", "#003366", "#7BB848", "#555555",
-      "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F", "#1A1A1A", "#4A90D9",
-    ];
 
     function hashColor(str: string): string {
       let h = 0;

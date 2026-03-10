@@ -19,7 +19,7 @@ function buildEmbedText(row: {
 }): string {
   const merchant = row.merchant_name || row.raw_name || "";
   const category = (row.primary_category || "").replace(/_/g, " ").toLowerCase();
-  return `${merchant} ${category} $${Math.abs(row.amount).toFixed(2)} ${row.date}`.trim();
+  return `${merchant} ${category} ${Math.abs(row.amount).toLocaleString("en-US", { style: "currency", currency: "USD" })} ${row.date}`.trim();
 }
 
 async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {

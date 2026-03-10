@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { savePlaidToken, syncTransactionsForUser, embedTransactionsForUser } from "@/lib/transaction-sync";
-
-const DEMO_USER_ID = "demo-sandbox-user";
+import { getEffectiveUserId } from "@/lib/demo";
 
 export async function POST(request: NextRequest) {
-  const { userId } = await auth();
-  // Production: require real auth, never use demo/sandbox user
-  const effectiveUserId =
-    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Sign in to connect your bank" }, { status: 401 });
   }

@@ -6,9 +6,7 @@ const openai = process.env.OPENAI_API_KEY
 
 const paddleOcrUrl = process.env.PADDLEOCR_API_URL?.replace(/\/$/, "");
 const paddleAistudioToken = process.env.PADDLEOCR_AI_STUDIO_TOKEN;
-const paddleAistudioUrl =
-  process.env.PADDLEOCR_AI_STUDIO_URL?.replace(/\/$/, "") ||
-  "https://b3xbb1f6zar0x9me.aistudio-app.com/layout-parsing";
+const paddleAistudioUrl = process.env.PADDLEOCR_AI_STUDIO_URL?.replace(/\/$/, "");
 
 const SYSTEM_PROMPT_IMAGE = `You are a receipt parser. Given a photo of a receipt, extract structured data as JSON.
 
@@ -87,7 +85,7 @@ async function paddleAistudioOcr(
   imageBase64: string,
   fileType: 0 | 1
 ): Promise<string | null> {
-  if (!paddleAistudioToken) return null;
+  if (!paddleAistudioToken || !paddleAistudioUrl) return null;
   try {
     const payload = {
       file: imageBase64,

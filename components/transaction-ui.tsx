@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { getMerchantLogoDomain } from "@/lib/merchant-logos";
+import { formatCurrencyAbs } from "@/lib/currency";
 
 /** Format amount with + / - . Only inflows (+) get green; outflows stay neutral. */
 export function AmountDisplay({ amount, className = "" }: { amount: number; className?: string }) {
   const isInflow = amount > 0;
   const sign = isInflow ? "+" : "-";
-  const abs = Math.abs(amount);
   return (
     <span
       className={
@@ -16,7 +16,7 @@ export function AmountDisplay({ amount, className = "" }: { amount: number; clas
           : `font-semibold text-gray-900 ${className}`
       }
     >
-      {sign}${abs.toFixed(2)}
+      {sign}{formatCurrencyAbs(amount)}
     </span>
   );
 }

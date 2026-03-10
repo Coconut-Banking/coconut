@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { canAccessGroup } from "@/lib/group-access";
+import { formatCurrency } from "@/lib/currency";
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
   const shareSum = shares.reduce((s, sh) => s + Number(sh.amount), 0);
   if (Math.abs(shareSum - totalAmount) > 0.01) {
     return NextResponse.json(
-      { error: `Shares must sum to $${totalAmount.toFixed(2)}` },
+      { error: `Shares must sum to ${formatCurrency(totalAmount)}` },
       { status: 400 }
     );
   }
