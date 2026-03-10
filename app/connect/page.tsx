@@ -74,6 +74,7 @@ function ConnectBankContent() {
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("link");
   const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [isSandbox, setIsSandbox] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isExchanging, setIsExchanging] = useState(false);
 
@@ -105,6 +106,7 @@ function ConnectBankContent() {
           return;
         }
         setLinkToken(data.link_token ?? null);
+        setIsSandbox(data.plaid_env !== "production");
       })
       .catch((err) => {
         if (!cancelled) setError(err.message ?? "Failed to load");
@@ -219,9 +221,11 @@ function ConnectBankContent() {
                             </>
                           )}
                         </button>
-                        <p className="text-xs text-gray-400 mt-4 text-center">
-                          Sandbox: use <strong>user_good</strong> / <strong>pass_good</strong> to test
-                        </p>
+                        {isSandbox && (
+                          <p className="text-xs text-gray-400 mt-4 text-center">
+                            Sandbox: use <strong>user_good</strong> / <strong>pass_good</strong> to test
+                          </p>
+                        )}
                       </>
                     ) : (
                       <div className="text-center py-4">

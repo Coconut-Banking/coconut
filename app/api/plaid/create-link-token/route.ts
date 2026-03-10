@@ -12,7 +12,7 @@ export async function POST() {
   }
 
   const client = getPlaidClient();
-  const { isConfigured } = getPlaidConfig();
+  const { isConfigured, env } = getPlaidConfig();
   if (!client || !isConfigured) {
     return NextResponse.json(
       { error: "Plaid is not configured. Set PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET in .env.local." },
@@ -40,7 +40,10 @@ export async function POST() {
       transactions: { days_requested: SYNC.PLAID_HISTORY_DAYS },
       redirect_uri: redirectUri,
     });
-    return NextResponse.json({ link_token: response.data.link_token });
+    return NextResponse.json({
+      link_token: response.data.link_token,
+      plaid_env: env,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to create link token";
     const hint =
