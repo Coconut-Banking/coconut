@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useUser } from "@clerk/nextjs";
 import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -15,9 +16,10 @@ const sections = [
 ];
 
 export default function SettingsPage() {
+  const { user } = useUser();
   const [activeSection, setActiveSection] = useState("profile");
-  const [name, setName] = useState("Jamie Doe");
-  const [email, setEmail] = useState("jamie@example.com");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [saved, setSaved] = useState(false);
   const [twoFA, setTwoFA] = useState(true);
   const [notifications, setNotifications] = useState(true);
@@ -26,6 +28,13 @@ export default function SettingsPage() {
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      setName(user.fullName ?? "");
+      setEmail(user.primaryEmailAddress?.emailAddress ?? "");
+    }
+  }, [user]);
 
   useEffect(() => {
     if (linked) {
@@ -172,7 +181,7 @@ export default function SettingsPage() {
                       <a href="/connect" className="text-sm text-[#3D8E62] font-medium hover:underline">+ Add account</a>
                     )}
                     {!linked && (
-                      <button className="text-sm text-[#3D8E62] font-medium hover:underline">+ Add account</button>
+                      <a href="/connect" className="text-sm text-[#3D8E62] font-medium hover:underline">+ Add account</a>
                     )}
                   </div>
                   <div className="space-y-3">

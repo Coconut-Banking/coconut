@@ -13,7 +13,12 @@ export async function PUT(
   }
 
   const { id } = await params;
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const { items, subtotal, tax, tip, total, merchant_name, other_fees } = body;
 
   const db = getSupabase();

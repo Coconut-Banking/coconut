@@ -34,6 +34,9 @@ export function useTransactions() {
           setTransactions(data as UITransaction[]);
         }
       })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });

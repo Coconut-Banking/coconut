@@ -323,7 +323,6 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
                     rows={3}
                   />
-                  <button className="mt-1.5 text-xs text-[#3D8E62] font-medium">Save note</button>
                 </div>
               )}
               <button
@@ -561,6 +560,8 @@ export default function TransactionsPage() {
   // Real-time filter: page search bar. Client-side only, no LLM.
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [dateFilter, setDateFilter] = useState("This month");
+  const [typeFilter, setTypeFilter] = useState("All");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
   const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
@@ -585,9 +586,47 @@ export default function TransactionsPage() {
   // Real-time filter (page search bar): client-side, no LLM
   const filteredBySearch = filterTransactionsByQuery(baseList, filterQuery);
   // Category filter
-  const filtered = selectedCategory === "All"
+  const afterCategory = selectedCategory === "All"
     ? filteredBySearch
     : filteredBySearch.filter((tx) => tx.category === selectedCategory);
+  // Date filter
+  const afterDate = (() => {
+    if (dateFilter === "All time") return afterCategory;
+    const now = new Date();
+    let cutoff: Date;
+    switch (dateFilter) {
+      case "Last month": {
+        cutoff = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        return afterCategory.filter((tx) => {
+          const d = new Date(tx.date);
+          return d >= cutoff && d <= endOfLastMonth;
+        });
+      }
+      case "Last 3 months":
+        cutoff = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        return afterCategory.filter((tx) => new Date(tx.date) >= cutoff);
+      case "This year":
+        cutoff = new Date(now.getFullYear(), 0, 1);
+        return afterCategory.filter((tx) => new Date(tx.date) >= cutoff);
+      default: // "This month"
+        cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
+        return afterCategory.filter((tx) => new Date(tx.date) >= cutoff);
+    }
+  })();
+  // Type filter
+  const filtered = (() => {
+    switch (typeFilter) {
+      case "Recurring":
+        return afterDate.filter((tx) => tx.isRecurring);
+      case "Split":
+        return afterDate.filter((tx) => tx.hasSplitSuggestion);
+      case "One-time":
+        return afterDate.filter((tx) => !tx.isRecurring);
+      default:
+        return afterDate;
+    }
+  })();
 
   // Build unique category tabs from actual transaction data (use baseList so categories reflect current view)
   const categoryTabs = ["All", ...Array.from(
@@ -771,11 +810,16 @@ export default function TransactionsPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-2">Date</div>
-                <select className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]">
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
+                >
                   <option>This month</option>
                   <option>Last month</option>
                   <option>Last 3 months</option>
                   <option>This year</option>
+                  <option>All time</option>
                 </select>
               </div>
               <div>
@@ -810,7 +854,13 @@ export default function TransactionsPage() {
                 <div className="space-y-1.5">
                   {["All", "Recurring", "Split", "One-time"].map((type) => (
                     <label key={type} className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="type" defaultChecked={type === "All"} className="accent-[#3D8E62]" />
+                      <input
+                        type="radio"
+                        name="type"
+                        checked={typeFilter === type}
+                        onChange={() => setTypeFilter(type)}
+                        className="accent-[#3D8E62]"
+                      />
                       <span className="text-xs text-gray-600">{type}</span>
                     </label>
                   ))}
@@ -819,6 +869,8 @@ export default function TransactionsPage() {
               <button
                 onClick={() => {
                   setSelectedCategory("All");
+                  setDateFilter("This month");
+                  setTypeFilter("All");
                   setFilterQuery("");
                 }}
                 className="w-full text-xs text-gray-500 hover:text-gray-700 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"

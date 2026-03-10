@@ -321,9 +321,17 @@ export function useReceiptSplit() {
 }
 
 async function resizeImage(file: File, maxDim: number): Promise<File> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to load image"));
+    };
+
     img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
       const { width, height } = img;
       if (width <= maxDim && height <= maxDim) {
         resolve(file);
@@ -333,14 +341,25 @@ async function resizeImage(file: File, maxDim: number): Promise<File> {
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
-      const ctx = canvas.getContext("2d")!;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Failed to get canvas context"));
+        return;
+      }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(
-        (blob) => resolve(new File([blob!], file.name, { type: "image/jpeg" })),
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Failed to create image blob"));
+            return;
+          }
+          resolve(new File([blob], file.name, { type: "image/jpeg" }));
+        },
         "image/jpeg",
         0.85
       );
     };
-    img.src = URL.createObjectURL(file);
+
+    img.src = objectUrl;
   });
 }

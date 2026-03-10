@@ -23,12 +23,13 @@ export function useGmail() {
     tokenError: false,
   });
 
-  const fetchStatus = useCallback(async () => {
+  const fetchStatus = useCallback(async (isCancelled?: () => boolean) => {
     console.log("[useGmail] Fetching Gmail status...");
     try {
       const res = await fetch("/api/gmail/status");
       console.log("[useGmail] Status response:", res.status);
 
+      if (isCancelled?.()) return;
       if (!res.ok) {
         console.error("[useGmail] Status check failed:", res.status);
         setState((prev) => ({ ...prev, loading: false }));
@@ -38,6 +39,7 @@ export function useGmail() {
       const data = await res.json();
       console.log("[useGmail] Status data:", data);
 
+      if (isCancelled?.()) return;
       setState((prev) => ({
         ...prev,
         connected: data.connected,
@@ -47,11 +49,15 @@ export function useGmail() {
       }));
     } catch (e) {
       console.error("[useGmail] Status check error:", e);
-      setState((prev) => ({ ...prev, loading: false }));
+      if (!isCancelled?.()) setState((prev) => ({ ...prev, loading: false }));
     }
   }, []);
 
-  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchStatus(() => cancelled);
+    return () => { cancelled = true; };
+  }, [fetchStatus]);
 
   const connect = useCallback(async () => {
     console.log("[useGmail] Starting Gmail connection...");

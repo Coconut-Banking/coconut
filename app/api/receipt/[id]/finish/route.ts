@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
+import { randomUUID } from "crypto";
 
 export async function POST(
   req: NextRequest,
@@ -12,7 +13,12 @@ export async function POST(
   }
 
   const { id } = await params;
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const { groupId } = body;
 
   if (!groupId) {
@@ -78,13 +84,14 @@ export async function POST(
     .from("transactions")
     .insert({
       clerk_user_id: userId,
+      plaid_transaction_id: `manual_${randomUUID()}`,
       merchant_name: receipt.merchant_name || "Receipt Split",
       raw_name: receipt.merchant_name || "Receipt Split",
-      amount: -(receipt.total || 0), // Negative for expenses
+      amount: -(receipt.total || 0),
       date: new Date().toISOString().split('T')[0],
-      pending: false,
-      category: "Food & Drink",
-      source: "receipt_split",
+      is_pending: false,
+      primary_category: "Food & Drink",
+      detailed_category: null,
     })
     .select()
     .single();
@@ -138,7 +145,7 @@ export async function POST(
 
         if (!memberId) {
           // Try to find member by name
-          memberId = memberByName.get(assignment.assignee_name.toLowerCase()) || null;
+          memberId = memberByName.get(assignment.assignee_name?.toLowerCase()) || null;
         }
 
         if (!memberId) {
@@ -192,10 +199,13 @@ export async function POST(
     .eq("group_id", groupId);
 
   // Get all shares
-  const { data: allShares } = await db
-    .from("split_shares")
-    .select("split_transaction_id, member_id, amount")
-    .in("split_transaction_id", (allSplits ?? []).map(s => s.id));
+  const allSplitIds = (allSplits ?? []).map(s => s.id);
+  const { data: allShares } = allSplitIds.length > 0
+    ? await db
+        .from("split_shares")
+        .select("split_transaction_id, member_id, amount")
+        .in("split_transaction_id", allSplitIds)
+    : { data: [] as { split_transaction_id: string; member_id: string; amount: number }[] };
 
   // Get settlements
   const { data: settlements } = await db

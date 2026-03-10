@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { TrendingDown, RefreshCw, Users, DollarSign, ArrowRight } from "lucide-react";
 import { motion } from "motion/react";
+import { useUser } from "@clerk/nextjs";
 import { useTransactions } from "@/hooks/useTransactions";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
@@ -66,6 +67,7 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { user } = useUser();
   const { transactions, linked, loading } = useTransactions();
   const recentTransactions = transactions.slice(0, 5);
   const { spendingData, categoryData, monthlySpend } = deriveFromTransactions(transactions);
@@ -92,9 +94,11 @@ export default function DashboardPage() {
         </div>
       )}
       <div className="mb-7">
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Good morning, Jamie ☀️</h1>
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+          {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {user?.firstName ?? "there"} ☀️
+        </h1>
         <p className="text-sm text-gray-500 mt-1">
-          February 2026 · <span className="text-[#3D8E62] font-medium">{transactions.length} transactions</span>
+          {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#3D8E62] font-medium">{transactions.length} transactions</span>
         </p>
       </div>
 

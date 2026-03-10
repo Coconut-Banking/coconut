@@ -31,6 +31,7 @@ export function useGroupListen(
       es.onerror = () => {
         es?.close();
         es = null;
+        clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connect, 2000);
       };
     };
