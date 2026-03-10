@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, group_id, transaction_id, created_by, created_at,
+      id, group_id, transaction_id, created_by, created_at, payer_member_id,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .in("group_id", sharedGroupIds)
@@ -136,8 +136,14 @@ export async function GET(req: NextRequest) {
 
     const paidRows: { member_id: string; amount: number }[] = [];
     for (const s of groupSplits) {
-      const ownerId = txOwnerById.get(s.transaction_id);
-      const memberId = ownerId ? memberByUserId.get(ownerId) : null;
+      const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
+      const memberId =
+        payerMemberId && groupMembers.some((m) => m.id === payerMemberId)
+          ? payerMemberId
+          : (() => {
+              const ownerId = txOwnerById.get(s.transaction_id);
+              return ownerId ? memberByUserId.get(ownerId) : null;
+            })();
       if (memberId) {
         const tx = (s as { transactions?: { amount?: number } | { amount?: number }[] }).transactions;
         const amt = Number(Array.isArray(tx) ? tx[0]?.amount : tx?.amount) || 0;
@@ -185,8 +191,14 @@ export async function GET(req: NextRequest) {
       const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
       const totalShares = shareList.length;
       const txAmount = Math.abs(tx?.amount ?? 0);
-      const payerUserId = txOwnerById.get(s.transaction_id);
-      const payerMemberId = payerUserId ? memberByUserId.get(payerUserId) : null;
+      const explicitPayer = (s as { payer_member_id?: string | null }).payer_member_id;
+      const payerMemberId =
+        explicitPayer && groupMembers.some((m) => m.id === explicitPayer)
+          ? explicitPayer
+          : (() => {
+              const ownerId = txOwnerById.get(s.transaction_id);
+              return ownerId ? memberByUserId.get(ownerId) : null;
+            })();
 
       const paidByMe = payerMemberId === myMember.id;
       const paidByThem = payerMemberId === theirMember.id;

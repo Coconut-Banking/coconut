@@ -51,7 +51,7 @@ export async function GET(
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, transaction_id, created_by, created_at,
+      id, transaction_id, created_by, created_at, payer_member_id,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .eq("group_id", id)
@@ -99,12 +99,18 @@ export async function GET(
     (members ?? []).filter((m) => m.user_id).map((m) => [m.user_id, m.id])
   );
 
-  // Splits are already deduped by transaction_id; build paidRows
+  // Splits deduped by transaction_id; build paidRows (use payer_member_id when set)
   const paidRows: { member_id: string; amount: number }[] = [];
   for (const s of splits) {
     const tid = s.transaction_id as string;
-    const ownerId = txOwnerById.get(tid);
-    const memberId = ownerId ? memberByUserId.get(ownerId) : null;
+    const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
+    const memberId =
+      payerMemberId && (members ?? []).some((m) => m.id === payerMemberId)
+        ? payerMemberId
+        : (() => {
+            const ownerId = txOwnerById.get(tid);
+            return ownerId ? memberByUserId.get(ownerId) : null;
+          })();
     if (memberId) {
       const tx = (s as { transactions?: { amount?: number } | { amount?: number }[] }).transactions;
       const amt = Number(Array.isArray(tx) ? tx[0]?.amount : tx?.amount) || 0;
@@ -133,21 +139,28 @@ export async function GET(
   const balances = computeBalances(paidRows, owedRows, paidSettlements, receivedSettlements);
   const suggestions = getSuggestedSettlements(balances);
   const totalSpend = paidRows.reduce((a, r) => a + r.amount, 0);
+  const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
+
   const activity = splits.map((s) => {
     const tx = (s as { transactions?: { merchant_name?: string; raw_name?: string; amount?: number } }).transactions;
     const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
     const totalShares = shareList.length;
+    const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
+    const payerMember = payerMemberId ? memberMap.get(payerMemberId) : null;
+    const ownerId = txOwnerById.get(s.transaction_id);
+    const ownerMember = ownerId ? Array.from(memberMap.values()).find((m) => m.user_id === ownerId) : null;
+    const paidByMember = payerMember ?? ownerMember;
     return {
       id: s.id,
       merchant: tx?.merchant_name ?? tx?.raw_name ?? "Unknown",
       amount: Math.abs(tx?.amount ?? 0),
       paidBy: s.created_by,
+      paidByDisplayName: paidByMember?.display_name ?? "Someone",
       splitCount: totalShares,
       createdAt: s.created_at,
     };
   });
 
-  const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
   return NextResponse.json({
     ...group,
     group,

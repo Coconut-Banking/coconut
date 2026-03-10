@@ -10,7 +10,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -87,30 +87,52 @@ function AddExpenseModal({
   const [personKey, setPersonKey] = useState<string | null>(selectedPersonKey);
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
+  const [payerMemberId, setPayerMemberId] = useState<string | null>(null);
+  const [splitMode, setSplitMode] = useState<"equal" | "person" | "custom">("equal");
+  const [customShares, setCustomShares] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { user } = useUser();
   const { detail: groupDetail } = useGroupDetail(groupId);
 
+  const members = groupDetail?.members ?? [];
+  const currentUserMember = members.find((m) => m.user_id === user?.id);
+
+  const amt = parseFloat(amount) || 0;
+  const customSharesValid =
+    splitMode === "custom" &&
+    Object.values(customShares).reduce((s, v) => s + (parseFloat(v) || 0), 0) === amt &&
+    amt > 0;
+
   const save = async () => {
-    const amt = parseFloat(amount);
     if (!groupId || !amt || amt <= 0) {
       setError("Select a group and enter a valid amount.");
+      return;
+    }
+    if (splitMode === "custom" && !customSharesValid) {
+      setError("Custom amounts must add up to the total.");
       return;
     }
     setError(null);
     setSaving(true);
     try {
+      const payload: Record<string, unknown> = {
+        groupId,
+        description: desc.trim() || "Expense",
+        amount: amt,
+        payerMemberId: payerMemberId || currentUserMember?.id || undefined,
+      };
+      if (splitMode === "person" && personKey) payload.personKey = personKey;
+      if (splitMode === "custom" && customSharesValid) {
+        payload.shares = Object.entries(customShares)
+          .filter(([, v]) => parseFloat(v) > 0)
+          .map(([memberId, v]) => ({ memberId, amount: parseFloat(v) }));
+      }
       const res = await fetch("/api/manual-expense", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          groupId,
-          description: desc.trim() || "Expense",
-          amount: amt,
-          personKey: personKey || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok) {
@@ -118,6 +140,8 @@ function AddExpenseModal({
         setAmount("");
         setGroupId(null);
         setPersonKey(null);
+        setPayerMemberId(null);
+        setCustomShares({});
         onSuccess();
         onClose();
       } else {
@@ -130,6 +154,17 @@ function AddExpenseModal({
     }
   };
 
+  const initCustomShares = (total = amt) => {
+    if (!groupDetail || !members.length || total <= 0) return;
+    const per = Math.floor((total / members.length) * 100) / 100;
+    const rem = Math.round((total - per * members.length) * 100) / 100;
+    const next: Record<string, string> = {};
+    members.forEach((m, i) => {
+      next[m.id] = (i === 0 ? per + rem : per).toFixed(2);
+    });
+    setCustomShares(next);
+  };
+
   return (
     <>
       <motion.div
@@ -137,32 +172,66 @@ function AddExpenseModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+        className="fixed inset-0 bg-black/30 backdrop-blur-md z-40"
       />
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        initial={{ opacity: 0, scale: 0.95, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        transition={{ type: "spring", damping: 28, stiffness: 320 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-6"
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ type: "spring", damping: 30, stiffness: 400 }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
-            <h3 className="text-base font-bold text-gray-900">Add an expense</h3>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92vh] flex flex-col border border-gray-100">
+          <div className="flex items-center justify-between px-6 py-5 shrink-0 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-100">
+            <h3 className="text-lg font-bold text-gray-900 tracking-tight">Add expense</h3>
             <button
               onClick={onClose}
-              className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"
+              className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
             >
-              <X size={14} />
+              <X size={18} />
             </button>
           </div>
-          <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1 min-h-0">
+          <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
-                In group
+              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
+                Amount
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg font-medium">$</span>
+                <input
+                  value={amount}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setAmount(v);
+                    if (splitMode === "custom") {
+                      const n = parseFloat(v) || 0;
+                      if (n > 0) initCustomShares(n);
+                    }
+                  }}
+                  placeholder="0.00"
+                  type="number"
+                  step="0.01"
+                  className="w-full pl-9 pr-4 py-3.5 text-lg font-semibold border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
+                What for
+              </label>
+              <input
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="Dinner, groceries, rent…"
+                className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
+                Group
               </label>
               {groups.length === 0 ? (
-                <p className="text-sm text-amber-600 py-3">
+                <p className="text-sm text-amber-600 py-4 px-4 rounded-2xl bg-amber-50 border border-amber-100">
                   Create a group first to add expenses.
                 </p>
               ) : (
@@ -171,10 +240,11 @@ function AddExpenseModal({
                   onChange={(e) => {
                     setGroupId(e.target.value || null);
                     setPersonKey(null);
+                    setCustomShares({});
                   }}
-                  className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                  className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
                 >
-                  <option value="">Select a group…</option>
+                  <option value="">Select a group</option>
                   {groups.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
@@ -184,97 +254,126 @@ function AddExpenseModal({
               )}
             </div>
 
-            {groupId && groupDetail && (
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
-                  Split with (optional)
-                </label>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setPersonKey(null)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left ${
-                      !personKey ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <Users size={16} className="text-gray-500" />
-                    <span className="text-sm font-medium text-gray-800">Everyone in group</span>
-                    <div
-                      className={`ml-auto w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                        !personKey ? "border-[#3D8E62] bg-[#3D8E62]" : "border-gray-300"
-                      }`}
-                    >
-                      {!personKey && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                    </div>
-                  </button>
-                  {groupDetail.members
-                    .filter((m) => m.user_id !== user?.id)
-                    .map((m) => {
-                      const key = m.user_id ?? m.email ?? `${groupId}-${m.id}`;
-                      const isSelected = personKey === key;
+            {groupId && groupDetail && members.length > 0 && (
+              <>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
+                    Paid by
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {members.map((m, i) => {
+                      const isPayer = (payerMemberId ?? currentUserMember?.id) === m.id;
                       return (
                         <button
                           key={m.id}
-                          onClick={() => setPersonKey(isSelected ? null : key)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left ${
-                            isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                          onClick={() => setPayerMemberId(m.id)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                            isPayer
+                              ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52]"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-600"
                           }`}
                         >
-                          <Avatar
-                            initials={m.display_name.slice(0, 2).toUpperCase()}
-                            color={MEMBER_COLORS[0]}
-                            size="sm"
-                          />
-                          <span className="text-sm font-medium text-gray-800">{m.display_name}</span>
-                          <div
-                            className={`ml-auto w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                              isSelected ? "border-[#3D8E62] bg-[#3D8E62]" : "border-gray-300"
-                            }`}
-                          >
-                            {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                          </div>
+                          <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
+                          {m.user_id === user?.id ? "You" : m.display_name}
                         </button>
                       );
                     })}
+                  </div>
                 </div>
-              </div>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
+                    Split
+                  </label>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => { setSplitMode("equal"); setPersonKey(null); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
+                        splitMode === "equal" ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
+                      }`}
+                    >
+                      <Users size={18} className="text-gray-500 shrink-0" />
+                      <span className="text-sm font-medium">Split equally</span>
+                      {splitMode === "equal" && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
+                    </button>
+                    {members.filter((m) => m.user_id !== user?.id).map((m) => {
+                      const key = m.user_id ?? m.email ?? `${groupId}-${m.id}`;
+                      const isSelected = splitMode === "person" && personKey === key;
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => { setSplitMode("person"); setPersonKey(isSelected ? null : key); }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
+                            isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
+                          }`}
+                        >
+                          <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[0]} size="sm" />
+                          <span className="text-sm font-medium">Split with {m.display_name}</span>
+                          {isSelected && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => {
+                        setSplitMode("custom");
+                        setPersonKey(null);
+                        initCustomShares();
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
+                        splitMode === "custom" ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
+                      }`}
+                    >
+                      <span className="text-base">✏️</span>
+                      <span className="text-sm font-medium">Custom amounts</span>
+                      {splitMode === "custom" && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
+                    </button>
+                  </div>
+                </div>
+                {splitMode === "custom" && amt > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <p className="text-xs text-gray-500">Enter each person&apos;s share (must total ${amt.toFixed(2)})</p>
+                    {members.map((m, i) => (
+                      <div key={m.id} className="flex items-center gap-3">
+                        <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
+                        <span className="text-sm font-medium w-24 truncate">{m.user_id === user?.id ? "You" : m.display_name}</span>
+                        <div className="flex-1 relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                          <input
+                            value={customShares[m.id] ?? ""}
+                            onChange={(e) => setCustomShares((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                            placeholder="0"
+                            type="number"
+                            step="0.01"
+                            className="w-full pl-7 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
-
-            <div className="border-t border-gray-100 pt-4 space-y-3">
-              <input
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="What's it for?"
-                className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
-              />
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
-                  $
-                </span>
-                <input
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  type="number"
-                  step="0.01"
-                  className="w-full pl-8 pr-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
-                />
-              </div>
-            </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
           </div>
-          <div className="px-6 pb-6 flex gap-3 shrink-0">
+          <div className="px-6 pb-6 pt-2 flex gap-3 shrink-0 bg-gray-50/30">
             <button
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+              className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm text-gray-600 font-semibold hover:bg-gray-100 transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={save}
-              disabled={groups.length === 0 || !groupId || !amount || parseFloat(amount) <= 0 || saving}
-              className="flex-1 py-2.5 rounded-xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+              disabled={
+                groups.length === 0 ||
+                !groupId ||
+                !amount ||
+                amt <= 0 ||
+                saving ||
+                (splitMode === "custom" && !customSharesValid)
+              }
+              className="flex-1 py-3 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
             >
-              {saving ? "Saving…" : "Save"}
+              {saving ? "Saving…" : "Add expense"}
             </button>
           </div>
         </div>
@@ -320,41 +419,51 @@ function SettleModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+        className="fixed inset-0 bg-black/30 backdrop-blur-md z-40"
       />
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        transition={{ type: "spring", damping: 28, stiffness: 320 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-6"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ type: "spring", damping: 30, stiffness: 400 }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
-          <div className="px-6 py-8 text-center">
-            <Avatar initials={person.initials} color={person.color} size="lg" />
-            <div className="mt-4 mb-1 text-lg font-bold text-gray-900">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-100">
+          <div className="px-6 py-10 text-center">
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="inline-flex"
+            >
+              <Avatar initials={person.initials} color={person.color} size="lg" />
+            </motion.div>
+            <div className="mt-5 mb-1 text-base font-semibold text-gray-600">
               {direction === "owes_you" ? `${person.displayName} owes you` : `You owe ${person.displayName}`}
             </div>
             <div
-              className={`text-3xl font-bold ${
+              className={`text-4xl font-bold tracking-tight ${
                 direction === "owes_you" ? "text-[#3D8E62]" : "text-red-500"
               }`}
             >
               ${amount.toFixed(2)}
             </div>
             {done ? (
-              <div className="mt-6 flex items-center justify-center gap-2 text-[#3D8E62] font-semibold">
-                <CheckCircle2 size={18} /> All settled!
-              </div>
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 flex items-center justify-center gap-2 text-[#3D8E62] font-semibold"
+              >
+                <CheckCircle2 size={20} /> All settled!
+              </motion.div>
             ) : (
-              <div className="mt-6 space-y-3">
+              <div className="mt-8 space-y-2">
                 {direction === "owes_you" && (
                   <button
                     onClick={() => {
                       onRequestPayment();
                       onClose();
                     }}
-                    className="w-full py-3 rounded-xl border border-[#3D8E62] text-[#3D8E62] font-semibold hover:bg-[#EEF7F2] transition-colors"
+                    className="w-full py-3.5 rounded-2xl border-2 border-[#3D8E62] text-[#3D8E62] font-semibold hover:bg-[#EEF7F2] transition-colors"
                   >
                     Request payment
                   </button>
@@ -362,7 +471,7 @@ function SettleModal({
                 <button
                   onClick={handleRecord}
                   disabled={recording}
-                  className="w-full py-3 rounded-xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white font-semibold transition-colors"
+                  className="w-full py-3.5 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
                 >
                   {recording
                     ? "Recording…"
@@ -372,7 +481,7 @@ function SettleModal({
                 </button>
                 <button
                   onClick={onClose}
-                  className="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors"
+                  className="w-full py-2.5 rounded-2xl text-sm text-gray-500 hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
@@ -386,7 +495,7 @@ function SettleModal({
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────
-export default function SharedPage() {
+function SharedPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useUser();
@@ -407,6 +516,7 @@ export default function SharedPage() {
   } | null>(null);
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupType, setNewGroupType] = useState<string>("other");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
@@ -456,7 +566,11 @@ export default function SharedPage() {
       const res = await fetch("/api/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newGroupName.trim(), ownerDisplayName: "You" }),
+        body: JSON.stringify({
+          name: newGroupName.trim(),
+          ownerDisplayName: "You",
+          group_type: ["home", "trip", "couple", "other"].includes(newGroupType) ? newGroupType : "other",
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -620,7 +734,7 @@ export default function SharedPage() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate">{a.merchant}</div>
                     <div className="text-xs text-gray-500">
-                      ${a.amount.toFixed(2)} split {a.splitCount} ways
+                      ${a.amount.toFixed(2)} · {(a as { paidByDisplayName?: string }).paidByDisplayName ?? "Someone"} paid · split {a.splitCount} ways
                     </div>
                   </div>
                 </div>
@@ -824,11 +938,12 @@ export default function SharedPage() {
       breakdown: [] as { in: string; amount: number; them_owe: boolean }[],
     })) ?? [];
 
+  const GROUP_EMOJI: Record<string, string> = { home: "🏠", trip: "✈️", couple: "💑", other: "👥" };
   const groupsData =
     summary?.groups?.map((g) => ({
       id: g.id,
       name: g.name,
-      emoji: "🏔️",
+      emoji: GROUP_EMOJI[(g as { groupType?: string }).groupType ?? "other"] ?? "👥",
       memberCount: g.memberCount,
       direction:
         g.myBalance > 0 ? ("owed" as const) : g.myBalance < 0 ? ("you_owe" as const) : ("settled" as const),
@@ -838,26 +953,28 @@ export default function SharedPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
-      <div className="flex items-center justify-between mb-7">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Shared</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Expenses with friends and groups</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
-          >
-            <Plus size={15} />
-            Add expense
-          </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-          >
-            <Users size={15} />
-            Create group
-          </button>
+      <div className="mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Shared</h1>
+            <p className="text-sm text-gray-500 mt-1">Split expenses with friends, roommates & trips</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-3.5 rounded-2xl text-sm font-semibold transition-all shadow-lg shadow-[#3D8E62]/25 hover:shadow-[#3D8E62]/30 hover:-translate-y-0.5"
+            >
+              <Plus size={18} strokeWidth={2.5} />
+              Add expense
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-2xl text-sm font-medium transition-colors"
+            >
+              <Users size={18} />
+              New group
+            </button>
+          </div>
         </div>
       </div>
 
@@ -865,32 +982,58 @@ export default function SharedPage() {
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl border border-gray-200 p-5 mb-6 shadow-sm"
+          className="bg-white rounded-2xl border border-gray-100 p-6 mb-6 shadow-lg shadow-gray-200/50"
         >
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">New group</h3>
-          <input
-            value={newGroupName}
-            onChange={(e) => { setNewGroupName(e.target.value); setCreateError(null); }}
-            placeholder="Group name"
-            className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm min-h-[44px] mb-3"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={createGroup}
-              disabled={!newGroupName.trim() || creating}
-              className="px-4 py-2.5 rounded-lg bg-[#3D8E62] text-white text-sm font-medium disabled:opacity-50 min-h-[44px]"
-            >
-              {creating ? "Creating…" : "Create"}
-            </button>
-            <button
-              onClick={() => { setShowCreate(false); setNewGroupName(""); setCreateError(null); }}
-              disabled={creating}
-              className="px-4 py-2.5 rounded-lg border border-gray-200 text-sm disabled:opacity-50 min-h-[44px]"
-            >
-              Cancel
-            </button>
+          <h3 className="text-base font-bold text-gray-900 mb-4">New group</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Name</label>
+              <input
+                value={newGroupName}
+                onChange={(e) => { setNewGroupName(e.target.value); setCreateError(null); }}
+                placeholder="e.g. Apartment, Vegas Trip"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Type</label>
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  { id: "home", label: "🏠 Home", desc: "Roommates" },
+                  { id: "trip", label: "✈️ Trip", desc: "Travel" },
+                  { id: "couple", label: "💑 Couple", desc: "Partners" },
+                  { id: "other", label: "👥 Other", desc: "Friends" },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setNewGroupType(t.id)}
+                    className={`px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                      newGroupType === t.id ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52]" : "border-gray-200 hover:bg-gray-50"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={createGroup}
+                disabled={!newGroupName.trim() || creating}
+                className="flex-1 py-3 rounded-xl bg-[#3D8E62] text-white text-sm font-semibold disabled:opacity-50 hover:bg-[#2D7A52] transition-colors"
+              >
+                {creating ? "Creating…" : "Create"}
+              </button>
+              <button
+                onClick={() => { setShowCreate(false); setNewGroupName(""); setCreateError(null); }}
+                disabled={creating}
+                className="px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-          {createError && <p className="text-sm text-red-600 mt-2">{createError}</p>}
+          {createError && <p className="text-sm text-red-600 mt-3">{createError}</p>}
         </motion.div>
       )}
 
@@ -1136,6 +1279,19 @@ export default function SharedPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function SharedPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
+        <div className="h-8 w-48 bg-gray-200 rounded animate-pulse mb-6" />
+        <div className="h-64 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    }>
+      <SharedPageContent />
+    </Suspense>
   );
 }
 

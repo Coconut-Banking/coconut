@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -657,7 +657,7 @@ function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: st
   });
 }
 
-export default function TransactionsPage() {
+function TransactionsPageContent() {
   const searchParams = useSearchParams();
   const { transactions, linked, loading, syncAndRefetch } = useTransactions();
   const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
@@ -1198,5 +1198,17 @@ export default function TransactionsPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function TransactionsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+      </div>
+    }>
+      <TransactionsPageContent />
+    </Suspense>
   );
 }

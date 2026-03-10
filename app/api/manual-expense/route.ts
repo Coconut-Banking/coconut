@@ -7,9 +7,10 @@ import { randomUUID } from "crypto";
 /**
  * POST /api/manual-expense
  * Create a manual expense and split it in a group.
- * Body: { amount: number, description: string, groupId: string, personKey?: string }
- * - If personKey provided: split between current user and that person (50/50)
- * - Else: split equally among all group members
+ * Body: { amount, description, groupId, personKey?, payerMemberId?, shares? }
+ * - personKey: split 50/50 with that person
+ * - shares: custom amounts [{ memberId, amount }] — must sum to amount
+ * - payerMemberId: who paid (default: current user)
  */
 export async function POST(req: NextRequest) {
   const userId = await getUserId();
@@ -20,6 +21,8 @@ export async function POST(req: NextRequest) {
   const amount = Number(body.amount);
   const description = (body.description ?? "Expense").toString().trim() || "Expense";
   const personKey = body.personKey ?? body.person_key;
+  const payerMemberId = body.payerMemberId ?? body.payer_member_id ?? null;
+  const customShares = body.shares as Array<{ memberId: string; amount: number }> | undefined;
 
   if (!groupId || !amount || amount <= 0) {
     return NextResponse.json(
@@ -42,13 +45,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Group has no members" }, { status: 400 });
   }
 
-  const payerMember = members.find((m) => m.user_id === userId);
-  if (!payerMember) {
+  const currentUserMember = members.find((m) => m.user_id === userId);
+  if (!currentUserMember) {
     return NextResponse.json({ error: "You are not a member of this group" }, { status: 400 });
   }
 
-  let shareMemberIds: string[];
-  if (personKey) {
+  let shares: { memberId: string; amount: number }[];
+  if (Array.isArray(customShares) && customShares.length > 0) {
+    const sum = customShares.reduce((s, sh) => s + Number(sh.amount), 0);
+    if (Math.abs(sum - amount) > 0.01) {
+      return NextResponse.json({ error: `Shares must sum to $${amount.toFixed(2)}` }, { status: 400 });
+    }
+    shares = customShares
+      .filter((s) => Number(s.amount) > 0)
+      .map((s) => ({ memberId: s.memberId, amount: Math.round(Number(s.amount) * 100) / 100 }));
+  } else if (personKey) {
     const memberIdFromKey =
       personKey.length > 37 && personKey[36] === "-" ? personKey.slice(37) : null;
     const otherMember = members.find((m) => {
@@ -61,17 +72,23 @@ export async function POST(req: NextRequest) {
     if (!otherMember) {
       return NextResponse.json({ error: "Person not found in group" }, { status: 404 });
     }
-    shareMemberIds = [payerMember.id, otherMember.id];
+    const half = Math.round((amount / 2) * 100) / 100;
+    shares = [
+      { memberId: currentUserMember.id, amount: half },
+      { memberId: otherMember.id, amount: amount - half },
+    ];
   } else {
-    shareMemberIds = members.map((m) => m.id);
+    const sharePerPerson = Math.floor((amount / members.length) * 100) / 100;
+    const remainder = Math.round((amount - sharePerPerson * members.length) * 100) / 100;
+    shares = members.map((m, i) => ({
+      memberId: m.id,
+      amount: i === 0 ? sharePerPerson + remainder : sharePerPerson,
+    }));
   }
 
-  const sharePerPerson = Math.floor((amount / shareMemberIds.length) * 100) / 100;
-  const remainder = Math.round((amount - sharePerPerson * shareMemberIds.length) * 100) / 100;
-  const shares = shareMemberIds.map((id, i) => ({
-    memberId: id,
-    amount: i === 0 ? sharePerPerson + remainder : sharePerPerson,
-  }));
+  const effectivePayer = payerMemberId
+    ? members.find((m) => m.id === payerMemberId)?.id ?? currentUserMember.id
+    : currentUserMember.id;
 
   const plaidId = `manual_${randomUUID()}`;
 
@@ -98,15 +115,34 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data: splitTx, error: splitError } = await db
+  let splitTx: { id: string } | null = null;
+  let splitError: { message?: string } | null = null;
+  const { data: st1, error: e1 } = await db
     .from("split_transactions")
     .insert({
       group_id: groupId,
       transaction_id: transaction.id,
       created_by: userId,
+      payer_member_id: effectivePayer,
     })
     .select("id")
     .single();
+  if (e1 && e1.message?.includes("column")) {
+    const { data: st2, error: e2 } = await db
+      .from("split_transactions")
+      .insert({
+        group_id: groupId,
+        transaction_id: transaction.id,
+        created_by: userId,
+      })
+      .select("id")
+      .single();
+    splitTx = st2;
+    splitError = e2;
+  } else {
+    splitTx = st1;
+    splitError = e1;
+  }
 
   if (splitError || !splitTx) {
     await db.from("transactions").delete().eq("id", transaction.id);

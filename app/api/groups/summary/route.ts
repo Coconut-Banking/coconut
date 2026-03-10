@@ -23,7 +23,7 @@ export async function GET() {
 
   const { data: groups } = await db
     .from("groups")
-    .select("id, name, owner_id, created_at")
+    .select("id, name, owner_id, created_at, group_type")
     .in("id", ids)
     .order("created_at", { ascending: false });
 
@@ -37,7 +37,7 @@ export async function GET() {
   const { data: splits } = await db
     .from("split_transactions")
     .select(`
-      id, group_id, transaction_id, created_by, created_at,
+      id, group_id, transaction_id, created_by, created_at, payer_member_id,
       transactions(amount)
     `)
     .in("group_id", groupIds)
@@ -116,8 +116,15 @@ export async function GET() {
 
     const paidRows: { member_id: string; amount: number }[] = [];
     for (const s of groupSplits) {
-      const ownerId = txOwnerById.get(s.transaction_id);
-      const memberId = ownerId ? memberByUserId.get(ownerId) : null;
+      const sWithPayer = s as { payer_member_id?: string | null };
+      const payerMemberId = sWithPayer.payer_member_id;
+      const memberId =
+        payerMemberId && groupMembers.some((m) => m.id === payerMemberId)
+          ? payerMemberId
+          : (() => {
+              const ownerId = txOwnerById.get(s.transaction_id);
+              return ownerId ? memberByUserId.get(ownerId) : null;
+            })();
       if (memberId) {
         const tx = (s as { transactions?: { amount?: number } | { amount?: number }[] }).transactions;
         const amt = Number(Array.isArray(tx) ? tx[0]?.amount : tx?.amount) || 0;
@@ -172,6 +179,7 @@ export async function GET() {
     return {
       id: g.id,
       name: g.name,
+      groupType: (g as { group_type?: string }).group_type ?? "other",
       memberCount: groupMembers.length,
       myBalance: Math.round(myBalance * 100) / 100,
       lastActivityAt,

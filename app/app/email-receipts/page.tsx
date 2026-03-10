@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -25,7 +25,7 @@ interface Receipt {
   transaction_id?: string;
 }
 
-export default function EmailReceiptsPage() {
+function EmailReceiptsContent() {
   const searchParams = useSearchParams();
   const gmail = useGmail();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -403,5 +403,13 @@ export default function EmailReceiptsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function EmailReceiptsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>}>
+      <EmailReceiptsContent />
+    </Suspense>
   );
 }

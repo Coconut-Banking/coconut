@@ -113,10 +113,12 @@ $$;
 -- ============================================================
 
 create table if not exists groups (
-  id         uuid primary key default gen_random_uuid(),
-  owner_id   text not null,
-  name       text not null,
-  created_at timestamptz default now()
+  id           uuid primary key default gen_random_uuid(),
+  owner_id     text not null,
+  name         text not null,
+  group_type   text default 'other',
+  invite_token text unique,
+  created_at   timestamptz default now()
 );
 create index if not exists groups_owner_idx on groups(owner_id);
 
@@ -137,7 +139,8 @@ create table if not exists split_transactions (
   group_id         uuid not null references groups(id) on delete cascade,
   transaction_id   uuid not null references transactions(id) on delete cascade,
   created_by       text not null,
-  created_at       timestamptz default now(),
+  payer_member_id  uuid references group_members(id) on delete set null,
+  created_at       timestamptz default now()
 );
 -- Prevent duplicate (same tx in same group twice) - run after deleting any duplicates:
 -- alter table split_transactions add constraint split_transactions_group_tx_unique unique(group_id, transaction_id);

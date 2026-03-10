@@ -108,16 +108,16 @@ export async function GET() {
       }
     }
     const { data: updated } = await db.from("accounts").select("*").eq("clerk_user_id", userId);
-    const accounts = (updated ?? []).map((row: Record<string, unknown>) => ({
-      account_id: row.plaid_account_id,
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      subtype: row.subtype,
-      mask: row.mask,
-      balance_current: row.balance_current ?? null,
-      balance_available: row.balance_available ?? null,
-      iso_currency_code: row.iso_currency_code ?? "USD",
+    const accounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
+      account_id: String(row.plaid_account_id ?? ""),
+      id: String(row.id ?? ""),
+      name: String(row.name ?? ""),
+      type: row.type as string | undefined,
+      subtype: row.subtype as string | null | undefined,
+      mask: row.mask as string | null | undefined,
+      balance_current: (row.balance_current as number | null) ?? null,
+      balance_available: (row.balance_available as number | null) ?? null,
+      iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
     const deduped = deduplicateAccounts(db, userId, accounts);
     return NextResponse.json({ accounts: deduped });
