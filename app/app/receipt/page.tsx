@@ -787,17 +787,14 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
     }
   };
 
-  // Fetch available groups
+  // Fetch available groups (API returns array directly)
   useEffect(() => {
     fetch("/api/groups")
       .then((res) => res.json())
       .then((data) => {
-        if (data.groups) {
-          setGroups(data.groups);
-          if (data.groups.length === 1) {
-            setSelectedGroupId(data.groups[0].id);
-          }
-        }
+        const arr = Array.isArray(data) ? data : Array.isArray(data?.groups) ? data.groups : [];
+        setGroups(arr);
+        if (arr.length === 1) setSelectedGroupId(arr[0].id);
       })
       .catch(() => {});
   }, []);
@@ -817,10 +814,10 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
       if (res.ok) {
         setFinished(true);
-        setGroupBalances(data.balances || []);
-        setSuggestions(data.suggestions || []);
-        setGroupName(data.groupName || "");
-        setMembers(data.members || []);
+        setGroupBalances(Array.isArray(data.balances) ? data.balances : []);
+        setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+        setGroupName(typeof data.groupName === "string" ? data.groupName : "");
+        setMembers(Array.isArray(data.members) ? data.members : []);
 
         // Don't redirect immediately - let user see the balances
       } else {

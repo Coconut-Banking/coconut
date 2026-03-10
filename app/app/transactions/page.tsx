@@ -97,8 +97,8 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
     const res = await fetch("/api/groups/people");
     if (res.ok) {
       const data = await res.json();
-      setPeople(data.people ?? []);
-      setGroups(data.groups ?? []);
+      setPeople(Array.isArray(data.people) ? data.people : []);
+      setGroups(Array.isArray(data.groups) ? data.groups : []);
     }
   };
 
@@ -107,7 +107,7 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
     const res = await fetch(`/api/groups/${groupId}`);
     if (res.ok) {
       const data = await res.json();
-      setMembers(data.members ?? []);
+      setMembers(Array.isArray(data.members) ? data.members : []);
     }
   };
 

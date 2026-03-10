@@ -79,7 +79,7 @@ export default function SettingsPage() {
     }
   }, [linked]);
 
-  const banks = (plaidAccounts?.accounts ?? []).map((a) => ({
+  const banks = (Array.isArray(plaidAccounts?.accounts) ? plaidAccounts.accounts : []).map((a) => ({
     id: (a as { id?: string }).id ?? a.account_id,
     name: a.name || "Account",
     accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,

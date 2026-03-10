@@ -28,7 +28,7 @@ export function useAccounts(linked: boolean) {
       const res = await fetch("/api/plaid/accounts");
       if (res.ok) {
         const data = await res.json();
-        setAccounts(data.accounts ?? []);
+        setAccounts(Array.isArray(data.accounts) ? data.accounts : []);
       } else {
         setAccounts([]);
       }

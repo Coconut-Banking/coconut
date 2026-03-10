@@ -50,7 +50,7 @@ export function useGroups() {
       const res = await fetch("/api/groups");
       if (res.ok) {
         const data = await res.json();
-        setGroups(data);
+        setGroups(Array.isArray(data) ? data : []);
       } else {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Failed to load groups");
@@ -86,7 +86,12 @@ export function useGroupDetail(id: string | null) {
       const res = await fetch(`/api/groups/${id}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setDetail(data);
+        setDetail(data && typeof data === "object" ? {
+          ...data,
+          members: Array.isArray(data.members) ? data.members : [],
+          activity: Array.isArray(data.activity) ? data.activity : [],
+          suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+        } : null);
       } else {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Failed to load group");
@@ -160,9 +165,13 @@ export function useGroupsSummary() {
     try {
       setError(null);
       const res = await fetch("/api/groups/summary", { cache: "no-store" });
-      if (res.ok) {
+        if (res.ok) {
         const data = await res.json();
-        setSummary(data);
+        setSummary(data && typeof data === "object" ? {
+          ...data,
+          groups: Array.isArray(data.groups) ? data.groups : [],
+          friends: Array.isArray(data.friends) ? data.friends : [],
+        } : null);
       } else {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Failed to load summary");
@@ -170,6 +179,7 @@ export function useGroupsSummary() {
       }
     } catch {
       setError("Failed to load summary");
+      setSummary(null);
     } finally {
       setLoading(false);
     }
@@ -199,7 +209,11 @@ export function usePersonDetail(key: string | null) {
       const res = await fetch(`/api/groups/person?key=${encodeURIComponent(key)}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setDetail(data);
+        setDetail(data && typeof data === "object" ? {
+          ...data,
+          activity: Array.isArray(data.activity) ? data.activity : [],
+          settlements: Array.isArray(data.settlements) ? data.settlements : [],
+        } : null);
       } else setDetail(null);
     } finally {
       if (!silent) setLoading(false);
@@ -243,7 +257,7 @@ export function useRecentActivity(enabled = true) {
       const res = await fetch("/api/groups/recent-activity", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setActivity(data.activity ?? []);
+        setActivity(Array.isArray(data.activity) ? data.activity : []);
       } else setActivity([]);
     } finally {
       setLoading(false);
