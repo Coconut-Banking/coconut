@@ -87,6 +87,7 @@ export async function GET() {
         isRecurring: false,
         hasSplitSuggestion: false,
         merchantColor: hashColor(merchant),
+        isPending: Boolean(tx.is_pending),
       };
     });
 

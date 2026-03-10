@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useNLSearch } from "@/hooks/useNLSearch";
 import type { UITransaction } from "@/lib/transaction-types";
+import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
 
 // Display labels for known Plaid primary categories
 const CATEGORY_LABEL: Record<string, string> = {
@@ -42,17 +43,6 @@ const CATEGORY_LABEL: Record<string, string> = {
   "TRANSFER OUT": "Transfer Out",
   "OTHER": "Other",
 };
-
-function MerchantAvatar({ name, color }: { name: string; color: string }) {
-  return (
-    <div
-      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
-      style={{ backgroundColor: color }}
-    >
-      {name[0]}
-    </div>
-  );
-}
 
 type SplitMode = "person" | "group";
 
@@ -193,15 +183,12 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
         <div className="flex-1 overflow-y-auto">
           <div className="px-6 py-6 border-b border-gray-100">
             <div className="flex items-start gap-4">
-              <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold shrink-0"
-                style={{ backgroundColor: tx.merchantColor }}
-              >
-                {tx.merchant[0]}
-              </div>
+              <MerchantLogo name={tx.merchant} color={tx.merchantColor} size="lg" />
               <div className="flex-1">
                 <h2 className="text-lg font-bold text-gray-900">{tx.merchant}</h2>
-                <div className="text-2xl font-bold text-gray-900 mt-1">${Math.abs(tx.amount).toFixed(2)}</div>
+                <div className="text-2xl font-bold mt-1">
+                  <AmountDisplay amount={tx.amount} className="text-2xl" />
+                </div>
                 <div className="text-sm text-gray-500 mt-0.5">{tx.dateStr}</div>
               </div>
             </div>
@@ -561,6 +548,7 @@ export default function TransactionsPage() {
   // Real-time filter: page search bar. Client-side only, no LLM.
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "posted">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
   const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
@@ -584,10 +572,23 @@ export default function TransactionsPage() {
   const baseList = semanticQuery.trim() ? nlFiltered : transactions;
   // Real-time filter (page search bar): client-side, no LLM
   const filteredBySearch = filterTransactionsByQuery(baseList, filterQuery);
+  // Status filter (pending first / pending only / posted only)
+  const byStatus =
+    statusFilter === "pending"
+      ? filteredBySearch.filter((tx) => tx.isPending)
+      : statusFilter === "posted"
+        ? filteredBySearch.filter((tx) => !tx.isPending)
+        : filteredBySearch;
+  // Sort: pending first when showing all
+  const sortedByPending =
+    statusFilter === "all"
+      ? [...byStatus].sort((a, b) => (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1))
+      : byStatus;
   // Category filter
-  const filtered = selectedCategory === "All"
-    ? filteredBySearch
-    : filteredBySearch.filter((tx) => tx.category === selectedCategory);
+  const filtered =
+    selectedCategory === "All"
+      ? sortedByPending
+      : sortedByPending.filter((tx) => tx.category === selectedCategory);
 
   // Build unique category tabs from actual transaction data (use baseList so categories reflect current view)
   const categoryTabs = ["All", ...Array.from(
@@ -652,6 +653,22 @@ export default function TransactionsPage() {
 
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">
+          {/* Status filter: All / Pending / Posted */}
+          <div className="flex items-center gap-2 mb-3">
+            {(["all", "pending", "posted"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
+                  statusFilter === s
+                    ? "bg-[#3D8E62] text-white"
+                    : "bg-white border border-gray-200 text-gray-600 hover:border-gray-300"
+                }`}
+              >
+                {s === "all" ? "All" : s === "pending" ? "Pending" : "Posted"}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
             {categoryTabs.map((cat) => (
               <button
@@ -686,10 +703,13 @@ export default function TransactionsPage() {
                     className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
                     onClick={() => setSelectedTx(tx)}
                   >
-                    <MerchantAvatar name={tx.merchant} color={tx.merchantColor} />
+                    <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
+                        {tx.isPending && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
+                        )}
                         {tx.isRecurring && <RefreshCw size={11} className="text-gray-300" />}
                         {tx.hasSplitSuggestion && (
                           <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-2 py-0.5 rounded-full">
@@ -704,7 +724,7 @@ export default function TransactionsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-semibold text-gray-900">${Math.abs(tx.amount).toFixed(2)}</span>
+                      <AmountDisplay amount={tx.amount} className="text-sm" />
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -739,6 +759,12 @@ export default function TransactionsPage() {
                               </div>
                             </div>
                           )}
+                          <div>
+                            <div className="text-xs text-gray-400 mb-0.5">Status</div>
+                            <div className="text-xs text-gray-600">
+                              {tx.isPending ? "Pending" : "Posted"}
+                            </div>
+                          </div>
                           <div>
                             <div className="text-xs text-gray-400 mb-0.5">Recurring</div>
                             <div className="text-xs text-gray-600">

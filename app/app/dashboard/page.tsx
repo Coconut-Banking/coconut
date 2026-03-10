@@ -5,17 +5,7 @@ import { TrendingDown, RefreshCw, Users, DollarSign, ArrowRight } from "lucide-r
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-
-function MerchantAvatar({ name, color }: { name: string; color: string }) {
-  return (
-    <div
-      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
-      style={{ backgroundColor: color }}
-    >
-      {name[0]}
-    </div>
-  );
-}
+import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) => {
   if (active && payload && payload.length) {
@@ -247,7 +237,7 @@ export default function DashboardPage() {
               onClick={() => router.push("/app/transactions")}
               className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
             >
-              <MerchantAvatar name={tx.merchant} color={tx.merchantColor} />
+                    <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
@@ -262,7 +252,7 @@ export default function DashboardPage() {
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${tx.categoryColor}`}>{tx.category}</span>
               </div>
               <div className="text-right shrink-0">
-                <div className="text-sm font-semibold text-gray-900">${Math.abs(tx.amount).toFixed(2)}</div>
+                <AmountDisplay amount={tx.amount} className="text-sm" />
                 <div className="text-xs text-gray-400">{tx.dateStr}</div>
               </div>
             </motion.div>
