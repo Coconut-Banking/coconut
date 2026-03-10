@@ -11,8 +11,8 @@ export default async function LoginPage({
 }) {
   const { userId } = await auth();
   const { redirect_url } = await searchParams;
-  const fallbackRedirect = redirect_url ?? "/connect";
-  if (userId) redirect(fallbackRedirect.startsWith("/") ? fallbackRedirect : "/connect");
+  const fallbackRedirect = redirect_url ?? "/app/dashboard";
+  if (userId) redirect(fallbackRedirect.startsWith("/") ? fallbackRedirect : "/app/dashboard");
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">

@@ -11,6 +11,13 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const [plaidStatus, setPlaidStatus] = useState<"checking" | "linked" | "unlinked">("checking");
 
+  // Redirect signed-out users to /login (side-effect, not during render)
+  useEffect(() => {
+    if (!SKIP_AUTH && isLoaded && !isSignedIn) {
+      router.replace("/login");
+    }
+  }, [isLoaded, isSignedIn, router]);
+
   useEffect(() => {
     if (SKIP_AUTH || !isLoaded || !isSignedIn) return;
     let cancelled = false;
@@ -36,8 +43,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!SKIP_AUTH && !isSignedIn) {
-    router.replace("/login");
+  // We already scheduled the redirect in the effect above; just render nothing
+  if (!SKIP_AUTH && isLoaded && !isSignedIn) {
     return null;
   }
 
@@ -57,7 +64,11 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   }
 
   if (plaidStatus === "unlinked") {
-    router.replace("/connect");
+    // We still want new users to go through connect, but to avoid React warnings
+    // we navigate from a microtask instead of during render.
+    Promise.resolve().then(() => {
+      router.replace("/connect");
+    });
     return null;
   }
 
