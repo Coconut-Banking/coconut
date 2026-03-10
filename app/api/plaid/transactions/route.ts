@@ -2,16 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
-
-const DEMO_USER_ID = "demo-sandbox-user";
+import { getEffectiveUserId } from "@/lib/demo";
 
 export async function GET() {
-  const { userId } = await auth();
-  // In production, never show demo data; require real user
-  const effectiveUserId =
-    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {

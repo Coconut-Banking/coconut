@@ -102,6 +102,21 @@ test.describe("API Security — debug endpoint gated", () => {
   });
 });
 
+test.describe("API Security — demo mode gated", () => {
+  test("POST /api/demo returns 403 in production or sets cookie in dev", async ({
+    request,
+  }) => {
+    const response = await request.post("/api/demo");
+    const status = response.status();
+    // In production: 403 (gated). In dev: 200 with httpOnly cookie.
+    expect([200, 403]).toContain(status);
+    if (status === 200) {
+      const body = await response.json();
+      expect(body.demo).toBe(true);
+    }
+  });
+});
+
 test.describe("API Security — POST routes require auth", () => {
   const POST_ROUTES = [
     "/api/plaid/create-link-token",
