@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { search } from "@/lib/search-engine";
-
-const DEMO_USER_ID = "demo-sandbox-user";
+import { getEffectiveUserId } from "@/lib/demo";
 
 export async function POST(request: NextRequest) {
-  const { userId } = await auth();
-  const effectiveUserId = userId ?? DEMO_USER_ID;
+  const effectiveUserId = await getEffectiveUserId();
+  if (!effectiveUserId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const body = await request.json();
   const { q } = body as { q?: string };
@@ -16,10 +16,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    let result = await search(effectiveUserId, q.trim());
-    if (userId && result.transactions?.length === 0) {
-      result = await search(DEMO_USER_ID, q.trim());
-    }
+    const result = await search(effectiveUserId, q.trim());
     return NextResponse.json(result);
   } catch (err) {
     console.error("[nl-search]", err);

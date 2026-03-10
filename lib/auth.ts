@@ -1,7 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "./supabase";
 
-const SKIP_AUTH = String(process.env.SKIP_AUTH ?? "").trim().toLowerCase() === "true";
+const SKIP_AUTH =
+  process.env.NODE_ENV !== "production" &&
+  String(process.env.SKIP_AUTH ?? "").trim().toLowerCase() === "true";
 
 /** Fixed dev user used when SKIP_AUTH — same ID every time, no config needed */
 const DEV_SKIP_AUTH_USER_ID = "dev_skip_auth_user";

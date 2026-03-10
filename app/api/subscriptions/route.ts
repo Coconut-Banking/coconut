@@ -6,6 +6,7 @@ import {
   saveDetectedSubscriptions,
   deleteExcludedSubscriptions,
 } from "@/lib/subscription-detect";
+import { getEffectiveUserId } from "@/lib/demo";
 
 function addMonth(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00");
@@ -13,19 +14,14 @@ function addMonth(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-const DEMO_USER_ID = "demo-sandbox-user";
-
 export async function GET() {
-  const { userId } = await auth();
-  const effectiveUserId = userId ?? DEMO_USER_ID;
+  const effectiveUserId = await getEffectiveUserId();
+  if (!effectiveUserId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const db = getSupabase();
-    let { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false });
-    if (userId && (!data || data.length === 0)) {
-      const demo = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", DEMO_USER_ID).eq("status", "active").order("amount", { ascending: false });
-      data = demo.data;
-      error = demo.error;
-    }
+    const { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false });
     if (error) throw error;
     const subs = (data ?? []).map((s) => ({ id: s.id, merchant: s.merchant_name, amount: Number(s.amount), frequency: s.frequency, lastCharged: s.last_charge_date, nextDue: s.next_due_date, category: (s.primary_category ?? "SUBSCRIPTIONS").replace(/_/g, " "), transactionCount: s.transaction_count ?? 0, status: s.status }));
     return NextResponse.json(subs);

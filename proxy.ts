@@ -1,10 +1,16 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-// /connect is public — allows sandbox Plaid flow without sign-in
-const isProtectedRoute = createRouteMatcher(["/app(.*)"]);
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/login(.*)",
+  "/connect(.*)",
+  "/api/stripe/webhook",
+  "/api/gmail/callback",
+  "/api/demo",
+]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
+  if (!isPublicRoute(req)) {
     await auth.protect();
   }
 });
