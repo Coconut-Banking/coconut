@@ -25,6 +25,20 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabase();
 
+  const { data: groupMembers } = await db
+    .from("group_members")
+    .select("id")
+    .eq("group_id", groupId);
+
+  const memberIds = new Set((groupMembers ?? []).map((m) => m.id));
+  const invalidMembers = shares.filter((s) => !memberIds.has(s.memberId));
+  if (invalidMembers.length > 0) {
+    return NextResponse.json(
+      { error: "One or more member IDs do not belong to this group" },
+      { status: 400 }
+    );
+  }
+
   const { data: tx } = await db
     .from("transactions")
     .select("id, amount, clerk_user_id")

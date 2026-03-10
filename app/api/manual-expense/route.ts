@@ -19,7 +19,10 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const groupId = body.groupId ?? body.group_id;
   const amount = Number(body.amount);
-  const description = (body.description ?? "Expense").toString().trim() || "Expense";
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return NextResponse.json({ error: "Valid positive amount required" }, { status: 400 });
+  }
+  const description = ((body.description ?? "Expense").toString().trim() || "Expense").slice(0, 500);
   const personKey = body.personKey ?? body.person_key;
   const payerMemberId = body.payerMemberId ?? body.payer_member_id ?? null;
   const customShares = body.shares as Array<{ memberId: string; amount: number }> | undefined;
@@ -48,6 +51,22 @@ export async function POST(req: NextRequest) {
   const currentUserMember = members.find((m) => m.user_id === userId);
   if (!currentUserMember) {
     return NextResponse.json({ error: "You are not a member of this group" }, { status: 400 });
+  }
+
+  const memberIds = new Set(members.map((m) => m.id));
+
+  if (payerMemberId && !memberIds.has(payerMemberId)) {
+    return NextResponse.json({ error: "Payer is not a member of this group" }, { status: 400 });
+  }
+
+  if (Array.isArray(customShares) && customShares.length > 0) {
+    const invalidMembers = customShares.filter((s) => !memberIds.has(s.memberId));
+    if (invalidMembers.length > 0) {
+      return NextResponse.json(
+        { error: "One or more member IDs do not belong to this group" },
+        { status: 400 }
+      );
+    }
   }
 
   let shares: { memberId: string; amount: number }[];

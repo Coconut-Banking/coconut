@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const message = (body.message as string)?.trim();
+    const message = (body.message as string)?.trim()?.slice(0, 2000);
     if (!message) {
       return NextResponse.json({ error: "message required" }, { status: 400 });
     }
