@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 
 /**
@@ -8,7 +8,7 @@ import { getSupabase } from "@/lib/supabase";
  * User must re-connect at /connect to get a fresh token (production if PLAID_ENV=production).
  */
 export async function POST() {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getSupabase();
