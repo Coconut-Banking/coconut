@@ -45,9 +45,17 @@ export async function POST(request: NextRequest) {
         await db.from("transactions").delete().in("id", idsToDelete);
       }
     }
-    const { synced, error: syncError } = await syncTransactionsForUser(effectiveUserId);
+    let { synced, error: syncError } = await syncTransactionsForUser(effectiveUserId);
     if (syncError) console.warn("[exchange-token] sync warning:", syncError);
     console.log(`[exchange-token] synced ${synced} transactions for ${effectiveUserId}`);
+
+    // Plaid often returns empty on first connect — wait and retry once
+    if (synced === 0) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const retry = await syncTransactionsForUser(effectiveUserId);
+      synced = retry.synced;
+      if (retry.synced > 0) console.log(`[exchange-token] retry synced ${retry.synced} transactions`);
+    }
 
     embedTransactionsForUser(effectiveUserId).catch((e) =>
       console.error("[exchange-token] background embed failed:", e)
