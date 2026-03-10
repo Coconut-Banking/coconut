@@ -3,6 +3,10 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
+import {
+  needsLLMNormalization,
+  normalizeMerchantsWithLLM,
+} from "@/lib/merchant-normalize-llm";
 
 export async function GET() {
   const effectiveUserId = await getEffectiveUserId();
@@ -90,10 +94,24 @@ export async function GET() {
       return `${months[d.getMonth()]} ${d.getDate()}`;
     }
 
+    // LLM normalization for long/weird descriptions (batched, cached)
+    const llmCandidates = deduped.filter((tx) => {
+      const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+      const primary = (tx.primary_category ?? "OTHER") as string;
+      return needsLLMNormalization(raw, primary);
+    });
+    const llmResults = await normalizeMerchantsWithLLM(
+      llmCandidates.map((tx) => ({
+        raw: (tx.merchant_name || tx.raw_name || "Unknown") as string,
+        category: (tx.primary_category ?? "OTHER") as string,
+      }))
+    );
+
     const mapped = deduped.map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const rawMerchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
-      const merchant = cleanMerchantForDisplay(rawMerchant, primary);
+      const merchant =
+        llmResults.get(rawMerchant) ?? cleanMerchantForDisplay(rawMerchant, primary);
       return {
         id: tx.plaid_transaction_id as string,
         dbId: tx.id as string,

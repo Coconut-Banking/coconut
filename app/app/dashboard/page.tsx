@@ -70,7 +70,9 @@ export default function DashboardPage() {
   const recentTransactions = transactions.slice(0, 5);
   const { spendingData, categoryData, monthlySpend } = deriveFromTransactions(transactions);
 
-  if (linked && loading) {
+  // Avoid a flash of an empty dashboard: while transactions are loading,
+  // show a unified loading state instead of rendering partial UI.
+  if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
         <div className="flex flex-col items-center gap-4">
