@@ -203,7 +203,7 @@ async function runStructuredQuery(
     const { data, error } = await applyFilters(
       db.from("transactions").select(
         "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }),
+      ).lt("amount", 0).order("date", { ascending: false }).order("id", { ascending: false }),
       intentForQuery,
       clerkUserId
     );
@@ -235,7 +235,7 @@ async function runStructuredQuery(
       db.from("transactions").select(
         "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending",
         { count: "exact" }
-      ).order("date", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
+      ).order("date", { ascending: false }).order("id", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
       intent,
       clerkUserId
     );
@@ -247,7 +247,7 @@ async function runStructuredQuery(
     const { data, error } = await applyFilters(
       db.from("transactions").select(
         "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }),
+      ).lt("amount", 0).order("date", { ascending: false }).order("id", { ascending: false }),
       intent,
       clerkUserId
     );
@@ -261,7 +261,7 @@ async function runStructuredQuery(
     const { data, error } = await applyFilters(
       db.from("transactions").select(
         "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }),
+      ).lt("amount", 0).order("date", { ascending: false }).order("id", { ascending: false }),
       intent,
       clerkUserId
     );
@@ -283,7 +283,7 @@ async function runStructuredQuery(
   const { data, error } = await applyFilters(
     db.from("transactions").select(
       "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-    ).order("date", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
+    ).order("date", { ascending: false }).order("id", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
     intent,
     clerkUserId
   );

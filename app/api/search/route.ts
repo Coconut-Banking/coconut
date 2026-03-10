@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     .select("id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category")
     .eq("clerk_user_id", userId)
     .order("date", { ascending: false })
+    .order("id", { ascending: false })
     .limit(SEARCH.TX_FETCH_LIMIT);
 
   const transactions = (rows ?? []).map((r) => ({
