@@ -8,8 +8,10 @@ import {
 } from "@/lib/subscription-detect";
 import { getEffectiveUserId } from "@/lib/demo";
 
-function addMonth(dateStr: string): string {
+function addMonth(dateStr: string | null | undefined): string {
+  if (!dateStr) return new Date().toISOString().slice(0, 10);
   const d = new Date(dateStr + "T12:00:00");
+  if (isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
   d.setMonth(d.getMonth() + 1);
   return d.toISOString().slice(0, 10);
 }

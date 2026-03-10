@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const q = request.nextUrl.searchParams.get("q")?.trim() ?? "";
+  const q = (request.nextUrl.searchParams.get("q")?.trim() ?? "").slice(0, 500);
   if (!q) {
     return NextResponse.json({ filters: { keywords: [] } });
   }

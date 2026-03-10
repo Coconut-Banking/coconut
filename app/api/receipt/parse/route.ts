@@ -67,13 +67,8 @@ export async function POST(req: NextRequest) {
 
     if (receiptErr || !receipt) {
       console.error("Database save failed:", receiptErr);
-      const msg = receiptErr?.message ?? "Unknown error";
       return NextResponse.json(
-        {
-          error: "Failed to save receipt",
-          details: msg,
-          hint: msg.includes("does not exist") ? "Run docs/supabase-migration-receipt-split.sql in Supabase SQL Editor" : undefined,
-        },
+        { error: "Failed to save receipt" },
         { status: 500 }
       );
     }
@@ -103,7 +98,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Error in receipt parse route:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to parse receipt" },
+      { error: "Failed to parse receipt" },
       { status: 500 }
     );
   }

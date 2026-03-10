@@ -11,10 +11,14 @@ export async function POST(
 
   const { id } = await params;
   const body = await req.json();
-  const displayName = (body.displayName ?? body.display_name ?? "").trim();
+  const displayName = (body.displayName ?? body.display_name ?? "").trim().slice(0, 100);
   const email = (body.email as string)?.trim() || null;
 
   if (!displayName) return NextResponse.json({ error: "displayName required" }, { status: 400 });
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+  }
 
   const db = getSupabase();
 

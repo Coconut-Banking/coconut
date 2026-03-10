@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const name = (body.name as string)?.trim();
+  const name = (body.name as string)?.trim()?.slice(0, 100);
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
   const groupType = ["home", "trip", "couple", "other"].includes(body.group_type)

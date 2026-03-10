@@ -45,23 +45,9 @@ export async function POST() {
       plaid_env: env,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to create link token";
-    const hint =
-      message.toLowerCase().includes("redirect") || message.includes("400")
-        ? ` Add ${redirectUri} to Plaid Dashboard → API → Allowed redirect URIs.`
-        : "";
+    console.error("Plaid link token error:", err);
     return NextResponse.json(
-      {
-        error: message + hint,
-        _debug: {
-          redirect_uri: redirectUri,
-          base_url_from: process.env.APP_URL
-            ? "APP_URL"
-            : process.env.VERCEL_URL
-              ? "VERCEL_URL"
-              : "fallback",
-        },
-      },
+      { error: "Failed to create link token" },
       { status: 500 }
     );
   }

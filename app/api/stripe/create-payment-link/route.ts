@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
+import { canAccessGroup } from "@/lib/group-access";
+import { getSupabase } from "@/lib/supabase";
 
 /**
  * POST /api/stripe/create-payment-link
@@ -44,6 +46,25 @@ export async function POST(req: NextRequest) {
 
   const metadata: Record<string, string> = {};
   if (body.groupId && body.payerMemberId && body.receiverMemberId) {
+    const allowed = await canAccessGroup(userId, body.groupId);
+    if (!allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const db = getSupabase();
+    const { data: groupMembers } = await db
+      .from("group_members")
+      .select("id")
+      .eq("group_id", body.groupId)
+      .in("id", [body.payerMemberId, body.receiverMemberId]);
+
+    if (!groupMembers || groupMembers.length < 2) {
+      return NextResponse.json(
+        { error: "Payer or receiver not found in group" },
+        { status: 400 }
+      );
+    }
+
     metadata.group_id = body.groupId;
     metadata.payer_member_id = body.payerMemberId;
     metadata.receiver_member_id = body.receiverMemberId;

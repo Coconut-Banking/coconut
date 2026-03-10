@@ -9,14 +9,15 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { q } = body as { q?: string };
+  const { q: rawQ } = body as { q?: string };
+  const q = rawQ?.trim()?.slice(0, 500);
 
-  if (!q?.trim()) {
+  if (!q) {
     return NextResponse.json({ transactions: [], answer: "", metric: "list" });
   }
 
   try {
-    const result = await search(effectiveUserId, q.trim());
+    const result = await search(effectiveUserId, q);
     return NextResponse.json(result);
   } catch (err) {
     console.error("[nl-search]", err);
