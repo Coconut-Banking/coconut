@@ -136,7 +136,12 @@ async function cleanReceiptWithLLM(parsed: ParsedReceipt): Promise<ParsedReceipt
       response_format: { type: "json_object" },
     });
     const raw = completion.choices[0]?.message?.content ?? "{}";
-    return JSON.parse(raw) as ParsedReceipt;
+    try {
+      return JSON.parse(raw) as ParsedReceipt;
+    } catch (parseErr) {
+      console.warn("[receipt-ocr] LLM cleanup returned malformed JSON, using raw:", parseErr);
+      return parsed;
+    }
   } catch (e) {
     console.warn("[receipt-ocr] LLM cleanup failed, returning raw:", e);
     return parsed;
@@ -163,7 +168,11 @@ async function parseReceiptFromText(text: string): Promise<ParsedReceipt> {
     response_format: { type: "json_object" },
   });
   const raw = completion.choices[0]?.message?.content ?? "{}";
-  return JSON.parse(raw) as ParsedReceipt;
+  try {
+    return JSON.parse(raw) as ParsedReceipt;
+  } catch (e) {
+    throw new Error(`[receipt-ocr] Malformed AI response when parsing receipt text: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /** Try PaddleOCR AI Studio → self-hosted PaddleOCR → GPT-4o Vision. */
@@ -239,6 +248,11 @@ export async function parseReceiptImage(
   });
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
-  const parsed = JSON.parse(raw) as ParsedReceipt;
+  let parsed: ParsedReceipt;
+  try {
+    parsed = JSON.parse(raw) as ParsedReceipt;
+  } catch (e) {
+    throw new Error(`[receipt-ocr] Malformed AI response when parsing receipt image: ${e instanceof Error ? e.message : String(e)}`);
+  }
   return await cleanReceiptWithLLM(parsed);
 }

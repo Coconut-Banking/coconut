@@ -13,8 +13,12 @@ export async function POST(
   }
 
   const { id } = await params;
-  const body = await req.json();
-  // assignments: Array<{ itemId: string, assignees: Array<{ name: string, memberId?: string }> }>
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const { assignments } = body;
 
   if (!Array.isArray(assignments)) {

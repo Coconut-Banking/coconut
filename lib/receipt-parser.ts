@@ -127,7 +127,13 @@ ${body}`
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw);
+    let parsed: { not_receipt?: boolean; merchant?: string; total_amount?: number; order_date?: string; line_items?: Array<Record<string, unknown>> };
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      console.warn("[receipt-parser] Malformed AI JSON response:", e instanceof Error ? e.message : String(e));
+      return null;
+    }
     if (parsed.not_receipt) {
       console.log(`[receipt-parser] AI marked as not_receipt`);
       return null;

@@ -92,9 +92,11 @@ export default function DashboardPage() {
         </div>
       )}
       <div className="mb-7">
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Good morning, {displayName} ☀️</h1>
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+          {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {displayName} ☀️
+        </h1>
         <p className="text-sm text-gray-500 mt-1">
-          February 2026 · <span className="text-[#3D8E62] font-medium">{transactions.length} transactions</span>
+          {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#3D8E62] font-medium">{transactions.length} transactions</span>
         </p>
       </div>
 

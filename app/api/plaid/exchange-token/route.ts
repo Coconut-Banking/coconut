@@ -14,7 +14,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sign in to connect your bank" }, { status: 401 });
   }
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const { public_token } = body as { public_token?: string };
   if (!public_token) return NextResponse.json({ error: "public_token required" }, { status: 400 });
 

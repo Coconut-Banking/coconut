@@ -33,16 +33,18 @@ export function useSubscriptions() {
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
 
-  const fetchSubs = useCallback(async () => {
+  const fetchSubs = useCallback(async (isCancelled?: () => boolean) => {
     const res = await fetch("/api/subscriptions");
+    if (isCancelled?.()) return;
     if (!res.ok) return;
     const data = await res.json();
+    if (isCancelled?.()) return;
     setSubscriptions(Array.isArray(data) ? data : []);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    fetchSubs().finally(() => {
+    fetchSubs(() => cancelled).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };

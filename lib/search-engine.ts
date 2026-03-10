@@ -314,6 +314,7 @@ async function runVectorSearch(
     model: "text-embedding-3-small",
     input: query,
   });
+  if (!embData?.length || !embData[0]?.embedding) return [];
   const queryEmbedding = embData[0].embedding;
 
   const { data, error } = await db.rpc("vector_search_transactions", {

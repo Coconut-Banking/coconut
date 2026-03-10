@@ -1,0 +1,79 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - link "Coconut" [ref=e4] [cursor=pointer]:
+      - /url: /
+      - img [ref=e6]
+      - generic [ref=e9]: Coconut
+    - generic [ref=e10]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e15]:
+            - heading "Sign in to My Application" [level=1] [ref=e16]
+            - paragraph [ref=e17]: Welcome back! Please sign in to continue
+          - generic [ref=e18]:
+            - button "Sign in with Google Continue with Google" [ref=e21] [cursor=pointer]:
+              - generic [ref=e22]:
+                - img "Sign in with Google" [ref=e24]
+                - generic [ref=e25]: Continue with Google
+            - paragraph [ref=e28]: or
+            - generic [ref=e30]:
+              - generic [ref=e31]:
+                - generic [ref=e34]:
+                  - generic [ref=e36]: Email address
+                  - textbox "Email address" [ref=e37]:
+                    - /placeholder: Enter your email address
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: Password
+                      - generic:
+                        - textbox "Password":
+                          - /placeholder: Enter your password
+                        - button "Show password":
+                          - img
+              - button "Continue" [ref=e40] [cursor=pointer]:
+                - generic [ref=e41]:
+                  - text: Continue
+                  - img [ref=e42]
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - generic [ref=e46]: Don’t have an account?
+            - link "Sign up" [ref=e47] [cursor=pointer]:
+              - /url: https://apt-kodiak-78.accounts.dev/sign-up?__clerk_db_jwt=dvb_3Ak4aOCjWse8EkDt4tTCYB0BjxG
+          - generic [ref=e49]:
+            - generic [ref=e51]:
+              - paragraph [ref=e52]: Secured by
+              - link "Clerk logo" [ref=e53] [cursor=pointer]:
+                - /url: https://go.clerk.com/components
+                - img [ref=e54]
+            - paragraph [ref=e59]: Development mode
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - img [ref=e62]
+          - text: Bank-level encryption
+        - generic [ref=e64]:
+          - img [ref=e65]
+          - text: Read-only access
+  - button "Open Next.js Dev Tools" [ref=e73] [cursor=pointer]:
+    - img [ref=e74]
+  - alert [ref=e77]
+  - generic [ref=e78]:
+    - button "Keyless prompt" [expanded] [ref=e79] [cursor=pointer]:
+      - img [ref=e80]
+      - generic [ref=e84]: Configure your application
+      - img [ref=e85]
+    - generic [ref=e88]:
+      - generic [ref=e89]:
+        - paragraph [ref=e90]: Temporary API keys are enabled so you can get started immediately.
+        - list [ref=e91]:
+          - listitem [ref=e92]: Add SSO connections (eg. GitHub)
+          - listitem [ref=e93]: Set up B2B authentication
+          - listitem [ref=e94]: Enable MFA
+        - paragraph [ref=e95]: Access the dashboard to customize auth settings and explore Clerk features.
+      - link "Configure your application" [ref=e96] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=7ajue9brw4ncss08jzddhafgc6tyfjwbd4oprj3s&return_url=http%3A%2F%2Flocalhost%3A3000%2Flogin
+```

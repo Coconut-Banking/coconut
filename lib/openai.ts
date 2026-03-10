@@ -15,6 +15,9 @@ export async function embed(text: string): Promise<number[]> {
     model: "text-embedding-3-small",
     input: text,
   });
+  if (!data?.length || !data[0]?.embedding) {
+    throw new Error("Embedding response was empty");
+  }
   return data[0].embedding;
 }
 

@@ -121,8 +121,8 @@ export default function EmailReceiptsPage() {
 
   const filteredReceipts = receipts.filter(r =>
     !filter ||
-    r.merchant.toLowerCase().includes(filter.toLowerCase()) ||
-    r.raw_subject.toLowerCase().includes(filter.toLowerCase())
+    (r.merchant ?? "").toLowerCase().includes(filter.toLowerCase()) ||
+    (r.raw_subject ?? "").toLowerCase().includes(filter.toLowerCase())
   );
 
   const totalAmount = filteredReceipts.reduce((sum, r) => sum + r.amount, 0);

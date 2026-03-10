@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { exchangeCode, saveGmailTokens, getOAuth2Client } from "@/lib/google-auth";
 import { google } from "googleapis";
 
@@ -10,6 +11,10 @@ function parseOAuthState(raw: string): { userId: string; redirect?: string } {
     // Legacy format: state is just the clerkUserId string
   }
   return { userId: raw };
+}
+
+function isAllowedRedirect(url: string): boolean {
+  return url.startsWith("coconut://") || url.startsWith("/");
 }
 
 export async function GET(request: NextRequest) {
@@ -30,6 +35,19 @@ export async function GET(request: NextRequest) {
   }
 
   const { userId: clerkUserId, redirect: mobileRedirect } = parseOAuthState(rawState);
+
+  const { userId: authedUserId } = await auth();
+  if (!authedUserId || authedUserId !== clerkUserId) {
+    console.error("[Gmail Callback] Auth mismatch: state userId does not match authenticated user", {
+      stateUserId: clerkUserId,
+      authedUserId,
+    });
+    return NextResponse.redirect(new URL("/app/email-receipts?error=unauthorized", request.url));
+  }
+
+  const sanitizedRedirect = mobileRedirect && isAllowedRedirect(mobileRedirect)
+    ? mobileRedirect
+    : undefined;
 
   try {
     console.log("[Gmail Callback] Exchanging code for tokens...");
@@ -57,9 +75,11 @@ export async function GET(request: NextRequest) {
     await saveGmailTokens(clerkUserId, tokens, email);
     console.log("[Gmail Callback] Tokens saved successfully");
 
-    if (mobileRedirect) {
-      const url = `${mobileRedirect}?connected=true`;
-      console.log("[Gmail Callback] Redirecting to mobile app:", url);
+    if (sanitizedRedirect) {
+      const url = sanitizedRedirect.startsWith("/")
+        ? new URL(`${sanitizedRedirect}?connected=true`, request.url)
+        : `${sanitizedRedirect}?connected=true`;
+      console.log("[Gmail Callback] Redirecting:", url);
       return NextResponse.redirect(url);
     }
 
@@ -67,8 +87,11 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     console.error("[Gmail Callback] Token exchange failed:", e);
 
-    if (mobileRedirect) {
-      return NextResponse.redirect(`${mobileRedirect}?error=auth_failed`);
+    if (sanitizedRedirect) {
+      const url = sanitizedRedirect.startsWith("/")
+        ? new URL(`${sanitizedRedirect}?error=auth_failed`, request.url)
+        : `${sanitizedRedirect}?error=auth_failed`;
+      return NextResponse.redirect(url);
     }
 
     return NextResponse.redirect(new URL("/app/email-receipts?error=auth_failed", request.url));

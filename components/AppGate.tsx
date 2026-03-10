@@ -13,10 +13,16 @@ export function AppGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (SKIP_AUTH || !isLoaded || !isSignedIn) return;
+    let cancelled = false;
     fetch("/api/plaid/status")
       .then((res) => res.json())
-      .then((data) => setPlaidStatus(data.linked ? "linked" : "unlinked"))
-      .catch(() => setPlaidStatus("unlinked"));
+      .then((data) => {
+        if (!cancelled) setPlaidStatus(data.linked ? "linked" : "unlinked");
+      })
+      .catch(() => {
+        if (!cancelled) setPlaidStatus("unlinked");
+      });
+    return () => { cancelled = true; };
   }, [isLoaded, isSignedIn]);
 
   if (!SKIP_AUTH && !isLoaded) {

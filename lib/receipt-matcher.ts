@@ -40,7 +40,7 @@ export async function matchReceiptsToTransactions(
 
   const { data: receipts } = await db
     .from("email_receipts")
-    .select("id, merchant, total_amount, order_date")
+    .select("id, merchant, amount, date")
     .in("id", receiptIds)
     .is("transaction_id", null);
 
@@ -49,13 +49,13 @@ export async function matchReceiptsToTransactions(
   let matched = 0;
 
   for (const receipt of receipts) {
-    if (!receipt.merchant || !receipt.total_amount) continue;
+    if (!receipt.merchant || !receipt.amount) continue;
 
     const keyword = extractKeyword(receipt.merchant);
     if (!keyword) continue;
 
-    const receiptAmount = Math.abs(Number(receipt.total_amount));
-    const receiptDate = receipt.order_date;
+    const receiptAmount = Math.abs(Number(receipt.amount));
+    const receiptDate = receipt.date;
 
     // Query candidate transactions: same user, merchant contains keyword, within date window
     let query = db
