@@ -19,7 +19,7 @@ export async function GET() {
     const { data, error } = await db
       .from("transactions")
       .select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+        "id, plaid_transaction_id, account_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
       )
       .eq("clerk_user_id", effectiveUserId)
       .order("date", { ascending: false })
@@ -107,14 +107,31 @@ export async function GET() {
       }))
     );
 
+    const accountIdToMask = new Map<string, string>();
+    if (deduped.length > 0) {
+      const acctIds = [...new Set((deduped as { account_id?: string }[]).map((t) => t.account_id).filter(Boolean))];
+      if (acctIds.length > 0) {
+        const { data: accts } = await db.from("accounts").select("id, plaid_account_id, name, mask").in("id", acctIds);
+        for (const a of accts ?? []) {
+          accountIdToMask.set(a.id, a.mask ?? "****");
+          accountIdToMask.set(`name:${a.id}`, a.name ?? "");
+          accountIdToMask.set(`plaid:${a.id}`, a.plaid_account_id);
+        }
+      }
+    }
+
     const mapped = deduped.map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const rawMerchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       const merchant =
         llmResults.get(rawMerchant) ?? cleanMerchantForDisplay(rawMerchant, primary);
+      const aid = tx.account_id as string | undefined;
       return {
         id: tx.plaid_transaction_id as string,
         dbId: tx.id as string,
+        accountId: aid ?? null,
+        accountMask: aid ? accountIdToMask.get(aid) ?? "****" : null,
+        accountName: aid ? accountIdToMask.get(`name:${aid}`) ?? null : null,
         merchant,
         rawDescription: (tx.raw_name || "") as string,
         amount: tx.amount as number,

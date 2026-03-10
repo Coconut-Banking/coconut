@@ -1,6 +1,9 @@
 export interface UITransaction {
   id: string;
   dbId?: string;
+  accountId?: string | null;
+  accountMask?: string | null;
+  accountName?: string | null;
   merchant: string;
   rawDescription: string;
   amount: number;

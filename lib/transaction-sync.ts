@@ -75,20 +75,26 @@ export async function syncTransactionsForUser(
   const plaid = getPlaidClient();
   if (!plaid) return { synced: 0, error: "Plaid not configured" };
 
-  // Upsert accounts
+  // Upsert accounts (with balances for display — run docs/supabase-migration-accounts-balance.sql first)
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
   for (const acct of acctResp.accounts) {
-    await db.from("accounts").upsert(
-      {
-        clerk_user_id: clerkUserId,
-        plaid_account_id: acct.account_id,
-        name: acct.name,
-        type: acct.type,
-        subtype: acct.subtype ?? null,
-        mask: acct.mask ?? null,
-      },
-      { onConflict: "plaid_account_id" }
-    );
+    const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+    const row: Record<string, unknown> = {
+      clerk_user_id: clerkUserId,
+      plaid_account_id: acct.account_id,
+      name: acct.name,
+      type: acct.type,
+      subtype: acct.subtype ?? null,
+      mask: acct.mask ?? null,
+    };
+    try {
+      await db.from("accounts").upsert(
+        { ...row, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
+        { onConflict: "plaid_account_id" }
+      );
+    } catch {
+      await db.from("accounts").upsert(row, { onConflict: "plaid_account_id" });
+    }
   }
 
   // Build account UUID map (plaid_account_id → our UUID)

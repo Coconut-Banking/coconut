@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useAccounts } from "@/hooks/useAccounts";
 import { useNLSearch } from "@/hooks/useNLSearch";
 import type { UITransaction } from "@/lib/transaction-types";
 import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
@@ -646,6 +647,8 @@ function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: st
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const { transactions, linked, loading } = useTransactions();
+  const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   // Semantic search: from URL (top bar submit). Triggers NL/LLM search.
   const semanticQuery = searchParams.get("q") ? decodeURIComponent(searchParams.get("q")!) : "";
   // Real-time filter: page search bar. Client-side only, no LLM.
@@ -680,10 +683,14 @@ export default function TransactionsPage() {
   const sortedByPending = [...filteredBySearch].sort(
     (a, b) => (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1)
   );
+  // Account filter
+  const afterAccount = selectedAccountId
+    ? sortedByPending.filter((tx) => tx.accountId === selectedAccountId)
+    : sortedByPending;
   // Category filter
   const afterCategory = selectedCategory === "All"
-    ? sortedByPending
-    : sortedByPending.filter((tx) => tx.category === selectedCategory);
+    ? afterAccount
+    : afterAccount.filter((tx) => tx.category === selectedCategory);
   // Date filter
   const afterDate = (() => {
     if (dateFilter === "All time") return afterCategory;
@@ -752,6 +759,136 @@ export default function TransactionsPage() {
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Transactions</h1>
         <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions loaded</p>
       </div>
+
+      {/* Accounts overview — US / CAD with balances */}
+      {linked && (usAccounts.length > 0 || cadAccounts.length > 0 || otherAccounts.length > 0) && (
+        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5">
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">Your accounts</h2>
+          <div className="space-y-4">
+            {usAccounts.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">US — USD</div>
+                <div className="flex flex-wrap gap-3">
+                  {usAccounts.map((acc) => {
+                    const bal = acc.balance_current ?? acc.balance_available ?? 0;
+                    const isSelected = selectedAccountId === acc.id;
+                    return (
+                      <button
+                        key={acc.account_id}
+                        onClick={() => setSelectedAccountId(isSelected ? null : acc.id)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? "border-[#3D8E62] bg-[#EEF7F2] ring-1 ring-[#3D8E62]"
+                            : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-[#3D8E62]/10 flex items-center justify-center text-[#3D8E62] font-semibold text-sm">
+                          {(acc.name?.[0] ?? "?").toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
+                          <div className="text-xs text-gray-500">••••{acc.mask ?? "****"}</div>
+                          <div className="text-sm font-semibold text-gray-900 mt-0.5">
+                            ${typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {cadAccounts.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Canada — CAD</div>
+                <div className="flex flex-wrap gap-3">
+                  {cadAccounts.map((acc) => {
+                    const bal = acc.balance_current ?? acc.balance_available ?? 0;
+                    const isSelected = selectedAccountId === acc.id;
+                    return (
+                      <button
+                        key={acc.account_id}
+                        onClick={() => setSelectedAccountId(isSelected ? null : acc.id)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? "border-[#3D8E62] bg-[#EEF7F2] ring-1 ring-[#3D8E62]"
+                            : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
+                          {(acc.name?.[0] ?? "?").toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
+                          <div className="text-xs text-gray-500">••••{acc.mask ?? "****"}</div>
+                          <div className="text-sm font-semibold text-gray-900 mt-0.5">
+                            C${typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {otherAccounts.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Other</div>
+                <div className="flex flex-wrap gap-3">
+                  {otherAccounts.map((acc) => {
+                    const bal = acc.balance_current ?? acc.balance_available ?? 0;
+                    const isSelected = selectedAccountId === acc.id;
+                    return (
+                      <button
+                        key={acc.account_id}
+                        onClick={() => setSelectedAccountId(isSelected ? null : acc.id)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                          isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200"
+                        }`}
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 font-semibold text-sm">
+                          {(acc.name?.[0] ?? "?").toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
+                          <div className="text-xs text-gray-500">••••{acc.mask ?? "****"} {acc.iso_currency_code}</div>
+                          <div className="text-sm font-semibold text-gray-900 mt-0.5">
+                            ${typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2 }) : "—"}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => setSelectedAccountId(null)}
+              className={`text-xs px-3 py-1.5 rounded-full font-medium ${
+                !selectedAccountId ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              All accounts
+            </button>
+            {[...usAccounts, ...cadAccounts, ...otherAccounts].filter((a) => a.id).map((acc) => {
+              const isSelected = selectedAccountId === acc.id;
+              return (
+                <button
+                  key={acc.account_id}
+                  onClick={() => setSelectedAccountId(isSelected ? null : acc.id)}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium ${
+                    isSelected ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {acc.name?.slice(0, 12)}{acc.name && acc.name.length > 12 ? "…" : ""} ••••{acc.mask ?? "****"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Semantic search banner: only when query came from top bar (URL) */}
       {semanticQuery && (nlLoading || nlAnswer) && (
