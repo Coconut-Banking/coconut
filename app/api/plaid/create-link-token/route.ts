@@ -39,7 +39,7 @@ export async function POST() {
       user: { client_user_id: effectiveUserId },
       client_name: "Coconut",
       products: [Products.Transactions],
-      country_codes: [CountryCode.Us],
+      country_codes: [CountryCode.Us, CountryCode.Ca],
       language: "en",
       transactions: { days_requested: 730 },
       redirect_uri: redirectUri,
