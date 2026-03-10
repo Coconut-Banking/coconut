@@ -12,7 +12,6 @@ import {
   Users,
   X,
   MapPin,
-  Tag,
   StickyNote,
   Share2,
   Zap,
@@ -86,6 +85,8 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
       });
       if (res.ok) {
         onClose();
+      } else {
+        alert("Failed to mark as subscription. Please try again.");
       }
     } finally {
       setMarkingSubscription(false);
@@ -127,8 +128,12 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
         body: JSON.stringify({ displayName: newPersonName.trim() }),
       });
       if (!addRes.ok) return null;
+      const addedMember = await addRes.json().catch(() => null);
       setNewPersonName("");
       await loadPeopleAndGroups();
+      if (addedMember?.id) {
+        setSelectedPerson({ groupId: group.id, memberId: addedMember.id, displayName: newPersonName.trim() });
+      }
       return group.id;
     } finally {
       setAddingNewPerson(false);
@@ -261,7 +266,18 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
             </h4>
             <div className="space-y-2">
               {tx.hasSplitSuggestion && (
-                <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left">
+                <button
+                  onClick={async () => {
+                    setShowAddToShared(true);
+                    await loadPeopleAndGroups();
+                    const match = people.find((p) => p.displayName === tx.splitWith);
+                    if (match) {
+                      setSelectedPerson({ groupId: match.groupId, memberId: match.memberId, displayName: match.displayName });
+                      loadGroupMembers(match.groupId);
+                    }
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left"
+                >
                   <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
                     <Users size={15} className="text-[#3D8E62]" />
                   </div>
@@ -326,30 +342,6 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                   />
                 </div>
               )}
-              <button
-                onClick={() => {
-                  setShowAddToShared(true);
-                  loadPeopleAndGroups();
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left"
-              >
-                <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
-                  <Share2 size={15} className="text-gray-500" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium">Tag to shared space</div>
-                  <div className="text-xs text-gray-400">Add to Weekend Trip or other spaces</div>
-                </div>
-              </button>
-              <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-100 hover:bg-gray-50 text-gray-700 transition-colors text-left">
-                <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
-                  <Tag size={15} className="text-gray-500" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium">Edit category</div>
-                  <div className="text-xs text-gray-400">Currently: {tx.category}</div>
-                </div>
-              </button>
             </div>
           </div>
         </div>
@@ -448,7 +440,6 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                           onClick={async () => {
                             const gid = await createPersonAndGroup();
                             if (gid) {
-                              setSelectedPerson({ groupId: gid, memberId: "", displayName: newPersonName.trim() });
                               loadGroupMembers(gid);
                             }
                           }}

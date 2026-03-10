@@ -21,7 +21,9 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState("profile");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [currency, setCurrency] = useState("USD");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [twoFA, setTwoFA] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const { linked } = useTransactions();
@@ -87,9 +89,20 @@ export default function SettingsPage() {
   const visibleBanks = banks.filter((b) => !isHidden(b.id));
   const hiddenBanks = banks.filter((b) => isHidden(b.id));
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const handleSave = async () => {
+    if (!user) return;
+    setSaving(true);
+    try {
+      const [firstName, ...rest] = name.trim().split(" ");
+      const lastName = rest.join(" ");
+      await user.update({ firstName: firstName || "", lastName: lastName || "" });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      alert("Failed to save profile changes. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -131,12 +144,16 @@ export default function SettingsPage() {
                 <div className="bg-white rounded-2xl border border-gray-100 p-6">
                   <h2 className="text-sm font-semibold text-gray-900 mb-5">Profile</h2>
                   <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-100">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#3D8E62] to-[#5BAE82] flex items-center justify-center text-white text-xl font-bold">
-                      JD
-                    </div>
+                    {user?.imageUrl ? (
+                      <img src={user.imageUrl} alt="Profile" className="w-16 h-16 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#3D8E62] to-[#5BAE82] flex items-center justify-center text-white text-xl font-bold">
+                        {(user?.firstName?.[0] ?? "").toUpperCase()}{(user?.lastName?.[0] ?? "").toUpperCase() || ""}
+                      </div>
+                    )}
                     <div>
-                      <button className="text-sm text-[#3D8E62] font-medium hover:underline">Change photo</button>
-                      <p className="text-xs text-gray-400 mt-0.5">JPG or PNG, max 2MB</p>
+                      <span className="text-sm text-gray-400 font-medium cursor-default">Change photo</span>
+                      <p className="text-xs text-gray-400 mt-0.5">Coming soon</p>
                     </div>
                   </div>
                   <div className="space-y-4">
@@ -159,17 +176,27 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Currency</label>
-                      <select className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none bg-white focus:ring-2 focus:ring-[#3D8E62]/20">
-                        <option>USD — US Dollar</option>
-                        <option>EUR — Euro</option>
-                        <option>GBP — British Pound</option>
+                      <select
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none bg-white focus:ring-2 focus:ring-[#3D8E62]/20"
+                      >
+                        <option value="USD">USD — US Dollar</option>
+                        <option value="EUR">EUR — Euro</option>
+                        <option value="GBP">GBP — British Pound</option>
                       </select>
                     </div>
                     <button
                       onClick={handleSave}
-                      className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                      disabled={saving}
+                      className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
                     >
-                      {saved ? (
+                      {saving ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          Saving…
+                        </>
+                      ) : saved ? (
                         <>
                           <CheckCircle2 size={15} />
                           Saved
