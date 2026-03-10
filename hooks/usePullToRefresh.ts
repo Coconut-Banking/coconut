@@ -16,6 +16,7 @@ export function usePullToRefresh(onRefresh: () => void | Promise<void>, enabled:
     if (!enabled) return;
     const main = document.querySelector("main");
     if (!main) return;
+    const el = main as HTMLElement;
 
     let indicator: HTMLDivElement | null = null;
 
@@ -58,13 +59,13 @@ export function usePullToRefresh(onRefresh: () => void | Promise<void>, enabled:
     }
 
     function handleTouchStart(e: TouchEvent) {
-      if (main.scrollTop > 5) return;
+      if (el.scrollTop > 5) return;
       startY.current = e.touches[0].clientY;
       pullY.current = 0;
     }
 
     function handleTouchMove(e: TouchEvent) {
-      if (main.scrollTop > 5) return;
+      if (el.scrollTop > 5) return;
       const y = e.touches[0].clientY;
       pullY.current = Math.max(0, y - startY.current);
       if (pullY.current > 10) {
@@ -87,14 +88,14 @@ export function usePullToRefresh(onRefresh: () => void | Promise<void>, enabled:
       pullY.current = 0;
     }
 
-    main.addEventListener("touchstart", handleTouchStart, { passive: true });
-    main.addEventListener("touchmove", handleTouchMove, { passive: false });
-    main.addEventListener("touchend", handleTouchEnd, { passive: true });
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    el.addEventListener("touchend", handleTouchEnd, { passive: true });
 
     return () => {
-      main.removeEventListener("touchstart", handleTouchStart);
-      main.removeEventListener("touchmove", handleTouchMove);
-      main.removeEventListener("touchend", handleTouchEnd);
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
       const existing = document.querySelector("[data-pull-indicator]");
       if (existing) existing.remove();
     };
