@@ -149,6 +149,10 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => fileRef.current?.click()}
+        role="button"
+        aria-label="Upload receipt image"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fileRef.current?.click(); }}
         className={`relative border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
           dragOver
             ? "border-[#3D8E62] bg-[#EEF7F2]"
@@ -928,7 +932,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           </div>
 
           <div className="space-y-3">
-            {groups.length > 1 && (
+            {groups.length > 1 ? (
               <select
                 value={selectedGroupId}
                 onChange={(e) => setSelectedGroupId(e.target.value)}
@@ -941,7 +945,11 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                   </option>
                 ))}
               </select>
-            )}
+            ) : groups.length === 1 ? (
+              <div className="px-3 py-2 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-xl">
+                Saving to: <span className="font-medium">{groups[0].name}</span>
+              </div>
+            ) : null}
 
             <button
               onClick={handleFinish}
