@@ -7,7 +7,12 @@ const DEMO_USER_ID = "demo-sandbox-user";
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
-  const effectiveUserId = userId ?? DEMO_USER_ID;
+  // Production: require real auth, never use demo/sandbox user
+  const effectiveUserId =
+    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  if (!effectiveUserId) {
+    return NextResponse.json({ error: "Sign in to connect your bank" }, { status: 401 });
+  }
 
   const body = await request.json();
   const { public_token } = body as { public_token?: string };

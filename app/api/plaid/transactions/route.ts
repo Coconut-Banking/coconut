@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
+import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 
 const DEMO_USER_ID = "demo-sandbox-user";
 
@@ -70,7 +71,8 @@ export async function GET() {
 
     const mapped = bankOnly.map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
-      const merchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+      const rawMerchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+      const merchant = cleanMerchantForDisplay(rawMerchant, primary);
       return {
         id: tx.plaid_transaction_id as string,
         dbId: tx.id as string,

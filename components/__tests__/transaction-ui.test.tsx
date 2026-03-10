@@ -22,9 +22,16 @@ describe("AmountDisplay", () => {
 });
 
 describe("MerchantLogo", () => {
-  it("renders letter avatar", () => {
-    const { container } = render(<MerchantLogo name="Starbucks" color="#000" />);
-    expect(container.textContent).toBe("S");
+  it("renders letter avatar for unknown merchants", () => {
+    const { container } = render(<MerchantLogo name="Mission Grocery" color="#000" />);
+    expect(container.textContent).toBe("M");
+  });
+
+  it("renders logo img for allowlisted merchants", () => {
+    const { container } = render(<MerchantLogo name="Lyft" />);
+    const img = container.querySelector("img");
+    expect(img).toBeTruthy();
+    expect(img?.src).toContain("lyft.com");
   });
 
   it("respects size prop", () => {

@@ -520,6 +520,110 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
   );
 }
 
+// Single transaction row (no inline Pending tag — status comes from section header)
+function TxRow({
+  tx,
+  index,
+  expandedId,
+  setExpandedId,
+  onSelect,
+}: {
+  tx: UITransaction;
+  index: number;
+  expandedId: string | null;
+  setExpandedId: (id: string | null) => void;
+  onSelect: () => void;
+}) {
+  return (
+    <div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: index * 0.03 }}
+        className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
+        onClick={onSelect}
+      >
+        <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
+            {tx.isRecurring && <RefreshCw size={11} className="text-gray-300" />}
+            {tx.hasSplitSuggestion && (
+              <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-2 py-0.5 rounded-full">
+                <Users size={9} />
+                <span>Split</span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${tx.categoryColor}`}>{tx.category}</span>
+            <span className="text-xs text-gray-400">{tx.dateStr}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <AmountDisplay amount={tx.amount} className="text-sm" />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpandedId(expandedId === tx.id ? null : tx.id);
+            }}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+          >
+            {expandedId === tx.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+        </div>
+      </motion.div>
+      <AnimatePresence>
+        {expandedId === tx.id && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-gray-50 border-b border-gray-100 px-5 py-3 ml-16 grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-xs text-gray-400 mb-0.5">Raw description</div>
+                <div className="text-xs text-gray-600 font-mono">{tx.rawDescription}</div>
+              </div>
+              {tx.location && (
+                <div>
+                  <div className="text-xs text-gray-400 mb-0.5">Location</div>
+                  <div className="text-xs text-gray-600 flex items-center gap-1">
+                    <MapPin size={10} className="text-gray-400" />
+                    {tx.location}
+                  </div>
+                </div>
+              )}
+              <div>
+                <div className="text-xs text-gray-400 mb-0.5">Status</div>
+                <div className="text-xs text-gray-600">
+                  {tx.isPending ? "Pending" : "Posted"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-0.5">Recurring</div>
+                <div className="text-xs text-gray-600">
+                  {tx.isRecurring ? "Monthly subscription" : "One-time charge"}
+                </div>
+              </div>
+              {tx.hasSplitSuggestion && (
+                <div>
+                  <div className="text-xs text-gray-400 mb-0.5">Split suggestion</div>
+                  <div className="text-xs text-[#3D8E62] font-medium">
+                    Split with {tx.splitWith} — ${(Math.abs(tx.amount) / 2).toFixed(2)} each
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // Real-time client-side filter: match query against merchant, category, description, date, amount (no LLM)
 function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: string): T[] {
   const q = query.trim().toLowerCase();
@@ -580,6 +684,10 @@ export default function TransactionsPage() {
     selectedCategory === "All"
       ? sortedByPending
       : sortedByPending.filter((tx) => tx.category === selectedCategory);
+
+  // Split into Pending / Posted sections (bank statement style)
+  const pendingTx = filtered.filter((tx) => tx.isPending);
+  const postedTx = filtered.filter((tx) => !tx.isPending);
 
   // Build unique category tabs from actual transaction data (use baseList so categories reflect current view)
   const categoryTabs = ["All", ...Array.from(
@@ -675,97 +783,42 @@ export default function TransactionsPage() {
                 </div>
               </div>
             ) : (
-              filtered.map((tx, i) => (
-                <div key={tx.id}>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.03 }}
-                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
-                    onClick={() => setSelectedTx(tx)}
-                  >
-                    <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
-                        {tx.isPending && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>
-                        )}
-                        {tx.isRecurring && <RefreshCw size={11} className="text-gray-300" />}
-                        {tx.hasSplitSuggestion && (
-                          <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-2 py-0.5 rounded-full">
-                            <Users size={9} />
-                            <span>Split</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${tx.categoryColor}`}>{tx.category}</span>
-                        <span className="text-xs text-gray-400">{tx.dateStr}</span>
-                      </div>
+              <>
+                {pendingTx.length > 0 && (
+                  <div className="border-b border-gray-100">
+                    <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-100 text-xs font-semibold text-amber-800">
+                      Pending
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <AmountDisplay amount={tx.amount} className="text-sm" />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedId(expandedId === tx.id ? null : tx.id);
-                        }}
-                        className="text-gray-400 hover:text-gray-600 transition-colors p-1"
-                      >
-                        {expandedId === tx.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                      </button>
+                    {pendingTx.map((tx, i) => (
+                      <TxRow
+                        key={tx.id}
+                        tx={tx}
+                        index={i}
+                        expandedId={expandedId}
+                        setExpandedId={setExpandedId}
+                        onSelect={() => setSelectedTx(tx)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {postedTx.length > 0 && (
+                  <div>
+                    <div className="px-5 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-600">
+                      Posted
                     </div>
-                  </motion.div>
-                  <AnimatePresence>
-                    {expandedId === tx.id && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="bg-gray-50 border-b border-gray-100 px-5 py-3 ml-16 grid grid-cols-2 gap-3">
-                          <div>
-                            <div className="text-xs text-gray-400 mb-0.5">Raw description</div>
-                            <div className="text-xs text-gray-600 font-mono">{tx.rawDescription}</div>
-                          </div>
-                          {tx.location && (
-                            <div>
-                              <div className="text-xs text-gray-400 mb-0.5">Location</div>
-                              <div className="text-xs text-gray-600 flex items-center gap-1">
-                                <MapPin size={10} className="text-gray-400" />
-                                {tx.location}
-                              </div>
-                            </div>
-                          )}
-                          <div>
-                            <div className="text-xs text-gray-400 mb-0.5">Status</div>
-                            <div className="text-xs text-gray-600">
-                              {tx.isPending ? "Pending" : "Posted"}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-400 mb-0.5">Recurring</div>
-                            <div className="text-xs text-gray-600">
-                              {tx.isRecurring ? "Monthly subscription" : "One-time charge"}
-                            </div>
-                          </div>
-                          {tx.hasSplitSuggestion && (
-                            <div>
-                              <div className="text-xs text-gray-400 mb-0.5">Split suggestion</div>
-                              <div className="text-xs text-[#3D8E62] font-medium">
-                                Split with {tx.splitWith} — ${(Math.abs(tx.amount) / 2).toFixed(2)} each
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              ))
+                    {postedTx.map((tx, i) => (
+                      <TxRow
+                        key={tx.id}
+                        tx={tx}
+                        index={i + pendingTx.length}
+                        expandedId={expandedId}
+                        setExpandedId={setExpandedId}
+                        onSelect={() => setSelectedTx(tx)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -33,8 +33,10 @@ export default function SettingsPage() {
     setDisconnecting(true);
     try {
       const res = await fetch("/api/plaid/disconnect", { method: "POST" });
-      if (res.ok) window.location.href = "/connect";
-      else alert("Failed to disconnect");
+      if (res.ok) {
+        if (typeof sessionStorage !== "undefined") sessionStorage.removeItem("tx_prod_sync_done");
+        window.location.href = "/connect";
+      } else alert("Failed to disconnect");
     } finally {
       setDisconnecting(false);
     }
