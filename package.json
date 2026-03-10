@@ -4,15 +4,15 @@
   "private": true,
   "scripts": {
     "push": "git push origin main",
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "NODE_OPTIONS='--disable-warning=DEP0169' next dev",
+    "build": "NODE_OPTIONS='--disable-warning=DEP0169' next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:unit": "vitest run",
-    "test:e2e": "playwright test"
+    "test": "NODE_OPTIONS='--disable-warning=DEP0169' vitest run",
+    "test:watch": "NODE_OPTIONS='--disable-warning=DEP0169' vitest",
+    "test:unit": "NODE_OPTIONS='--disable-warning=DEP0169' vitest run",
+    "test:e2e": "NODE_OPTIONS='--disable-warning=DEP0169' playwright test"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.39.0",
