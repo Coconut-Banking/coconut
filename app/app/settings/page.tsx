@@ -29,6 +29,7 @@ export default function SettingsPage() {
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [wiping, setWiping] = useState(false);
 
   const disconnectBank = async () => {
     if (!confirm("Disconnect your bank? You can reconnect anytime to get real transactions.")) return;
@@ -41,6 +42,20 @@ export default function SettingsPage() {
       } else alert("Failed to disconnect");
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const wipeAllData = async () => {
+    if (!confirm("Delete ALL your transactions, accounts, and linked data? This cannot be undone. You'll need to reconnect your bank.")) return;
+    setWiping(true);
+    try {
+      const res = await fetch("/api/plaid/wipe", { method: "POST" });
+      if (res.ok) {
+        if (typeof sessionStorage !== "undefined") sessionStorage.removeItem("tx_prod_sync_done");
+        window.location.href = "/connect";
+      } else alert("Failed to wipe data");
+    } finally {
+      setWiping(false);
     }
   };
 
@@ -223,13 +238,20 @@ export default function SettingsPage() {
                             +{banks.length - 3} more accounts
                           </div>
                         )}
-                        <div className="pt-2">
+                        <div className="pt-2 space-y-2">
                           <button
                             onClick={disconnectBank}
-                            disabled={disconnecting}
+                            disabled={disconnecting || wiping}
                             className="w-full text-sm text-red-600 hover:text-red-700 px-4 py-3 border border-red-200 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
                           >
                             {disconnecting ? "Disconnecting…" : "Disconnect bank"}
+                          </button>
+                          <button
+                            onClick={wipeAllData}
+                            disabled={disconnecting || wiping}
+                            className="w-full text-sm text-red-700 hover:text-red-800 px-4 py-3 border border-red-300 rounded-xl bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50"
+                          >
+                            {wiping ? "Wiping…" : "Wipe all data & start fresh"}
                           </button>
                         </div>
                       </>
@@ -412,6 +434,17 @@ export default function SettingsPage() {
                 <div className="bg-white rounded-2xl border border-gray-100 p-6">
                   <h2 className="text-sm font-semibold text-gray-900 mb-1">Data & Export</h2>
                   <p className="text-xs text-gray-400 mb-5">Download your data anytime. Your data, your rules.</p>
+                  <div className="mb-5 p-4 border border-red-200 rounded-xl bg-red-50">
+                    <div className="text-sm font-medium text-red-800 mb-1">Wipe all data</div>
+                    <p className="text-xs text-red-700 mb-3">Delete all transactions, accounts, and linked data. Start completely fresh and reconnect.</p>
+                    <button
+                      onClick={wipeAllData}
+                      disabled={wiping}
+                      className="text-sm font-medium text-red-700 hover:text-red-800 border border-red-300 px-3 py-2 rounded-lg bg-white hover:bg-red-50 transition-colors disabled:opacity-50"
+                    >
+                      {wiping ? "Wiping…" : "Wipe all data & start fresh"}
+                    </button>
+                  </div>
                   <div className="space-y-3">
                     {[
                       { label: "Export transactions", desc: "All transactions as a CSV file", format: "CSV" },

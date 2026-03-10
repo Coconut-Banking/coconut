@@ -32,6 +32,31 @@ export async function GET() {
       (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
     );
 
+    // Deduplicate: same merchant+amount+date can appear twice (sandbox vs production Plaid IDs)
+    const seen = new Set<string>();
+    const keptIds = new Set<string>();
+    const deduped = bankOnly.filter((tx) => {
+      const merchant = (tx.merchant_name || tx.raw_name || "").trim().toLowerCase();
+      const amount = Number(tx.amount);
+      const date = tx.date as string;
+      const key = `${merchant}|${amount}|${date}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      keptIds.add(tx.id as string);
+      return true;
+    });
+
+    // Actually delete duplicate rows from Supabase (first occurrence stays)
+    // Don't delete tx that are in splits — they're referenced by split_transactions
+    const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
+    const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
+    const idsToDelete = bankOnly
+      .map((tx) => tx.id as string)
+      .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
+    if (idsToDelete.length > 0) {
+      await db.from("transactions").delete().in("id", idsToDelete);
+    }
+
     // Map to UI shape (reuse existing mapper logic inline)
     const CATEGORY_COLORS: Record<string, string> = {
       ENTERTAINMENT: "bg-purple-100 text-purple-700",
@@ -69,7 +94,7 @@ export async function GET() {
       return `${months[d.getMonth()]} ${d.getDate()}`;
     }
 
-    const mapped = bankOnly.map((tx) => {
+    const mapped = deduped.map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const rawMerchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       const merchant = cleanMerchantForDisplay(rawMerchant, primary);
@@ -104,8 +129,8 @@ export async function POST(req: Request) {
 
   const db = getSupabase();
 
-  // In production: always clear stale/sandbox tx before sync so only real data remains
-  if (process.env.NODE_ENV === "production") {
+  // Always clear before sync so we never mix sandbox + production or accumulate duplicates
+  {
     // Delete bank tx not in splits (keeps manual expenses + any split bank tx)
     const { data: inSplits } = await db
       .from("split_transactions")
@@ -133,7 +158,7 @@ export async function POST(req: Request) {
         console.error("[transactions] fullResync delete error:", delErr.message);
         return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
       }
-      console.log(`[transactions] fullResync: cleared ${idsToDelete.length} transactions for ${userId}`);
+      console.log(`[transactions] cleared ${idsToDelete.length} before sync for ${userId}`);
     }
   }
 
