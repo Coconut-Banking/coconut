@@ -18,16 +18,15 @@ export function AmountDisplay({ amount, className = "" }: { amount: number; clas
   );
 }
 
-/** Letter avatar — no external favicon calls (avoids 404 spam from bad domain guesses). */
-export function MerchantLogo({ name, color, size = "sm" }: { name: string; color: string; size?: "sm" | "lg" }) {
+/** Simple letter avatar — no external logos, no color guessing. Clean neutral style. */
+export function MerchantLogo({ name, size = "sm" }: { name: string; color?: string; size?: "sm" | "lg" }) {
   const dim = size === "lg" ? "w-14 h-14" : "w-9 h-9";
   const textSize = size === "lg" ? "text-xl" : "text-sm";
   return (
     <div
-      className={`${dim} rounded-xl flex items-center justify-center text-white font-bold shrink-0 ${textSize}`}
-      style={{ backgroundColor: color }}
+      className={`${dim} rounded-xl flex items-center justify-center bg-gray-200 text-gray-600 font-semibold shrink-0 ${textSize}`}
     >
-      {name[0]}
+      {(name[0] || "?").toUpperCase()}
     </div>
   );
 }
