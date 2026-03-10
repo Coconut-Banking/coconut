@@ -6,11 +6,16 @@ const DEMO_USER_ID = "demo-sandbox-user";
 
 export async function GET() {
   const { userId } = await auth();
-  const effectiveUserId = userId ?? DEMO_USER_ID;
+  // In production, never show demo data; require real user
+  const effectiveUserId =
+    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  if (!effectiveUserId) {
+    return NextResponse.json([], { status: 200 });
+  }
 
   try {
     const db = getSupabase();
-    let { data, error } = await db
+    const { data, error } = await db
       .from("transactions")
       .select(
         "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
@@ -19,20 +24,12 @@ export async function GET() {
       .order("date", { ascending: false })
       .limit(2000);
 
-    if (userId && (!data || data.length === 0)) {
-      const demo = await db
-        .from("transactions")
-        .select(
-          "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-        )
-        .eq("clerk_user_id", DEMO_USER_ID)
-        .order("date", { ascending: false })
-        .limit(2000);
-      data = demo.data;
-      error = demo.error;
-    }
-
     if (error) throw error;
+
+    // Exclude manual expenses (from Shared tab splits) — they belong in Shared, not main Transactions
+    const bankOnly = (data ?? []).filter(
+      (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
+    );
 
     // Map to UI shape (reuse existing mapper logic inline)
     const CATEGORY_COLORS: Record<string, string> = {
@@ -71,7 +68,7 @@ export async function GET() {
       return `${months[d.getMonth()]} ${d.getDate()}`;
     }
 
-    const mapped = (data ?? []).map((tx) => {
+    const mapped = bankOnly.map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const merchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       return {
@@ -98,10 +95,45 @@ export async function GET() {
   }
 }
 
-// Re-sync from Plaid on demand
-export async function POST() {
+// Re-sync from Plaid on demand. Body: { fullResync?: true } to clear stale/sandbox tx first.
+export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const db = getSupabase();
+
+  // In production: always clear stale/sandbox tx before sync so only real data remains
+  if (process.env.NODE_ENV === "production") {
+    // Delete bank tx not in splits (keeps manual expenses + any split bank tx)
+    const { data: inSplits } = await db
+      .from("split_transactions")
+      .select("transaction_id");
+    const protectedIds = new Set(
+      (inSplits ?? []).map((r) => r.transaction_id as string)
+    );
+
+    const { data: toDelete } = await db
+      .from("transactions")
+      .select("id, plaid_transaction_id")
+      .eq("clerk_user_id", userId);
+
+    const idsToDelete = (toDelete ?? [])
+      .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
+      .map((r) => r.id as string)
+      .filter((id) => !protectedIds.has(id));
+
+    if (idsToDelete.length > 0) {
+      const { error: delErr } = await db
+        .from("transactions")
+        .delete()
+        .in("id", idsToDelete);
+      if (delErr) {
+        console.error("[transactions] fullResync delete error:", delErr.message);
+        return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
+      }
+      console.log(`[transactions] fullResync: cleared ${idsToDelete.length} transactions for ${userId}`);
+    }
+  }
 
   const { syncTransactionsForUser, embedTransactionsForUser } = await import("@/lib/transaction-sync");
   const { synced, error } = await syncTransactionsForUser(userId);

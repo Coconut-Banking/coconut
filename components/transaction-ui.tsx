@@ -16,7 +16,7 @@ export function merchantToDomain(merchant: string): string | null {
   return slug.length >= 2 ? `${slug}.com` : null;
 }
 
-/** Format amount with + / - and color: green for inflows, red for outflows. */
+/** Format amount with + / - . Only inflows (+) get green; outflows stay neutral. */
 export function AmountDisplay({ amount, className = "" }: { amount: number; className?: string }) {
   const isInflow = amount > 0;
   const sign = isInflow ? "+" : "-";
@@ -26,7 +26,7 @@ export function AmountDisplay({ amount, className = "" }: { amount: number; clas
       className={
         isInflow
           ? `font-semibold text-emerald-600 ${className}`
-          : `font-semibold text-red-600 ${className}`
+          : `font-semibold text-gray-900 ${className}`
       }
     >
       {sign}${abs.toFixed(2)}
@@ -52,11 +52,12 @@ export function MerchantLogo({ name, color, size = "sm" }: { name: string; color
 
   if (useFallback) return fallback;
 
+  // Google Favicon API: free, no key, domain → favicon (widely used fallback for Clearbit)
   return (
     <div className={`${dim} rounded-xl overflow-hidden shrink-0 flex items-center justify-center bg-gray-100`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={`https://logo.clearbit.com/${domain}`}
+        src={`https://www.google.com/s2/favicons?domain=${domain}&sz=128`}
         alt=""
         className="w-full h-full object-contain"
         onError={() => setFailed(true)}

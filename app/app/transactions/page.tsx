@@ -548,7 +548,6 @@ export default function TransactionsPage() {
   // Real-time filter: page search bar. Client-side only, no LLM.
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "posted">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
   const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
@@ -572,18 +571,10 @@ export default function TransactionsPage() {
   const baseList = semanticQuery.trim() ? nlFiltered : transactions;
   // Real-time filter (page search bar): client-side, no LLM
   const filteredBySearch = filterTransactionsByQuery(baseList, filterQuery);
-  // Status filter (pending first / pending only / posted only)
-  const byStatus =
-    statusFilter === "pending"
-      ? filteredBySearch.filter((tx) => tx.isPending)
-      : statusFilter === "posted"
-        ? filteredBySearch.filter((tx) => !tx.isPending)
-        : filteredBySearch;
-  // Sort: pending first when showing all
-  const sortedByPending =
-    statusFilter === "all"
-      ? [...byStatus].sort((a, b) => (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1))
-      : byStatus;
+  // Sort: pending first (no filter, just auto-sort)
+  const sortedByPending = [...filteredBySearch].sort(
+    (a, b) => (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1)
+  );
   // Category filter
   const filtered =
     selectedCategory === "All"
@@ -653,22 +644,6 @@ export default function TransactionsPage() {
 
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">
-          {/* Status filter: All / Pending / Posted */}
-          <div className="flex items-center gap-2 mb-3">
-            {(["all", "pending", "posted"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
-                  statusFilter === s
-                    ? "bg-[#3D8E62] text-white"
-                    : "bg-white border border-gray-200 text-gray-600 hover:border-gray-300"
-                }`}
-              >
-                {s === "all" ? "All" : s === "pending" ? "Pending" : "Posted"}
-              </button>
-            ))}
-          </div>
           <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
             {categoryTabs.map((cat) => (
               <button
