@@ -8,6 +8,7 @@ const openai = process.env.OPENAI_API_KEY
   : null;
 
 const TODAY = new Date().toISOString().slice(0, 10);
+const CURRENT_YEAR = new Date().getFullYear();
 const LAST_30_START = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
 const SYSTEM_PROMPT = `You extract search filters from natural language queries about financial transactions.
@@ -32,7 +33,7 @@ Rules:
 Examples:
 "how much did I spend on rideshare in the last month" -> {"keywords":["uber","lyft"],"dateStart":"${LAST_30_START}","dateEnd":"${TODAY}","amountMin":null,"amountMax":null,"categoryHint":"transportation"}
 "how much did I spend on food in the past month" -> {"keywords":[],"dateStart":"${LAST_30_START}","dateEnd":"${TODAY}","amountMin":null,"amountMax":null,"categoryHint":"food and drink"}
-"coffee in January" -> {"keywords":["starbucks","coffee","dunkin"],"dateStart":"2026-01-01","dateEnd":"2026-01-31","amountMin":null,"amountMax":null,"categoryHint":"food and drink"}
+"coffee in January" -> {"keywords":["starbucks","coffee","dunkin"],"dateStart":"${CURRENT_YEAR}-01-01","dateEnd":"${CURRENT_YEAR}-01-31","amountMin":null,"amountMax":null,"categoryHint":"food and drink"}
 "subscriptions over $10" -> {"keywords":["netflix","spotify","hulu"],"dateStart":null,"dateEnd":null,"amountMin":10,"amountMax":null,"categoryHint":"subscriptions"}`;
 
 function validateAndSanitize(obj: unknown): QueryFilters {

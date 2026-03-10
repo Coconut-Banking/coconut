@@ -10,6 +10,7 @@
  */
 import OpenAI from "openai";
 import { getSupabase } from "./supabase";
+import { SEARCH } from "./config";
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -234,7 +235,7 @@ async function runStructuredQuery(
       db.from("transactions").select(
         "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending",
         { count: "exact" }
-      ).order("date", { ascending: false }).limit(50),
+      ).order("date", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
       intent,
       clerkUserId
     );
@@ -282,7 +283,7 @@ async function runStructuredQuery(
   const { data, error } = await applyFilters(
     db.from("transactions").select(
       "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-    ).order("date", { ascending: false }).limit(50),
+    ).order("date", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
     intent,
     clerkUserId
   );
@@ -322,7 +323,7 @@ async function runVectorSearch(
     p_embedding: JSON.stringify(queryEmbedding),
     p_date_start: intent.date_start,
     p_date_end: intent.date_end,
-    p_limit: 20,
+    p_limit: SEARCH.VECTOR_LIMIT,
   });
 
   if (error) {
@@ -335,7 +336,7 @@ async function runVectorSearch(
 // ─── Answer generator ─────────────────────────────────────────────────────────
 
 function fmt(amount: number): string {
-  return `$${amount.toFixed(2)}`;
+  return amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 function fmtPeriod(intent: SearchIntent): string {

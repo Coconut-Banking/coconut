@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { scanGmailForReceipts } from "@/lib/receipt-parser";
+import { GMAIL } from "@/lib/config";
 
 export async function POST(request: Request) {
   const { userId } = await auth();
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
   try {
     // Parse request body for options
     const body = await request.json().catch(() => ({}));
-    const daysBack = body.daysBack || 7; // Default to 7 days
+    const daysBack = body.daysBack || GMAIL.DEFAULT_SCAN_DAYS;
     const detailed = body.detailed !== false; // Default to true for detailed parsing
     const forceRescan = body.forceRescan === true; // Default to false
 

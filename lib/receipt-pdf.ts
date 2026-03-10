@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { PersonShare } from "./receipt-split";
+import { formatCurrency } from "./currency";
 
 /**
  * Generate a calm, minimal PDF of the receipt split summary.
@@ -28,7 +29,7 @@ export function exportReceiptSplitPdf(
   doc.setFont("helvetica", "normal");
   doc.setTextColor(107, 114, 128);
   doc.text(
-    `${merchant || "Receipt"} — Total: $${grandTotal.toFixed(2)} (incl. tax & tip)`,
+    `${merchant || "Receipt"} — Total: ${formatCurrency(grandTotal)} (incl. tax & tip)`,
     margin,
     y
   );
@@ -61,7 +62,7 @@ export function exportReceiptSplitPdf(
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
     doc.text(person.name, margin + 4, y + 7);
-    doc.text(`$${person.totalOwed.toFixed(2)}`, pageW - margin - 4, y + 7, {
+    doc.text(formatCurrency(person.totalOwed), pageW - margin - 4, y + 7, {
       align: "right",
     });
     y += 14;
@@ -72,7 +73,7 @@ export function exportReceiptSplitPdf(
     doc.setTextColor(107, 114, 128);
     for (const item of person.items) {
       doc.text(item.itemName, margin + 4, y);
-      doc.text(`$${item.shareAmount.toFixed(2)}`, pageW - margin - 4, y, {
+      doc.text(formatCurrency(item.shareAmount), pageW - margin - 4, y, {
         align: "right",
       });
       y += 6;

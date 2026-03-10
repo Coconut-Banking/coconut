@@ -1,20 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
-
-const DEMO_USER_ID = "demo-sandbox-user";
+import { getEffectiveUserId } from "@/lib/demo";
 
 /**
  * POST /api/plaid/disconnect
  * Removes Plaid connection and all bank transactions for the user.
- * Uses same effectiveUserId as status/exchange (userId ?? DEMO_USER_ID) so
- * disconnect actually deletes the same data that was linked.
  */
 export async function POST() {
-  const { userId } = await auth();
-  // Production: require real auth, never use demo/sandbox user
-  const effectiveUserId =
-    userId ?? (process.env.NODE_ENV === "production" ? null : DEMO_USER_ID);
+  const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Sign in to manage your bank" }, { status: 401 });
   }

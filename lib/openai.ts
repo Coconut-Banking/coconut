@@ -35,7 +35,7 @@ export async function chatWithContext(
         .slice(0, 30)
         .map(
           (t) =>
-            `${t.date} ${t.merchant} $${t.amount.toFixed(2)} (${t.category})`
+            `${t.date} ${t.merchant} ${t.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })} (${t.category})`
         )
         .join("\n")
     : "No relevant transactions found.";

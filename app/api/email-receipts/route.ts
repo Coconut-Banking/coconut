@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
+import { EMAIL_RECEIPTS } from "@/lib/config";
 
 export async function GET() {
   const { userId } = await auth();
@@ -15,7 +16,7 @@ export async function GET() {
       .select("*")
       .eq("clerk_user_id", userId)
       .order("parsed_at", { ascending: false })
-      .limit(100);
+      .limit(EMAIL_RECEIPTS.PAGE_SIZE);
 
     if (error) {
       console.error("Failed to fetch receipts:", error);
