@@ -20,11 +20,24 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAccounts } from "@/hooks/useAccounts";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
 import { useNLSearch } from "@/hooks/useNLSearch";
 import type { UITransaction } from "@/lib/transaction-types";
 import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
 
 // Display labels for known Plaid primary categories
+function isInvestmentAccount(acc: { type?: string; subtype?: string; name?: string }): boolean {
+  const t = (acc.type ?? "").toLowerCase();
+  const s = (acc.subtype ?? "").toLowerCase();
+  const n = (acc.name ?? "").toLowerCase();
+  return (
+    t === "investment" ||
+    /\b(brokerage|tfsa|ira|401k|403b|457b|529|trust)\b/.test(s) ||
+    /\b(tfsa|non-registered|crypto|brokerage|investment)\b/.test(n)
+  );
+}
+
 const CATEGORY_LABEL: Record<string, string> = {
   "FOOD AND DRINK": "Food & Drink",
   "GROCERIES": "Groceries",
@@ -646,15 +659,20 @@ function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: st
 
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
-  const { transactions, linked, loading } = useTransactions();
+  const { transactions, linked, loading, syncAndRefetch } = useTransactions();
   const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
+  const { isHidden, hidden: hiddenIds } = useHiddenAccounts();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+
+  const visibleUsAccounts = usAccounts.filter((a) => a.id && !isHidden(a.id));
+  const visibleCadAccounts = cadAccounts.filter((a) => a.id && !isHidden(a.id));
+  const visibleOtherAccounts = otherAccounts.filter((a) => a.id && !isHidden(a.id));
   // Semantic search: from URL (top bar submit). Triggers NL/LLM search.
   const semanticQuery = searchParams.get("q") ? decodeURIComponent(searchParams.get("q")!) : "";
   // Real-time filter: page search bar. Client-side only, no LLM.
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [dateFilter, setDateFilter] = useState("This month");
+  const [dateFilter, setDateFilter] = useState("Last 3 months");
   const [typeFilter, setTypeFilter] = useState("All");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
@@ -663,6 +681,14 @@ export default function TransactionsPage() {
   useEffect(() => {
     if (filterQuery.trim()) setSelectedCategory("All");
   }, [filterQuery]);
+
+  useEffect(() => {
+    if (selectedAccountId && isHidden(selectedAccountId)) {
+      setSelectedAccountId(null);
+    }
+  }, [selectedAccountId, isHidden]);
+
+  usePullToRefresh(syncAndRefetch, !!linked);
 
   if (linked && loading) {
     return (
@@ -683,10 +709,15 @@ export default function TransactionsPage() {
   const sortedByPending = [...filteredBySearch].sort(
     (a, b) => (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1)
   );
-  // Account filter
-  const afterAccount = selectedAccountId
-    ? sortedByPending.filter((tx) => tx.accountId === selectedAccountId)
-    : sortedByPending;
+  const hiddenSet = new Set(hiddenIds);
+  // Account filter (exclude hidden accounts; filter by selected when set)
+  const afterAccount = (() => {
+    const excludeHidden = sortedByPending.filter((tx) => !tx.accountId || !hiddenSet.has(tx.accountId));
+    return selectedAccountId
+      ? excludeHidden.filter((tx) => tx.accountId === selectedAccountId)
+      : excludeHidden;
+  })();
+  const hasUnlinkedTx = selectedAccountId && sortedByPending.some((tx) => !tx.accountId);
   // Category filter
   const afterCategory = selectedCategory === "All"
     ? afterAccount
@@ -761,15 +792,15 @@ export default function TransactionsPage() {
       </div>
 
       {/* Accounts overview — US / CAD with balances */}
-      {linked && (usAccounts.length > 0 || cadAccounts.length > 0 || otherAccounts.length > 0) && (
+      {linked && (visibleUsAccounts.length > 0 || visibleCadAccounts.length > 0 || visibleOtherAccounts.length > 0) && (
         <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5">
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Your accounts</h2>
           <div className="space-y-4">
-            {usAccounts.length > 0 && (
+            {visibleUsAccounts.length > 0 && (
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">US — USD</div>
                 <div className="flex flex-wrap gap-3">
-                  {usAccounts.map((acc) => {
+                  {visibleUsAccounts.map((acc) => {
                     const bal = acc.balance_current ?? acc.balance_available ?? 0;
                     const isSelected = selectedAccountId === acc.id;
                     return (
@@ -786,7 +817,12 @@ export default function TransactionsPage() {
                           {(acc.name?.[0] ?? "?").toUpperCase()}
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
+                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px] flex items-center gap-1.5">
+                            {acc.name}
+                            {isInvestmentAccount(acc) && (
+                              <span className="text-[10px] font-normal text-gray-400 shrink-0">(investments)</span>
+                            )}
+                          </div>
                           <div className="text-xs text-gray-500">••••{acc.mask ?? "****"}</div>
                           <div className="text-sm font-semibold text-gray-900 mt-0.5">
                             ${typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
@@ -798,11 +834,11 @@ export default function TransactionsPage() {
                 </div>
               </div>
             )}
-            {cadAccounts.length > 0 && (
+            {visibleCadAccounts.length > 0 && (
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Canada — CAD</div>
                 <div className="flex flex-wrap gap-3">
-                  {cadAccounts.map((acc) => {
+                  {visibleCadAccounts.map((acc) => {
                     const bal = acc.balance_current ?? acc.balance_available ?? 0;
                     const isSelected = selectedAccountId === acc.id;
                     return (
@@ -819,7 +855,12 @@ export default function TransactionsPage() {
                           {(acc.name?.[0] ?? "?").toUpperCase()}
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
+                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px] flex items-center gap-1.5">
+                            {acc.name}
+                            {isInvestmentAccount(acc) && (
+                              <span className="text-[10px] font-normal text-gray-400 shrink-0">(investments)</span>
+                            )}
+                          </div>
                           <div className="text-xs text-gray-500">••••{acc.mask ?? "****"}</div>
                           <div className="text-sm font-semibold text-gray-900 mt-0.5">
                             C${typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
@@ -831,11 +872,11 @@ export default function TransactionsPage() {
                 </div>
               </div>
             )}
-            {otherAccounts.length > 0 && (
+            {visibleOtherAccounts.length > 0 && (
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Other</div>
                 <div className="flex flex-wrap gap-3">
-                  {otherAccounts.map((acc) => {
+                  {visibleOtherAccounts.map((acc) => {
                     const bal = acc.balance_current ?? acc.balance_available ?? 0;
                     const isSelected = selectedAccountId === acc.id;
                     return (
@@ -850,7 +891,12 @@ export default function TransactionsPage() {
                           {(acc.name?.[0] ?? "?").toUpperCase()}
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
+                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px] flex items-center gap-1.5">
+                            {acc.name}
+                            {isInvestmentAccount(acc) && (
+                              <span className="text-[10px] font-normal text-gray-400 shrink-0">(investments)</span>
+                            )}
+                          </div>
                           <div className="text-xs text-gray-500">••••{acc.mask ?? "****"} {acc.iso_currency_code}</div>
                           <div className="text-sm font-semibold text-gray-900 mt-0.5">
                             ${typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2 }) : "—"}
@@ -872,7 +918,7 @@ export default function TransactionsPage() {
             >
               All accounts
             </button>
-            {[...usAccounts, ...cadAccounts, ...otherAccounts].filter((a) => a.id).map((acc) => {
+            {[...visibleUsAccounts, ...visibleCadAccounts, ...visibleOtherAccounts].filter((a) => a.id).map((acc) => {
               const isSelected = selectedAccountId === acc.id;
               return (
                 <button
@@ -951,10 +997,26 @@ export default function TransactionsPage() {
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
             {filtered.length === 0 ? (
               <div className="text-center py-12 text-gray-400 text-sm">
-                {nlAnswer || "No transactions found"}
-                <div className="mt-2 text-xs text-gray-500">
-                  Try a different filter or <button onClick={() => setFilterQuery("")} className="text-[#3D8E62] underline">clear the filter</button>
-                  {semanticQuery && <> or <Link href="/app/transactions" className="text-[#3D8E62] underline">clear semantic search</Link></>}.
+                {nlAnswer || (selectedAccountId ? "No transactions for this account" : "No transactions found")}
+                <div className="mt-2 text-xs text-gray-500 space-y-1">
+                  {selectedAccountId ? (
+                    <>
+                      <p>
+                        This account has no transactions. You have <strong>{transactions.filter((t) => !t.accountId || !hiddenSet.has(t.accountId)).length} total</strong> —{" "}
+                        <button onClick={() => setSelectedAccountId(null)} className="text-[#3D8E62] font-semibold underline">View all transactions</button>
+                      </p>
+                      <p className="text-gray-400 mt-1">Investment accounts (TFSA, brokerage) often have few day-to-day transactions.</p>
+                      {hasUnlinkedTx && (
+                        <p className="text-amber-600/90 mt-1">Some older transactions aren&apos;t linked to accounts.</p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p>Try a different filter or <button onClick={() => setFilterQuery("")} className="text-[#3D8E62] underline">clear the filter</button>.</p>
+                      <p>Or change the date to <button onClick={() => setDateFilter("Last 3 months")} className="text-[#3D8E62] font-medium underline">Last 3 months</button> or <button onClick={() => setDateFilter("All time")} className="text-[#3D8E62] font-medium underline">All time</button>.</p>
+                      {semanticQuery && <p><Link href="/app/transactions" className="text-[#3D8E62] underline">Clear semantic search</Link></p>}
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1011,9 +1073,9 @@ export default function TransactionsPage() {
                   onChange={(e) => setDateFilter(e.target.value)}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
                 >
+                  <option>Last 3 months</option>
                   <option>This month</option>
                   <option>Last month</option>
-                  <option>Last 3 months</option>
                   <option>This year</option>
                   <option>All time</option>
                 </select>

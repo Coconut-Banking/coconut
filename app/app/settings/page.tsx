@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
-import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2 } from "lucide-react";
+import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGmail } from "@/hooks/useGmail";
+import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
 
 const sections = [
   { id: "profile", label: "Profile", icon: User },
@@ -25,6 +26,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { linked } = useTransactions();
   const gmail = useGmail();
+  const { hidden, hide, unhide, isHidden } = useHiddenAccounts();
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
@@ -76,12 +78,14 @@ export default function SettingsPage() {
   }, [linked]);
 
   const banks = (plaidAccounts?.accounts ?? []).map((a) => ({
-    id: a.account_id,
+    id: (a as { id?: string }).id ?? a.account_id,
     name: a.name || "Account",
     accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
     color: "#3D8E62",
     connected: "Connected",
   }));
+  const visibleBanks = banks.filter((b) => !isHidden(b.id));
+  const hiddenBanks = banks.filter((b) => isHidden(b.id));
 
   const handleSave = () => {
     setSaved(true);
@@ -218,8 +222,7 @@ export default function SettingsPage() {
                       <div className="py-6 text-center text-sm text-gray-500">No accounts found.</div>
                     ) : (
                       <>
-                        {/* Show first 3 accounts as a summary; one Disconnect clears everything */}
-                        {banks.slice(0, 3).map((bank) => (
+                        {visibleBanks.map((bank) => (
                           <div key={bank.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl">
                             <div
                               className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
@@ -231,11 +234,40 @@ export default function SettingsPage() {
                               <div className="text-sm font-semibold text-gray-900">{bank.name}</div>
                               <div className="text-xs text-gray-400">{bank.accounts}</div>
                             </div>
+                            <button
+                              onClick={() => hide(bank.id)}
+                              className="text-xs text-gray-500 hover:text-red-600 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                              title="Hide from Transactions"
+                            >
+                              <EyeOff size={14} />
+                              Hide
+                            </button>
                           </div>
                         ))}
-                        {banks.length > 3 && (
-                          <div className="text-xs text-gray-500 px-4 py-2">
-                            +{banks.length - 3} more accounts
+                        {hiddenBanks.length > 0 && (
+                          <div className="pt-2 border-t border-gray-100">
+                            <div className="text-xs font-medium text-gray-500 mb-2">Hidden accounts</div>
+                            {hiddenBanks.map((bank) => (
+                              <div key={bank.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl mb-2">
+                                <div
+                                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 text-xs font-bold shrink-0"
+                                  style={{ backgroundColor: "rgba(0,0,0,0.05)" }}
+                                >
+                                  {bank.name[0]}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm text-gray-600 truncate">{bank.name}</div>
+                                  <div className="text-xs text-gray-400">{bank.accounts}</div>
+                                </div>
+                                <button
+                                  onClick={() => unhide(bank.id)}
+                                  className="text-xs text-[#3D8E62] hover:text-[#2D7A52] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#EEF7F2] transition-colors"
+                                >
+                                  <Eye size={14} />
+                                  Show again
+                                </button>
+                              </div>
+                            ))}
                           </div>
                         )}
                         <div className="pt-2 space-y-2">

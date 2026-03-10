@@ -23,6 +23,22 @@ export function useTransactions() {
     setTransactions(Array.isArray(data) ? (data as UITransaction[]) : []);
   }, []);
 
+  const syncAndRefetch = useCallback(async () => {
+    const statusRes = await fetch("/api/plaid/status");
+    const status = await statusRes.json();
+    if (!status.linked) return;
+    try {
+      await fetch("/api/plaid/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      await refetch();
+    } catch {
+      await refetch();
+    }
+  }, [refetch]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -35,18 +51,18 @@ export function useTransactions() {
           return null;
         }
         setLinked(true);
-        // In production, run a sync on first visit to clear any stale sandbox data
-        const syncKey = "tx_prod_sync_done";
-        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(syncKey)) {
+        // Sync only on hard refresh (F5 / reload), not on tab return or client nav
+        const nav = typeof performance !== "undefined" && performance.getEntriesByType?.("navigation")?.[0];
+        const isReload = nav && (nav as PerformanceNavigationTiming).type === "reload";
+        if (isReload) {
           try {
             await fetch("/api/plaid/transactions", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: "{}",
             });
-            sessionStorage.setItem(syncKey, "1");
           } catch {
-            // ignore
+            // ignore — will still fetch from cache
           }
         }
         return fetch("/api/plaid/transactions");
@@ -71,5 +87,5 @@ export function useTransactions() {
     return () => { cancelled = true; };
   }, []);
 
-  return { transactions, linked, loading, refetch };
+  return { transactions, linked, loading, refetch, syncAndRefetch };
 }
