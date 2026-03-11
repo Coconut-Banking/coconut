@@ -16,6 +16,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "image file required" }, { status: 400 });
   }
 
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  if (file.size > MAX_FILE_SIZE) {
+    return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 400 });
+  }
+
+  if (!file.type.startsWith("image/")) {
+    return NextResponse.json({ error: "Only image files are accepted" }, { status: 400 });
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
   const mimeType = file.type || "image/png";
