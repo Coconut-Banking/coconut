@@ -9,22 +9,33 @@ export function useTransactions() {
   const [transactions, setTransactions] = useState<UITransaction[]>([]);
   const [linked, setLinked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
-    const statusRes = await fetch("/api/plaid/status");
-    const status = await statusRes.json();
-    setLinked(!!status.linked);
-    if (!status.linked) {
-      setTransactions([]);
-      return;
+    try {
+      setError(null);
+      const statusRes = await fetch("/api/plaid/status");
+      if (!statusRes.ok) { setError("Failed to check bank connection"); return; }
+      const status = await statusRes.json();
+      setLinked(!!status.linked);
+      if (!status.linked) { setTransactions([]); return; }
+      const txRes = await fetch("/api/plaid/transactions");
+      if (!txRes.ok) {
+        const body = await txRes.json().catch(() => ({}));
+        setError(body.error ?? "Failed to load transactions");
+        return;
+      }
+      const data = await txRes.json();
+      setTransactions(Array.isArray(data) ? (data as UITransaction[]) : []);
+    } catch (e) {
+      console.error("[useTransactions] refetch:", e);
+      setError("Failed to load transactions");
     }
-    const txRes = await fetch("/api/plaid/transactions");
-    const data = await txRes.json();
-    setTransactions(Array.isArray(data) ? (data as UITransaction[]) : []);
   }, []);
 
   const syncAndRefetch = useCallback(async () => {
     const statusRes = await fetch("/api/plaid/status");
+    if (!statusRes.ok) return;
     const status = await statusRes.json();
     if (!status.linked) return;
     try {
@@ -87,5 +98,5 @@ export function useTransactions() {
     return () => { cancelled = true; };
   }, []);
 
-  return { transactions, linked, loading, refetch, syncAndRefetch };
+  return { transactions, linked, loading, error, refetch, syncAndRefetch };
 }

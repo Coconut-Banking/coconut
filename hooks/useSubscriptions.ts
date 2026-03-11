@@ -35,14 +35,24 @@ export function useSubscriptions() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchSubs = useCallback(async (isCancelled?: () => boolean) => {
-    const res = await fetch("/api/subscriptions");
-    if (isCancelled?.()) return;
-    if (!res.ok) return;
-    const data = await res.json();
-    if (isCancelled?.()) return;
-    setSubscriptions(Array.isArray(data) ? data : []);
+    try {
+      setError(null);
+      const res = await fetch("/api/subscriptions");
+      if (isCancelled?.()) return;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Failed to load subscriptions");
+        return;
+      }
+      const data = await res.json();
+      if (isCancelled?.()) return;
+      setSubscriptions(Array.isArray(data) ? data : []);
+    } catch {
+      if (!isCancelled?.()) setError("Failed to load subscriptions");
+    }
   }, []);
 
   useEffect(() => {
@@ -58,18 +68,24 @@ export function useSubscriptions() {
     try {
       const res = await fetch("/api/subscriptions", { method: "POST" });
       if (res.ok) await fetchSubs();
+    } catch (e) {
+      console.error("[subscriptions] detect:", e);
     } finally {
       setDetecting(false);
     }
   }, [fetchSubs]);
 
   const dismiss = useCallback(async (id: string) => {
-    const res = await fetch(`/api/subscriptions/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "dismissed" }),
-    });
-    if (res.ok) setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+    try {
+      const res = await fetch(`/api/subscriptions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "dismissed" }),
+      });
+      if (res.ok) setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      console.error("[subscriptions] dismiss:", e);
+    }
   }, []);
 
   const totalMonthly = subscriptions.reduce((acc, s) => {
@@ -91,6 +107,7 @@ export function useSubscriptions() {
     totalAnnual: totalMonthly * 12,
     loading,
     detecting,
+    error,
     detect,
     dismiss,
     refetch: fetchSubs,
