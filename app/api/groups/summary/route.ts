@@ -41,7 +41,8 @@ export async function GET() {
       transactions(amount)
     `)
     .in("group_id", groupIds)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(500);
 
   const splitIds = (splits ?? []).map((s) => s.id);
 

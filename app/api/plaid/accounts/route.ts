@@ -64,7 +64,7 @@ export async function GET() {
     const db = getSupabase();
     const { data: cached } = await db
       .from("accounts")
-      .select("*")
+      .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
       .eq("clerk_user_id", userId);
 
     if (cached && cached.length > 0) {
@@ -94,20 +94,25 @@ export async function GET() {
     if (!client) return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
 
     const response = await client.accountsGet({ access_token: accessToken });
-    // Upsert to ensure we have DB ids (for transaction filtering)
-    for (const acct of response.data.accounts) {
+    // Batch upsert all accounts in one call
+    const rows = response.data.accounts.map((acct) => {
       const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-      const base = { clerk_user_id: userId, plaid_account_id: acct.account_id, name: acct.name, type: acct.type, subtype: acct.subtype ?? null, mask: acct.mask ?? null };
-      try {
-        await db.from("accounts").upsert(
-          { ...base, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
-          { onConflict: "plaid_account_id" }
-        );
-      } catch {
-        await db.from("accounts").upsert(base, { onConflict: "plaid_account_id" });
-      }
+      return {
+        clerk_user_id: userId,
+        plaid_account_id: acct.account_id,
+        name: acct.name,
+        type: acct.type,
+        subtype: acct.subtype ?? null,
+        mask: acct.mask ?? null,
+        balance_current: bal?.current ?? null,
+        balance_available: bal?.available ?? null,
+        iso_currency_code: bal?.iso_currency_code ?? "USD",
+      };
+    });
+    if (rows.length > 0) {
+      await db.from("accounts").upsert(rows, { onConflict: "plaid_account_id" });
     }
-    const { data: updated } = await db.from("accounts").select("*").eq("clerk_user_id", userId);
+    const { data: updated } = await db.from("accounts").select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", userId);
     const accounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
       account_id: String(row.plaid_account_id ?? ""),
       id: String(row.id ?? ""),
