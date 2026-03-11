@@ -31,7 +31,7 @@ export async function GET() {
   }
   try {
     const db = getSupabase();
-    const { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false });
+    const { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false }).limit(200);
     if (error) throw error;
     const subs = (data ?? []).map((s) => ({ id: s.id, merchant: s.merchant_name ?? "Unknown", amount: Number(s.amount) || 0, frequency: s.frequency ?? "monthly", lastCharged: s.last_charge_date ?? null, nextDue: s.next_due_date ?? null, category: (s.primary_category ?? "SUBSCRIPTIONS").replace(/_/g, " "), transactionCount: s.transaction_count ?? 0, status: s.status ?? "active" }));
     return NextResponse.json(subs);
