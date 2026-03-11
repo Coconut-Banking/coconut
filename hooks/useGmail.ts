@@ -8,7 +8,7 @@ interface GmailState {
   lastScan: string | null;
   loading: boolean;
   scanning: boolean;
-  scanResult: { scanned: number; matched: number } | null;
+  scanResult: { emailsFetched: number; inserted: number; matched: number } | null;
   tokenError: boolean;
 }
 
@@ -103,7 +103,7 @@ export function useGmail() {
       setState((prev) => ({
         ...prev,
         scanning: false,
-        scanResult: { scanned: data.scanned, matched: data.matched },
+        scanResult: { emailsFetched: data.emailsFetched, inserted: data.inserted, matched: data.matched },
         lastScan: new Date().toISOString(),
       }));
     } catch (e) {
