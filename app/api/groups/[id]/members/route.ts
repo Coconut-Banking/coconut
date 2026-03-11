@@ -31,7 +31,7 @@ export async function POST(
     .from("group_members")
     .insert({
       group_id: id,
-      user_id: body.userId ?? null,
+      user_id: null,
       email,
       display_name: displayName,
     })

@@ -32,7 +32,11 @@ export async function GET() {
   );
 
   return NextResponse.json(
-    groups.map((g) => ({ ...g, memberCount: countByGroup[g.id] ?? 0 }))
+    groups.map((g) => ({
+      ...g,
+      invite_token: g.owner_id === userId ? g.invite_token : null,
+      memberCount: countByGroup[g.id] ?? 0,
+    }))
   );
 }
 

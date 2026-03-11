@@ -779,6 +779,23 @@ if (idsToDelete.length > 0) {
 
 ---
 
+## Remediation Status
+
+| ID | Finding | Status | Notes |
+|----|---------|--------|-------|
+| CRIT-01 | No RLS policies | **Mitigated** | RLS policies created in `docs/supabase-migration-rls-policies.sql`. Apply manually in Supabase SQL Editor. Service role key still bypasses RLS — migrate to user-scoped client with Clerk JWTs for full enforcement. |
+| CRIT-03 | Plaid tokens in plaintext | **Requires infrastructure work** | Encrypt at rest using `pgcrypto` (`pgp_sym_encrypt`/`pgp_sym_decrypt`) with a key from a KMS (e.g. AWS KMS, Vault). Alternatively, use application-level AES-256-GCM encryption before writing to Supabase. The `.plaid-token.json` dev artifact should be removed and added to `.gitignore`. |
+| CRIT-04 | Gmail tokens in plaintext | **Requires infrastructure work** | Same approach as CRIT-03: encrypt `access_token` and `refresh_token` columns in `gmail_connections` using `pgcrypto` or application-level encryption with a KMS-managed key. |
+| CRIT-06 | `proxy.ts` not loaded as middleware | **Fixed** | Renamed to `middleware.ts`. |
+| HIGH-01 | No rate limiting | **Fixed** | In-memory sliding window rate limiter applied to LLM, Plaid, receipt, Gmail, and demo routes. For production scale, migrate to Upstash Redis or Vercel Edge Config. |
+| HIGH-06 | Demo mode on staging | **Fixed** | Demo mode now requires explicit `DEMO_ENABLED=true` env var in addition to `NODE_ENV !== "production"`. |
+| HIGH-09 | `NEXT_PUBLIC_SKIP_AUTH` no production guard | **Fixed** | `AppGate.tsx` now ignores the flag when `NODE_ENV === "production"`. |
+| MED-05 | `invite_token` exposed to all members | **Fixed** | Token is only returned for groups where the user is the owner. |
+| MED-08 | `body.userId` accepted in member creation | **Fixed** | `user_id` is always set to `null` on creation; should only be linked via invite acceptance flow. |
+| MED-09 | Open redirect in Gmail callback | **Fixed** | `coconut://` URLs restricted to an explicit allowlist of known deep link paths. |
+
+---
+
 ## Recommended Integrations
 
 | Tool | Purpose | Priority |

@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { search } from "@/lib/search-engine";
 import { getEffectiveUserId } from "@/lib/demo";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rl = rateLimit(`nl-search:${effectiveUserId}`, 20, 60_000);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
   let body;

@@ -13,8 +13,13 @@ function parseOAuthState(raw: string): { userId: string; redirect?: string } {
   return { userId: raw };
 }
 
+const ALLOWED_DEEP_LINKS = ["coconut://connected", "coconut://settings"];
+
 function isAllowedRedirect(url: string): boolean {
-  return url.startsWith("coconut://") || url.startsWith("/");
+  if (url.startsWith("/")) return true;
+  return ALLOWED_DEEP_LINKS.some(
+    (prefix) => url === prefix || url.startsWith(`${prefix}?`),
+  );
 }
 
 export async function GET(request: NextRequest) {

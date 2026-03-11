@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import OpenAI from "openai";
 import { parseQuery, type QueryFilters } from "@/lib/nl-query";
+import { rateLimit } from "@/lib/rate-limit";
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -56,6 +57,11 @@ export async function GET(request: NextRequest) {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rl = rateLimit(`nl-parse:${userId}`, 20, 60_000);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
   const q = (request.nextUrl.searchParams.get("q")?.trim() ?? "").slice(0, 500);
