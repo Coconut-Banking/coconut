@@ -4,7 +4,9 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 
-const SKIP_AUTH = process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
+const SKIP_AUTH =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 
 export function AppGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();

@@ -3,10 +3,16 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { search } from "@/lib/search-engine";
 import { chatWithContext } from "@/lib/openai";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const rl = rateLimit(`chat:${userId}`, 20, 60_000);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
 
   try {
     const body = await request.json();

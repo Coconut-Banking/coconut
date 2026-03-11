@@ -11,11 +11,20 @@ export const DEMO_PROFILE = {
   email: "alex@coconut-demo.com",
 };
 
+function isDemoEnabled(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.DEMO_ENABLED === "true"
+  );
+}
+
 /**
  * Returns true when the current request is in demo mode (cookie set).
  * Works in server components and API routes.
+ * Requires both NODE_ENV !== "production" and DEMO_ENABLED=true.
  */
 export async function isDemoMode(): Promise<boolean> {
+  if (!isDemoEnabled()) return false;
   const jar = await cookies();
   return jar.get(DEMO_COOKIE)?.value === "true";
 }
@@ -23,13 +32,12 @@ export async function isDemoMode(): Promise<boolean> {
 /**
  * Returns the effective user ID for API routes:
  * - If authenticated via Clerk, returns the real userId (never demo)
- * - If in demo mode (cookie), returns DEMO_USER_ID
+ * - If in demo mode (cookie + env guard), returns DEMO_USER_ID
  * - Otherwise returns null (unauthenticated, no demo)
  */
 export async function getEffectiveUserId(): Promise<string | null> {
   const { userId } = await auth();
   if (userId) return userId;
-  if (process.env.NODE_ENV !== "production" && (await isDemoMode()))
-    return DEMO_USER_ID;
+  if (await isDemoMode()) return DEMO_USER_ID;
   return null;
 }

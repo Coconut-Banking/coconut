@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getAuthUrl } from "@/lib/google-auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
   const { userId } = await auth();
@@ -9,6 +10,11 @@ export async function GET(request: NextRequest) {
   if (!userId) {
     console.error("[Gmail Auth] No userId");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rl = rateLimit(`gmail-auth:${userId}`, 30, 60_000);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
   try {
