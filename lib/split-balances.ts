@@ -51,9 +51,9 @@ export function computeBalances(
 
   for (const m of map.values()) {
     m.total += m.paid - m.owed;
-    m.paid = Math.round(m.paid * 100) / 100 + 0;
-    m.owed = Math.round(m.owed * 100) / 100 + 0;
-    m.total = Math.round(m.total * 100) / 100 + 0;
+    m.paid = Math.round(m.paid * 100) / 100;
+    m.owed = Math.round(m.owed * 100) / 100;
+    m.total = Math.round(m.total * 100) / 100;
   }
   return map;
 }
@@ -97,7 +97,7 @@ export function getSuggestedSettlements(
     const amount = first.total + last.total;
 
     if (first.total > -last.total) {
-      const amt = Math.round(-last.total * 100) / 100 + 0;
+      const amt = Math.round(-last.total * 100) / 100;
       if (amt > 0) {
         suggestions.push({
           fromMemberId: last.memberId,
@@ -108,7 +108,7 @@ export function getSuggestedSettlements(
       first.total = amount;
       arr.pop();
     } else {
-      const amt = Math.round(first.total * 100) / 100 + 0;
+      const amt = Math.round(first.total * 100) / 100;
       if (amt > 0) {
         suggestions.push({
           fromMemberId: last.memberId,
