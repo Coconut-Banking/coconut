@@ -3,35 +3,93 @@ import { getGmailClient } from "./google-auth";
 import { getSupabase } from "./supabase";
 import { matchReceiptsToTransactions } from "./receipt-matcher";
 import { GMAIL, AI } from "./config";
-// import { reEmbedWithReceipts } from "./transaction-sync";
+import { withRetry, mapWithConcurrency } from "./retry";
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
+// ─── Gmail query builder ─────────────────────────────────────────────────────
 
 function buildGmailQuery(): string {
-  // Focus on actual purchases and receipts, not just any financial email
-  return `(receipt OR "order confirmation" OR "payment confirmation" OR "your order" OR "your purchase" OR invoice OR "has been charged" OR "order total" OR "payment received" OR "thank you for your order" OR "thank you for your purchase" OR billing OR subscription OR "amount due" OR from:amazon.com OR from:amazon.ca OR from:uber.com OR from:doordash.com) -label:spam -label:trash -category:promotions`;
+  const keywords = GMAIL.RECEIPT_KEYWORDS.join(" OR ");
+  const merchants = GMAIL.RECEIPT_MERCHANTS.map((d) => `from:${d}`).join(" OR ");
+  const exclusions = GMAIL.RECEIPT_EXCLUSIONS.join(" ");
+  return `(${keywords} OR ${merchants}) ${exclusions}`;
 }
 
-function decodeBody(payload: { body?: { data?: string }; parts?: Array<{ mimeType?: string; body?: { data?: string }; parts?: unknown[] }> }): string {
-  // Try top-level body
-  if (payload.body?.data) {
-    return Buffer.from(payload.body.data, "base64url").toString("utf-8");
+// ─── Email body decoding ─────────────────────────────────────────────────────
+
+interface EmailPart {
+  mimeType?: string;
+  body?: { data?: string };
+  parts?: EmailPart[];
+}
+
+/**
+ * Recursively walk multipart email structure to extract body content.
+ * Handles arbitrary nesting (multipart/mixed > multipart/alternative > text/html).
+ */
+function collectParts(part: EmailPart, html: string[], plain: string[]): void {
+  if (part.body?.data) {
+    const decoded = Buffer.from(part.body.data, "base64url").toString("utf-8");
+    if (part.mimeType === "text/html") html.push(decoded);
+    else if (part.mimeType === "text/plain") plain.push(decoded);
   }
-  // Try parts (multipart emails)
-  if (payload.parts) {
-    // Prefer text/html, fall back to text/plain
-    const htmlPart = payload.parts.find((p) => p.mimeType === "text/html");
-    const textPart = payload.parts.find((p) => p.mimeType === "text/plain");
-    const part = htmlPart || textPart;
-    if (part?.body?.data) {
-      return Buffer.from(part.body.data, "base64url").toString("utf-8");
+  if (part.parts) {
+    for (const child of part.parts) {
+      collectParts(child, html, plain);
     }
   }
-  return "";
 }
+
+function decodeBody(payload: EmailPart): string {
+  const html: string[] = [];
+  const plain: string[] = [];
+  collectParts(payload, html, plain);
+
+  const raw = html.length > 0 ? html.join("\n") : plain.join("\n");
+  if (!raw) return "";
+
+  if (html.length > 0) return stripHtml(raw);
+  return raw;
+}
+
+/** Strip HTML tags, decode common entities, collapse whitespace. */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&[a-z]+;/gi, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// ─── Scan log types ──────────────────────────────────────────────────────────
+
+export type ScanLogStatus = "parsed" | "not_receipt" | "no_body" | "parse_error" | "insert_error";
+
+interface ScanLogEntry {
+  clerk_user_id: string;
+  gmail_message_id: string;
+  subject: string;
+  from_address: string;
+  status: ScanLogStatus;
+  error_reason: string | null;
+}
+
+// ─── LLM receipt parsing ─────────────────────────────────────────────────────
 
 export async function parseReceiptEmail(emailBody: string): Promise<{
   merchant: string;
@@ -40,15 +98,16 @@ export async function parseReceiptEmail(emailBody: string): Promise<{
   line_items: Array<{ name: string; quantity: number; unit_price: number; total: number; category: string }>;
 } | null> {
   if (!openai) {
-    console.error("[receipt-parser] OpenAI API key not configured. Add OPENAI_API_KEY to .env.local");
+    console.error("[receipt-parser] OpenAI API key not configured");
     return null;
   }
 
-  // Truncate very long emails to stay within token limits - but take more content for better parsing
-  const body = emailBody.length > GMAIL.EMAIL_MAX_CHARS ? emailBody.slice(0, GMAIL.EMAIL_MAX_CHARS) : emailBody;
+  const body = emailBody.length > GMAIL.EMAIL_MAX_CHARS
+    ? emailBody.slice(0, GMAIL.EMAIL_MAX_CHARS)
+    : emailBody;
 
-  try {
-    const completion = await openai.chat.completions.create({
+  const completion = await withRetry(
+    () => openai!.chat.completions.create({
       model: AI.MODEL,
       messages: [{
         role: "user",
@@ -73,7 +132,6 @@ ARE receipts:
 IMPORTANT:
 - MUST find the actual dollar amount - look for $XX.XX, "Total:", "Amount:", "Charged:", etc.
 - Do NOT use 0.01 as placeholder - if you can't find a real amount, return {"not_receipt": true}
-- For Freedom Mobile example: "$126 + $40" means total is $166
 - Look for the ACTUAL amount paid, not placeholder values
 - Extract merchant name from sender or subject if not in body
 - All numeric values must be numbers, not strings
@@ -89,94 +147,85 @@ Schema:
   ]
 }
 
-Examples of VALID receipts WITH amounts:
-- "Your Freedom Mobile bill of $44.07" → total_amount: 44.07
-- "Order total: $29.99" → total_amount: 29.99
-- "You've been charged $9.99 for Netflix" → total_amount: 9.99
-
-Examples of NOT receipts (return {"not_receipt": true}):
-- "Your transfer is complete" (money transfer, not purchase)
-- "Deposit cash at locations" (informational)
-- "Thank you for your application" (no purchase)
-
-Examples of valid line_items:
-- {"name": "Echo Dot", "quantity": 1, "unit_price": 29.99, "total": 29.99, "category": "electronics"}
-- {"name": "USB Cable", "quantity": 2, "unit_price": 9.99, "total": 19.98, "category": "electronics"}
-
 Email body:
 ${body}`
       }],
       response_format: { type: "json_object" },
       temperature: 0,
       max_tokens: 1000,
-    });
+    }),
+    { attempts: 3, baseDelayMs: 1000, label: "parseReceiptEmail" }
+  );
 
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) return null;
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) return null;
 
-    let parsed: { not_receipt?: boolean; merchant?: string; total_amount?: number; order_date?: string; line_items?: Array<Record<string, unknown>> };
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      console.warn("[receipt-parser] Malformed AI JSON response:", e instanceof Error ? e.message : String(e));
-      return null;
-    }
-    if (parsed.not_receipt) {
-      console.log(`[receipt-parser] AI marked as not_receipt`);
-      return null;
-    }
-
-    // Must have merchant AND a real amount
-    if (!parsed.merchant) {
-      console.log(`[receipt-parser] No merchant found in parsed data`);
-      return null;
-    }
-
-    // Reject if no real amount found
-    if (!parsed.total_amount || parsed.total_amount <= 0) {
-      console.log(`[receipt-parser] No valid amount found for: ${parsed.merchant}`);
-      return null;
-    }
-
-    return {
-      merchant: parsed.merchant,
-      order_date: parsed.order_date || new Date().toISOString().split("T")[0],
-      total_amount: Number(parsed.total_amount) || 0,
-      line_items: (parsed.line_items || []).map((item: Record<string, unknown>) => {
-        const quantity = Number(item.quantity) || 1;
-        const unit_price = Number(item.unit_price) || Number(item.price) || 0;
-        const total = Number(item.total) || (unit_price * quantity);
-
-        return {
-          name: String(item.name || "Item"),
-          quantity: quantity,
-          unit_price: unit_price,
-          total: total,
-          category: String(item.category || "other"),
-        };
-      }),
-    };
-  } catch (e) {
-    console.warn("[receipt-parser] LLM parse failed:", e);
-    console.warn("[receipt-parser] Email preview that failed:", emailBody.slice(0, 200));
+  let parsed: {
+    not_receipt?: boolean;
+    merchant?: string;
+    total_amount?: number;
+    order_date?: string;
+    line_items?: Array<Record<string, unknown>>;
+  };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.warn("[receipt-parser] Malformed AI JSON response");
     return null;
   }
+
+  if (parsed.not_receipt) return null;
+  if (!parsed.merchant) return null;
+  if (!parsed.total_amount || parsed.total_amount <= 0) return null;
+
+  return {
+    merchant: parsed.merchant,
+    order_date: parsed.order_date || new Date().toISOString().split("T")[0],
+    total_amount: Number(parsed.total_amount) || 0,
+    line_items: (parsed.line_items || []).map((item: Record<string, unknown>) => {
+      const quantity = Number(item.quantity) || 1;
+      const unit_price = Number(item.unit_price) || Number(item.price) || 0;
+      const total = Number(item.total) || (unit_price * quantity);
+      return {
+        name: String(item.name || "Item"),
+        quantity,
+        unit_price,
+        total,
+        category: String(item.category || "other"),
+      };
+    }),
+  };
 }
+
+// ─── Scan stats ──────────────────────────────────────────────────────────────
+
+export interface ScanStats {
+  emailsFetched: number;
+  alreadyProcessed: number;
+  parsed: number;
+  notReceipt: number;
+  noBody: number;
+  parseErrors: number;
+  insertErrors: number;
+  inserted: number;
+  matched: number;
+  receipts?: unknown[];
+  error?: string;
+}
+
+// ─── Main scan function ──────────────────────────────────────────────────────
 
 export async function scanGmailForReceipts(
   clerkUserId: string,
   daysBack: number = GMAIL.DEFAULT_SCAN_DAYS,
   detailed: boolean = true,
   forceRescan: boolean = false
-): Promise<{ scanned: number; found: number; new: number; matched: number; errors: number; receipts?: any[]; error?: string }> {
+): Promise<ScanStats> {
   if (!openai) {
     return {
-      scanned: 0,
-      found: 0,
-      new: 0,
-      matched: 0,
-      errors: 1,
-      error: "OpenAI API key not configured. Add OPENAI_API_KEY to .env.local to enable receipt parsing."
+      emailsFetched: 0, alreadyProcessed: 0, parsed: 0, notReceipt: 0,
+      noBody: 0, parseErrors: 0, insertErrors: 0, inserted: 0, matched: 0,
+      error: "OpenAI API key not configured. Add OPENAI_API_KEY to .env.local to enable receipt parsing.",
     };
   }
 
@@ -185,25 +234,30 @@ export async function scanGmailForReceipts(
 
   const db = getSupabase();
 
-  // Build query with date filter
-  const dateFilter = daysBack > 0 ? ` after:${Math.floor(Date.now() / 1000) - (daysBack * 24 * 60 * 60)}` : "";
+  const dateFilter = daysBack > 0
+    ? ` after:${Math.floor(Date.now() / 1000) - (daysBack * 24 * 60 * 60)}`
+    : "";
   const query = buildGmailQuery() + dateFilter;
 
-  console.log(`[receipt-parser] Searching Gmail with query: ${query.slice(0, 200)}...`);
+  console.log(`[receipt-parser] Searching Gmail with query: ${query.slice(0, 300)}...`);
 
-  const listResp = await gmail.users.messages.list({
-    userId: "me",
-    q: query,
-    maxResults: GMAIL.MAX_RESULTS,
-  });
+  const listResp = await withRetry(
+    () => gmail.users.messages.list({ userId: "me", q: query, maxResults: GMAIL.MAX_RESULTS }),
+    { attempts: 3, label: "gmail.messages.list" }
+  );
 
   const messageIds = (listResp.data.messages || []).map((m) => m.id!).filter(Boolean);
-  if (messageIds.length === 0) return { scanned: 0, found: 0, new: 0, matched: 0, errors: 0 };
+  if (messageIds.length === 0) {
+    return {
+      emailsFetched: 0, alreadyProcessed: 0, parsed: 0, notReceipt: 0,
+      noBody: 0, parseErrors: 0, insertErrors: 0, inserted: 0, matched: 0,
+    };
+  }
 
   let newMessageIds = messageIds;
+  let alreadyProcessed = 0;
 
   if (!forceRescan) {
-    // Check which ones we've already processed (skip if force rescan)
     const { data: existing } = await db
       .from("email_receipts")
       .select("gmail_message_id")
@@ -211,126 +265,171 @@ export async function scanGmailForReceipts(
       .in("gmail_message_id", messageIds);
 
     const processedIds = new Set((existing || []).map((r: { gmail_message_id: string }) => r.gmail_message_id));
-    newMessageIds = messageIds.filter((id) => !processedIds.has(id));
 
-    if (newMessageIds.length < messageIds.length) {
-      console.log(`[receipt-parser] Skipping ${messageIds.length - newMessageIds.length} already processed emails`);
+    // Also check scan log for previously attempted (non-receipt, errors, etc.)
+    const { data: logged } = await db
+      .from("gmail_scan_log")
+      .select("gmail_message_id")
+      .eq("clerk_user_id", clerkUserId)
+      .in("gmail_message_id", messageIds);
+    const loggedIds = new Set((logged || []).map((r: { gmail_message_id: string }) => r.gmail_message_id));
+
+    newMessageIds = messageIds.filter((id) => !processedIds.has(id) && !loggedIds.has(id));
+    alreadyProcessed = messageIds.length - newMessageIds.length;
+
+    if (alreadyProcessed > 0) {
+      console.log(`[receipt-parser] Skipping ${alreadyProcessed} already processed emails`);
     }
-  } else {
-    console.log(`[receipt-parser] Force rescan enabled - processing ALL ${messageIds.length} emails`);
   }
 
-  let scanned = 0;
-  let errors = 0;
+  // Counters
+  let parsed = 0;
+  let notReceipt = 0;
+  let noBody = 0;
+  let parseErrors = 0;
+  let insertErrors = 0;
   const insertedReceiptIds: string[] = [];
+  const scanLogs: ScanLogEntry[] = [];
 
-  for (const msgId of newMessageIds) {
-    try {
-      const msg = await gmail.users.messages.get({ userId: "me", id: msgId, format: "full" });
-      const payload = msg.data.payload;
-      if (!payload) continue;
+  // Process emails with bounded concurrency
+  await mapWithConcurrency(
+    newMessageIds,
+    async (msgId) => {
+      try {
+        const msg = await withRetry(
+          () => gmail.users.messages.get({ userId: "me", id: msgId, format: "full" }),
+          { attempts: 2, label: `gmail.get(${msgId})` }
+        );
 
-      const body = decodeBody(payload as Parameters<typeof decodeBody>[0]);
-      if (!body) continue;
+        const payload = msg.data.payload;
+        if (!payload) return;
 
-      const headers = payload.headers || [];
-      const subject = headers.find((h) => h.name?.toLowerCase() === "subject")?.value || "";
-      const from = headers.find((h) => h.name?.toLowerCase() === "from")?.value || "";
+        const headers = payload.headers || [];
+        const subject = headers.find((h) => h.name?.toLowerCase() === "subject")?.value || "";
+        const from = headers.find((h) => h.name?.toLowerCase() === "from")?.value || "";
 
-      // Special logging for Amazon emails
-      if (from.toLowerCase().includes("amazon") || subject.toLowerCase().includes("amazon")) {
-        console.log(`[receipt-parser] Found Amazon email - Subject: "${subject}" From: ${from}`);
-      }
-
-      const parsed = await parseReceiptEmail(body);
-      if (!parsed) {
-        // More detailed logging for Amazon failures
-        if (from.toLowerCase().includes("amazon") || subject.toLowerCase().includes("amazon")) {
-          console.log(`[receipt-parser] FAILED to parse Amazon email ${msgId}`);
-          console.log(`  Subject: "${subject}"`);
-          console.log(`  From: ${from}`);
-          console.log(`  Body preview: ${body.slice(0, 200)}...`);
-        } else {
-          console.log(`[receipt-parser] Could not parse message ${msgId} - Subject: "${subject.slice(0, 50)}" From: ${from.slice(0, 30)}`);
+        const body = decodeBody(payload as EmailPart);
+        if (!body) {
+          noBody++;
+          scanLogs.push({
+            clerk_user_id: clerkUserId, gmail_message_id: msgId,
+            subject, from_address: from, status: "no_body", error_reason: "Could not decode email body",
+          });
+          return;
         }
-        scanned++;
-        continue;
+
+        let receiptData;
+        try {
+          receiptData = await parseReceiptEmail(body);
+        } catch (e) {
+          parseErrors++;
+          scanLogs.push({
+            clerk_user_id: clerkUserId, gmail_message_id: msgId,
+            subject, from_address: from, status: "parse_error",
+            error_reason: e instanceof Error ? e.message : String(e),
+          });
+          return;
+        }
+
+        if (!receiptData) {
+          notReceipt++;
+          scanLogs.push({
+            clerk_user_id: clerkUserId, gmail_message_id: msgId,
+            subject, from_address: from, status: "not_receipt", error_reason: null,
+          });
+          return;
+        }
+
+        parsed++;
+
+        const row = {
+          clerk_user_id: clerkUserId,
+          gmail_message_id: msgId,
+          merchant: receiptData.merchant,
+          amount: receiptData.total_amount || 0,
+          date: receiptData.order_date || new Date().toISOString().split("T")[0],
+          line_items: receiptData.line_items,
+          raw_subject: subject,
+          raw_from: from,
+        };
+
+        const { data: inserted, error: insertError } = forceRescan
+          ? await db.from("email_receipts").upsert(row, { onConflict: "gmail_message_id" }).select("id")
+          : await db.from("email_receipts").insert(row).select("id");
+
+        if (insertError) {
+          insertErrors++;
+          scanLogs.push({
+            clerk_user_id: clerkUserId, gmail_message_id: msgId,
+            subject, from_address: from, status: "insert_error",
+            error_reason: insertError.message,
+          });
+          return;
+        }
+
+        if (inserted && inserted.length > 0) {
+          insertedReceiptIds.push(inserted[0].id);
+          scanLogs.push({
+            clerk_user_id: clerkUserId, gmail_message_id: msgId,
+            subject, from_address: from, status: "parsed", error_reason: null,
+          });
+        }
+      } catch (e) {
+        parseErrors++;
+        scanLogs.push({
+          clerk_user_id: clerkUserId, gmail_message_id: msgId,
+          subject: "", from_address: "", status: "parse_error",
+          error_reason: e instanceof Error ? e.message : String(e),
+        });
       }
+    },
+    GMAIL.PARSE_CONCURRENCY
+  );
 
-      console.log(`[receipt-parser] Parsed receipt from ${parsed.merchant} for $${parsed.total_amount}`);
-
-      console.log(`[receipt-parser] ${forceRescan ? 'Upserting' : 'Inserting'} receipt: ${parsed.merchant}, amount: $${parsed.total_amount}, date: ${parsed.order_date}`);
-
-      const receiptData = {
-        clerk_user_id: clerkUserId,
-        gmail_message_id: msgId,
-        merchant: parsed.merchant,
-        amount: parsed.total_amount || 0,
-        date: parsed.order_date || new Date().toISOString().split("T")[0],
-        line_items: parsed.line_items,
-        raw_subject: subject,
-        raw_from: from,
-      };
-
-      const { data: inserted, error: insertError } = forceRescan
-        ? await db.from("email_receipts").upsert(receiptData, { onConflict: 'gmail_message_id' }).select("*")
-        : await db.from("email_receipts").insert(receiptData).select("*");
-
-      if (insertError) {
-        console.error(`[receipt-parser] Failed to insert receipt:`, insertError);
-      } else if (inserted && inserted.length > 0) {
-        console.log(`[receipt-parser] Successfully inserted receipt with id:`, inserted[0].id);
-        insertedReceiptIds.push(inserted[0].id);
-      }
-
-      // Note: insertedReceiptIds tracking is now done above
-      scanned++;
+  // Persist scan logs in batches (best-effort, don't fail the scan)
+  if (scanLogs.length > 0) {
+    try {
+      await db.from("gmail_scan_log").upsert(
+        scanLogs.map((l) => ({ ...l, created_at: new Date().toISOString() })),
+        { onConflict: "clerk_user_id,gmail_message_id" }
+      );
     } catch (e) {
-      console.warn(`[receipt-parser] Failed to process message ${msgId}:`, e);
-      errors++;
+      console.warn("[receipt-parser] Failed to persist scan logs:", e);
     }
   }
 
-  // Match receipts to transactions and re-embed
+  // Match receipts to transactions
   let matched = 0;
   if (insertedReceiptIds.length > 0) {
     matched = await matchReceiptsToTransactions(clerkUserId, insertedReceiptIds);
-    // Re-embed matched transactions so search picks up line items
-    const { data: matchedReceipts } = await db
-      .from("email_receipts")
-      .select("transaction_id")
-      .in("id", insertedReceiptIds)
-      .not("transaction_id", "is", null);
-    const txIds = (matchedReceipts || []).map((r: { transaction_id: string }) => r.transaction_id);
-    if (txIds.length > 0) {
-      // TODO: Re-embed matched transactions when function is available
-      // reEmbedWithReceipts(clerkUserId, txIds).catch((e) =>
-      //   console.warn("[receipt-parser] re-embed failed:", e)
-      // );
-    }
   }
 
   // Update last scan timestamp
-  await db.from("gmail_connections").update({ last_scan_at: new Date().toISOString() }).eq("clerk_user_id", clerkUserId);
+  await db.from("gmail_connections")
+    .update({ last_scan_at: new Date().toISOString() })
+    .eq("clerk_user_id", clerkUserId);
 
-  // If detailed, return the receipts as well
-  let receipts: any[] = [];
+  // Optionally return the inserted receipts
+  let receipts: unknown[] = [];
   if (detailed && insertedReceiptIds.length > 0) {
     const { data } = await db
       .from("email_receipts")
       .select("*")
       .in("id", insertedReceiptIds)
-      .order("date", { ascending: false })
-      .order("id", { ascending: false });
+      .order("date", { ascending: false });
     receipts = data || [];
   }
 
   return {
-    scanned: messageIds.length,
-    found: scanned,
-    new: insertedReceiptIds.length,
+    emailsFetched: messageIds.length,
+    alreadyProcessed,
+    parsed,
+    notReceipt,
+    noBody,
+    parseErrors,
+    insertErrors,
+    inserted: insertedReceiptIds.length,
     matched,
-    errors,
-    ...(detailed && { receipts })
+    ...(detailed && { receipts }),
   };
 }
