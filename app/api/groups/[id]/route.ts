@@ -13,6 +13,7 @@ export async function GET(
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  try {
   const db = getSupabase();
 
   const { data: group } = await db.from("groups").select("*").eq("id", id).single();
@@ -175,4 +176,8 @@ export async function GET(
     })),
     totalSpend,
   });
+  } catch (err) {
+    console.error("[groups/id]", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load group" }, { status: 500 });
+  }
 }

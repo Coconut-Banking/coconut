@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q") ?? "";
   const limit = Math.min(Number(request.nextUrl.searchParams.get("limit")) || SEARCH.DEFAULT_LIMIT, SEARCH.MAX_LIMIT);
 
+  try {
   const db = getSupabase();
   const { data: rows } = await db
     .from("transactions")
@@ -31,4 +32,8 @@ export async function GET(request: NextRequest) {
 
   const results = searchTransactions(transactions, q, limit);
   return NextResponse.json(results);
+  } catch (err) {
+    console.error("[search]", err);
+    return NextResponse.json({ error: "Search failed" }, { status: 500 });
+  }
 }

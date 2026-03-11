@@ -504,7 +504,7 @@ function SharedPageContent() {
   const router = useRouter();
   const { user } = useUser();
   const { linked } = useTransactions();
-  const { summary, loading, refetch: refetchSummary } = useGroupsSummary();
+  const { summary, loading, error: summaryError, refetch: refetchSummary } = useGroupsSummary();
   const { activity, loading: activityLoading, refetch: refetchActivity } = useRecentActivity(linked);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1047,7 +1047,17 @@ function SharedPageContent() {
         </motion.div>
       )}
 
-      {loading && !summary ? (
+      {summaryError ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 px-6 py-8 text-center mb-6">
+          <p className="text-sm font-medium text-red-700 mb-3">{summaryError}</p>
+          <button
+            onClick={() => refetchSummary()}
+            className="px-4 py-2 rounded-xl bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      ) : loading && !summary ? (
         <div className="text-sm text-gray-500 py-12">Loading…</div>
       ) : (
         <>

@@ -13,6 +13,7 @@ export async function POST() {
     return NextResponse.json({ error: "Sign in to wipe data" }, { status: 401 });
   }
 
+  try {
   const db = getSupabase();
 
   // Delete ALL transactions (manual + bank)
@@ -34,4 +35,8 @@ export async function POST() {
   await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
 
   return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[wipe]", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Wipe failed" }, { status: 500 });
+  }
 }

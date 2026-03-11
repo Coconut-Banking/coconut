@@ -12,6 +12,7 @@ export async function POST() {
     return NextResponse.json({ error: "Sign in to manage your bank" }, { status: 401 });
   }
 
+  try {
   const db = getSupabase();
 
   // Delete only bank transactions (keep manual expenses from Shared)
@@ -37,4 +38,8 @@ export async function POST() {
   }
 
   return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[disconnect]", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Disconnect failed" }, { status: 500 });
+  }
 }

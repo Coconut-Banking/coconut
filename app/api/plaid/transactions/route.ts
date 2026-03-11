@@ -135,6 +135,7 @@ export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  try {
   const db = getSupabase();
 
   // Always clear before sync so we never mix sandbox + production or accumulate duplicates
@@ -173,9 +174,13 @@ export async function POST(req: Request) {
   const { syncTransactionsForUser, embedTransactionsForUser } = await import("@/lib/transaction-sync");
   const { synced, error } = await syncTransactionsForUser(userId);
   if (error) return NextResponse.json({ error }, { status: 500 });
-  embedTransactionsForUser(userId).catch(() => {});
+  embedTransactionsForUser(userId).catch((e) => console.error("[transactions] embed:", e));
   const { detectSubscriptionsForUser, saveDetectedSubscriptions } = await import("@/lib/subscription-detect");
   const detected = await detectSubscriptionsForUser(userId);
   await saveDetectedSubscriptions(userId, detected);
   return NextResponse.json({ synced, detected: detected.length });
+  } catch (err) {
+    console.error("[transactions] sync error:", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Sync failed" }, { status: 500 });
+  }
 }
