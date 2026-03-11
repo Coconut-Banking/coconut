@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "push": "git push origin main",
-    "dev": "NODE_OPTIONS='--disable-warning=DEP0169' next dev",
+    "dev": "NODE_OPTIONS='--disable-warning=DEP0169' next dev -H 0.0.0.0",
+    "dev:phone": "echo \"\\n📱 On your phone (same WiFi): http://$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}'):3000\\n\" && npm run dev",
     "build": "NODE_OPTIONS='--disable-warning=DEP0169' next build",
     "start": "next start",
     "lint": "next lint",
