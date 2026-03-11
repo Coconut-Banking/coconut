@@ -100,10 +100,13 @@ function AddExpenseModal({
   const currentUserMember = members.find((m) => m.user_id === user?.id);
 
   const amt = parseFloat(amount) || 0;
-  const customSharesValid =
-    splitMode === "custom" &&
-    Object.values(customShares).reduce((s, v) => s + (parseFloat(v) || 0), 0) === amt &&
-    amt > 0;
+  const customSharesValid = (() => {
+    if (splitMode !== "custom" || amt <= 0) return false;
+    const sumCents = Object.values(customShares).reduce(
+      (s, v) => s + Math.round((parseFloat(v) || 0) * 100), 0
+    );
+    return Math.abs(sumCents - Math.round(amt * 100)) <= 1;
+  })();
 
   const save = async () => {
     if (!groupId || !amt || amt <= 0) {
@@ -156,11 +159,12 @@ function AddExpenseModal({
 
   const initCustomShares = (total = amt) => {
     if (!groupDetail || !members.length || total <= 0) return;
-    const per = Math.floor((total / members.length) * 100) / 100;
-    const rem = Math.round((total - per * members.length) * 100) / 100;
+    const totalCents = Math.round(total * 100);
+    const baseCents = Math.floor(totalCents / members.length);
+    const remainderCents = totalCents - baseCents * members.length;
     const next: Record<string, string> = {};
     members.forEach((m, i) => {
-      next[m.id] = (i === 0 ? per + rem : per).toFixed(2);
+      next[m.id] = ((baseCents + (i < remainderCents ? 1 : 0)) / 100).toFixed(2);
     });
     setCustomShares(next);
   };

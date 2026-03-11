@@ -3,6 +3,11 @@ import { getSupabase } from "@/lib/supabase";
 import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { randomUUID } from "crypto";
+import {
+  computeEqualShares,
+  computeTwoWayShares,
+  toCents,
+} from "@/lib/expense-shares";
 
 /**
  * POST /api/manual-expense
@@ -26,6 +31,9 @@ export async function POST(req: NextRequest) {
   const personKey = body.personKey ?? body.person_key;
   const payerMemberId = body.payerMemberId ?? body.payer_member_id ?? null;
   const customShares = body.shares as Array<{ memberId: string; amount: number }> | undefined;
+  const clientDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+    ? body.date
+    : null;
 
   if (!groupId || !amount || amount <= 0) {
     return NextResponse.json(
@@ -71,8 +79,9 @@ export async function POST(req: NextRequest) {
 
   let shares: { memberId: string; amount: number }[];
   if (Array.isArray(customShares) && customShares.length > 0) {
-    const sum = customShares.reduce((s, sh) => s + Number(sh.amount), 0);
-    if (Math.abs(sum - amount) > 0.01) {
+    const sumCents = customShares.reduce((s, sh) => s + toCents(Number(sh.amount)), 0);
+    const amountCents = toCents(amount);
+    if (Math.abs(sumCents - amountCents) > 1) {
       return NextResponse.json({ error: `Shares must sum to $${amount.toFixed(2)}` }, { status: 400 });
     }
     shares = customShares
@@ -91,18 +100,12 @@ export async function POST(req: NextRequest) {
     if (!otherMember) {
       return NextResponse.json({ error: "Person not found in group" }, { status: 404 });
     }
-    const half = Math.round((amount / 2) * 100) / 100;
-    shares = [
-      { memberId: currentUserMember.id, amount: half },
-      { memberId: otherMember.id, amount: amount - half },
-    ];
+    shares = computeTwoWayShares(amount, currentUserMember.id, otherMember.id);
   } else {
-    const sharePerPerson = Math.floor((amount / members.length) * 100) / 100;
-    const remainder = Math.round((amount - sharePerPerson * members.length) * 100) / 100;
-    shares = members.map((m, i) => ({
-      memberId: m.id,
-      amount: i === 0 ? sharePerPerson + remainder : sharePerPerson,
-    }));
+    shares = computeEqualShares(
+      amount,
+      members.map((m) => m.id)
+    );
   }
 
   const effectivePayer = payerMemberId
@@ -119,7 +122,7 @@ export async function POST(req: NextRequest) {
       merchant_name: description,
       raw_name: description,
       amount: -amount,
-      date: new Date().toISOString().split("T")[0],
+      date: clientDate ?? new Date().toISOString().split("T")[0],
       is_pending: false,
       primary_category: "Food & Drink",
       detailed_category: null,

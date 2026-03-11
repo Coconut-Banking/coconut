@@ -79,8 +79,8 @@ export interface PersonShare {
  * Given items with final prices and a map of item-id → assignees,
  * compute how much each person owes in total.
  *
- * If an item is assigned to 3 people, each pays 1/3 of finalPrice.
- * Last assignee absorbs any rounding remainder.
+ * Uses integer-cent arithmetic to avoid floating-point rounding errors.
+ * Extra cents from remainder are distributed across the first N assignees.
  */
 export function computePersonShares(
   items: ReceiptItemWithExtras[],
@@ -92,9 +92,9 @@ export function computePersonShares(
     const assignees = assignments.get(item.id);
     if (!assignees || assignees.length === 0) continue;
 
-    const sharePerPerson =
-      Math.round((item.finalPrice / assignees.length) * 100) / 100;
-    let allocated = 0;
+    const totalCents = Math.round(item.finalPrice * 100);
+    const baseCents = Math.floor(totalCents / assignees.length);
+    const remainderCents = totalCents - baseCents * assignees.length;
 
     assignees.forEach((assignee, idx) => {
       const key = assignee.name.toLowerCase();
@@ -108,13 +108,8 @@ export function computePersonShares(
       }
       const person = personMap.get(key)!;
 
-      let amount: number;
-      if (idx === assignees.length - 1) {
-        amount = Math.round((item.finalPrice - allocated) * 100) / 100;
-      } else {
-        amount = sharePerPerson;
-        allocated += amount;
-      }
+      const amountCents = baseCents + (idx < remainderCents ? 1 : 0);
+      const amount = amountCents / 100;
 
       person.items.push({ itemName: item.name, shareAmount: amount });
       person.totalOwed = Math.round((person.totalOwed + amount) * 100) / 100;

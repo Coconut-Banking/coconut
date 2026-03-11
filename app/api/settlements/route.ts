@@ -56,5 +56,15 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const postCheck = await getMaxSettlementAllowed(groupId, payerMemberId, receiverMemberId);
+  if (postCheck.maxAmount < 0) {
+    await db.from("settlements").delete().eq("id", settlement.id);
+    return NextResponse.json(
+      { error: "Settlement race detected \u2014 already settled" },
+      { status: 409 }
+    );
+  }
+
   return NextResponse.json(settlement);
 }

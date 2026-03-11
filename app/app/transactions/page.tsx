@@ -147,11 +147,12 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
     if (!canSubmit) return;
     const groupId = effectiveGroupId!;
     const totalAmount = Math.abs(tx.amount);
-    const sharePerPerson = Math.floor((totalAmount / members.length) * 100) / 100;
-    const remainder = Math.round((totalAmount - sharePerPerson * members.length) * 100) / 100;
+    const totalCents = Math.round(totalAmount * 100);
+    const baseCents = Math.floor(totalCents / members.length);
+    const remainderCents = totalCents - baseCents * members.length;
     const shares = members.map((m, i) => ({
       memberId: m.id,
-      amount: i === 0 ? sharePerPerson + remainder : sharePerPerson,
+      amount: (baseCents + (i < remainderCents ? 1 : 0)) / 100,
     }));
     setSubmitting(true);
     try {
@@ -487,8 +488,8 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                   <div className="rounded-xl bg-gray-50 p-4">
                     <div className="text-sm font-medium text-gray-700 mb-2">Equal split</div>
                     <div className="text-xs text-gray-500 mb-2">
-                      ${Math.abs(tx.amount).toFixed(2)} ÷ {members.length} = $
-                      {(Math.abs(tx.amount) / members.length).toFixed(2)} each
+                      ${Math.abs(tx.amount).toFixed(2)} ÷ {members.length} ≈ $
+                      {(Math.floor(Math.round(Math.abs(tx.amount) * 100) / members.length) / 100).toFixed(2)} each
                     </div>
                     <ul className="space-y-1">
                       {members.map((m) => (
@@ -616,7 +617,7 @@ function TxRow({
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Split suggestion</div>
                   <div className="text-xs text-[#3D8E62] font-medium">
-                    Split with {tx.splitWith} — ${(Math.abs(tx.amount) / 2).toFixed(2)} each
+                    Split with {tx.splitWith} — ${(Math.round(Math.round(Math.abs(tx.amount) * 100) / 2) / 100).toFixed(2)} each
                   </div>
                 </div>
               )}
@@ -737,6 +738,10 @@ function TransactionsPageContent() {
   const afterCategory = selectedCategory === "All"
     ? afterAccount
     : afterAccount.filter((tx) => tx.category === selectedCategory);
+  const parseLocalDate = (s: string) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
   // Date filter
   const afterDate = (() => {
     if (dateFilter === "All time") return afterCategory;
@@ -747,13 +752,13 @@ function TransactionsPageContent() {
         cutoff = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
         return afterCategory.filter((tx) => {
-          const d = new Date(tx.date);
+          const d = parseLocalDate(tx.date);
           return d >= cutoff && d <= endOfLastMonth;
         });
       }
       case "Last 3 months":
         cutoff = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-        return afterCategory.filter((tx) => new Date(tx.date) >= cutoff);
+        return afterCategory.filter((tx) => parseLocalDate(tx.date) >= cutoff);
       case "This year":
         cutoff = new Date(now.getFullYear(), 0, 1);
         return afterCategory.filter((tx) => new Date(tx.date) >= cutoff);

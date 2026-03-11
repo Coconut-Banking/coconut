@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { canAccessGroup } from "@/lib/group-access";
 import { formatCurrency } from "@/lib/currency";
+import { toCents } from "@/lib/expense-shares";
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -63,8 +64,9 @@ export async function POST(req: NextRequest) {
   }
 
   const totalAmount = Math.abs(Number(tx.amount));
-  const shareSum = shares.reduce((s, sh) => s + Number(sh.amount), 0);
-  if (Math.abs(shareSum - totalAmount) > 0.01) {
+  const shareSumCents = shares.reduce((s, sh) => s + toCents(Number(sh.amount)), 0);
+  const totalCents = toCents(totalAmount);
+  if (Math.abs(shareSumCents - totalCents) > 1) {
     return NextResponse.json(
       { error: `Shares must sum to ${formatCurrency(totalAmount)}` },
       { status: 400 }
@@ -85,12 +87,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: splitErr?.message ?? "Failed to create split" }, { status: 500 });
   }
 
+  const { data: allSplits } = await db
+    .from("split_transactions")
+    .select("id, created_at")
+    .eq("group_id", groupId)
+    .eq("transaction_id", transactionId)
+    .order("created_at", { ascending: true });
+
+  if (allSplits && allSplits.length > 1 && allSplits[0].id !== split.id) {
+    await db.from("split_transactions").delete().eq("id", split.id);
+    return NextResponse.json(
+      { error: "This transaction is already in this group" },
+      { status: 409 }
+    );
+  }
+
   const shareRows = shares
     .filter((s) => Number(s.amount) > 0)
     .map((s) => ({
       split_transaction_id: split.id,
       member_id: s.memberId,
-      amount: Number(s.amount),
+      amount: Math.round(Number(s.amount) * 100) / 100,
     }));
 
   if (shareRows.length > 0) {
