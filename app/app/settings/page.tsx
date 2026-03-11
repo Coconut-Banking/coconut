@@ -412,7 +412,8 @@ export default function SettingsPage() {
                       {gmail.scanResult && (
                         <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3">
                           <p className="text-sm text-[#2D5A44]">
-                            Found <span className="font-semibold">{gmail.scanResult.scanned}</span> receipt{gmail.scanResult.scanned !== 1 ? "s" : ""},
+                            Scanned <span className="font-semibold">{gmail.scanResult.emailsFetched}</span> email{gmail.scanResult.emailsFetched !== 1 ? "s" : ""},
+                            saved <span className="font-semibold">{gmail.scanResult.inserted}</span> receipt{gmail.scanResult.inserted !== 1 ? "s" : ""},
                             matched <span className="font-semibold">{gmail.scanResult.matched}</span> to transactions.
                           </p>
                         </div>

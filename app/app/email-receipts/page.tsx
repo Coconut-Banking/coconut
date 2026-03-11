@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
+import { formatCurrency } from "@/lib/currency";
 
 interface Receipt {
   id: string;
@@ -25,43 +26,44 @@ interface Receipt {
   transaction_id?: string;
 }
 
+interface ScanResult {
+  emailsFetched: number;
+  alreadyProcessed: number;
+  parsed: number;
+  notReceipt: number;
+  noBody: number;
+  parseErrors: number;
+  insertErrors: number;
+  inserted: number;
+  matched: number;
+  error?: string;
+}
+
 function EmailReceiptsContent() {
   const searchParams = useSearchParams();
   const gmail = useGmail();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanResults, setScanResults] = useState<any>(null);
+  const [scanResults, setScanResults] = useState<ScanResult | null>(null);
   const [error, setError] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    // Check for connection success/error from OAuth callback
     const connected = searchParams.get("connected");
     const authError = searchParams.get("error");
 
-    console.log("[EmailReceipts] Page loaded with params:", { connected, authError });
-
     if (connected === "true") {
-      console.log("[EmailReceipts] Just connected, showing success message");
-      // Remove the query params to prevent reload loop
       const url = new URL(window.location.href);
-      url.searchParams.delete('connected');
-      url.searchParams.delete('error');
-      window.history.replaceState({}, '', url);
+      url.searchParams.delete("connected");
+      url.searchParams.delete("error");
+      window.history.replaceState({}, "", url);
     } else if (authError) {
-      console.error("[EmailReceipts] Auth error:", authError);
       setError(authError === "auth_failed" ? "Failed to connect Gmail. Please try again." : "Connection error");
     }
   }, [searchParams]);
 
   useEffect(() => {
-    console.log("[EmailReceipts] Gmail status:", {
-      connected: gmail.connected,
-      email: gmail.email,
-      loading: gmail.loading
-    });
-
     if (gmail.connected) {
       loadReceipts();
     }
@@ -82,15 +84,12 @@ function EmailReceiptsContent() {
   const handleScan = async (forceRescan = false) => {
     setIsScanning(true);
     setError("");
+    setScanResults(null);
     try {
       const res = await fetch("/api/gmail/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          daysBack: 30,
-          detailed: true,
-          forceRescan: forceRescan
-        })
+        body: JSON.stringify({ daysBack: 30, detailed: true, forceRescan }),
       });
 
       if (!res.ok) {
@@ -98,29 +97,30 @@ function EmailReceiptsContent() {
         throw new Error(errorData.error || "Scan failed");
       }
 
-      const data = await res.json();
+      const data = await res.json() as ScanResult;
       setScanResults(data);
 
-      // Check for specific error about OpenAI
       if (data.error) {
         setError(data.error);
-      } else if (data.found === 0 && data.scanned > 0) {
-        setError("No receipts found. Make sure you have receipt emails from supported merchants.");
+      } else if (data.inserted === 0 && data.emailsFetched > 0 && data.alreadyProcessed === data.emailsFetched) {
+        setError("All emails have already been processed. Try 'Force Rescan All' to reprocess.");
+      } else if (data.inserted === 0 && data.emailsFetched > 0) {
+        setError("No new receipts found in the scanned emails.");
       }
 
-      // Reload receipts after scan
       await loadReceipts();
-    } catch (err: any) {
-      setError(err.message || "Failed to scan emails");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to scan emails");
     } finally {
       setIsScanning(false);
     }
   };
 
-  const filteredReceipts = receipts.filter(r =>
-    !filter ||
-    (r.merchant ?? "").toLowerCase().includes(filter.toLowerCase()) ||
-    (r.raw_subject ?? "").toLowerCase().includes(filter.toLowerCase())
+  const filteredReceipts = receipts.filter(
+    (r) =>
+      !filter ||
+      (r.merchant ?? "").toLowerCase().includes(filter.toLowerCase()) ||
+      (r.raw_subject ?? "").toLowerCase().includes(filter.toLowerCase())
   );
 
   const totalAmount = filteredReceipts.reduce((sum, r) => sum + r.amount, 0);
@@ -130,16 +130,16 @@ function EmailReceiptsContent() {
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
-              <Mail className="w-8 h-8 text-blue-600" />
+            <div className="w-16 h-16 rounded-2xl bg-[#EEF7F2] flex items-center justify-center mx-auto mb-4">
+              <Mail className="w-8 h-8 text-[#3D8E62]" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Connect Gmail to Get Started</h2>
             <p className="text-sm text-gray-500 mb-6">
-              We'll scan your email for receipts from Amazon, Walmart, and other merchants
+              We&apos;ll scan your email for receipts from Amazon, Walmart, and other merchants
             </p>
             <button
               onClick={gmail.connect}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+              className="px-6 py-3 bg-[#3D8E62] text-white rounded-xl text-sm font-medium hover:bg-[#2D7A52] transition-colors"
             >
               Connect Gmail
             </button>
@@ -158,14 +158,14 @@ function EmailReceiptsContent() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Email Receipts</h1>
               <p className="text-sm text-gray-500 mt-1">
-                Connected as {gmail.email} • Last scan: {gmail.lastScan ? new Date(gmail.lastScan).toLocaleString() : "Never"}
+                Connected as {gmail.email} &bull; Last scan: {gmail.lastScan ? new Date(gmail.lastScan).toLocaleString() : "Never"}
               </p>
             </div>
             <div className="flex gap-2">
               <button
                 onClick={() => handleScan(false)}
                 disabled={isScanning}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 bg-[#3D8E62] text-white rounded-xl text-sm font-medium hover:bg-[#2D7A52] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
               >
                 {isScanning ? (
                   <>
@@ -182,7 +182,7 @@ function EmailReceiptsContent() {
               <button
                 onClick={() => handleScan(true)}
                 disabled={isScanning}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                 title="Reprocess all emails, even ones already scanned"
               >
                 {isScanning ? (
@@ -203,12 +203,19 @@ function EmailReceiptsContent() {
       </div>
 
       {/* Scan Results Banner */}
-      {scanResults && (
-        <div className="bg-green-50 border-b border-green-200">
+      {scanResults && !scanResults.error && (
+        <div className="bg-[#EEF7F2] border-b border-[#C3E0D3]">
           <div className="max-w-6xl mx-auto px-4 py-3">
-            <div className="flex items-center gap-2 text-sm text-green-700">
+            <div className="flex items-center gap-2 text-sm text-[#3D8E62]">
               <CheckCircle2 className="w-4 h-4" />
-              Scanned {scanResults.scanned} emails • Found {scanResults.found} receipts • {scanResults.new} new
+              <span>
+                Scanned {scanResults.emailsFetched} emails
+                {scanResults.alreadyProcessed > 0 && ` (${scanResults.alreadyProcessed} already processed)`}
+                {" "}&bull; {scanResults.parsed} receipts found
+                {" "}&bull; {scanResults.inserted} new saved
+                {scanResults.matched > 0 && ` \u00b7 ${scanResults.matched} matched to transactions`}
+                {scanResults.parseErrors > 0 && ` \u00b7 ${scanResults.parseErrors} errors`}
+              </span>
             </div>
           </div>
         </div>
@@ -242,7 +249,7 @@ function EmailReceiptsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500">Total Spent</p>
-                <p className="text-2xl font-bold text-gray-900">${totalAmount.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalAmount)}</p>
               </div>
               <Calendar className="w-8 h-8 text-gray-400" />
             </div>
@@ -252,7 +259,7 @@ function EmailReceiptsContent() {
               <div>
                 <p className="text-sm text-gray-500">Merchants</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {new Set(receipts.map(r => r.merchant)).size}
+                  {new Set(receipts.map((r) => r.merchant)).size}
                 </p>
               </div>
               <Mail className="w-8 h-8 text-gray-400" />
@@ -269,7 +276,7 @@ function EmailReceiptsContent() {
               placeholder="Search by merchant or subject..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
             />
           </div>
         </div>
@@ -282,7 +289,7 @@ function EmailReceiptsContent() {
               <div className="bg-white rounded-xl border border-gray-100 p-8 text-center">
                 <p className="text-sm text-gray-500">
                   {receipts.length === 0
-                    ? "No receipts found. Click 'Scan Last 30 Days' to search your emails."
+                    ? "No receipts found. Click 'Scan New' to search your emails."
                     : "No receipts match your search."}
                 </p>
               </div>
@@ -294,7 +301,7 @@ function EmailReceiptsContent() {
                     onClick={() => setSelectedReceipt(receipt)}
                     className={`bg-white rounded-xl border ${
                       selectedReceipt?.id === receipt.id
-                        ? "border-blue-500 ring-2 ring-blue-100"
+                        ? "border-[#3D8E62] ring-2 ring-[#3D8E62]/20"
                         : "border-gray-100 hover:border-gray-200"
                     } p-4 cursor-pointer transition-all`}
                     whileHover={{ scale: 1.01 }}
@@ -305,19 +312,19 @@ function EmailReceiptsContent() {
                         <div className="flex items-center gap-2 mb-1">
                           <h4 className="font-semibold text-gray-900">{receipt.merchant}</h4>
                           {receipt.transaction_id && (
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                            <span className="px-2 py-0.5 bg-[#EEF7F2] text-[#3D8E62] text-xs rounded-full font-medium">
                               Matched
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-500">{receipt.raw_subject}</p>
+                        <p className="text-sm text-gray-500 line-clamp-1">{receipt.raw_subject}</p>
                         <p className="text-xs text-gray-400 mt-1">
                           {new Date(receipt.date).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
                         <p className="text-lg font-bold text-gray-900">
-                          ${receipt.amount.toFixed(2)}
+                          {formatCurrency(receipt.amount)}
                         </p>
                         <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
                       </div>
@@ -349,10 +356,9 @@ function EmailReceiptsContent() {
                     <h5 className="text-sm font-semibold text-gray-700 mb-3">Items</h5>
                     <div className="space-y-2">
                       {selectedReceipt.line_items.map((item, idx) => {
-                        // Calculate the price, handling various field names and missing values
                         const price = item.unit_price || item.price || item.total || 0;
                         const quantity = item.quantity || 1;
-                        const total = item.total || (price * quantity) || 0;
+                        const total = item.total || price * quantity || 0;
 
                         return (
                           <div key={idx} className="flex justify-between py-2 border-b border-gray-100 last:border-0">
@@ -361,7 +367,7 @@ function EmailReceiptsContent() {
                               <p className="text-xs text-gray-500">Qty: {quantity}</p>
                             </div>
                             <p className="text-sm font-medium text-gray-900">
-                              ${total.toFixed(2)}
+                              {formatCurrency(total)}
                             </p>
                           </div>
                         );
@@ -371,7 +377,7 @@ function EmailReceiptsContent() {
                       <div className="flex justify-between">
                         <p className="text-lg font-semibold text-gray-900">Total</p>
                         <p className="text-lg font-bold text-gray-900">
-                          ${selectedReceipt.amount.toFixed(2)}
+                          {formatCurrency(selectedReceipt.amount)}
                         </p>
                       </div>
                     </div>
@@ -384,7 +390,7 @@ function EmailReceiptsContent() {
                       <div className="flex justify-between">
                         <p className="text-lg font-semibold text-gray-900">Total</p>
                         <p className="text-lg font-bold text-gray-900">
-                          ${selectedReceipt.amount.toFixed(2)}
+                          {formatCurrency(selectedReceipt.amount)}
                         </p>
                       </div>
                     </div>
