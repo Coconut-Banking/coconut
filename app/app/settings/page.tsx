@@ -106,20 +106,20 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-8 py-8">
+    <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Settings</h1>
         <p className="text-sm text-gray-500 mt-1">Manage your account, security, and preferences.</p>
       </div>
 
-      <div className="flex gap-6">
-        <div className="w-44 shrink-0">
-          <nav className="bg-white rounded-2xl border border-gray-100 p-2 space-y-0.5">
+      <div className="flex flex-col sm:flex-row gap-6">
+        <div className="w-full sm:w-44 shrink-0">
+          <nav className="bg-white rounded-2xl border border-gray-100 p-2 flex sm:flex-col gap-0.5 overflow-x-auto">
             {sections.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setActiveSection(id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-all text-left ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-all text-left whitespace-nowrap ${
                   activeSection === id
                     ? "bg-[#EEF7F2] text-[#3D8E62] font-medium"
                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"

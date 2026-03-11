@@ -189,12 +189,13 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
         transition={{ type: "spring", damping: 30, stiffness: 300 }}
-        className="fixed right-0 top-0 bottom-0 w-96 bg-white border-l border-gray-200 z-50 flex flex-col shadow-xl"
+        className="fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white border-l border-gray-200 z-50 flex flex-col shadow-xl"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h3 className="text-sm font-semibold text-gray-900">Transaction details</h3>
           <button
             onClick={onClose}
+            aria-label="Close transaction details"
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
           >
             <X size={15} />
@@ -338,8 +339,10 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="Write a note..."
+                    aria-label="Transaction note"
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
                     rows={3}
+                    autoFocus
                   />
                 </div>
               )}
@@ -369,6 +372,7 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                 <h3 className="text-base font-semibold">Add to shared</h3>
                 <button
                   onClick={() => setShowAddToShared(false)}
+                  aria-label="Close split modal"
                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100"
                 >
                   <X size={16} />
@@ -434,6 +438,7 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                           value={newPersonName}
                           onChange={(e) => setNewPersonName(e.target.value)}
                           placeholder="Or add new person..."
+                          aria-label="New person name"
                           className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
                         />
                         <button
@@ -572,6 +577,7 @@ function TxRow({
               e.stopPropagation();
               setExpandedId(expandedId === tx.id ? null : tx.id);
             }}
+            aria-label={expandedId === tx.id ? "Collapse details" : "Expand details"}
             className="text-gray-400 hover:text-gray-600 transition-colors p-1"
           >
             {expandedId === tx.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -791,7 +797,7 @@ function TransactionsPageContent() {
   ).sort()];
 
   return (
-    <div className="max-w-4xl mx-auto px-8 py-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-8 py-8">
       {linked && (
         <div className="mb-4 flex items-center gap-2 flex-wrap">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
@@ -1013,11 +1019,13 @@ function TransactionsPageContent() {
           value={filterQuery}
           onChange={(e) => setFilterQuery(e.target.value)}
           placeholder="Filter by name, category, amount..."
+          aria-label="Filter transactions"
           className="w-full pl-11 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
         />
         {filterQuery && (
           <button
             onClick={() => setFilterQuery("")}
+            aria-label="Clear filter"
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
           >
             <X size={15} />
@@ -1107,7 +1115,7 @@ function TransactionsPageContent() {
             )}
           </div>
         </div>
-        <div className="w-48 shrink-0">
+        <div className="hidden sm:block w-48 shrink-0">
           <div className="bg-white rounded-2xl border border-gray-100 p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Filter size={13} className="text-gray-500" />
@@ -1146,11 +1154,13 @@ function TransactionsPageContent() {
                   <input
                     type="number"
                     placeholder="Min $"
+                    aria-label="Minimum amount"
                     className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
                   />
                   <input
                     type="number"
                     placeholder="Max $"
+                    aria-label="Maximum amount"
                     className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
                   />
                 </div>
