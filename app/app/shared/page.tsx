@@ -190,6 +190,7 @@ function AddExpenseModal({
             <h3 className="text-lg font-bold text-gray-900 tracking-tight">Add expense</h3>
             <button
               onClick={onClose}
+              aria-label="Close add expense"
               className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
             >
               <X size={18} />
@@ -215,6 +216,7 @@ function AddExpenseModal({
                   placeholder="0.00"
                   type="number"
                   step="0.01"
+                  autoFocus
                   className="w-full pl-9 pr-4 py-3.5 text-lg font-semibold border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
                 />
               </div>
@@ -341,12 +343,13 @@ function AddExpenseModal({
                         <span className="text-sm font-medium w-24 truncate">{m.user_id === user?.id ? "You" : m.display_name}</span>
                         <div className="flex-1 relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                          <input
+                            <input
                             value={customShares[m.id] ?? ""}
                             onChange={(e) => setCustomShares((prev) => ({ ...prev, [m.id]: e.target.value }))}
                             placeholder="0"
                             type="number"
                             step="0.01"
+                            aria-label={`Share for ${m.user_id === user?.id ? "You" : m.display_name}`}
                             className="w-full pl-7 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20"
                           />
                         </div>
@@ -690,7 +693,7 @@ function SharedPageContent() {
           Create groups, attach bank transactions, split, and settle. Connect your bank to start.
         </p>
         <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
-          <Users size={40} className="text-gray-300 mx-auto mb-4" />
+          <Users size={40} className="text-gray-400 mx-auto mb-4" />
           <p className="text-sm font-medium text-gray-600">Connect your bank</p>
           <p className="text-xs text-gray-500 mt-1 mb-4">
             Create groups and split transactions from real bank data
@@ -792,6 +795,7 @@ function SharedPageContent() {
                 value={newMemberName}
                 onChange={(e) => { setNewMemberName(e.target.value); setAddMemberError(null); }}
                 placeholder="Name"
+                aria-label="New member name"
                 className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 text-sm min-h-[44px]"
               />
               <input
@@ -799,6 +803,7 @@ function SharedPageContent() {
                 value={newMemberEmail}
                 onChange={(e) => { setNewMemberEmail(e.target.value); setAddMemberError(null); }}
                 placeholder="Email"
+                aria-label="New member email"
                 className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 text-sm min-h-[44px]"
               />
               <button
@@ -1180,7 +1185,7 @@ function SharedPageContent() {
                           </div>
                         )}
                         {group.direction === "settled" && <p className="text-sm text-gray-400">settled up</p>}
-                        <ChevronRight size={15} className="text-gray-300" />
+                        <ChevronRight size={15} className="text-gray-400" />
                       </div>
                     </motion.div>
                   ))}
@@ -1388,7 +1393,7 @@ function PersonRow({
             </div>
           )}
           {person.direction === "settled" && <p className="text-sm text-gray-400 font-medium">settled up</p>}
-          <ChevronRight size={15} className={`text-gray-300 transition-transform ${expanded ? "rotate-90" : ""}`} />
+          <ChevronRight size={15} className={`text-gray-400 transition-transform ${expanded ? "rotate-90" : ""}`} />
         </div>
       </motion.div>
 

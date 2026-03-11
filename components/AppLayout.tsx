@@ -145,12 +145,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search your money. Try: dinner with Alex in January"
+                aria-label="Search transactions"
                 className="w-full pl-9 pr-4 py-2 text-sm bg-[#F7FAF8] border border-[#E8EAEC] rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
               />
             </div>
           </form>
           <div className="flex items-center gap-2">
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-50 text-gray-500 transition-colors relative">
+            <button aria-label="Notifications" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-50 text-gray-500 transition-colors relative">
               <Bell size={16} />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#3D8E62]" />
             </button>

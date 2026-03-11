@@ -375,6 +375,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               </div>
               <button
                 onClick={() => removeItem(idx)}
+                aria-label={`Remove ${item.name || "item"}`}
                 className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
               >
                 <Trash2 size={12} />
@@ -496,6 +497,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                       rs.setEditOtherFees((prev) => prev.filter((_, i) => i !== idx));
                       rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount) * 100) / 100);
                     }}
+                    aria-label={`Remove ${fee.name || "fee"}`}
                     className="w-6 h-6 flex shrink-0 items-center justify-center rounded hover:bg-red-50 text-gray-300 hover:text-red-500"
                   >
                     <X size={12} />
@@ -574,6 +576,7 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               {person.name}
               <button
                 onClick={() => rs.removePerson(person.name)}
+                aria-label={`Remove ${person.name}`}
                 className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
               >
                 <X size={10} />
@@ -592,10 +595,12 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             onChange={(e) => setNewName(e.target.value)}
             className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
             placeholder="Type a name and press Enter"
+            aria-label="Person name"
           />
           <button
             type="submit"
             disabled={!newName.trim()}
+            aria-label="Add person"
             className="px-4 py-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
           >
             <Plus size={16} />
@@ -936,6 +941,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               <select
                 value={selectedGroupId}
                 onChange={(e) => setSelectedGroupId(e.target.value)}
+                aria-label="Select group"
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
               >
                 <option value="">Select a group...</option>
