@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
+import { canAccessGroup } from "@/lib/group-access";
 import { randomUUID } from "crypto";
 
 export async function POST(
@@ -52,10 +53,14 @@ export async function POST(
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
 
-  // Verify user has access to the group
+  const allowed = await canAccessGroup(userId, groupId);
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { data: group } = await db
     .from("groups")
-    .select("id, owner_id, name")
+    .select("id, name")
     .eq("id", groupId)
     .single();
 
