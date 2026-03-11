@@ -72,7 +72,7 @@ function AddExpenseModal({
   onClose,
   onSuccess,
   groups,
-  friends,
+  friends: _friends,
   selectedGroupId,
   selectedPersonKey,
 }: {
@@ -502,7 +502,7 @@ function SettleModal({
 function SharedPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user } = useUser();
+  const { user: _user } = useUser();
   const { linked } = useTransactions();
   const { summary, loading, refetch: refetchSummary } = useGroupsSummary();
   const { activity, loading: activityLoading, refetch: refetchActivity } = useRecentActivity(linked);
@@ -528,7 +528,6 @@ function SharedPageContent() {
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
-  const [paymentLink, setPaymentLink] = useState<string | null>(null);
 
   const { detail: groupDetail, refetch: refetchGroupDetail } = useGroupDetail(selectedId);
   const { detail: personDetail, loading: personDetailLoading, refetch: refetchPersonDetail } = usePersonDetail(
@@ -546,10 +545,6 @@ function SharedPageContent() {
       refetchActivity();
     }
   }, [showAdd, settleTarget, refetchActivity]);
-
-  useEffect(() => {
-    setPaymentLink(null);
-  }, [selectedId, selectedPersonKey]);
 
   useEffect(() => {
     if (searchParams.get("stripe") !== "success" || !showRealUI) return;
@@ -614,7 +609,7 @@ function SharedPageContent() {
   };
 
   const requestPayment = async (
-    email: string | null,
+    _email: string | null,
     name: string,
     amount: number,
     groupName = "expenses",
@@ -636,7 +631,6 @@ function SharedPageContent() {
       });
       const data = await res.json();
       if (res.ok && data.url) {
-        setPaymentLink(data.url);
         await navigator.clipboard.writeText(data.url);
       }
     } finally {

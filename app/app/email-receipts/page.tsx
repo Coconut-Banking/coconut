@@ -34,7 +34,6 @@ function EmailReceiptsContent() {
   const [error, setError] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [filter, setFilter] = useState("");
-  const [showConnectedMessage, setShowConnectedMessage] = useState(false);
 
   useEffect(() => {
     // Check for connection success/error from OAuth callback
@@ -45,7 +44,6 @@ function EmailReceiptsContent() {
 
     if (connected === "true") {
       console.log("[EmailReceipts] Just connected, showing success message");
-      setShowConnectedMessage(true);
       // Remove the query params to prevent reload loop
       const url = new URL(window.location.href);
       url.searchParams.delete('connected');

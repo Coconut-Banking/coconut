@@ -9,20 +9,6 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
-const RECEIPT_SENDERS = [
-  // US stores
-  "amazon.com", "walmart.com", "target.com", "bestbuy.com",
-  "costco.com", "apple.com", "uber.com", "doordash.com",
-  "grubhub.com", "instacart.com", "chewy.com", "etsy.com",
-  "ebay.com", "homedepot.com", "lowes.com", "nike.com",
-  "adidas.com", "nordstrom.com", "macys.com", "sephora.com",
-  // Canadian stores
-  "loblaws.ca", "nofrills.ca", "foodbasics.ca", "metro.ca",
-  "sobeys.com", "lcbo.com", "thebeer.store", "canadiantire.ca",
-  "skip.dishes", "ubereats.com", "amazon.ca", "walmart.ca",
-  // Generic receipt senders
-  "receipt", "order", "confirmation", "invoice", "payment"
-];
 
 function buildGmailQuery(): string {
   // Focus on actual purchases and receipts, not just any financial email
