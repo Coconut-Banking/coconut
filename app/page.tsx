@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Shield, RefreshCw, Users, Sparkles, Lock, Star, ChevronRight, Check } from "lucide-react";
+import { ArrowRight, Shield, RefreshCw, Users, Sparkles, Lock, Star, Check } from "lucide-react";
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
 

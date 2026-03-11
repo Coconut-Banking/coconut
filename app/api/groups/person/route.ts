@@ -190,7 +190,6 @@ export async function GET(req: NextRequest) {
       const tx = (s as { transactions?: { merchant_name?: string; raw_name?: string; amount?: number } })
         .transactions;
       const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
-      const totalShares = shareList.length;
       const txAmount = Math.abs(tx?.amount ?? 0);
       const explicitPayer = (s as { payer_member_id?: string | null }).payer_member_id;
       const payerMemberId =

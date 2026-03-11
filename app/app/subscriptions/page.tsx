@@ -2,7 +2,6 @@
 
 import { RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 
 function MerchantAvatar({ name, color }: { name: string; color: string }) {

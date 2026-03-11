@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { linked } = useTransactions();
   const gmail = useGmail();
-  const { hidden, hide, unhide, isHidden } = useHiddenAccounts();
+  const { hide, unhide, isHidden } = useHiddenAccounts();
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);

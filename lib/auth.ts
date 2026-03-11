@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { getSupabase } from "./supabase";
 
 const SKIP_AUTH =
   process.env.NODE_ENV !== "production" &&

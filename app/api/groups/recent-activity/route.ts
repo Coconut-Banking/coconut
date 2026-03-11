@@ -81,12 +81,6 @@ export async function GET() {
     membersByGroup.set(m.group_id, list);
   }
 
-  const { data: settlements } = await db
-    .from("settlements")
-    .select("group_id, payer_member_id, receiver_member_id, amount")
-    .in("group_id", ids)
-    .eq("status", "completed");
-
   const activity: Array<{
     id: string;
     who: string;
@@ -101,7 +95,7 @@ export async function GET() {
   for (const s of splits.slice(0, 15)) {
     const tx = (s as { transactions?: { merchant_name?: string; raw_name?: string; amount?: number } }).transactions;
     const merchant = tx?.merchant_name ?? tx?.raw_name ?? "Expense";
-    const txAmount = Math.abs(Number(tx?.amount ?? 0));
+    const _txAmount = Math.abs(Number(tx?.amount ?? 0));
     const payerUserId = txOwnerById.get(s.transaction_id);
     const groupMembers = membersByGroup.get(s.group_id) ?? [];
     const myMember = groupMembers.find((m) => m.user_id === userId);
