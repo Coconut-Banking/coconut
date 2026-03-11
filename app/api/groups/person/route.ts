@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
   const key = req.nextUrl.searchParams.get("key");
   if (!key) return NextResponse.json({ error: "key required" }, { status: 400 });
 
+  try {
   const db = getSupabase();
   const ids = await getAccessibleGroupIds(userId);
 
@@ -237,4 +238,8 @@ export async function GET(req: NextRequest) {
     key,
     settlements: personSettlements,
   });
+  } catch (err) {
+    console.error("[person]", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load person" }, { status: 500 });
+  }
 }

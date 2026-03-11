@@ -43,6 +43,7 @@ export interface GroupDetail extends Group {
 export function useGroups() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchGroups = useCallback(async () => {
     try {
@@ -50,7 +51,12 @@ export function useGroups() {
       if (res.ok) {
         const data = await res.json();
         setGroups(data);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Failed to load groups");
       }
+    } catch {
+      setError("Failed to load groups");
     } finally {
       setLoading(false);
     }
@@ -60,12 +66,13 @@ export function useGroups() {
     fetchGroups();
   }, [fetchGroups]);
 
-  return { groups, loading, refetch: fetchGroups };
+  return { groups, loading, error, refetch: fetchGroups };
 }
 
 export function useGroupDetail(id: string | null) {
   const [detail, setDetail] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchDetail = useCallback(async (silent = false) => {
     if (!id) {
@@ -75,11 +82,19 @@ export function useGroupDetail(id: string | null) {
     }
     if (!silent) setLoading(true);
     try {
+      setError(null);
       const res = await fetch(`/api/groups/${id}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setDetail(data);
-      } else setDetail(null);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Failed to load group");
+        setDetail(null);
+      }
+    } catch {
+      setError("Failed to load group");
+      setDetail(null);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -91,7 +106,7 @@ export function useGroupDetail(id: string | null) {
 
   useGroupListen(id, () => fetchDetail(true));
 
-  return { detail, loading, refetch: fetchDetail };
+  return { detail, loading, error, refetch: fetchDetail };
 }
 
 export interface GroupSummary {
@@ -139,14 +154,22 @@ export interface GroupsSummary {
 export function useGroupsSummary() {
   const [summary, setSummary] = useState<GroupsSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchSummary = useCallback(async () => {
     try {
+      setError(null);
       const res = await fetch("/api/groups/summary", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setSummary(data);
-      } else setSummary(null);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Failed to load summary");
+        setSummary(null);
+      }
+    } catch {
+      setError("Failed to load summary");
     } finally {
       setLoading(false);
     }
@@ -156,7 +179,7 @@ export function useGroupsSummary() {
     fetchSummary();
   }, [fetchSummary]);
 
-  return { summary, loading, refetch: fetchSummary };
+  return { summary, loading, error, refetch: fetchSummary };
 }
 
 const PERSON_POLL_MS = 30000; // Person view spans multiple groups — poll every 30s

@@ -40,7 +40,12 @@ export async function POST(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const name = (body.name as string)?.trim()?.slice(0, 100);
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
