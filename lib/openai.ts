@@ -5,22 +5,6 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
-export function hasOpenAI(): boolean {
-  return !!openai;
-}
-
-export async function embed(text: string): Promise<number[]> {
-  if (!openai) throw new Error("OPENAI_API_KEY not set");
-  const { data } = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: text,
-  });
-  if (!data?.length || !data[0]?.embedding) {
-    throw new Error("Embedding response was empty");
-  }
-  return data[0].embedding;
-}
-
 export async function chatWithContext(
   userMessage: string,
   transactions: Transaction[],

@@ -18,7 +18,7 @@ import {
   Send,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useReceiptSplit, type Step } from "@/hooks/useReceiptSplit";
 import type { ReceiptItem } from "@/lib/receipt-split";

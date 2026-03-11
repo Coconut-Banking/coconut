@@ -3,15 +3,6 @@
  * No LLM, no API — regex + date math. Client-safe.
  */
 
-interface TransactionLike {
-  merchant: string;
-  category: string;
-  rawDescription: string;
-  date: string; // YYYY-MM-DD
-  amount: number;
-  isRecurring?: boolean;
-}
-
 export interface QueryFilters {
   keywords: string[];
   dateStart?: string; // YYYY-MM-DD
@@ -149,51 +140,3 @@ export function parseQuery(query: string): QueryFilters {
   };
 }
 
-export function filterTransactions<T extends TransactionLike>(
-  transactions: T[],
-  filters: QueryFilters
-): T[] {
-  if (filters.keywords.length === 0 && !filters.dateStart && !filters.dateEnd && filters.amountMin == null && filters.amountMax == null && !filters.categoryHint) {
-    return transactions;
-  }
-
-  return transactions.filter((tx) => {
-    const text = [tx.merchant, tx.category, tx.rawDescription].join(" ").toLowerCase();
-
-    if (filters.keywords.length > 0) {
-      const matchCount = filters.keywords.filter((kw) => text.includes(kw)).length;
-      if (matchCount === 0) return false;
-    }
-
-    if (filters.dateStart && tx.date < filters.dateStart) return false;
-    if (filters.dateEnd && tx.date > filters.dateEnd) return false;
-
-    const absAmount = Math.abs(tx.amount);
-    if (filters.amountMin != null && absAmount < filters.amountMin) return false;
-    if (filters.amountMax != null && absAmount > filters.amountMax) return false;
-
-    if (filters.categoryHint) {
-      const catLower = tx.category.toLowerCase();
-      const hint = filters.categoryHint.toLowerCase().replace(/\s+/g, " ");
-      const catMatch = catLower.includes(hint) || hint.split(" ").some((word) => catLower.includes(word));
-      // Map common hints to Plaid categories: "food and drink" matches FOOD_AND_DRINK, RESTAURANTS, GROCERIES
-      const foodMatch = ["food and drink", "food", "dining", "restaurant"].some((h) => hint.includes(h)) &&
-        ["food", "drink", "restaurant", "groceries"].some((c) => catLower.includes(c));
-      const recurringMatch = filters.categoryHint === "subscriptions" && tx.isRecurring;
-      if (!catMatch && !foodMatch && !recurringMatch) return false;
-    }
-
-    return true;
-  });
-}
-
-/**
- * One-liner: parse + filter.
- */
-export function searchTransactionsNL<T extends TransactionLike>(
-  transactions: T[],
-  query: string
-): T[] {
-  const filters = parseQuery(query);
-  return filterTransactions(transactions, filters);
-}

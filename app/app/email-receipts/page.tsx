@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
 
 interface Receipt {
