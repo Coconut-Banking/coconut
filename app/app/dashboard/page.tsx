@@ -1,44 +1,109 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { TrendingDown, RefreshCw, Users, DollarSign, ArrowRight } from "lucide-react";
+import {
+  TrendingDown, TrendingUp, RefreshCw, Users, DollarSign, ArrowRight,
+  Wallet, CalendarClock, ArrowUpRight, ArrowDownRight,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
+import { formatCurrency } from "@/lib/currency";
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) => {
   if (active && payload && payload.length) {
-    const val = Math.round(payload[0].value * 100) / 100;
     return (
       <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3 py-2">
         <div className="text-xs text-gray-500 mb-0.5">{label}</div>
-        <div className="text-sm font-bold text-gray-900">${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div className="text-sm font-bold text-gray-900">{formatCurrency(payload[0].value)}</div>
       </div>
     );
   }
   return null;
 };
 
-/** Format currency to 2 decimals, avoid floating-point display issues */
-function formatCurrency(n: number): string {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+interface DashboardData {
+  netWorth: { assets: number; liabilities: number; total: number };
+  subscriptions: {
+    totalMonthly: number;
+    count: number;
+    upcomingBills: Array<{ merchant: string; amount: number; nextDue: string; category: string }>;
+  };
 }
 
-// Derive spending by month and category from linked transactions (no demo/sandbox)
-function deriveFromTransactions(transactions: { amount: number; date: string; category?: string }[]) {
+interface MonthStats {
+  income: number;
+  expenses: number;
+  net: number;
+}
+
+interface CategoryDelta {
+  name: string;
+  current: number;
+  previous: number;
+  delta: number;
+  pct: number;
+  color: string;
+}
+
+interface TopMerchant {
+  name: string;
+  total: number;
+  count: number;
+  color: string;
+}
+
+function deriveFromTransactions(transactions: { amount: number; date: string; category?: string; merchant?: string }[]) {
   const byMonth: Record<string, number> = {};
   const byCategory: Record<string, number> = {};
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+
+  // Monthly income/expense breakdown
+  let thisMonthIncome = 0;
+  let thisMonthExpenses = 0;
+
+  // Per-category per-month for month-over-month
+  const catByMonth: Record<string, Record<string, number>> = {};
+
+  // Top merchants (expenses only)
+  const merchantTotals: Record<string, { total: number; count: number }> = {};
+
   for (const tx of transactions) {
     const amt = Math.round(Math.abs(tx.amount) * 100) / 100;
     const month = tx.date.slice(0, 7);
     const [y, m] = month.split("-").map(Number);
-    const monthKey = new Date(y, m - 1).toLocaleString("en", { month: "short" });
-    byMonth[monthKey] = Math.round(((byMonth[monthKey] ?? 0) + amt) * 100) / 100;
+    const monthLabel = new Date(y, m - 1).toLocaleString("en", { month: "short" });
+    byMonth[monthLabel] = Math.round(((byMonth[monthLabel] ?? 0) + amt) * 100) / 100;
+
     const cat = tx.category ?? "Other";
     byCategory[cat] = Math.round(((byCategory[cat] ?? 0) + amt) * 100) / 100;
+
+    // Income vs expenses for current month
+    if (month === thisMonthKey) {
+      if (tx.amount > 0) thisMonthIncome += amt;
+      else thisMonthExpenses += amt;
+    }
+
+    // Category by month
+    if (month === thisMonthKey || month === prevMonthKey) {
+      if (!catByMonth[cat]) catByMonth[cat] = {};
+      catByMonth[cat][month] = (catByMonth[cat][month] ?? 0) + amt;
+    }
+
+    // Top merchants (only count expenses)
+    if (tx.amount < 0 && tx.merchant) {
+      if (!merchantTotals[tx.merchant]) merchantTotals[tx.merchant] = { total: 0, count: 0 };
+      merchantTotals[tx.merchant].total += amt;
+      merchantTotals[tx.merchant].count++;
+    }
   }
+
   const colors = ["#3D8E62", "#4A6CF7", "#9B59B6", "#E8507A", "#F59E0B", "#CBD5E1"];
   const total = Object.values(byCategory).reduce((a, b) => a + b, 0);
   const categoryData = Object.entries(byCategory)
@@ -50,6 +115,7 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
       color: colors[i % colors.length],
       pct: total ? Math.round((amount / total) * 100) : 0,
     }));
+
   const spendingData = Object.entries(byMonth)
     .sort(([a], [b]) => {
       const order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -57,21 +123,62 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
     })
     .slice(-6)
     .map(([month, amount]) => ({ month, amount }));
-  const thisMonth = new Date().toLocaleString("en", { month: "short" });
+
+  const thisMonth = now.toLocaleString("en", { month: "short" });
   const monthlySpend = byMonth[thisMonth] ?? 0;
-  return { spendingData, categoryData, monthlySpend };
+
+  // Net cash flow
+  const cashFlow: MonthStats = {
+    income: thisMonthIncome,
+    expenses: thisMonthExpenses,
+    net: thisMonthIncome - thisMonthExpenses,
+  };
+
+  // Month-over-month category deltas
+  const categoryDeltas: CategoryDelta[] = Object.entries(catByMonth)
+    .map(([name, months], i) => {
+      const current = months[thisMonthKey] ?? 0;
+      const previous = months[prevMonthKey] ?? 0;
+      const delta = current - previous;
+      const pct = previous > 0 ? Math.round((delta / previous) * 100) : current > 0 ? 100 : 0;
+      return { name, current, previous, delta, pct, color: colors[i % colors.length] };
+    })
+    .filter((d) => d.current > 0 || d.previous > 0)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 5);
+
+  // Top merchants
+  const topMerchants: TopMerchant[] = Object.entries(merchantTotals)
+    .sort(([, a], [, b]) => b.total - a.total)
+    .slice(0, 5)
+    .map(([name, data], i) => ({
+      name,
+      total: data.total,
+      count: data.count,
+      color: colors[i % colors.length],
+    }));
+
+  return { spendingData, categoryData, monthlySpend, cashFlow, categoryDeltas, topMerchants };
 }
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useUser();
   const { transactions, linked, loading } = useTransactions();
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+
   const displayName = user?.firstName || user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "there";
   const recentTransactions = transactions.slice(0, 5);
-  const { spendingData, categoryData, monthlySpend } = deriveFromTransactions(transactions);
+  const { spendingData, categoryData, monthlySpend, cashFlow, categoryDeltas, topMerchants } = deriveFromTransactions(transactions);
 
-  // Avoid a flash of an empty dashboard: while transactions are loading,
-  // show a unified loading state instead of rendering partial UI.
+  useEffect(() => {
+    if (!linked) return;
+    fetch("/api/dashboard")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setDashboard(data); })
+      .catch(() => {});
+  }, [linked]);
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
@@ -82,6 +189,9 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const netWorth = dashboard?.netWorth;
+  const subData = dashboard?.subscriptions;
 
   return (
     <div className="px-8 py-8 max-w-5xl mx-auto">
@@ -95,71 +205,75 @@ export default function DashboardPage() {
       )}
       <div className="mb-7">
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-          {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {displayName} ☀️
+          {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {displayName}
         </h1>
         <p className="text-sm text-gray-500 mt-1">
           {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#3D8E62] font-medium">{transactions.length} transactions</span>
         </p>
       </div>
 
+      {/* Stat Cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0, duration: 0.4 }}
-          className="bg-white rounded-2xl border border-gray-100 p-4"
-        >
+        {/* Monthly Spend */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }} className="bg-white rounded-2xl border border-gray-100 p-4">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-50 mb-3">
             <TrendingDown size={15} className="text-red-500" />
           </div>
-          <div className="text-xl font-bold text-gray-900 mb-0.5">
-            ${formatCurrency(monthlySpend)}
-          </div>
+          <div className="text-xl font-bold text-gray-900 mb-0.5">{formatCurrency(monthlySpend)}</div>
           <div className="text-xs text-gray-500 mb-2">Monthly Spend</div>
           <div className="text-xs text-gray-400">From transactions</div>
         </motion.div>
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.07, duration: 0.4 }}
-          className="bg-white rounded-2xl border border-gray-100 p-4"
-        >
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-50 mb-3">
-            <RefreshCw size={15} className="text-purple-500" />
-          </div>
-          <div className="text-xl font-bold text-gray-900 mb-0.5">{linked ? "—" : "$84.95"}</div>
-          <div className="text-xs text-gray-500 mb-2">Subscriptions</div>
-          {linked && <div className="text-xs text-gray-400">Coming soon</div>}
-          {!linked && <div className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full">↑ Price alert</div>}
-        </motion.div>
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.14, duration: 0.4 }}
-          className="bg-white rounded-2xl border border-gray-100 p-4"
-        >
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 mb-3">
-            <Users size={15} className="text-blue-500" />
-          </div>
-          <div className="text-xl font-bold text-gray-900 mb-0.5">—</div>
-          <div className="text-xs text-gray-500 mb-2">Shared Expenses</div>
-          <a href="/app/shared" className="text-xs text-[#3D8E62] hover:underline">View →</a>
-        </motion.div>
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.21, duration: 0.4 }}
-          className="bg-white rounded-2xl border border-gray-100 p-4"
-        >
+
+        {/* Net Cash Flow */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }} className="bg-white rounded-2xl border border-gray-100 p-4">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#EEF7F2] mb-3">
             <DollarSign size={15} className="text-[#3D8E62]" />
           </div>
-          <div className="text-xl font-bold text-gray-900 mb-0.5">—</div>
+          <div className={`text-xl font-bold mb-0.5 ${cashFlow.net >= 0 ? "text-[#3D8E62]" : "text-red-500"}`}>
+            {cashFlow.net >= 0 ? "+" : ""}{formatCurrency(cashFlow.net)}
+          </div>
           <div className="text-xs text-gray-500 mb-2">Net Cash Flow</div>
-          <div className="text-xs text-gray-400">Coming soon</div>
+          <div className="text-xs text-gray-400">
+            {formatCurrency(cashFlow.income)} in · {formatCurrency(cashFlow.expenses)} out
+          </div>
+        </motion.div>
+
+        {/* Subscriptions */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-50 mb-3">
+            <RefreshCw size={15} className="text-purple-500" />
+          </div>
+          <div className="text-xl font-bold text-gray-900 mb-0.5">
+            {subData ? formatCurrency(subData.totalMonthly) : "—"}
+          </div>
+          <div className="text-xs text-gray-500 mb-2">Subscriptions/mo</div>
+          {subData ? (
+            <a href="/app/subscriptions" className="text-xs text-[#3D8E62] hover:underline">{subData.count} active →</a>
+          ) : (
+            <div className="text-xs text-gray-400">Loading...</div>
+          )}
+        </motion.div>
+
+        {/* Net Worth */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 mb-3">
+            <Wallet size={15} className="text-blue-500" />
+          </div>
+          <div className="text-xl font-bold text-gray-900 mb-0.5">
+            {netWorth ? formatCurrency(netWorth.total) : "—"}
+          </div>
+          <div className="text-xs text-gray-500 mb-2">Net Worth</div>
+          {netWorth ? (
+            <div className="text-xs text-gray-400">
+              {formatCurrency(netWorth.assets)} assets
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400">Loading...</div>
+          )}
         </motion.div>
       </div>
 
+      {/* Charts Row */}
       <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="col-span-3 bg-white rounded-2xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-4">
@@ -209,7 +323,7 @@ export default function DashboardPage() {
               <div key={cat.name}>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="text-gray-600">{cat.name}</span>
-                  <span className="text-gray-500 font-medium">${formatCurrency(cat.amount)}</span>
+                  <span className="text-gray-500 font-medium">{formatCurrency(cat.amount)}</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                   <motion.div
@@ -228,7 +342,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Bottom Row: Transactions + Insights */}
       <div className="grid grid-cols-5 gap-4">
+        {/* Recent Transactions */}
         <div className="col-span-3 bg-white rounded-2xl border border-gray-100">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <div>
@@ -251,11 +367,11 @@ export default function DashboardPage() {
               onClick={() => router.push("/app/transactions")}
               className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
             >
-                    <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
+              <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
-                  {tx.isRecurring && <RefreshCw size={10} className="text-gray-300" />}
+                  {tx.isRecurring && <RefreshCw size={10} className="text-purple-400" />}
                   {tx.hasSplitSuggestion && (
                     <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-1.5 py-0.5 rounded-full">
                       <Users size={8} />
@@ -273,11 +389,82 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        <div className="col-span-2 space-y-3">
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1">Smart Insights</div>
-          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6 text-center">
-            <p className="text-sm text-gray-500">Subscription alerts, split reminders, and duplicate detection coming soon.</p>
-          </div>
+        {/* Right Column: Insights */}
+        <div className="col-span-2 space-y-4">
+          {/* Upcoming Bills */}
+          {subData && subData.upcomingBills.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <CalendarClock size={14} className="text-purple-500" />
+                <div className="text-sm font-semibold text-gray-900">Upcoming Bills</div>
+              </div>
+              <div className="space-y-2.5">
+                {subData.upcomingBills.map((bill, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm text-gray-900">{bill.merchant}</div>
+                      <div className="text-xs text-gray-400">
+                        {bill.nextDue ? new Date(bill.nextDue + "T12:00:00").toLocaleDateString("en", { month: "short", day: "numeric" }) : "—"}
+                      </div>
+                    </div>
+                    <div className="text-sm font-medium text-gray-900">{formatCurrency(bill.amount)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Month-over-Month */}
+          {categoryDeltas.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp size={14} className="text-[#3D8E62]" />
+                <div className="text-sm font-semibold text-gray-900">vs. Last Month</div>
+              </div>
+              <div className="space-y-2.5">
+                {categoryDeltas.map((d) => (
+                  <div key={d.name} className="flex items-center justify-between">
+                    <div className="text-sm text-gray-700">{d.name}</div>
+                    <div className={`flex items-center gap-1 text-xs font-medium ${d.delta > 0 ? "text-red-500" : d.delta < 0 ? "text-[#3D8E62]" : "text-gray-400"}`}>
+                      {d.delta > 0 ? <ArrowUpRight size={12} /> : d.delta < 0 ? <ArrowDownRight size={12} /> : null}
+                      {d.pct !== 0 ? `${d.pct > 0 ? "+" : ""}${d.pct}%` : "same"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Top Merchants */}
+          {topMerchants.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <DollarSign size={14} className="text-[#4A6CF7]" />
+                <div className="text-sm font-semibold text-gray-900">Top Merchants</div>
+              </div>
+              <div className="space-y-2.5">
+                {topMerchants.map((m, i) => (
+                  <div key={m.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-400 w-4">{i + 1}</span>
+                      <span className="text-sm text-gray-900">{m.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-medium text-gray-900">{formatCurrency(m.total)}</div>
+                      <div className="text-xs text-gray-400">{m.count} txn{m.count !== 1 ? "s" : ""}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Fallback if no insights */}
+          {!subData?.upcomingBills.length && categoryDeltas.length === 0 && topMerchants.length === 0 && (
+            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6 text-center">
+              <p className="text-sm text-gray-500">Link your bank account to see insights, upcoming bills, and spending trends.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
