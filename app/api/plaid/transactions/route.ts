@@ -97,12 +97,23 @@ export async function GET() {
       }
     }
 
+    // Load subscription merchants to flag recurring transactions
+    const { data: activeSubs } = await db
+      .from("subscriptions")
+      .select("normalized_merchant")
+      .eq("clerk_user_id", effectiveUserId)
+      .eq("status", "active");
+    const recurringMerchants = new Set(
+      (activeSubs ?? []).map((s) => (s.normalized_merchant as string || "").toLowerCase()).filter(Boolean)
+    );
+
     const mapped = deduped.map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const rawMerchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       const merchant =
         llmResults.get(rawMerchant) ?? cleanMerchantForDisplay(rawMerchant, primary);
       const aid = tx.account_id as string | undefined;
+      const normalizedForRecurring = rawMerchant.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       return {
         id: tx.plaid_transaction_id as string,
         dbId: tx.id as string,
@@ -116,7 +127,7 @@ export async function GET() {
         categoryColor: CATEGORY_COLORS[primary] ?? "bg-gray-100 text-gray-700",
         date: tx.date as string,
         dateStr: fmtDate(tx.date as string),
-        isRecurring: false,
+        isRecurring: recurringMerchants.has(normalizedForRecurring),
         hasSplitSuggestion: false,
         merchantColor: hashColor(merchant),
         isPending: Boolean(tx.is_pending),
