@@ -45,16 +45,19 @@ export async function POST(request: NextRequest) {
         await db.from("transactions").delete().in("id", idsToDelete);
       }
     }
-    let { synced, error: syncError } = await syncTransactionsForUser(effectiveUserId);
-    if (syncError) console.warn("[exchange-token] sync warning:", syncError);
-    console.log(`[exchange-token] synced ${synced} transactions for ${effectiveUserId}`);
-
-    // Plaid often returns empty on first connect — wait and retry once
-    if (synced === 0) {
-      await new Promise((r) => setTimeout(r, 5000));
-      const retry = await syncTransactionsForUser(effectiveUserId);
-      synced = retry.synced;
-      if (retry.synced > 0) console.log(`[exchange-token] retry synced ${retry.synced} transactions`);
+    let synced = 0;
+    let syncError: string | undefined;
+    // Plaid can return 0 immediately after OAuth handoff; retry a couple times.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 3000 * attempt)); // 3s, then 6s
+      }
+      const result = await syncTransactionsForUser(effectiveUserId);
+      synced = result.synced;
+      syncError = result.error;
+      if (syncError) console.warn(`[exchange-token] sync warning (attempt ${attempt + 1}):`, syncError);
+      console.log(`[exchange-token] attempt ${attempt + 1} synced ${synced} transactions for ${effectiveUserId}`);
+      if (synced > 0) break;
     }
 
     embedTransactionsForUser(effectiveUserId).catch((e) =>
