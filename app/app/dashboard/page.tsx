@@ -57,56 +57,58 @@ interface TopMerchant {
 }
 
 function deriveFromTransactions(transactions: { amount: number; date: string; category?: string; merchant?: string }[]) {
-  const byMonth: Record<string, number> = {};
-  const byCategory: Record<string, number> = {};
+  // Spending metrics use ONLY expenses (negative amounts).
+  // Plaid convention in Coconut: negative = expense, positive = income.
+  const spendByMonth: Record<string, number> = {};
+  const spendByCategory: Record<string, number> = {};
   const now = new Date();
   const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevMonthKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
 
-  // Monthly income/expense breakdown
   let thisMonthIncome = 0;
   let thisMonthExpenses = 0;
 
-  // Per-category per-month for month-over-month
   const catByMonth: Record<string, Record<string, number>> = {};
-
-  // Top merchants (expenses only)
   const merchantTotals: Record<string, { total: number; count: number }> = {};
 
   for (const tx of transactions) {
-    const amt = Math.round(Math.abs(tx.amount) * 100) / 100;
+    const absAmt = Math.round(Math.abs(tx.amount) * 100) / 100;
     const month = tx.date.slice(0, 7);
-    const [y, m] = month.split("-").map(Number);
-    const monthLabel = new Date(y, m - 1).toLocaleString("en", { month: "short" });
-    byMonth[monthLabel] = Math.round(((byMonth[monthLabel] ?? 0) + amt) * 100) / 100;
+    const isExpense = tx.amount < 0;
 
-    const cat = tx.category ?? "Other";
-    byCategory[cat] = Math.round(((byCategory[cat] ?? 0) + amt) * 100) / 100;
-
-    // Income vs expenses for current month
+    // Cash flow: track income and expenses separately for current month
     if (month === thisMonthKey) {
-      if (tx.amount > 0) thisMonthIncome += amt;
-      else thisMonthExpenses += amt;
+      if (isExpense) thisMonthExpenses += absAmt;
+      else thisMonthIncome += absAmt;
     }
 
-    // Category by month
-    if (month === thisMonthKey || month === prevMonthKey) {
-      if (!catByMonth[cat]) catByMonth[cat] = {};
-      catByMonth[cat][month] = (catByMonth[cat][month] ?? 0) + amt;
-    }
+    // All spending metrics: expenses only
+    if (isExpense) {
+      // Spending by month (for chart) — key by YYYY-MM for correct chronological sorting
+      spendByMonth[month] = Math.round(((spendByMonth[month] ?? 0) + absAmt) * 100) / 100;
 
-    // Top merchants (only count expenses)
-    if (tx.amount < 0 && tx.merchant) {
-      if (!merchantTotals[tx.merchant]) merchantTotals[tx.merchant] = { total: 0, count: 0 };
-      merchantTotals[tx.merchant].total += amt;
-      merchantTotals[tx.merchant].count++;
+      const cat = tx.category ?? "Other";
+      spendByCategory[cat] = Math.round(((spendByCategory[cat] ?? 0) + absAmt) * 100) / 100;
+
+      // Category by month (for month-over-month deltas)
+      if (month === thisMonthKey || month === prevMonthKey) {
+        if (!catByMonth[cat]) catByMonth[cat] = {};
+        catByMonth[cat][month] = (catByMonth[cat][month] ?? 0) + absAmt;
+      }
+
+      // Top merchants
+      if (tx.merchant) {
+        if (!merchantTotals[tx.merchant]) merchantTotals[tx.merchant] = { total: 0, count: 0 };
+        merchantTotals[tx.merchant].total += absAmt;
+        merchantTotals[tx.merchant].count++;
+      }
     }
   }
 
   const colors = ["#3D8E62", "#4A6CF7", "#9B59B6", "#E8507A", "#F59E0B", "#CBD5E1"];
-  const total = Object.values(byCategory).reduce((a, b) => a + b, 0);
-  const categoryData = Object.entries(byCategory)
+  const total = Object.values(spendByCategory).reduce((a, b) => a + b, 0);
+  const categoryData = Object.entries(spendByCategory)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 6)
     .map(([name, amount], i) => ({
@@ -116,25 +118,23 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
       pct: total ? Math.round((amount / total) * 100) : 0,
     }));
 
-  const spendingData = Object.entries(byMonth)
-    .sort(([a], [b]) => {
-      const order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      return order.indexOf(a) - order.indexOf(b);
-    })
+  // Sort by YYYY-MM key (chronological), then display as short month name
+  const spendingData = Object.entries(spendByMonth)
+    .sort(([a], [b]) => a.localeCompare(b))
     .slice(-6)
-    .map(([month, amount]) => ({ month, amount }));
+    .map(([ym, amount]) => {
+      const [y, m] = ym.split("-").map(Number);
+      return { month: new Date(y, m - 1).toLocaleString("en", { month: "short" }), amount };
+    });
 
-  const thisMonth = now.toLocaleString("en", { month: "short" });
-  const monthlySpend = byMonth[thisMonth] ?? 0;
+  const monthlySpend = spendByMonth[thisMonthKey] ?? 0;
 
-  // Net cash flow
   const cashFlow: MonthStats = {
     income: thisMonthIncome,
     expenses: thisMonthExpenses,
     net: thisMonthIncome - thisMonthExpenses,
   };
 
-  // Month-over-month category deltas
   const categoryDeltas: CategoryDelta[] = Object.entries(catByMonth)
     .map(([name, months], i) => {
       const current = months[thisMonthKey] ?? 0;
@@ -147,7 +147,6 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, 5);
 
-  // Top merchants
   const topMerchants: TopMerchant[] = Object.entries(merchantTotals)
     .sort(([, a], [, b]) => b.total - a.total)
     .slice(0, 5)
