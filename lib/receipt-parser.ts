@@ -3,6 +3,17 @@ import { getGmailClient } from "./google-auth";
 import { getSupabase } from "./supabase";
 import { matchReceiptsToTransactions } from "./receipt-matcher";
 import { GMAIL, AI } from "./config";
+
+// ─── Pre-filter: skip emails that are clearly not expense receipts ───────────
+
+function isExcludedSender(from: string): boolean {
+  const lower = from.toLowerCase();
+  return GMAIL.EXCLUDED_SENDERS.some((domain) => lower.includes(domain));
+}
+
+function isExcludedSubject(subject: string): boolean {
+  return GMAIL.EXCLUDED_SUBJECT_PATTERNS.some((pat) => pat.test(subject));
+}
 import { withRetry, mapWithConcurrency } from "./retry";
 
 const openai = process.env.OPENAI_API_KEY
@@ -113,35 +124,39 @@ export async function parseReceiptEmail(emailBody: string): Promise<{
         role: "user",
         content: `Extract purchase details from this email. Return ONLY valid JSON.
 
-IMPORTANT: Only parse as a receipt if this is an ACTUAL PURCHASE where money was SPENT on goods or services.
+IMPORTANT: Only parse as a receipt if this is an ACTUAL PURCHASE where money LEFT the user's account to pay for goods or services.
 
-NOT receipts (return {"not_receipt": true}):
-- Deposit notifications
-- Money transfers between accounts
-- Thank you messages without purchases
-- Marketing emails
-- Account statements
-- Investment orders (unless it's a fee)
+NOT receipts — return {"not_receipt": true} for ALL of these:
+- Income / earnings / job payment notifications (e.g. "you earned $X", "you've been paid")
+- Investment / brokerage trade confirmations (buy/sell stock, ETF, crypto orders)
+- Dividend or interest payments received
+- Deposit or direct deposit notifications
+- Money transfers between the user's own accounts
+- Refund notifications (money coming back, not going out)
+- Thank you messages without a purchase
+- Marketing / promotional emails
+- Account statements or balance summaries
+- Password reset, security alerts, shipping updates without a charge
 
-ARE receipts:
-- Product purchases (Amazon, stores, etc)
-- Service payments (phone bills, subscriptions)
-- Food orders (restaurants, delivery)
-- Digital purchases
+ARE receipts — parse these:
+- Product purchases (Amazon, stores, etc.)
+- Service payments (phone bills, subscriptions, SaaS)
+- Food orders (restaurants, delivery apps)
+- Digital purchases (apps, games, media)
+- Utility / insurance / rent payments
 
-IMPORTANT:
-- MUST find the actual dollar amount - look for $XX.XX, "Total:", "Amount:", "Charged:", etc.
-- Do NOT use 0.01 as placeholder - if you can't find a real amount, return {"not_receipt": true}
+Rules:
+- MUST find the actual dollar amount — look for $XX.XX, "Total:", "Amount:", "Charged:", etc.
+- Do NOT use 0.01 as placeholder — if you can't find a real amount, return {"not_receipt": true}
 - Look for the ACTUAL amount paid, not placeholder values
 - Extract merchant name from sender or subject if not in body
 - All numeric values must be numbers, not strings
-- If the email mentions a specific dollar amount, extract it
 
 Schema:
 {
   "merchant": "store/company/service name",
   "order_date": "YYYY-MM-DD",
-  "total_amount": number (MUST be the actual amount paid, not a placeholder),
+  "total_amount": number,
   "line_items": [
     {"name": "item/service name", "quantity": 1, "unit_price": 9.99, "total": 9.99, "category": "category"}
   ]
@@ -307,6 +322,17 @@ export async function scanGmailForReceipts(
         const headers = payload.headers || [];
         const subject = headers.find((h) => h.name?.toLowerCase() === "subject")?.value || "";
         const from = headers.find((h) => h.name?.toLowerCase() === "from")?.value || "";
+
+        // Pre-filter: skip investment platforms, income notifications, etc.
+        if (isExcludedSender(from) || isExcludedSubject(subject)) {
+          notReceipt++;
+          scanLogs.push({
+            clerk_user_id: clerkUserId, gmail_message_id: msgId,
+            subject, from_address: from, status: "not_receipt",
+            error_reason: "Excluded sender or subject pattern",
+          });
+          return;
+        }
 
         const body = decodeBody(payload as EmailPart);
         if (!body) {

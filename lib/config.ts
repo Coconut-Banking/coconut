@@ -57,6 +57,37 @@ export const GMAIL = {
     "chewy.com",
   ],
   RECEIPT_EXCLUSIONS: ["-label:spam", "-label:trash", "-category:promotions"],
+  /** Senders whose emails should never be treated as expense receipts. */
+  EXCLUDED_SENDERS: [
+    "wealthsimple.com",
+    "questrade.com",
+    "interactivebrokers.com",
+    "tdameritrade.com",
+    "schwab.com",
+    "fidelity.com",
+    "etrade.com",
+    "robinhood.com",
+    "vanguard.com",
+    "coinbase.com",
+    "binance.com",
+    "kraken.com",
+    "riipen.com",
+  ],
+  /** Subject-line patterns that indicate non-receipt emails (case-insensitive). */
+  EXCLUDED_SUBJECT_PATTERNS: [
+    /trade\s+confirm/i,
+    /order\s+(executed|filled|confirm)/i,
+    /buy\s+order/i,
+    /sell\s+order/i,
+    /dividend/i,
+    /investment\s+(confirm|statement|summary)/i,
+    /portfolio/i,
+    /you('ve| have) (been|earned|received a?) (paid|hired|accepted|offer)/i,
+    /job\s+(offer|payment|earning)/i,
+    /pay(ment|roll)?\s+(stub|slip|statement|deposit)/i,
+    /direct\s+deposit/i,
+    /your\s+earning/i,
+  ],
 } as const;
 
 export const RECEIPT_MATCH = {
