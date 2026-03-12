@@ -93,10 +93,19 @@ function ConnectBankContent() {
 
   useEffect(() => {
     let cancelled = false;
+    const fromApp = typeof window !== "undefined" && searchParams.get("from_app") === "1";
+    const redirectBack = `/connect${fromApp ? "?from_app=1" : ""}`;
+
     fetch("/api/plaid/create-link-token", { method: "POST" })
-      .then((res) => res.json())
+      .then((res) => {
+        if (res.status === 401) {
+          window.location.href = `/login?redirect_url=${encodeURIComponent(redirectBack)}`;
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled || !data) return;
         if (data.error) {
           const debugHint =
             data._debug?.redirect_uri
@@ -112,7 +121,7 @@ function ConnectBankContent() {
         if (!cancelled) setError(err.message ?? "Failed to load");
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [searchParams]);
 
   const onSuccess = useCallback(
     async (publicToken: string) => {
