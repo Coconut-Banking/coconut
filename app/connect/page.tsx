@@ -76,7 +76,25 @@ function ConnectBankContent() {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isSandbox, setIsSandbox] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [isExchanging, setIsExchanging] = useState(false);
+
+  const logPlaidEvent = useCallback(
+    (payload: Record<string, unknown>) => {
+      fetch("/api/plaid/link-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: searchParams.get("from_app") === "1" ? "app" : "web",
+          context: "connect",
+          ...payload,
+        }),
+      }).catch(() => {
+        // best effort logging only
+      });
+    },
+    [searchParams]
+  );
 
   // OAuth return: Plaid redirects back with oauth_state_id — pass to Link for redirect flow
   const receivedRedirectUri =
@@ -128,22 +146,52 @@ function ConnectBankContent() {
               ? `\n\nExact URI we sent: "${data._debug.redirect_uri}"`
               : "";
           setError(data.error + debugHint);
+          setDebugInfo(
+            data._debug?.redirect_uri
+              ? `redirect_uri=${data._debug.redirect_uri}`
+              : null
+          );
+          logPlaidEvent({
+            type: "create_link_token_error",
+            error: { message: data.error },
+            debug: data._debug ?? null,
+          });
           return;
         }
         setLinkToken(data.link_token ?? null);
         setIsSandbox(data.plaid_env !== "production");
+        setDebugInfo(
+          data._debug?.redirect_uri
+            ? `redirect_uri=${data._debug.redirect_uri}`
+            : null
+        );
+        logPlaidEvent({
+          type: "create_link_token_ok",
+          debug: data._debug ?? null,
+        });
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message ?? "Failed to load");
+        if (!cancelled) {
+          const msg = err.message ?? "Failed to load";
+          setError(msg);
+          logPlaidEvent({
+            type: "create_link_token_exception",
+            error: { message: msg },
+          });
+        }
       });
     return () => { cancelled = true; };
   }, [searchParams]);
 
   const onSuccess = useCallback(
-    async (publicToken: string) => {
+    async (publicToken: string, metadata?: unknown) => {
       setIsExchanging(true);
       setError(null);
       try {
+        logPlaidEvent({
+          type: "link_success",
+          metadata,
+        });
         const res = await fetch("/api/plaid/exchange-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -152,24 +200,72 @@ function ConnectBankContent() {
         const data = await res.json();
         if (!res.ok) {
           setError(data.error ?? "Failed to connect");
+          logPlaidEvent({
+            type: "exchange_token_error",
+            error: data ?? null,
+          });
           return;
         }
         setStep("connected");
+        logPlaidEvent({
+          type: "exchange_token_ok",
+          metadata: { synced: data?.synced ?? null, item_id: data?.item_id ?? null },
+        });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to connect");
+        const msg = err instanceof Error ? err.message : "Failed to connect";
+        setError(msg);
+        logPlaidEvent({
+          type: "exchange_token_exception",
+          error: { message: msg },
+        });
       } finally {
         setIsExchanging(false);
       }
     },
-    []
+    [logPlaidEvent]
   );
 
   const { open, ready } = usePlaidLink({
     token: linkToken,
     receivedRedirectUri,
     onSuccess,
+    onEvent: (eventName, metadata) => {
+      logPlaidEvent({
+        type: "link_event",
+        metadata: { eventName, metadata },
+      });
+    },
     onExit: (err) => {
-      if (err) setError((err as { errorMessage?: string })?.errorMessage ?? "Link exited");
+      if (err) {
+        const e = err as {
+          errorCode?: string;
+          errorType?: string;
+          errorMessage?: string;
+          displayMessage?: string | null;
+          requestId?: string | null;
+        };
+        const msg = e.displayMessage || e.errorMessage || "Link exited";
+        setError(msg);
+        const detail = [
+          e.errorCode ? `error_code=${e.errorCode}` : null,
+          e.errorType ? `error_type=${e.errorType}` : null,
+          e.requestId ? `request_id=${e.requestId}` : null,
+        ]
+          .filter(Boolean)
+          .join(", ");
+        setDebugInfo(detail || null);
+        logPlaidEvent({
+          type: "link_exit_error",
+          error: {
+            message: msg,
+            error_code: e.errorCode ?? null,
+            error_type: e.errorType ?? null,
+            request_id: e.requestId ?? null,
+          },
+        });
+      } else {
+        logPlaidEvent({ type: "link_exit_no_error" });
+      }
     },
   });
 
@@ -223,7 +319,12 @@ function ConnectBankContent() {
                   <div className="px-6 py-6">
                     {error && (
                       <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
-                        {error}
+                        <p>{error}</p>
+                        {debugInfo ? (
+                          <p className="mt-1 text-xs text-red-600 break-all">
+                            {debugInfo}
+                          </p>
+                        ) : null}
                       </div>
                     )}
                     {linkToken ? (
