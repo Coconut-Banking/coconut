@@ -4,6 +4,7 @@ import { getSupabase } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   needsLLMNormalization,
   normalizeMerchantsWithLLM,
@@ -17,22 +18,46 @@ export async function GET() {
 
   try {
     const db = getSupabase();
-    const { data, error } = await db
-      .from("transactions")
-      .select(
-        "id, plaid_transaction_id, account_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      )
-      .eq("clerk_user_id", effectiveUserId)
-      .order("date", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(2000);
+    const fetchRows = async () => {
+      const { data, error } = await db
+        .from("transactions")
+        .select(
+          "id, plaid_transaction_id, account_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+        )
+        .eq("clerk_user_id", effectiveUserId)
+        .order("date", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(2000);
+      return { data, error };
+    };
+
+    let { data, error } = await fetchRows();
 
     if (error) throw error;
 
     // Exclude manual expenses (from Shared tab splits) — they belong in Shared, not main Transactions
-    const bankOnly = (data ?? []).filter(
+    let bankOnly = (data ?? []).filter(
       (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
     );
+
+    // Direct mitigation: if connected account exists but local table is empty, trigger one sync-on-read.
+    if (bankOnly.length === 0) {
+      const rl = rateLimit(`plaid-sync-on-read:${effectiveUserId}`, 1, 90_000);
+      if (rl.success) {
+        try {
+          const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
+          const synced = await syncTransactionsForUser(effectiveUserId);
+          console.log(`[transactions] sync-on-read for ${effectiveUserId}:`, synced);
+          ({ data, error } = await fetchRows());
+          if (error) throw error;
+          bankOnly = (data ?? []).filter(
+            (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
+          );
+        } catch (e) {
+          console.warn("[transactions] sync-on-read failed:", e);
+        }
+      }
+    }
 
     // Deduplicate: same merchant+amount+date can appear twice (sandbox vs production Plaid IDs)
     const seen = new Set<string>();
