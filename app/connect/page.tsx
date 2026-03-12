@@ -10,6 +10,11 @@ import { usePlaidLink } from "react-plaid-link";
 type Step = "link" | "connected";
 
 const APP_DEEP_LINK = "coconut://";
+const TRACE_STORAGE_KEY = "plaid_connect_trace_id";
+
+function makeTraceId(): string {
+  return `plaid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function ConnectedStep() {
   const router = useRouter();
@@ -78,6 +83,9 @@ function ConnectBankContent() {
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [isExchanging, setIsExchanging] = useState(false);
+  const [traceId, setTraceId] = useState("");
+  const [loginRedirectUrl, setLoginRedirectUrl] = useState<string | null>(null);
+  const [showLoginRetry, setShowLoginRetry] = useState(false);
 
   const logPlaidEvent = useCallback(
     (payload: Record<string, unknown>) => {
@@ -85,6 +93,7 @@ function ConnectBankContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          trace_id: traceId || null,
           source: searchParams.get("from_app") === "1" ? "app" : "web",
           context: "connect",
           ...payload,
@@ -93,8 +102,29 @@ function ConnectBankContent() {
         // best effort logging only
       });
     },
-    [searchParams]
+    [searchParams, traceId]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const existing = sessionStorage.getItem(TRACE_STORAGE_KEY);
+    const id = existing || makeTraceId();
+    if (!existing) sessionStorage.setItem(TRACE_STORAGE_KEY, id);
+    setTraceId(id);
+  }, []);
+
+  useEffect(() => {
+    if (!traceId) return;
+    logPlaidEvent({
+      type: "connect_page_loaded",
+      metadata: {
+        href: typeof window !== "undefined" ? window.location.href : null,
+        from_app: searchParams.get("from_app") === "1",
+        via_login: searchParams.get("via_login") === "1",
+        has_oauth_state_id: Boolean(searchParams.get("oauth_state_id")),
+      },
+    });
+  }, [logPlaidEvent, searchParams, traceId]);
 
   // OAuth return: Plaid redirects back with oauth_state_id — pass to Link for redirect flow
   const receivedRedirectUri =
@@ -129,11 +159,24 @@ function ConnectBankContent() {
 
     let cancelled = false;
     const redirectBack = `/connect${fromApp ? "?from_app=1&via_login=1" : ""}`;
+    setLoginRedirectUrl(`/login?redirect_url=${encodeURIComponent(redirectBack)}`);
+    setShowLoginRetry(false);
 
-    fetch("/api/plaid/create-link-token", { method: "POST" })
+    fetch("/api/plaid/create-link-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trace_id: traceId || null }),
+    })
       .then((res) => {
         if (res.status === 401) {
-          window.location.href = `/login?redirect_url=${encodeURIComponent(redirectBack)}`;
+          // Avoid infinite login bounce loops on iOS webviews/session races.
+          setError("Your session isn't ready yet. Please sign in again.");
+          setDebugInfo("create-link-token returned 401");
+          setShowLoginRetry(true);
+          logPlaidEvent({
+            type: "create_link_token_unauthorized",
+            error: { message: "401 Unauthorized" },
+          });
           return null;
         }
         return res.json();
@@ -181,7 +224,7 @@ function ConnectBankContent() {
         }
       });
     return () => { cancelled = true; };
-  }, [searchParams]);
+  }, [searchParams, traceId, logPlaidEvent]);
 
   const onSuccess = useCallback(
     async (publicToken: string, metadata?: unknown) => {
@@ -195,7 +238,7 @@ function ConnectBankContent() {
         const res = await fetch("/api/plaid/exchange-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ public_token: publicToken }),
+          body: JSON.stringify({ public_token: publicToken, trace_id: traceId || null }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -222,7 +265,7 @@ function ConnectBankContent() {
         setIsExchanging(false);
       }
     },
-    [logPlaidEvent]
+    [logPlaidEvent, traceId]
   );
 
   const { open, ready } = usePlaidLink({
@@ -273,9 +316,13 @@ function ConnectBankContent() {
   useEffect(() => {
     if (receivedRedirectUri && linkToken && ready && !hasAutoOpened.current) {
       hasAutoOpened.current = true;
+      logPlaidEvent({
+        type: "link_auto_open_after_oauth",
+        metadata: { receivedRedirectUri },
+      });
       open();
     }
-  }, [receivedRedirectUri, linkToken, ready, open]);
+  }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent]);
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
@@ -325,13 +372,27 @@ function ConnectBankContent() {
                             {debugInfo}
                           </p>
                         ) : null}
+                        {traceId ? (
+                          <p className="mt-1 text-xs text-red-600 break-all">trace_id={traceId}</p>
+                        ) : null}
+                        {showLoginRetry && loginRedirectUrl ? (
+                          <a
+                            href={loginRedirectUrl}
+                            className="mt-3 inline-flex items-center rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
+                          >
+                            Sign in again
+                          </a>
+                        ) : null}
                       </div>
                     )}
                     {linkToken ? (
                       <>
                         <button
                           type="button"
-                          onClick={() => open()}
+                          onClick={() => {
+                            logPlaidEvent({ type: "link_open_clicked" });
+                            open();
+                          }}
                           disabled={!ready || isExchanging}
                           className="w-full bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-70 text-white py-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                         >

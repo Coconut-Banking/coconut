@@ -5,23 +5,50 @@ import { Products, CountryCode } from "plaid";
 import { getEffectiveUserId } from "@/lib/demo";
 import { SYNC } from "@/lib/config";
 import { rateLimit } from "@/lib/rate-limit";
+import { NextRequest } from "next/server";
 
-export async function POST() {
+type CreateLinkBody = { trace_id?: string };
+
+function getTraceId(maybeTraceId: unknown): string {
+  if (typeof maybeTraceId === "string" && maybeTraceId.trim()) return maybeTraceId.trim();
+  return `plaid_srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export async function POST(request: NextRequest) {
+  let body: CreateLinkBody = {};
+  try {
+    body = (await request.json()) as CreateLinkBody;
+  } catch {
+    // Allow callers with an empty body.
+  }
+  const traceId = getTraceId(body.trace_id);
   const effectiveUserId = await getEffectiveUserId();
+  console.log("[plaid][create-link-token] request_start", {
+    trace_id: traceId,
+    has_user: Boolean(effectiveUserId),
+    app_url: process.env.APP_URL || null,
+    vercel_url: process.env.VERCEL_URL || null,
+  });
   if (!effectiveUserId) {
-    return NextResponse.json({ error: "Sign in to connect your bank" }, { status: 401 });
+    console.warn("[plaid][create-link-token] unauthorized", { trace_id: traceId });
+    return NextResponse.json({ error: "Sign in to connect your bank", trace_id: traceId }, { status: 401 });
   }
 
   const rl = rateLimit(`plaid-link:${effectiveUserId}`, 30, 60_000);
   if (!rl.success) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    console.warn("[plaid][create-link-token] rate_limited", { trace_id: traceId, user_id: effectiveUserId });
+    return NextResponse.json({ error: "Too many requests", trace_id: traceId }, { status: 429 });
   }
 
   const client = getPlaidClient();
   const { isConfigured, env } = getPlaidConfig();
   if (!client || !isConfigured) {
+    console.error("[plaid][create-link-token] plaid_not_configured", { trace_id: traceId, env });
     return NextResponse.json(
-      { error: "Plaid is not configured. Set PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET in .env.local." },
+      {
+        error: "Plaid is not configured. Set PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET in .env.local.",
+        trace_id: traceId,
+      },
       { status: 503 }
     );
   }
@@ -42,6 +69,7 @@ export async function POST() {
   };
 
   try {
+    const startedAt = Date.now();
     const response = await client.linkTokenCreate({
       user: { client_user_id: effectiveUserId },
       client_name: "Coconut",
@@ -51,15 +79,26 @@ export async function POST() {
       transactions: { days_requested: SYNC.PLAID_HISTORY_DAYS },
       redirect_uri: redirectUri,
     });
+    console.log("[plaid][create-link-token] request_ok", {
+      trace_id: traceId,
+      user_id: effectiveUserId,
+      plaid_env: env,
+      redirect_uri: redirectUri,
+      elapsed_ms: Date.now() - startedAt,
+    });
     return NextResponse.json({
       link_token: response.data.link_token,
       plaid_env: env,
+      trace_id: traceId,
       _debug: debug,
     });
   } catch (err: unknown) {
-    console.error("Plaid link token error:", err);
+    console.error("[plaid][create-link-token] request_error", {
+      trace_id: traceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
-      { error: "Failed to create link token", _debug: debug },
+      { error: "Failed to create link token", trace_id: traceId, _debug: debug },
       { status: 500 }
     );
   }
