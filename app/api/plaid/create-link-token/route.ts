@@ -35,6 +35,11 @@ export async function POST() {
     baseUrl = `https://${baseUrl}`;
   }
   const redirectUri = `${baseUrl.replace(/\/$/, "")}/connect`;
+  const debug = {
+    redirect_uri: redirectUri,
+    app_url: process.env.APP_URL || null,
+    vercel_url: process.env.VERCEL_URL || null,
+  };
 
   try {
     const response = await client.linkTokenCreate({
@@ -49,11 +54,12 @@ export async function POST() {
     return NextResponse.json({
       link_token: response.data.link_token,
       plaid_env: env,
+      _debug: debug,
     });
   } catch (err: unknown) {
     console.error("Plaid link token error:", err);
     return NextResponse.json(
-      { error: "Failed to create link token" },
+      { error: "Failed to create link token", _debug: debug },
       { status: 500 }
     );
   }
