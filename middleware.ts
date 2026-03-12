@@ -11,6 +11,17 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  // When opening /connect from app: force through login first (same flow on simulator + phone)
+  const path = req.nextUrl.pathname;
+  const fromApp = req.nextUrl.searchParams.get("from_app") === "1";
+  const viaLogin = req.nextUrl.searchParams.get("via_login") === "1";
+  if (path === "/connect" && fromApp && !viaLogin) {
+    const redirectBack = "/connect?from_app=1&via_login=1";
+    return NextResponse.redirect(
+      new URL(`/login?redirect_url=${encodeURIComponent(redirectBack)}`, req.url)
+    );
+  }
+
   if (isPublicRoute(req)) return;
 
   const { isAuthenticated } = await auth();
