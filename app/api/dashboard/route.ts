@@ -13,7 +13,7 @@ export async function GET() {
   const [accountsResult, subsResult] = await Promise.all([
     db
       .from("accounts")
-      .select("type, balance_current, iso_currency_code")
+      .select("name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
       .eq("clerk_user_id", effectiveUserId),
     db
       .from("subscriptions")
@@ -23,20 +23,35 @@ export async function GET() {
       .order("next_due_date", { ascending: true }),
   ]);
 
-  // Net worth: assets (depository, investment, brokerage) minus liabilities (credit, loan)
-  const accounts = accountsResult.data ?? [];
-  const assetTypes = new Set(["depository", "investment", "brokerage", "other"]);
+  // Deduplicate accounts — same name+mask can appear from sandbox + production items
+  const rawAccounts = accountsResult.data ?? [];
+  const seen = new Map<string, (typeof rawAccounts)[number]>();
+  for (const a of rawAccounts) {
+    const key = `${a.name ?? ""}|${a.mask ?? ""}`;
+    if (!seen.has(key)) seen.set(key, a);
+  }
+  const accounts = [...seen.values()];
+
+  // Net worth: assets minus liabilities
+  // Plaid stores balance_current as positive for all account types:
+  //   depository/investment: positive = money you have
+  //   credit/loan: positive = money you owe
   const liabilityTypes = new Set(["credit", "loan"]);
 
   let assets = 0;
   let liabilities = 0;
   for (const a of accounts) {
-    const bal = Number(a.balance_current) || 0;
     const type = (a.type || "").toLowerCase();
-    if (liabilityTypes.has(type)) {
+    const isLiability = liabilityTypes.has(type);
+
+    // For depository, prefer balance_available (excludes pending debits)
+    const bal =
+      !isLiability && a.balance_available != null
+        ? Number(a.balance_available)
+        : Number(a.balance_current) || 0;
+
+    if (isLiability) {
       liabilities += Math.abs(bal);
-    } else if (assetTypes.has(type)) {
-      assets += bal;
     } else {
       assets += bal;
     }
