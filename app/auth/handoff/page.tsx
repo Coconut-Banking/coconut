@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useSignIn } from "@clerk/nextjs";
-import { useSearchParams } from "next/navigation";
 
 export default function AuthHandoffPage() {
-  const searchParams = useSearchParams();
   const { signIn, setActive, isLoaded } = useSignIn();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const [redirectUrl, setRedirectUrl] = useState("/connect?from_app=1&via_login=1");
 
   useEffect(() => {
-    const ticket = searchParams.get("__clerk_ticket");
-    const redirectUrl = searchParams.get("redirect_url") || "/connect?from_app=1&via_login=1";
+    const params = new URLSearchParams(window.location.search);
+    const ticket = params.get("__clerk_ticket");
+    const redirect = params.get("redirect_url") || "/connect?from_app=1&via_login=1";
+    setRedirectUrl(redirect);
 
     if (!ticket || !isLoaded || !signIn) {
       setStatus("error");
@@ -22,13 +23,13 @@ export default function AuthHandoffPage() {
 
     (async () => {
       try {
-        const result = await signIn.create({ ticket });
+        const result = await signIn.create({ strategy: "ticket", ticket });
         const sessionId = result?.createdSessionId;
         if (cancelled) return;
         if (sessionId && setActive) {
           await setActive({ session: sessionId });
           setStatus("success");
-          window.location.href = redirectUrl.startsWith("/") ? redirectUrl : "/connect?from_app=1&via_login=1";
+          window.location.href = redirect.startsWith("/") ? redirect : "/connect?from_app=1&via_login=1";
         } else {
           setStatus("error");
         }
@@ -40,7 +41,7 @@ export default function AuthHandoffPage() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, signIn, setActive, isLoaded]);
+  }, [signIn, setActive, isLoaded]);
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col items-center justify-center p-6">
@@ -51,7 +52,7 @@ export default function AuthHandoffPage() {
         <div className="text-center">
           <p className="text-gray-600 mb-4">Could not sign in automatically.</p>
           <a
-            href={`/login?redirect_url=${encodeURIComponent(searchParams.get("redirect_url") || "/connect?from_app=1&via_login=1")}`}
+            href={`/login?redirect_url=${encodeURIComponent(redirectUrl)}`}
             className="text-[#3D8E62] font-medium underline"
           >
             Sign in manually
