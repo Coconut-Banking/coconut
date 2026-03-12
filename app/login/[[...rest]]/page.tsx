@@ -7,12 +7,14 @@ import { redirect } from "next/navigation";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirect_url?: string }>;
+  searchParams: Promise<{ redirect_url?: string; hint?: string }>;
 }) {
   const { userId } = await auth();
-  const { redirect_url } = await searchParams;
+  const { redirect_url, hint } = await searchParams;
   const fallbackRedirect = redirect_url ?? "/app/dashboard";
   if (userId) redirect(fallbackRedirect.startsWith("/") ? fallbackRedirect : "/app/dashboard");
+  const fromApp = fallbackRedirect.includes("from_app");
+  const hintDecoded = hint ? decodeURIComponent(hint) : null;
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
@@ -29,6 +31,11 @@ export default async function LoginPage({
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 gap-6">
+        {fromApp && hintDecoded && (
+          <p className="text-sm text-gray-600 text-center -mt-4 mb-2">
+            Sign in with <span className="font-medium text-gray-900">{hintDecoded}</span> to connect your bank.
+          </p>
+        )}
         <SignIn
           routing="path"
           path="/login"

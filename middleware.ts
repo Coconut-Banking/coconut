@@ -5,6 +5,7 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/login(.*)",
   "/connect(.*)",
+  "/auth(.*)",
   "/api/stripe/webhook",
   "/api/gmail/callback",
   "/api/demo",
@@ -18,6 +19,8 @@ export default clerkMiddleware(async (auth, req) => {
     const redirectBack = "/connect?from_app=1&via_login=1";
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("redirect_url", redirectBack);
+    const hint = req.nextUrl.searchParams.get("hint");
+    if (hint) loginUrl.searchParams.set("hint", hint);
     return NextResponse.redirect(loginUrl, 307);
   }
 
