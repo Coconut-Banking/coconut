@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
@@ -28,7 +27,7 @@ export async function GET(request: NextRequest) {
     const db = getSupabase();
     let { data, error } = await getCachedTransactions(effectiveUserId, { bypassCache });
 
-    if (error) throw error;
+    if (error) throw new Error(error.message);
 
     // Exclude manual expenses (from Shared tab splits) — they belong in Shared, not main Transactions
     let bankOnly = (data ?? []).filter(
@@ -43,9 +42,13 @@ export async function GET(request: NextRequest) {
           const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
           const synced = await syncTransactionsForUser(effectiveUserId);
           console.log("[transactions] sync-on-read for", effectiveUserId, ":", synced);
-          revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+          try {
+            revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+          } catch (revalErr) {
+            console.warn("[transactions] revalidateTag failed:", revalErr);
+          }
           const fresh = await getCachedTransactions(effectiveUserId, { bypassCache: true });
-          if (fresh.error) throw fresh.error;
+          if (fresh.error) throw new Error(fresh.error.message);
           data = fresh.data;
           bankOnly = (data ?? []).filter(
             (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
@@ -79,7 +82,9 @@ export async function GET(request: NextRequest) {
     if (idsToDelete.length > 0) {
       const DEDUPE_BATCH = 100;
       for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
-        await db.from("transactions").delete().in("id", idsToDelete.slice(i, i + DEDUPE_BATCH));
+        const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
+        const { error: delErr } = await db.from("transactions").delete().in("id", batch);
+        if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
       }
     }
 
@@ -160,7 +165,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(mapped);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to get transactions";
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[transactions] GET error:", err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
