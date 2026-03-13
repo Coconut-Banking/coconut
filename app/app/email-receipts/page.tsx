@@ -177,6 +177,12 @@ function EmailReceiptsContent() {
 
   const activePresetLabel = DATE_PRESETS.find((p) => p.value === datePreset)?.label ?? "All Time";
 
+  if (gmail.loading) {
+    return (
+      <div className="min-h-screen bg-gray-50" />
+    );
+  }
+
   if (!gmail.connected) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
