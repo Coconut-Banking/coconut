@@ -74,7 +74,7 @@ export default function SettingsPage() {
 
   const fetchAccounts = async () => {
     setAccountsError(null);
-    const res = await fetch("/api/plaid/accounts");
+    const res = await fetch("/api/plaid/accounts", { cache: "no-store" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setAccountsError(body.error ?? `Failed to load accounts (${res.status})`);
@@ -273,13 +273,43 @@ export default function SettingsPage() {
                     ) : banks.length === 0 && linked ? (
                       <div className="py-6 text-center space-y-3">
                         <p className="text-sm text-gray-500">No accounts found.</p>
-                        {accountsError && <p className="text-xs text-amber-600">{accountsError}</p>}
+                        {accountsError === "Not linked" ? (
+                          <p className="text-xs text-amber-600">
+                            Connect your bank first, then come back here.
+                          </p>
+                        ) : accountsError ? (
+                          <p className="text-xs text-amber-600">{accountsError}</p>
+                        ) : null}
+                        <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+                          <a
+                            href="/connect"
+                            className="text-sm font-medium text-white bg-[#3D8E62] hover:bg-[#2D7A52] px-4 py-2 rounded-xl transition-colors"
+                          >
+                            Connect bank
+                          </a>
+                            {!accountsError && (
+                            <button
+                              onClick={refreshAccounts}
+                              disabled={accountsRefreshing}
+                              className="text-sm text-[#3D8E62] font-medium hover:underline disabled:opacity-50"
+                            >
+                              {accountsRefreshing ? "Refreshing…" : "Refresh accounts"}
+                            </button>
+                          )}
+                        </div>
                         <button
-                          onClick={refreshAccounts}
-                          disabled={accountsRefreshing}
-                          className="text-sm text-[#3D8E62] font-medium hover:underline disabled:opacity-50"
+                          onClick={async () => {
+                            try {
+                              const r = await fetch("/api/plaid/debug");
+                              const d = await r.json();
+                              alert(JSON.stringify(d, null, 2));
+                            } catch {
+                              alert("Debug fetch failed");
+                            }
+                          }}
+                          className="mt-2 text-xs text-gray-400 hover:text-gray-600"
                         >
-                          {accountsRefreshing ? "Refreshing…" : "Refresh accounts"}
+                          Show debug info
                         </button>
                       </div>
                     ) : (

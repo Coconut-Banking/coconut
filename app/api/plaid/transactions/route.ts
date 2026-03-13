@@ -77,7 +77,10 @@ export async function GET(request: NextRequest) {
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
     if (idsToDelete.length > 0) {
-      await db.from("transactions").delete().in("id", idsToDelete);
+      const DEDUPE_BATCH = 100;
+      for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
+        await db.from("transactions").delete().in("id", idsToDelete.slice(i, i + DEDUPE_BATCH));
+      }
     }
 
     function hashColor(str: string): string {
@@ -163,16 +166,14 @@ export async function GET(request: NextRequest) {
 }
 
 // Re-sync from Plaid on demand. Body: { fullResync?: true } to clear stale/sandbox tx first.
-export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST() {
+  const effectiveUserId = await getEffectiveUserId();
+  if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-  const db = getSupabase();
+    const db = getSupabase();
 
-  // Always clear before sync so we never mix sandbox + production or accumulate duplicates
-  {
-    // Delete bank tx not in splits (keeps manual expenses + any split bank tx)
+    // Always clear before sync so we never mix sandbox + production or accumulate duplicates
     const { data: inSplits } = await db
       .from("split_transactions")
       .select("transaction_id");
@@ -183,7 +184,7 @@ export async function POST(req: Request) {
     const { data: toDelete } = await db
       .from("transactions")
       .select("id, plaid_transaction_id")
-      .eq("clerk_user_id", userId);
+      .eq("clerk_user_id", effectiveUserId);
 
     const idsToDelete = (toDelete ?? [])
       .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
@@ -191,29 +192,44 @@ export async function POST(req: Request) {
       .filter((id) => !protectedIds.has(id));
 
     if (idsToDelete.length > 0) {
-      const { error: delErr } = await db
-        .from("transactions")
-        .delete()
-        .in("id", idsToDelete);
-      if (delErr) {
-        console.error("[transactions] fullResync delete error:", delErr.message);
-        return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
+      const BATCH = 100;
+      for (let i = 0; i < idsToDelete.length; i += BATCH) {
+        const batch = idsToDelete.slice(i, i + BATCH);
+        const { error: delErr } = await db
+          .from("transactions")
+          .delete()
+          .in("id", batch);
+        if (delErr) {
+          console.error("[transactions] fullResync delete error:", delErr.message);
+          return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
+        }
       }
-      console.log(`[transactions] cleared ${idsToDelete.length} before sync for ${userId}`);
+      console.log(`[transactions] cleared ${idsToDelete.length} before sync for ${effectiveUserId}`);
     }
-  }
 
-  const { syncTransactionsForUser, embedTransactionsForUser } = await import("@/lib/transaction-sync");
-  const { synced, error } = await syncTransactionsForUser(userId);
-  if (error) return NextResponse.json({ error }, { status: 500 });
-  revalidateTag(CACHE_TAGS.transactions(userId), "max");
-  embedTransactionsForUser(userId).catch((e) => console.error("[transactions] embed:", e));
-  const { detectSubscriptionsForUser, saveDetectedSubscriptions } = await import("@/lib/subscription-detect");
-  const detected = await detectSubscriptionsForUser(userId);
-  await saveDetectedSubscriptions(userId, detected);
-  return NextResponse.json({ synced, detected: detected.length });
+    const { syncTransactionsForUser, embedTransactionsForUser } = await import("@/lib/transaction-sync");
+    const { synced, error } = await syncTransactionsForUser(effectiveUserId);
+    if (error) return NextResponse.json({ error }, { status: 500 });
+
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+    embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));
+
+    let detected = 0;
+    try {
+      const { detectSubscriptionsForUser, saveDetectedSubscriptions } = await import("@/lib/subscription-detect");
+      const subs = await detectSubscriptionsForUser(effectiveUserId);
+      await saveDetectedSubscriptions(effectiveUserId, subs);
+      detected = subs.length;
+    } catch (e) {
+      console.warn("[transactions] subscription detect failed:", e instanceof Error ? e.message : e);
+    }
+
+    return NextResponse.json({ synced, detected });
   } catch (err) {
     console.error("[transactions] sync error:", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Sync failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Sync failed" },
+      { status: 500 }
+    );
   }
 }

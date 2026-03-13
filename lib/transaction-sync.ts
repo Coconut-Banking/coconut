@@ -199,14 +199,18 @@ export async function syncTransactionsForUser(
     }
   }
 
-  // Delete removed transactions across all banks
+  // Delete removed transactions across all banks (batch to avoid URL length limit)
   if (allRemovedIds.length > 0) {
-    const { error: delErr } = await db
-      .from("transactions")
-      .delete()
-      .eq("clerk_user_id", clerkUserId)
-      .in("plaid_transaction_id", allRemovedIds);
-    if (delErr) console.error("[sync] delete removed error:", delErr.message);
+    const BATCH = 100;
+    for (let i = 0; i < allRemovedIds.length; i += BATCH) {
+      const batch = allRemovedIds.slice(i, i + BATCH);
+      const { error: delErr } = await db
+        .from("transactions")
+        .delete()
+        .eq("clerk_user_id", clerkUserId)
+        .in("plaid_transaction_id", batch);
+      if (delErr) console.error("[sync] delete removed error:", delErr.message);
+    }
   }
 
   return { synced: totalSynced };

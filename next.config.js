@@ -7,7 +7,7 @@ const nextConfig = {
         headers: [
           {
             key: "Permissions-Policy",
-            value: "accelerometer=(self \"https://*.clerk.accounts.dev\" \"https://*.clerk.dev\" \"https://js.stripe.com\"), encrypted-media=(self \"https://*.clerk.accounts.dev\" \"https://*.clerk.dev\" \"https://js.stripe.com\")",
+            value: "accelerometer=(*), encrypted-media=(*)",
           },
         ],
       },
