@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
+import { getEffectiveUserId } from "@/lib/demo";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getAllPlaidTokensForUser } from "@/lib/transaction-sync";
@@ -56,8 +56,8 @@ async function deduplicateAccounts(
 }
 
 export async function GET() {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const effectiveUserId = await getEffectiveUserId();
+  if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
     // Serve from Supabase cache first
@@ -65,7 +65,7 @@ export async function GET() {
     const { data: cached } = await db
       .from("accounts")
       .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
-      .eq("clerk_user_id", userId);
+      .eq("clerk_user_id", effectiveUserId);
 
     if (cached && cached.length > 0) {
       const accounts = cached.map((acc) => {
@@ -82,12 +82,12 @@ export async function GET() {
           iso_currency_code: row.iso_currency_code ?? "USD",
         };
       });
-      const deduped = deduplicateAccounts(db, userId, accounts);
+      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
       return NextResponse.json({ accounts: deduped });
     }
 
     // Fallback: fetch live from Plaid (all connected banks)
-    const accessTokens = await getAllPlaidTokensForUser(userId);
+    const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
     if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
     const client = getPlaidClient();
@@ -99,7 +99,7 @@ export async function GET() {
       const rows = response.data.accounts.map((acct) => {
         const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
         return {
-          clerk_user_id: userId,
+          clerk_user_id: effectiveUserId,
           plaid_account_id: acct.account_id,
           name: acct.name,
           type: acct.type,
@@ -115,7 +115,7 @@ export async function GET() {
     if (allRows.length > 0) {
       await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
     }
-    const { data: updated } = await db.from("accounts").select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", userId);
+    const { data: updated } = await db.from("accounts").select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", effectiveUserId);
     const accounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
       account_id: String(row.plaid_account_id ?? ""),
       id: String(row.id ?? ""),
@@ -127,7 +127,7 @@ export async function GET() {
       balance_available: (row.balance_available as number | null) ?? null,
       iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
-    const deduped = deduplicateAccounts(db, userId, accounts);
+    const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
     return NextResponse.json({ accounts: deduped });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get accounts";

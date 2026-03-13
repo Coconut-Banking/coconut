@@ -273,14 +273,30 @@ export default function SettingsPage() {
                     ) : banks.length === 0 && linked ? (
                       <div className="py-6 text-center space-y-3">
                         <p className="text-sm text-gray-500">No accounts found.</p>
-                        {accountsError && <p className="text-xs text-amber-600">{accountsError}</p>}
-                        <button
-                          onClick={refreshAccounts}
-                          disabled={accountsRefreshing}
-                          className="text-sm text-[#3D8E62] font-medium hover:underline disabled:opacity-50"
-                        >
-                          {accountsRefreshing ? "Refreshing…" : "Refresh accounts"}
-                        </button>
+                        {accountsError === "Not linked" ? (
+                          <p className="text-xs text-amber-600">
+                            Connect your bank first, then come back here.
+                          </p>
+                        ) : accountsError ? (
+                          <p className="text-xs text-amber-600">{accountsError}</p>
+                        ) : null}
+                        <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+                          <a
+                            href="/connect"
+                            className="text-sm font-medium text-white bg-[#3D8E62] hover:bg-[#2D7A52] px-4 py-2 rounded-xl transition-colors"
+                          >
+                            Connect bank
+                          </a>
+                          {!accountsError && (
+                            <button
+                              onClick={refreshAccounts}
+                              disabled={accountsRefreshing}
+                              className="text-sm text-[#3D8E62] font-medium hover:underline disabled:opacity-50"
+                            >
+                              {accountsRefreshing ? "Refreshing…" : "Refresh accounts"}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <>
