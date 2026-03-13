@@ -7,7 +7,7 @@ const nextConfig = {
         headers: [
           {
             key: "Permissions-Policy",
-            value: "accelerometer=*, encrypted-media=*",
+            value: "accelerometer=(*), encrypted-media=(*)",
           },
         ],
       },
