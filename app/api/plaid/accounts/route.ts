@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
 import { getEffectiveUserId } from "@/lib/demo";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlaidClient } from "@/lib/plaid-client";
