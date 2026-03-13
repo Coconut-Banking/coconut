@@ -42,8 +42,18 @@ export async function getPlaidTokenForUser(clerkUserId: string): Promise<string 
     .from("plaid_items")
     .select("access_token")
     .eq("clerk_user_id", clerkUserId)
+    .limit(1)
     .single();
   return data?.access_token ?? null;
+}
+
+export async function getAllPlaidTokensForUser(clerkUserId: string): Promise<string[]> {
+  const db = getSupabase();
+  const { data } = await db
+    .from("plaid_items")
+    .select("access_token")
+    .eq("clerk_user_id", clerkUserId);
+  return (data ?? []).map((r: { access_token: string }) => r.access_token).filter(Boolean);
 }
 
 export async function savePlaidToken(
@@ -53,6 +63,8 @@ export async function savePlaidToken(
   institutionName?: string | null
 ) {
   const db = getSupabase();
+  // Conflict on plaid_item_id so each bank item is stored separately.
+  // This allows a user to connect multiple banks.
   await db.from("plaid_items").upsert(
     {
       clerk_user_id: clerkUserId,
@@ -60,22 +72,19 @@ export async function savePlaidToken(
       plaid_item_id: plaidItemId,
       institution_name: institutionName ?? null,
     },
-    { onConflict: "clerk_user_id" }
+    { onConflict: "plaid_item_id" }
   );
 }
 
-export async function syncTransactionsForUser(
-  clerkUserId: string
-): Promise<{ synced: number; error?: string }> {
-  const db = getSupabase();
+async function syncSingleToken(
+  clerkUserId: string,
+  accessToken: string,
+  plaid: ReturnType<typeof getPlaidClient>,
+  db: ReturnType<typeof getSupabase>
+): Promise<{ synced: number; removedIds: string[] }> {
+  if (!plaid) return { synced: 0, removedIds: [] };
 
-  const accessToken = await getPlaidTokenForUser(clerkUserId);
-  if (!accessToken) return { synced: 0, error: "No Plaid connection found for user" };
-
-  const plaid = getPlaidClient();
-  if (!plaid) return { synced: 0, error: "Plaid not configured" };
-
-  // Upsert accounts (with balances for display — run docs/supabase-migration-accounts-balance.sql first)
+  // Upsert accounts for this bank
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
   for (const acct of acctResp.accounts) {
     const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
@@ -97,7 +106,7 @@ export async function syncTransactionsForUser(
     }
   }
 
-  // Build account UUID map (plaid_account_id → our UUID)
+  // Build account UUID map
   const { data: dbAccts } = await db
     .from("accounts")
     .select("id, plaid_account_id")
@@ -131,27 +140,15 @@ export async function syncTransactionsForUser(
     hasMore = resp.data.has_more;
   }
 
-  // Delete removed transactions (e.g. pending that posted — prevents duplicates)
-  if (allRemovedIds.length > 0) {
-    const { error: delErr } = await db
-      .from("transactions")
-      .delete()
-      .eq("clerk_user_id", clerkUserId)
-      .in("plaid_transaction_id", allRemovedIds);
-    if (delErr) console.error("[sync] delete removed error:", delErr.message);
-  }
-
   const allTxs = [...allAdded, ...allModified];
-  if (allTxs.length === 0 && allRemovedIds.length === 0) return { synced: 0 };
+  if (allTxs.length === 0 && allRemovedIds.length === 0) return { synced: 0, removedIds: [] };
 
   const rows = allTxs.map((tx) => {
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";
     const pfc = tx.personal_finance_category as { primary?: string; detailed?: string } | null;
     const category = tx.category as string[] | null;
-    // Plaid convention: positive = debit (expense), negative = credit (income)
     const rawAmount = tx.amount as number;
     const amount = rawAmount > 0 ? -Math.abs(rawAmount) : Math.abs(rawAmount);
-
     return {
       clerk_user_id: clerkUserId,
       plaid_transaction_id: tx.transaction_id as string,
@@ -168,7 +165,6 @@ export async function syncTransactionsForUser(
     };
   });
 
-  // Upsert transactions in batches (no embeddings yet)
   const BATCH = 100;
   for (let i = 0; i < rows.length; i += BATCH) {
     const { error } = await db
@@ -177,7 +173,43 @@ export async function syncTransactionsForUser(
     if (error) console.error("[sync] upsert error:", error.message);
   }
 
-  return { synced: rows.length };
+  return { synced: rows.length, removedIds: allRemovedIds };
+}
+
+export async function syncTransactionsForUser(
+  clerkUserId: string
+): Promise<{ synced: number; error?: string }> {
+  const db = getSupabase();
+  const accessTokens = await getAllPlaidTokensForUser(clerkUserId);
+  if (accessTokens.length === 0) return { synced: 0, error: "No Plaid connection found for user" };
+
+  const plaid = getPlaidClient();
+  if (!plaid) return { synced: 0, error: "Plaid not configured" };
+
+  let totalSynced = 0;
+  const allRemovedIds: string[] = [];
+
+  for (const token of accessTokens) {
+    try {
+      const { synced, removedIds } = await syncSingleToken(clerkUserId, token, plaid, db);
+      totalSynced += synced;
+      allRemovedIds.push(...removedIds);
+    } catch (e) {
+      console.error("[sync] error syncing token:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  // Delete removed transactions across all banks
+  if (allRemovedIds.length > 0) {
+    const { error: delErr } = await db
+      .from("transactions")
+      .delete()
+      .eq("clerk_user_id", clerkUserId)
+      .in("plaid_transaction_id", allRemovedIds);
+    if (delErr) console.error("[sync] delete removed error:", delErr.message);
+  }
+
+  return { synced: totalSynced };
 }
 
 // Called async after exchange-token — does not block the HTTP response
