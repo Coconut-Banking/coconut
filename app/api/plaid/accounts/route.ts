@@ -83,7 +83,10 @@ export async function GET() {
         };
       });
       const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
-      return NextResponse.json({ accounts: deduped });
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
     }
 
     // Fallback: fetch live from Plaid (all connected banks)
@@ -128,7 +131,10 @@ export async function GET() {
       iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
     const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
-    return NextResponse.json({ accounts: deduped });
+    return NextResponse.json(
+      { accounts: deduped },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get accounts";
     return NextResponse.json({ error: message }, { status: 500 });
