@@ -15,8 +15,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push to harshils fork
+      - name: Push to harshils fork (Vercel deploy source)
         run: |
           git remote add harshils https://x-access-token:${{ secrets.HARSHIL_FORK_PAT }}@github.com/harshils2340/coconut.git 2>/dev/null || git remote set-url harshils https://x-access-token:${{ secrets.HARSHIL_FORK_PAT }}@github.com/harshils2340/coconut.git
-          git push harshils HEAD:main
+          git push harshils HEAD:main --force
         if: ${{ secrets.HARSHIL_FORK_PAT != '' }}
