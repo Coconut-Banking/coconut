@@ -12,6 +12,7 @@ jobs:
   deploy:
     name: Trigger Vercel deployment
     runs-on: ubuntu-latest
+    if: github.repository == 'Coconut-Banking/coconut'
     steps:
       - name: Call Vercel Deploy Hook
         run: |
