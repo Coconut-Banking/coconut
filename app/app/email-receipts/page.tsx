@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search } from "lucide-react";
+import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
 import { formatCurrency } from "@/lib/currency";
@@ -24,6 +24,30 @@ interface Receipt {
   raw_from: string;
   gmail_message_id: string;
   transaction_id?: string;
+}
+
+type DatePreset = "30d" | "3m" | "6m" | "1y" | "all" | "custom";
+
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: "30d", label: "Past 30 Days" },
+  { value: "3m", label: "Past 3 Months" },
+  { value: "6m", label: "Past 6 Months" },
+  { value: "1y", label: "Past Year" },
+  { value: "all", label: "All Time" },
+  { value: "custom", label: "Custom Range" },
+];
+
+function getPresetRange(preset: DatePreset): { start: Date | null; end: Date } {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  if (preset === "all") return { start: null, end };
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  if (preset === "30d") start.setDate(start.getDate() - 30);
+  else if (preset === "3m") start.setMonth(start.getMonth() - 3);
+  else if (preset === "6m") start.setMonth(start.getMonth() - 6);
+  else if (preset === "1y") start.setFullYear(start.getFullYear() - 1);
+  return { start, end };
 }
 
 interface ScanResult {
@@ -48,6 +72,10 @@ function EmailReceiptsContent() {
   const [error, setError] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [filter, setFilter] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("30d");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [showPresetMenu, setShowPresetMenu] = useState(false);
 
   useEffect(() => {
     const connected = searchParams.get("connected");
@@ -116,14 +144,38 @@ function EmailReceiptsContent() {
     }
   };
 
-  const filteredReceipts = receipts.filter(
-    (r) =>
-      !filter ||
-      (r.merchant ?? "").toLowerCase().includes(filter.toLowerCase()) ||
-      (r.raw_subject ?? "").toLowerCase().includes(filter.toLowerCase())
-  );
+  const filteredReceipts = useMemo(() => {
+    let start: Date | null = null;
+    let end: Date | null = null;
+
+    if (datePreset === "custom") {
+      start = customStart ? new Date(customStart + "T00:00:00") : null;
+      end = customEnd ? new Date(customEnd + "T23:59:59") : null;
+    } else if (datePreset !== "all") {
+      const range = getPresetRange(datePreset);
+      start = range.start;
+      end = range.end;
+    }
+
+    return receipts.filter((r) => {
+      const matchesText =
+        !filter ||
+        (r.merchant ?? "").toLowerCase().includes(filter.toLowerCase()) ||
+        (r.raw_subject ?? "").toLowerCase().includes(filter.toLowerCase());
+
+      if (!matchesText) return false;
+
+      const receiptDate = new Date(r.date + "T12:00:00");
+      if (start && receiptDate < start) return false;
+      if (end && receiptDate > end) return false;
+
+      return true;
+    });
+  }, [receipts, filter, datePreset, customStart, customEnd]);
 
   const totalAmount = filteredReceipts.reduce((sum, r) => sum + r.amount, 0);
+
+  const activePresetLabel = DATE_PRESETS.find((p) => p.value === datePreset)?.label ?? "All Time";
 
   if (!gmail.connected) {
     return (
@@ -234,13 +286,108 @@ function EmailReceiptsContent() {
       )}
 
       <div className="max-w-6xl mx-auto px-4 py-6">
+        {/* Date Filter + Search */}
+        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* Date preset dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowPresetMenu((v) => !v)}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition-colors min-w-[170px] justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-[#3D8E62]" />
+                  <span>{activePresetLabel}</span>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+              </button>
+              {showPresetMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowPresetMenu(false)} />
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1 min-w-[170px]">
+                    {DATE_PRESETS.map((p) => (
+                      <button
+                        key={p.value}
+                        onClick={() => {
+                          setDatePreset(p.value);
+                          setShowPresetMenu(false);
+                          if (p.value !== "custom") {
+                            setCustomStart("");
+                            setCustomEnd("");
+                          }
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                          datePreset === p.value
+                            ? "bg-[#EEF7F2] text-[#3D8E62] font-medium"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Custom date pickers */}
+            {datePreset === "custom" && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                />
+                <span className="text-xs text-gray-400">to</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                />
+                {(customStart || customEnd) && (
+                  <button
+                    onClick={() => { setCustomStart(""); setCustomEnd(""); }}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Reset to all time shortcut */}
+            {datePreset !== "all" && (
+              <button
+                onClick={() => { setDatePreset("all"); setCustomStart(""); setCustomEnd(""); }}
+                className="text-xs text-[#3D8E62] hover:underline self-center whitespace-nowrap"
+              >
+                Show all
+              </button>
+            )}
+
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by merchant or subject..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-xl border border-gray-100 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Receipts</p>
-                <p className="text-2xl font-bold text-gray-900">{receipts.length}</p>
+                <p className="text-sm text-gray-500">Receipts</p>
+                <p className="text-2xl font-bold text-gray-900">{filteredReceipts.length}</p>
               </div>
               <Package className="w-8 h-8 text-gray-400" />
             </div>
@@ -259,25 +406,11 @@ function EmailReceiptsContent() {
               <div>
                 <p className="text-sm text-gray-500">Merchants</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {new Set(receipts.map((r) => r.merchant)).size}
+                  {new Set(filteredReceipts.map((r) => r.merchant)).size}
                 </p>
               </div>
               <Mail className="w-8 h-8 text-gray-400" />
             </div>
-          </div>
-        </div>
-
-        {/* Search Bar */}
-        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by merchant or subject..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
-            />
           </div>
         </div>
 
