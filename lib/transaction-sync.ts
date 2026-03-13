@@ -43,7 +43,7 @@ export async function getPlaidTokenForUser(clerkUserId: string): Promise<string 
     .select("access_token")
     .eq("clerk_user_id", clerkUserId)
     .limit(1)
-    .single();
+    .maybeSingle();
   return data?.access_token ?? null;
 }
 
@@ -63,17 +63,23 @@ export async function savePlaidToken(
   institutionName?: string | null
 ) {
   const db = getSupabase();
-  // Conflict on plaid_item_id so each bank item is stored separately.
-  // This allows a user to connect multiple banks.
-  await db.from("plaid_items").upsert(
-    {
-      clerk_user_id: clerkUserId,
-      access_token: accessToken,
-      plaid_item_id: plaidItemId,
-      institution_name: institutionName ?? null,
-    },
-    { onConflict: "plaid_item_id" }
-  );
+  const row = {
+    clerk_user_id: clerkUserId,
+    access_token: accessToken,
+    plaid_item_id: plaidItemId,
+    institution_name: institutionName ?? null,
+  };
+  // Prefer multi-bank: conflict on plaid_item_id (one row per connected bank).
+  const { error } = await db.from("plaid_items").upsert(row, { onConflict: "plaid_item_id" });
+  if (!error) return;
+  // Fallback: old schema had unique(clerk_user_id) only — one bank per user.
+  // Error "no unique constraint" means migration not run; use old upsert target.
+  if (/unique|constraint|conflict|on conflict/i.test(error.message)) {
+    const { error: fallbackErr } = await db.from("plaid_items").upsert(row, { onConflict: "clerk_user_id" });
+    if (fallbackErr) throw fallbackErr;
+  } else {
+    throw error;
+  }
 }
 
 async function syncSingleToken(
