@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X } from "lucide-react";
+import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X, ExternalLink } from "lucide-react";
 import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
 import { formatCurrency } from "@/lib/currency";
@@ -482,6 +482,17 @@ function EmailReceiptsContent() {
                   <p className="text-xs text-gray-400">
                     Date: {new Date(selectedReceipt.date).toLocaleString()}
                   </p>
+                  {selectedReceipt.gmail_message_id && (
+                    <a
+                      href={`https://mail.google.com/mail/u/0/#inbox/${selectedReceipt.gmail_message_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[#EEF7F2] text-[#3D8E62] text-xs font-medium rounded-lg hover:bg-[#D1EAE0] transition-colors"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      View in Gmail
+                    </a>
+                  )}
                 </div>
 
                 {selectedReceipt.line_items && selectedReceipt.line_items.length > 0 ? (
