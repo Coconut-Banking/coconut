@@ -8,6 +8,10 @@ const SKIP_AUTH =
   process.env.NODE_ENV !== "production" &&
   process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 
+const CLERK_DISABLED = process.env.NEXT_PUBLIC_CLERK_DISABLED === "true";
+
+const BYPASS_AUTH = SKIP_AUTH || CLERK_DISABLED;
+
 export function AppGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
@@ -15,13 +19,13 @@ export function AppGate({ children }: { children: React.ReactNode }) {
 
   // Redirect signed-out users to /login (side-effect, not during render)
   useEffect(() => {
-    if (!SKIP_AUTH && isLoaded && !isSignedIn) {
+    if (!BYPASS_AUTH && isLoaded && !isSignedIn) {
       router.replace("/login");
     }
   }, [isLoaded, isSignedIn, router]);
 
   useEffect(() => {
-    if (SKIP_AUTH || !isLoaded || !isSignedIn) return;
+    if (BYPASS_AUTH || !isLoaded || !isSignedIn) return;
     let cancelled = false;
     fetch("/api/plaid/status")
       .then((res) => res.json())
@@ -34,7 +38,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [isLoaded, isSignedIn]);
 
-  if (!SKIP_AUTH && !isLoaded) {
+  if (!BYPASS_AUTH && !isLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
         <div className="flex flex-col items-center gap-4">
@@ -46,11 +50,11 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   }
 
   // We already scheduled the redirect in the effect above; just render nothing
-  if (!SKIP_AUTH && isLoaded && !isSignedIn) {
+  if (!BYPASS_AUTH && isLoaded && !isSignedIn) {
     return null;
   }
 
-  if (SKIP_AUTH) {
+  if (BYPASS_AUTH) {
     return <>{children}</>;
   }
 
