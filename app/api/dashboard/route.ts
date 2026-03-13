@@ -69,6 +69,7 @@ export async function GET() {
   const totalMonthly = subs.reduce((acc, s) => {
     if (s.frequency === "monthly") return acc + s.amount;
     if (s.frequency === "yearly") return acc + s.amount / 12;
+    if (s.frequency === "quarterly") return acc + s.amount / 3;
     if (s.frequency === "weekly") return acc + s.amount * 4.33;
     if (s.frequency === "biweekly") return acc + s.amount * 2.17;
     return acc + s.amount;
