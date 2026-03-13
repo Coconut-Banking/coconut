@@ -10,7 +10,12 @@ export async function POST(
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const displayName = (body.displayName ?? body.display_name ?? "").trim().slice(0, 100);
   const email = (body.email as string)?.trim() || null;
 
