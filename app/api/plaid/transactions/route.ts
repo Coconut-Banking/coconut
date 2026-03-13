@@ -81,7 +81,10 @@ export async function GET() {
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
     if (idsToDelete.length > 0) {
-      await db.from("transactions").delete().in("id", idsToDelete);
+      const DEDUPE_BATCH = 100;
+      for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
+        await db.from("transactions").delete().in("id", idsToDelete.slice(i, i + DEDUPE_BATCH));
+      }
     }
 
     function hashColor(str: string): string {
@@ -193,13 +196,17 @@ export async function POST() {
       .filter((id) => !protectedIds.has(id));
 
     if (idsToDelete.length > 0) {
-      const { error: delErr } = await db
-        .from("transactions")
-        .delete()
-        .in("id", idsToDelete);
-      if (delErr) {
-        console.error("[transactions] fullResync delete error:", delErr.message);
-        return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
+      const BATCH = 100;
+      for (let i = 0; i < idsToDelete.length; i += BATCH) {
+        const batch = idsToDelete.slice(i, i + BATCH);
+        const { error: delErr } = await db
+          .from("transactions")
+          .delete()
+          .in("id", batch);
+        if (delErr) {
+          console.error("[transactions] fullResync delete error:", delErr.message);
+          return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
+        }
       }
       console.log(`[transactions] cleared ${idsToDelete.length} before sync for ${effectiveUserId}`);
     }
