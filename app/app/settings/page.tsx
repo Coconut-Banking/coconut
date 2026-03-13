@@ -287,7 +287,7 @@ export default function SettingsPage() {
                           >
                             Connect bank
                           </a>
-                          {!accountsError && (
+                            {!accountsError && (
                             <button
                               onClick={refreshAccounts}
                               disabled={accountsRefreshing}
@@ -297,6 +297,20 @@ export default function SettingsPage() {
                             </button>
                           )}
                         </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const r = await fetch("/api/plaid/debug");
+                              const d = await r.json();
+                              alert(JSON.stringify(d, null, 2));
+                            } catch {
+                              alert("Debug fetch failed");
+                            }
+                          }}
+                          className="mt-2 text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          Show debug info
+                        </button>
                       </div>
                     ) : (
                       <>
