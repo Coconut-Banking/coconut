@@ -170,7 +170,7 @@ function EmailReceiptsContent() {
       if (end && receiptDate > end) return false;
 
       return true;
-    });
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [receipts, filter, datePreset, customStart, customEnd]);
 
   const totalAmount = filteredReceipts.reduce((sum, r) => sum + r.amount, 0);
