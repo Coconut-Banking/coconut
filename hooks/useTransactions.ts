@@ -11,7 +11,7 @@ export function useTransactions() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refetch = useCallback(async () => {
+  const refetch = useCallback(async (opts?: { bypassCache?: boolean }) => {
     try {
       setError(null);
       const statusRes = await fetch("/api/plaid/status");
@@ -19,7 +19,8 @@ export function useTransactions() {
       const status = await statusRes.json();
       setLinked(!!status.linked);
       if (!status.linked) { setTransactions([]); return; }
-      const txRes = await fetch("/api/plaid/transactions");
+      const url = opts?.bypassCache ? "/api/plaid/transactions?refresh=1" : "/api/plaid/transactions";
+      const txRes = await fetch(url);
       if (!txRes.ok) {
         const body = await txRes.json().catch(() => ({}));
         setError(body.error ?? "Failed to load transactions");
@@ -44,7 +45,7 @@ export function useTransactions() {
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      await refetch();
+      await refetch({ bypassCache: true });
     } catch {
       await refetch();
     }

@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
@@ -9,29 +10,23 @@ import {
   needsLLMNormalization,
   normalizeMerchantsWithLLM,
 } from "@/lib/merchant-normalize-llm";
+import {
+  getCachedTransactions,
+  getCachedSplitTransactionIds,
+  CACHE_TAGS,
+} from "@/lib/cached-queries";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
+
   try {
     const db = getSupabase();
-    const fetchRows = async () => {
-      const { data, error } = await db
-        .from("transactions")
-        .select(
-          "id, plaid_transaction_id, account_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-        )
-        .eq("clerk_user_id", effectiveUserId)
-        .order("date", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(2000);
-      return { data, error };
-    };
-
-    let { data, error } = await fetchRows();
+    let { data, error } = await getCachedTransactions(effectiveUserId, { bypassCache });
 
     if (error) throw error;
 
@@ -47,9 +42,11 @@ export async function GET() {
         try {
           const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
           const synced = await syncTransactionsForUser(effectiveUserId);
-          console.log(`[transactions] sync-on-read for ${effectiveUserId}:`, synced);
-          ({ data, error } = await fetchRows());
-          if (error) throw error;
+          console.log("[transactions] sync-on-read for", effectiveUserId, ":", synced);
+          revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+          const fresh = await getCachedTransactions(effectiveUserId, { bypassCache: true });
+          if (fresh.error) throw fresh.error;
+          data = fresh.data;
           bankOnly = (data ?? []).filter(
             (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
           );
@@ -75,8 +72,7 @@ export async function GET() {
 
     // Actually delete duplicate rows from Supabase (first occurrence stays)
     // Don't delete tx that are in splits — they're referenced by split_transactions
-    const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-    const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
+    const protectedIds = await getCachedSplitTransactionIds({ bypassCache });
     const idsToDelete = bankOnly
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
@@ -215,6 +211,7 @@ export async function POST() {
     const { synced, error } = await syncTransactionsForUser(effectiveUserId);
     if (error) return NextResponse.json({ error }, { status: 500 });
 
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
     embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));
 
     let detected = 0;

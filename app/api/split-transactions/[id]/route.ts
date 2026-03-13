@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 
 export async function DELETE(
@@ -25,6 +27,7 @@ export async function DELETE(
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await db.from("split_transactions").delete().eq("id", id);
+  revalidateTag(CACHE_TAGS.splitTransactions, "max");
 
   const { count } = await db
     .from("split_transactions")

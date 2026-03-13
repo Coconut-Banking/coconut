@@ -325,13 +325,20 @@ async function detectFromEmailReceipts(
 
 // ── Main detection entrypoint ─────────────────────────────────────────────────
 
+const SUBSCRIPTION_LOOKBACK_DAYS = 365;
+
 export async function detectSubscriptionsForUser(clerkUserId: string): Promise<DetectedSubscription[]> {
   const db = getSupabase();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - SUBSCRIPTION_LOOKBACK_DAYS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
   const { data: rows, error } = await db
     .from("transactions")
     .select("id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category")
     .eq("clerk_user_id", clerkUserId)
     .lt("amount", 0)
+    .gte("date", cutoffStr)
     .order("date", { ascending: false })
     .order("id", { ascending: false });
 

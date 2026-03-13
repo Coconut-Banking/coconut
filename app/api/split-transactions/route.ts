@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 import { formatCurrency } from "@/lib/currency";
 import { toCents } from "@/lib/expense-shares";
@@ -91,6 +93,7 @@ export async function POST(req: NextRequest) {
   if (splitErr || !split) {
     return NextResponse.json({ error: splitErr?.message ?? "Failed to create split" }, { status: 500 });
   }
+  revalidateTag(CACHE_TAGS.splitTransactions, "max");
 
   const { data: allSplits } = await db
     .from("split_transactions")

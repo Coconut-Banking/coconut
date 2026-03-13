@@ -120,3 +120,9 @@ export const SYNC = {
 export const EMAIL_RECEIPTS = {
   PAGE_SIZE: 100,
 } as const;
+
+/** Cache TTL in seconds for Supabase query results. Reduces egress. */
+export const CACHE = {
+  TRANSACTIONS_REVALIDATE_SEC: 120,
+  SPLIT_IDS_REVALIDATE_SEC: 60,
+} as const;
