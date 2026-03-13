@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
-import { EMAIL_RECEIPTS } from "@/lib/config";
+import { EMAIL_RECEIPTS, GMAIL } from "@/lib/config";
+
+function isExcludedReceipt(rawFrom: string | null, merchant: string | null): boolean {
+  const from = (rawFrom ?? "").toLowerCase();
+  const merch = (merchant ?? "").toLowerCase();
+  return (
+    GMAIL.EXCLUDED_SENDERS.some((d) => from.includes(d)) ||
+    GMAIL.EXCLUDED_SENDERS.some((d) => merch.includes(d.replace(".com", "")))
+  );
+}
 
 export async function GET() {
   const { userId } = await auth();
@@ -10,7 +19,6 @@ export async function GET() {
   try {
     const db = getSupabase();
 
-    // Fetch email receipts from the database
     const { data: receipts, error } = await db
       .from("email_receipts")
       .select("*")
@@ -23,9 +31,13 @@ export async function GET() {
       return NextResponse.json({ error: "Failed to fetch receipts" }, { status: 500 });
     }
 
+    const filtered = (receipts || []).filter(
+      (r) => !isExcludedReceipt(r.raw_from, r.merchant)
+    );
+
     return NextResponse.json({
-      receipts: receipts || [],
-      count: receipts?.length || 0
+      receipts: filtered,
+      count: filtered.length,
     });
   } catch (e) {
     console.error("Error fetching receipts:", e);
