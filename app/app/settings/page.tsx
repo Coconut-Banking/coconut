@@ -26,12 +26,14 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [twoFA, setTwoFA] = useState(true);
   const [notifications, setNotifications] = useState(true);
-  const { linked } = useTransactions();
+  const { linked, syncAndRefetch } = useTransactions();
   const gmail = useGmail();
   const { hide, unhide, isHidden } = useHiddenAccounts();
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
   } | null>(null);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [accountsRefreshing, setAccountsRefreshing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [wiping, setWiping] = useState(false);
 
@@ -70,13 +72,36 @@ export default function SettingsPage() {
     }
   }, [user]);
 
-  useEffect(() => {
-    if (linked) {
-      fetch("/api/plaid/accounts")
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => data && setPlaidAccounts(data))
-        .catch(() => {});
+  const fetchAccounts = async () => {
+    setAccountsError(null);
+    const res = await fetch("/api/plaid/accounts");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setAccountsError(body.error ?? `Failed to load accounts (${res.status})`);
+      setPlaidAccounts({ accounts: [] });
+      return;
     }
+    const data = await res.json();
+    setPlaidAccounts(data);
+  };
+
+  const refreshAccounts = async () => {
+    if (!linked) return;
+    setAccountsRefreshing(true);
+    setAccountsError(null);
+    try {
+      await fetch("/api/plaid/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      await syncAndRefetch();
+      await fetchAccounts();
+    } catch {
+      setAccountsError("Refresh failed");
+    } finally {
+      setAccountsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (linked) fetchAccounts();
   }, [linked]);
 
   const banks = (Array.isArray(plaidAccounts?.accounts) ? plaidAccounts.accounts : []).map((a) => ({
@@ -246,7 +271,17 @@ export default function SettingsPage() {
                     {banks.length === 0 && linked && !plaidAccounts ? (
                       <div className="py-6 text-center text-sm text-gray-500">Loading accounts...</div>
                     ) : banks.length === 0 && linked ? (
-                      <div className="py-6 text-center text-sm text-gray-500">No accounts found.</div>
+                      <div className="py-6 text-center space-y-3">
+                        <p className="text-sm text-gray-500">No accounts found.</p>
+                        {accountsError && <p className="text-xs text-amber-600">{accountsError}</p>}
+                        <button
+                          onClick={refreshAccounts}
+                          disabled={accountsRefreshing}
+                          className="text-sm text-[#3D8E62] font-medium hover:underline disabled:opacity-50"
+                        >
+                          {accountsRefreshing ? "Refreshing…" : "Refresh accounts"}
+                        </button>
+                      </div>
                     ) : (
                       <>
                         {visibleBanks.map((bank) => (
