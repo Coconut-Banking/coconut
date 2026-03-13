@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 import { randomUUID } from "crypto";
 
@@ -183,6 +185,9 @@ export async function POST(
       return NextResponse.json({ error: "Failed to create shares" }, { status: 500 });
     }
   }
+
+  revalidateTag(CACHE_TAGS.splitTransactions, "max");
+  revalidateTag(CACHE_TAGS.transactions(userId), "max");
 
   // Update receipt status to completed
   await db
