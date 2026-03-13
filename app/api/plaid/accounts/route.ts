@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlaidClient } from "@/lib/plaid-client";
-import { getPlaidTokenForUser } from "@/lib/transaction-sync";
+import { getAllPlaidTokensForUser } from "@/lib/transaction-sync";
 
 type AccountRow = {
   account_id: string;
@@ -86,31 +86,34 @@ export async function GET() {
       return NextResponse.json({ accounts: deduped });
     }
 
-    // Fallback: fetch live from Plaid
-    const accessToken = await getPlaidTokenForUser(userId);
-    if (!accessToken) return NextResponse.json({ error: "Not linked" }, { status: 401 });
+    // Fallback: fetch live from Plaid (all connected banks)
+    const accessTokens = await getAllPlaidTokensForUser(userId);
+    if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
     const client = getPlaidClient();
     if (!client) return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
 
-    const response = await client.accountsGet({ access_token: accessToken });
-    // Batch upsert all accounts in one call
-    const rows = response.data.accounts.map((acct) => {
-      const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-      return {
-        clerk_user_id: userId,
-        plaid_account_id: acct.account_id,
-        name: acct.name,
-        type: acct.type,
-        subtype: acct.subtype ?? null,
-        mask: acct.mask ?? null,
-        balance_current: bal?.current ?? null,
-        balance_available: bal?.available ?? null,
-        iso_currency_code: bal?.iso_currency_code ?? "USD",
-      };
-    });
-    if (rows.length > 0) {
-      await db.from("accounts").upsert(rows, { onConflict: "plaid_account_id" });
+    const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
+    for (const accessToken of accessTokens) {
+      const response = await client.accountsGet({ access_token: accessToken });
+      const rows = response.data.accounts.map((acct) => {
+        const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+        return {
+          clerk_user_id: userId,
+          plaid_account_id: acct.account_id,
+          name: acct.name,
+          type: acct.type,
+          subtype: acct.subtype ?? null,
+          mask: acct.mask ?? null,
+          balance_current: bal?.current ?? null,
+          balance_available: bal?.available ?? null,
+          iso_currency_code: bal?.iso_currency_code ?? "USD",
+        };
+      });
+      allRows.push(...rows);
+    }
+    if (allRows.length > 0) {
+      await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
     }
     const { data: updated } = await db.from("accounts").select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", userId);
     const accounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({

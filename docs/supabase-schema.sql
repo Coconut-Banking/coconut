@@ -6,11 +6,11 @@
 -- 1. Enable pgvector
 create extension if not exists vector;
 
--- 2. Plaid items (one row per connected bank per user)
+-- 2. Plaid items (one row per connected bank per user; multiple banks allowed)
 create table if not exists plaid_items (
   id               uuid primary key default gen_random_uuid(),
-  clerk_user_id    text not null unique,
-  plaid_item_id    text not null,
+  clerk_user_id    text not null,
+  plaid_item_id    text not null unique,
   access_token     text not null,
   institution_name text,
   created_at       timestamptz default now()

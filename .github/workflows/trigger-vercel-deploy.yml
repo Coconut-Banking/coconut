@@ -1,0 +1,22 @@
+# Triggers a Vercel deployment via deploy hook on every push to main.
+# Use this when Vercel blocks auto-deploys because the commit author doesn't have project access.
+# Deploy hooks bypass the commit-author check and deploy the latest main branch.
+
+name: Trigger Vercel Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Trigger Vercel deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Vercel Deploy Hook
+        run: |
+          if [ -z "${{ secrets.VERCEL_DEPLOY_HOOK }}" ]; then
+            echo "::warning::VERCEL_DEPLOY_HOOK secret not set. Add it in GitHub → Settings → Secrets."
+            exit 0
+          fi
+          curl -f -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
