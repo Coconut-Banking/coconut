@@ -18,6 +18,7 @@ import {
   X,
   AlertTriangle,
   CreditCard,
+  Smartphone,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
@@ -155,6 +156,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </form>
           <div className="flex items-center gap-2">
+            <Link
+              href="/auth/return-to-app"
+              className="md:hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-[#EEF7F2] text-[#3D8E62] hover:bg-[#E0F0E8] text-sm font-medium transition-colors shrink-0"
+            >
+              <Smartphone size={16} />
+              <span>Open in app</span>
+            </Link>
             <button aria-label="Notifications" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-50 text-gray-500 transition-colors relative">
               <Bell size={16} />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#3D8E62]" />
@@ -245,6 +253,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </Link>
                 );
               })}
+              <Link
+                href="/auth/return-to-app"
+                onClick={() => setMobileNavOpen(false)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#3D8E62] font-medium bg-[#EEF7F2] hover:bg-[#E0F0E8] transition-colors mt-4"
+              >
+                <Smartphone size={18} />
+                Open in Coconut App
+              </Link>
             </nav>
           </aside>
         </>
