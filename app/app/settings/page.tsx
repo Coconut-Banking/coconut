@@ -75,9 +75,10 @@ export default function SettingsPage() {
     }
   }, [user]);
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = async (forceRefresh = false) => {
     setAccountsError(null);
-    const res = await fetch(`/api/plaid/accounts?t=${Date.now()}`, { cache: "no-store", credentials: "include" });
+    const url = forceRefresh ? `/api/plaid/accounts?refresh=1&t=${Date.now()}` : `/api/plaid/accounts?t=${Date.now()}`;
+    const res = await fetch(url, { cache: "no-store", credentials: "include" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setAccountsError(body.error ?? `Failed to load accounts (${res.status})`);
@@ -95,7 +96,7 @@ export default function SettingsPage() {
     try {
       await fetch("/api/plaid/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       await syncAndRefetch();
-      await fetchAccounts();
+      await fetchAccounts(true);
     } catch {
       setAccountsError("Refresh failed");
     } finally {
