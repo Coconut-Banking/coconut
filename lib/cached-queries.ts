@@ -68,35 +68,3 @@ async function fetchTransactions(
     error: error ? { message: error.message } : null,
   };
 }
-
-export async function getCachedSplitTransactionIds(
-  opts?: { bypassCache?: boolean }
-): Promise<Set<string>> {
-  if (opts?.bypassCache) {
-    return fetchSplitTransactionIds();
-  }
-
-  // unstable_cache JSON-serializes; Set becomes {} so .has() fails. Cache array instead.
-  const result = await unstable_cache(
-    () => fetchSplitTransactionIds().then((s) => Array.from(s)),
-    ["split_transaction_ids", "v2"],
-    {
-      tags: [CACHE_TAGS.splitTransactions],
-      revalidate: CACHE.SPLIT_IDS_REVALIDATE_SEC,
-    }
-  )();
-
-  // Defensive: cache can return {} if old Set was cached; ensure we always have a Set
-  if (result instanceof Set) return result;
-  if (Array.isArray(result)) return new Set(result);
-  if (result && typeof result === "object" && !Array.isArray(result)) {
-    return new Set(Object.values(result).filter((v): v is string => typeof v === "string"));
-  }
-  return new Set();
-}
-
-async function fetchSplitTransactionIds(): Promise<Set<string>> {
-  const db = getSupabase();
-  const { data } = await db.from("split_transactions").select("transaction_id");
-  return new Set((data ?? []).map((r) => r.transaction_id as string));
-}

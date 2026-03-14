@@ -21,3 +21,18 @@ export const MERCHANT_COLORS = [
   "#E50914", "#1DB954", "#00674B", "#FF9900", "#003366", "#7BB848", "#555555",
   "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F", "#1A1A1A", "#4A90D9",
 ];
+
+export function hashColor(str: string | null | undefined): string {
+  if (!str) return MERCHANT_COLORS[0];
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
+  return MERCHANT_COLORS[Math.abs(h) % MERCHANT_COLORS.length];
+}
+
+export function fmtDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr + "T12:00:00");
+  if (isNaN(d.getTime())) return "—";
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}

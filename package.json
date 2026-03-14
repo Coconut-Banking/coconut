@@ -13,7 +13,8 @@
     "test": "NODE_OPTIONS='--disable-warning=DEP0169' vitest run",
     "test:watch": "NODE_OPTIONS='--disable-warning=DEP0169' vitest",
     "test:unit": "NODE_OPTIONS='--disable-warning=DEP0169' vitest run",
-    "test:e2e": "NODE_OPTIONS='--disable-warning=DEP0169' playwright test"
+    "test:e2e": "NODE_OPTIONS='--disable-warning=DEP0169' playwright test",
+    "test:bug-sweep": "NODE_OPTIONS='--disable-warning=DEP0169' playwright test -c e2e/bug-sweep.config.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.39.0",

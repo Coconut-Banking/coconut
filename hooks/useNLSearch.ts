@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { UITransaction } from "@/lib/transaction-types";
+import { hashColor } from "@/lib/plaid-mappers";
 
 const DEBOUNCE_MS = 500;
 
@@ -24,38 +25,30 @@ interface SearchResponse {
   usedVectorFallback: boolean;
 }
 
-// Map DB transaction row to UI Transaction shape
+const CATEGORY_COLORS: Record<string, string> = {
+  ENTERTAINMENT: "bg-purple-100 text-purple-700",
+  RESTAURANTS: "bg-orange-100 text-orange-700",
+  GROCERIES: "bg-emerald-100 text-emerald-700",
+  TRAVEL: "bg-cyan-100 text-cyan-700",
+  TRANSPORTATION: "bg-blue-100 text-blue-700",
+  SHOPPING: "bg-amber-100 text-amber-700",
+  GENERAL_MERCHANDISE: "bg-amber-100 text-amber-700",
+  UTILITIES: "bg-gray-100 text-gray-700",
+  RENT_AND_UTILITIES: "bg-gray-100 text-gray-700",
+  HEALTHCARE: "bg-pink-100 text-pink-700",
+  PERSONAL_CARE: "bg-indigo-100 text-indigo-700",
+  GENERAL_SERVICES: "bg-slate-100 text-slate-700",
+  FOOD_AND_DRINK: "bg-orange-100 text-orange-700",
+  HOME_IMPROVEMENT: "bg-teal-100 text-teal-700",
+};
+
+function fmtDateShort(d: string) {
+  const dt = new Date(d + "T12:00:00");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[dt.getMonth()]} ${dt.getDate()}`;
+}
+
 function toUITransaction(t: SearchResponse["transactions"][number]): UITransaction {
-  const CATEGORY_COLORS: Record<string, string> = {
-    ENTERTAINMENT: "bg-purple-100 text-purple-700",
-    RESTAURANTS: "bg-orange-100 text-orange-700",
-    GROCERIES: "bg-emerald-100 text-emerald-700",
-    TRAVEL: "bg-cyan-100 text-cyan-700",
-    TRANSPORTATION: "bg-blue-100 text-blue-700",
-    SHOPPING: "bg-amber-100 text-amber-700",
-    GENERAL_MERCHANDISE: "bg-amber-100 text-amber-700",
-    UTILITIES: "bg-gray-100 text-gray-700",
-    RENT_AND_UTILITIES: "bg-gray-100 text-gray-700",
-    HEALTHCARE: "bg-pink-100 text-pink-700",
-    PERSONAL_CARE: "bg-indigo-100 text-indigo-700",
-    GENERAL_SERVICES: "bg-slate-100 text-slate-700",
-    FOOD_AND_DRINK: "bg-orange-100 text-orange-700",
-    HOME_IMPROVEMENT: "bg-teal-100 text-teal-700",
-  };
-  const MERCHANT_COLORS = [
-    "#E50914","#1DB954","#00674B","#FF9900","#003366","#7BB848","#555555",
-    "#4A6CF7","#E8507A","#F59E0B","#10A37F","#FF5A5F","#1A1A1A","#4A90D9",
-  ];
-  function hashColor(s: string) {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
-    return MERCHANT_COLORS[Math.abs(h) % MERCHANT_COLORS.length];
-  }
-  function fmtDate(d: string) {
-    const dt = new Date(d + "T12:00:00");
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    return `${months[dt.getMonth()]} ${dt.getDate()}`;
-  }
   const primary = t.primary_category ?? "OTHER";
   const merchant = t.merchant_name || t.raw_name || "Unknown";
   return {
@@ -67,7 +60,7 @@ function toUITransaction(t: SearchResponse["transactions"][number]): UITransacti
     category: primary.replace(/_/g, " "),
     categoryColor: CATEGORY_COLORS[primary] ?? "bg-gray-100 text-gray-700",
     date: t.date,
-    dateStr: fmtDate(t.date),
+    dateStr: fmtDateShort(t.date),
     isRecurring: false,
     hasSplitSuggestion: false,
     merchantColor: hashColor(merchant),

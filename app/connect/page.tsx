@@ -75,7 +75,6 @@ function ConnectedStep() {
 }
 
 function ConnectBankContent() {
-  const _router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("link");
   const [linkToken, setLinkToken] = useState<string | null>(null);

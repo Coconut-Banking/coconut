@@ -302,20 +302,22 @@ export default function SettingsPage() {
                             </button>
                           )}
                         </div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const r = await fetch("/api/plaid/debug");
-                              const d = await r.json();
-                              alert(JSON.stringify(d, null, 2));
-                            } catch {
-                              alert("Debug fetch failed");
-                            }
-                          }}
-                          className="mt-2 text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          Show debug info
-                        </button>
+                        {process.env.NODE_ENV !== "production" && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const r = await fetch("/api/plaid/debug");
+                                const d = await r.json();
+                                alert(JSON.stringify(d, null, 2));
+                              } catch {
+                                alert("Debug fetch failed");
+                              }
+                            }}
+                            className="mt-2 text-xs text-gray-400 hover:text-gray-600"
+                          >
+                            Show debug info
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <>

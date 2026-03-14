@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
       link_token: response.data.link_token,
       plaid_env: env,
       trace_id: traceId,
-      _debug: debug,
+      ...(process.env.NODE_ENV !== "production" && { _debug: debug }),
     });
   } catch (err: unknown) {
     const plaidRequestId =
@@ -137,7 +137,11 @@ export async function POST(request: NextRequest) {
       request_id: plaidRequestId ?? null,
     });
     return NextResponse.json(
-      { error: "Failed to create link token", trace_id: traceId, _debug: debug },
+      {
+        error: "Failed to create link token",
+        trace_id: traceId,
+        ...(process.env.NODE_ENV !== "production" && { _debug: debug }),
+      },
       { status: 500 }
     );
   }
