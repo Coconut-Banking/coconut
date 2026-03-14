@@ -14,7 +14,10 @@ export default async function LoginPage({
   const fallbackRedirect = redirect_url ?? "/app/dashboard";
   if (userId) redirect(fallbackRedirect.startsWith("/") ? fallbackRedirect : "/app/dashboard");
   const fromApp = fallbackRedirect.includes("from_app");
+  const returnToApp = fallbackRedirect.includes("/auth/return-to-app");
   const hintDecoded = hint ? decodeURIComponent(hint) : null;
+  // Force redirect when coming from app — OAuth flows can drop redirect_url
+  const forceRedirect = returnToApp ? "/auth/return-to-app" : undefined;
 
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
@@ -39,6 +42,8 @@ export default async function LoginPage({
         <SignIn
           routing="path"
           path="/login"
+          forceRedirectUrl={forceRedirect}
+          signUpForceRedirectUrl={forceRedirect}
           fallbackRedirectUrl={fallbackRedirect}
           signUpFallbackRedirectUrl={fallbackRedirect}
           appearance={{

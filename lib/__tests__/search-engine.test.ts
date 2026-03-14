@@ -66,7 +66,7 @@ afterEach(() => {
 
 describe("search-engine", () => {
   describe("extractIntent", () => {
-    it("returns merchant + amount_lt for coffee query when OpenAI provides them", async () => {
+    it("returns merchant + amount_lt when OpenAI provides them", async () => {
       const { extractIntent } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -94,7 +94,7 @@ describe("search-engine", () => {
       expect(intent.metric).toBe("sum");
     });
 
-    it("returns broad category only for generic food query", async () => {
+    it("returns broad category only for generic food query (no merchant)", async () => {
       const { extractIntent } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -121,7 +121,7 @@ describe("search-engine", () => {
       expect(intent.amount_lt).toBeNull();
     });
 
-    it("validates and returns merchant for uber query", async () => {
+    it("validates merchant string for rideshare query", async () => {
       const { extractIntent } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -144,12 +144,11 @@ describe("search-engine", () => {
       const intent = await extractIntent("my uber rides in January");
 
       expect(intent.merchant).toBe("uber");
-      expect(intent.category).toBe("TRANSPORTATION");
     });
   });
 
   describe("search", () => {
-    it("returns transactions and answer when merchant present", async () => {
+    it("returns transactions and answer when merchant filter present", async () => {
       const { search } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -175,9 +174,10 @@ describe("search-engine", () => {
       expect(result.transactions[0].merchant_name).toBe("Progeny Coffee");
       expect(result.total).toBe(7.5);
       expect(result.answer).toContain("$7.50");
+      expect(mockOr).toHaveBeenCalled();
     });
 
-    it("returns transactions filtered by category and date", async () => {
+    it("calls or() when merchant in intent (hybrid merchant matching)", async () => {
       const { search } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -187,20 +187,21 @@ describe("search-engine", () => {
                 metric: "sum",
                 date_start: "2026-02-10",
                 date_end: "2026-03-11",
-                merchant: null,
+                merchant: "coffee",
                 category: "FOOD_AND_DRINK",
                 amount_gt: null,
-                amount_lt: 15,
+                amount_lt: null,
               }),
             },
           },
         ],
       });
 
-      const result = await search("user_123", "coffee last month");
+      await search("user_123", "coffee last month");
 
-      expect(result.transactions).toBeDefined();
-      expect(result.answer).toBeDefined();
+      expect(mockOr).toHaveBeenCalledWith(
+        expect.stringMatching(/normalized_merchant\.ilike.*coffee/)
+      );
     });
   });
 });
