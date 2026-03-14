@@ -6,6 +6,7 @@ import { getEffectiveUserId } from "@/lib/demo";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getAllPlaidTokensForUser } from "@/lib/transaction-sync";
+import { getAccountsFromTransactionIds } from "@/lib/accounts-for-user";
 
 type AccountRow = {
   account_id: string;
@@ -130,7 +131,32 @@ export async function GET() {
       );
     }
 
-    // Still empty: fetch live from Plaid and upsert
+    // Fallback: get accounts via transaction account_ids (fixes clerk_user_id mismatch or stale data)
+    const { data: txWithAcct } = await db
+      .from("transactions")
+      .select("account_id")
+      .eq("clerk_user_id", effectiveUserId)
+      .not("account_id", "is", null)
+      .limit(500);
+    const accounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
+    if (accounts && accounts.length > 0) {
+      // Backfill: fix clerk_user_id on accounts so future requests hit primary path
+      const acctIds = accounts.map((a) => a.id).filter(Boolean);
+      if (acctIds.length > 0) {
+        try {
+          await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
+        } catch (e) {
+          console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
+        }
+      }
+      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
+    // Last resort: fetch live from Plaid and upsert
     const client = getPlaidClient();
     if (!client) return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
 
