@@ -150,6 +150,7 @@ export async function GET(request: NextRequest) {
         merchant,
         rawDescription: (tx.raw_name || "") as string,
         amount: tx.amount as number,
+        isoCurrencyCode: (tx.iso_currency_code as string) || "USD",
         category: primary.replace(/_/g, " "),
         categoryColor: CATEGORY_COLORS[primary] ?? "bg-gray-100 text-gray-700",
         date: tx.date as string,

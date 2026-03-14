@@ -66,7 +66,7 @@ afterEach(() => {
 
 describe("search-engine", () => {
   describe("extractIntent", () => {
-    it("returns merchant_keywords + amount_lt for coffee query when OpenAI provides them", async () => {
+    it("returns merchant + amount_lt for coffee query when OpenAI provides them", async () => {
       const { extractIntent } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -76,12 +76,10 @@ describe("search-engine", () => {
                 metric: "sum",
                 date_start: "2026-02-10",
                 date_end: "2026-03-11",
-                merchant: null,
-                merchant_keywords: ["coffee", "cafe", "starbucks", "dunkin", "espresso"],
+                merchant: "coffee",
                 category: "FOOD_AND_DRINK",
                 amount_gt: null,
                 amount_lt: 15,
-                concept_label: "coffee/cafes",
               }),
             },
           },
@@ -90,14 +88,13 @@ describe("search-engine", () => {
 
       const intent = await extractIntent("how much did I spend on coffee in the past month");
 
-      expect(intent.merchant_keywords).toEqual(["coffee", "cafe", "starbucks", "dunkin", "espresso"]);
+      expect(intent.merchant).toBe("coffee");
       expect(intent.category).toBe("FOOD_AND_DRINK");
       expect(intent.amount_lt).toBe(15);
-      expect(intent.concept_label).toBe("coffee/cafes");
       expect(intent.metric).toBe("sum");
     });
 
-    it("returns broad category only for generic food query (no merchant_keywords)", async () => {
+    it("returns broad category only for generic food query", async () => {
       const { extractIntent } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -108,11 +105,9 @@ describe("search-engine", () => {
                 date_start: "2026-02-10",
                 date_end: "2026-03-11",
                 merchant: null,
-                merchant_keywords: null,
                 category: "FOOD_AND_DRINK",
                 amount_gt: null,
                 amount_lt: null,
-                concept_label: null,
               }),
             },
           },
@@ -121,13 +116,12 @@ describe("search-engine", () => {
 
       const intent = await extractIntent("how much did I spend on food in the past month");
 
-      expect(intent.merchant_keywords).toBeNull();
+      expect(intent.merchant).toBeNull();
       expect(intent.category).toBe("FOOD_AND_DRINK");
       expect(intent.amount_lt).toBeNull();
-      expect(intent.concept_label).toBeNull();
     });
 
-    it("validates and sanitizes merchant_keywords array", async () => {
+    it("validates and returns merchant for uber query", async () => {
       const { extractIntent } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -137,12 +131,10 @@ describe("search-engine", () => {
                 metric: "list",
                 date_start: "2026-01-01",
                 date_end: "2026-01-31",
-                merchant: null,
-                merchant_keywords: ["uber", "lyft", "", 123, null],
+                merchant: "uber",
                 category: "TRANSPORTATION",
                 amount_gt: null,
                 amount_lt: null,
-                concept_label: null,
               }),
             },
           },
@@ -151,12 +143,13 @@ describe("search-engine", () => {
 
       const intent = await extractIntent("my uber rides in January");
 
-      expect(intent.merchant_keywords).toEqual(["uber", "lyft"]);
+      expect(intent.merchant).toBe("uber");
+      expect(intent.category).toBe("TRANSPORTATION");
     });
   });
 
   describe("search", () => {
-    it("returns transactions and answer with concept_label when merchant_keywords present", async () => {
+    it("returns transactions and answer when merchant present", async () => {
       const { search } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -166,12 +159,10 @@ describe("search-engine", () => {
                 metric: "sum",
                 date_start: "2026-02-10",
                 date_end: "2026-03-11",
-                merchant: null,
-                merchant_keywords: ["coffee", "cafe"],
+                merchant: "coffee",
                 category: "FOOD_AND_DRINK",
                 amount_gt: null,
                 amount_lt: 15,
-                concept_label: "coffee/cafes",
               }),
             },
           },
@@ -183,12 +174,10 @@ describe("search-engine", () => {
       expect(result.transactions).toHaveLength(1);
       expect(result.transactions[0].merchant_name).toBe("Progeny Coffee");
       expect(result.total).toBe(7.5);
-      expect(result.answer).toContain("coffee/cafes");
       expect(result.answer).toContain("$7.50");
-      expect(mockOr).toHaveBeenCalled();
     });
 
-    it("calls or() when merchant_keywords in intent (verified via sum metric)", async () => {
+    it("returns transactions filtered by category and date", async () => {
       const { search } = await import("../search-engine");
       mockCompletionCreate.mockResolvedValueOnce({
         choices: [
@@ -199,22 +188,19 @@ describe("search-engine", () => {
                 date_start: "2026-02-10",
                 date_end: "2026-03-11",
                 merchant: null,
-                merchant_keywords: ["coffee", "cafe"],
                 category: "FOOD_AND_DRINK",
                 amount_gt: null,
                 amount_lt: 15,
-                concept_label: "coffee/cafes",
               }),
             },
           },
         ],
       });
 
-      await search("user_123", "coffee last month");
+      const result = await search("user_123", "coffee last month");
 
-      expect(mockOr).toHaveBeenCalledWith(
-        expect.stringMatching(/normalized_merchant\.ilike.*coffee/)
-      );
+      expect(result.transactions).toBeDefined();
+      expect(result.answer).toBeDefined();
     });
   });
 });

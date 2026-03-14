@@ -57,7 +57,7 @@ interface TxRow {
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 
-const AMOUNT_TOLERANCE = 0.20;
+const AMOUNT_TOLERANCE = 0.25;
 const MIN_OCCURRENCES = 2;
 const DAYS_WEEKLY = { min: 5, max: 10 };
 const DAYS_BIWEEKLY = { min: 11, max: 18 };
@@ -78,6 +78,8 @@ const PLAID_PREFIXES = ["sq ", "tst ", "sp ", "pos "];
 
 function normalizeMerchantName(raw: string): string {
   let s = raw.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  // Strip common domain suffixes for better matching (netflix.com -> netflix)
+  s = s.replace(/\s*(com|net|org|co|tv|io)\s*$/g, "").trim();
   // Strip common Plaid POS prefixes (Square, Toast, Shopify POS)
   for (const prefix of PLAID_PREFIXES) {
     if (s.startsWith(prefix)) {

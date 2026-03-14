@@ -7,6 +7,7 @@ export interface UITransaction {
   merchant: string;
   rawDescription: string;
   amount: number;
+  isoCurrencyCode?: string;
   category: string;
   categoryColor: string;
   date: string;

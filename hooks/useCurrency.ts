@@ -46,3 +46,25 @@ export function useCurrency() {
 
   return { currencyCode, symbol, format, formatAbs, setCurrency };
 }
+
+/** Compact view preference — reduces padding, line height, font size in lists. */
+export function useCompactView() {
+  const { user } = useUser();
+
+  const compact = useMemo(() => {
+    const stored = (user?.unsafeMetadata as { compactView?: boolean } | undefined)?.compactView;
+    return Boolean(stored);
+  }, [user?.unsafeMetadata]);
+
+  const setCompact = useCallback(
+    async (value: boolean) => {
+      if (!user) return;
+      await user.update({
+        unsafeMetadata: { ...user.unsafeMetadata, compactView: value },
+      });
+    },
+    [user]
+  );
+
+  return { compact, setCompact };
+}
