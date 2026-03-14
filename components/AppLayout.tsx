@@ -16,9 +16,12 @@ import {
   LogOut,
   Menu,
   X,
+  AlertTriangle,
+  CreditCard,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
+import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
 
 const navItems = [
   { href: "/app/dashboard", label: "Overview", icon: LayoutDashboard, end: true },
@@ -39,6 +42,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { user } = useUser();
   const { signOut } = useClerk();
+  const { needsReauth, newAccountsAvailable, refetch: refetchAlerts } = usePlaidAlerts(pathname);
 
   const displayName = user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "You";
   const displayEmail = user?.primaryEmailAddress?.emailAddress || "";
@@ -159,6 +163,38 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 overflow-y-auto min-w-0">
+          {(needsReauth || newAccountsAvailable) && (
+            <div className="bg-white border-b border-[#E8EAEC] px-4 sm:px-6 py-3 space-y-2">
+              {needsReauth && (
+                <Link
+                  href="/connect?update=1"
+                  className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors"
+                  onClick={() => refetchAlerts()}
+                >
+                  <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-amber-800">Your bank connection needs attention</p>
+                    <p className="text-xs text-amber-700">Re-authenticate at your bank to restore access</p>
+                  </div>
+                  <ChevronDown size={16} className="text-amber-600 shrink-0 rotate-[-90deg]" />
+                </Link>
+              )}
+              {newAccountsAvailable && !needsReauth && (
+                <Link
+                  href="/connect?update=1&new_accounts=1"
+                  className="flex items-center gap-3 p-3 bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl hover:bg-[#E0F0E8] transition-colors"
+                  onClick={() => refetchAlerts()}
+                >
+                  <CreditCard size={18} className="text-[#3D8E62] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[#2D5A44]">New accounts detected</p>
+                    <p className="text-xs text-[#3D8E62]">Add them to Coconut</p>
+                  </div>
+                  <ChevronDown size={16} className="text-[#3D8E62] shrink-0 rotate-[-90deg]" />
+                </Link>
+              )}
+            </div>
+          )}
           {children}
         </main>
       </div>

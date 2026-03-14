@@ -53,15 +53,60 @@ export async function POST(request: NextRequest) {
       public_token: maskToken(public_token),
     });
     const response = await client.itemPublicTokenExchange({ public_token });
-    const { access_token, item_id } = response.data;
+    const { access_token, item_id, request_id: plaid_request_id } = response.data;
     console.log("[plaid][exchange-token] exchange_ok", {
       trace_id: traceId,
       user_id: effectiveUserId,
       item_id,
+      request_id: plaid_request_id ?? null,
       elapsed_ms: Date.now() - startedAt,
     });
 
-    await savePlaidToken(effectiveUserId, access_token, item_id);
+    // Get institution_id for duplicate check and display
+    let institutionId: string | null = null;
+    let institutionName: string | null = null;
+    try {
+      const itemResp = await client.itemGet({ access_token: access_token });
+      institutionId = itemResp.data.item.institution_id ?? null;
+      institutionName = itemResp.data.item.institution_name ?? null;
+    } catch (e) {
+      console.warn("[plaid][exchange-token] itemGet failed (continuing):", e instanceof Error ? e.message : e);
+    }
+
+    // Duplicate institution check — block to avoid extra billing and confusion
+    if (institutionId) {
+      try {
+        const { getSupabase } = await import("@/lib/supabase");
+        const db = getSupabase();
+        const { data: existing } = await db
+          .from("plaid_items")
+          .select("id")
+          .eq("clerk_user_id", effectiveUserId)
+          .eq("institution_id", institutionId)
+          .limit(1)
+          .maybeSingle();
+        if (existing) {
+          try {
+            await client.itemRemove({ access_token: access_token });
+          } catch (e) {
+            console.warn("[plaid][exchange-token] itemRemove after duplicate:", e instanceof Error ? e.message : e);
+          }
+          return NextResponse.json(
+            {
+              error: "You already have this bank linked. Use Settings → Fix connection if you need to re-authenticate.",
+              code: "DUPLICATE_INSTITUTION",
+              trace_id: traceId,
+            },
+            { status: 409 }
+          );
+        }
+      } catch (e) {
+        // institution_id column may not exist yet; skip check
+        if (!/column.*institution_id|does not exist/i.test(e instanceof Error ? e.message : String(e))) throw e;
+      }
+    }
+
+    await savePlaidToken(effectiveUserId, access_token, item_id, institutionName, institutionId);
     console.log("[plaid][exchange-token] token_saved", {
       trace_id: traceId,
       user_id: effectiveUserId,
@@ -130,16 +175,22 @@ export async function POST(request: NextRequest) {
       trace_id: traceId,
       user_id: effectiveUserId,
       item_id,
+      request_id: plaid_request_id ?? null,
       synced,
       elapsed_ms: Date.now() - startedAt,
     });
     return NextResponse.json({ ok: true, item_id, synced, trace_id: traceId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to exchange token";
+    const plaidRequestId =
+      err && typeof err === "object" && "response" in err
+        ? (err.response as { data?: { request_id?: string } })?.data?.request_id
+        : undefined;
     console.error("[plaid][exchange-token] request_error", {
       trace_id: traceId,
       user_id: effectiveUserId,
       error: message,
+      request_id: plaidRequestId ?? null,
       elapsed_ms: Date.now() - startedAt,
     });
     return NextResponse.json({ error: message, trace_id: traceId }, { status: 500 });

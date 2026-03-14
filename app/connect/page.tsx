@@ -162,10 +162,12 @@ function ConnectBankContent() {
     setLoginRedirectUrl(`/login?redirect_url=${encodeURIComponent(redirectBack)}`);
     setShowLoginRetry(false);
 
+    const isUpdateMode = searchParams.get("update") === "1";
+    const newAccounts = searchParams.get("new_accounts") === "1";
     fetch("/api/plaid/create-link-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trace_id: traceId || null }),
+      body: JSON.stringify({ trace_id: traceId || null, update: isUpdateMode, new_accounts: newAccounts }),
     })
       .then((res) => {
         if (res.status === 401) {
@@ -226,34 +228,61 @@ function ConnectBankContent() {
     return () => { cancelled = true; };
   }, [searchParams, traceId, logPlaidEvent]);
 
+  const isUpdateMode = searchParams.get("update") === "1";
   const onSuccess = useCallback(
     async (publicToken: string, metadata?: unknown) => {
       setIsExchanging(true);
       setError(null);
       try {
+        const meta = metadata as {
+          linkSessionId?: string;
+          institution?: { institution_id?: string };
+          accounts?: { id: string }[];
+        } | undefined;
+        const plaidIds = {
+          link_session_id: meta?.linkSessionId ?? null,
+          account_ids: (meta?.accounts ?? []).map((a) => a.id),
+        };
         logPlaidEvent({
           type: "link_success",
-          metadata,
+          metadata: { ...(metadata as object), plaid_ids: plaidIds },
         });
-        const res = await fetch("/api/plaid/exchange-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ public_token: publicToken, trace_id: traceId || null }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error ?? "Failed to connect");
+        if (isUpdateMode) {
+          // Update mode: access_token unchanged, no exchange needed. Dismiss prompts.
+          fetch("/api/plaid/clear-alerts", { method: "POST" }).catch(() => {});
+          setStep("connected");
           logPlaidEvent({
-            type: "exchange_token_error",
-            error: data ?? null,
+            type: "update_mode_ok",
+            metadata: {
+              institution_id: meta?.institution?.institution_id ?? null,
+              plaid_ids: plaidIds,
+            },
           });
-          return;
+        } else {
+          const res = await fetch("/api/plaid/exchange-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ public_token: publicToken, trace_id: traceId || null }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            setError(data.error ?? "Failed to connect");
+            logPlaidEvent({
+              type: "exchange_token_error",
+              error: data ?? null,
+            });
+            return;
+          }
+          setStep("connected");
+          logPlaidEvent({
+            type: "exchange_token_ok",
+            metadata: {
+              synced: data?.synced ?? null,
+              item_id: data?.item_id ?? null,
+              plaid_ids: plaidIds,
+            },
+          });
         }
-        setStep("connected");
-        logPlaidEvent({
-          type: "exchange_token_ok",
-          metadata: { synced: data?.synced ?? null, item_id: data?.item_id ?? null },
-        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to connect";
         setError(msg);
@@ -265,7 +294,7 @@ function ConnectBankContent() {
         setIsExchanging(false);
       }
     },
-    [logPlaidEvent, traceId]
+    [logPlaidEvent, traceId, isUpdateMode]
   );
 
   const { open, ready } = usePlaidLink({

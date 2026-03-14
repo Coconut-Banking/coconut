@@ -60,17 +60,25 @@ export async function savePlaidToken(
   clerkUserId: string,
   accessToken: string,
   plaidItemId: string,
-  institutionName?: string | null
+  institutionName?: string | null,
+  institutionId?: string | null
 ) {
   const db = getSupabase();
-  const row = {
+  const row: Record<string, unknown> = {
     clerk_user_id: clerkUserId,
     access_token: accessToken,
     plaid_item_id: plaidItemId,
     institution_name: institutionName ?? null,
   };
+  if (institutionId != null) row.institution_id = institutionId;
   // Prefer multi-bank: conflict on plaid_item_id (one row per connected bank).
-  const { error } = await db.from("plaid_items").upsert(row, { onConflict: "plaid_item_id" });
+  let { error } = await db.from("plaid_items").upsert(row, { onConflict: "plaid_item_id" });
+  // If institution_id column doesn't exist, retry without it
+  if (error && /column.*institution_id|does not exist/i.test(error.message) && institutionId != null) {
+    delete row.institution_id;
+    const retry = await db.from("plaid_items").upsert(row, { onConflict: "plaid_item_id" });
+    error = retry.error;
+  }
   if (!error) return;
   // Fallback: old schema had unique(clerk_user_id) only — one bank per user.
   // Error "no unique constraint" means migration not run; use old upsert target.
@@ -121,29 +129,40 @@ async function syncSingleToken(
     (dbAccts ?? []).map((a: { id: string; plaid_account_id: string }) => [a.plaid_account_id, a.id])
   );
 
-  // Fetch all transactions from Plaid via cursor sync
+  // Fetch all transactions from Plaid via cursor sync (per Plaid Transactions integration guide)
   const allAdded: Array<Record<string, unknown>> = [];
   const allModified: Array<Record<string, unknown>> = [];
   const allRemovedIds: string[] = [];
   let cursor: string | undefined;
+  let lastGoodCursor: string | undefined;
   let hasMore = true;
   while (hasMore) {
-    const resp = await plaid.transactionsSync({
-      access_token: accessToken,
-      cursor,
-      count: 500,
-    });
-    allAdded.push(...(resp.data.added as unknown as Array<Record<string, unknown>>));
-    allModified.push(...(resp.data.modified as unknown as Array<Record<string, unknown>>));
-    const removed = resp.data.removed as unknown as Array<{ transaction_id?: string }>;
-    if (Array.isArray(removed)) {
-      for (const r of removed) {
-        const id = typeof r === "string" ? r : r?.transaction_id;
-        if (id) allRemovedIds.push(id);
+    lastGoodCursor = cursor;
+    try {
+      const resp = await plaid.transactionsSync({
+        access_token: accessToken,
+        cursor,
+        count: 500,
+      });
+      allAdded.push(...(resp.data.added as unknown as Array<Record<string, unknown>>));
+      allModified.push(...(resp.data.modified as unknown as Array<Record<string, unknown>>));
+      const removed = resp.data.removed as unknown as Array<{ transaction_id?: string }>;
+      if (Array.isArray(removed)) {
+        for (const r of removed) {
+          const id = typeof r === "string" ? r : r?.transaction_id;
+          if (id) allRemovedIds.push(id);
+        }
       }
+      cursor = resp.data.next_cursor;
+      hasMore = resp.data.has_more;
+    } catch (e) {
+      const err = e as { response?: { data?: { error_code?: string } } };
+      if (err?.response?.data?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") {
+        cursor = lastGoodCursor;
+        continue;
+      }
+      throw e;
     }
-    cursor = resp.data.next_cursor;
-    hasMore = resp.data.has_more;
   }
 
   const allTxs = [...allAdded, ...allModified];

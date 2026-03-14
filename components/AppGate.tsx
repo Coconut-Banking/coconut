@@ -27,6 +27,9 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (BYPASS_AUTH || !isLoaded || !isSignedIn) return;
     let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setPlaidStatus("unlinked");
+    }, 8000);
     fetch("/api/plaid/status")
       .then((res) => res.json())
       .then((data) => {
@@ -34,16 +37,44 @@ export function AppGate({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         if (!cancelled) setPlaidStatus("unlinked");
-      });
-    return () => { cancelled = true; };
+      })
+      .finally(() => clearTimeout(timeout));
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
   }, [isLoaded, isSignedIn]);
+
+  const [authLoadTimeout, setAuthLoadTimeout] = useState(false);
+  useEffect(() => {
+    if (BYPASS_AUTH || isLoaded) return;
+    const t = setTimeout(() => setAuthLoadTimeout(true), 12000);
+    return () => clearTimeout(t);
+  }, [isLoaded]);
 
   if (!BYPASS_AUTH && !isLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Loading...</p>
+          {!authLoadTimeout ? (
+            <>
+              <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+              <p className="text-sm text-gray-500">Loading...</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-gray-700">Taking too long?</p>
+              <p className="text-xs text-gray-500 text-center max-w-xs">
+                Check your connection or try again. If the app is in a browser within another app, try opening it in Safari.
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-2 text-sm text-[#3D8E62] hover:text-[#2D7A52] font-medium"
+              >
+                Reload
+              </button>
+            </>
+          )}
         </div>
       </div>
     );

@@ -13,9 +13,13 @@ create table if not exists plaid_items (
   plaid_item_id    text not null unique,
   access_token     text not null,
   institution_name text,
+  institution_id    text,
+  needs_reauth      boolean default false,
+  new_accounts_available boolean default false,
   created_at       timestamptz default now()
 );
 create index if not exists plaid_items_user_idx on plaid_items(clerk_user_id);
+create index if not exists plaid_items_institution_idx on plaid_items(clerk_user_id, institution_id);
 
 -- 3. Accounts (from Plaid)
 create table if not exists accounts (

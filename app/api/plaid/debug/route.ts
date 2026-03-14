@@ -72,17 +72,9 @@ export async function GET() {
         plaidError = "Plaid not configured";
       }
 
-      // Verify: try token with BOTH sandbox and production to detect mismatch
-      const sandboxClient = createPlaidClientForEnv("sandbox");
+      // Verify: try token with sandbox and/or production to detect mismatch.
+      // In production, never call sandbox API (Plaid production checklist).
       const prodClient = createPlaidClientForEnv("production");
-      if (sandboxClient) {
-        try {
-          await sandboxClient.accountsGet({ access_token: accessToken });
-          token_works_in_sandbox = true;
-        } catch {
-          token_works_in_sandbox = false;
-        }
-      }
       if (prodClient) {
         try {
           await prodClient.accountsGet({ access_token: accessToken });
@@ -91,15 +83,23 @@ export async function GET() {
           token_works_in_production = false;
         }
       }
+      if (PLAID_ENV !== "production") {
+        const sandboxClient = createPlaidClientForEnv("sandbox");
+        if (sandboxClient) {
+          try {
+            await sandboxClient.accountsGet({ access_token: accessToken });
+            token_works_in_sandbox = true;
+          } catch {
+            token_works_in_sandbox = false;
+          }
+        }
+      }
     }
 
     const env_mismatch =
-      (token_works_in_sandbox === true &&
-        token_works_in_production === false &&
-        PLAID_ENV === "production") ||
-      (token_works_in_sandbox === false &&
-        token_works_in_production === true &&
-        PLAID_ENV === "sandbox");
+      PLAID_ENV === "production"
+        ? token_works_in_production === false
+        : (token_works_in_sandbox === false && token_works_in_production === true);
 
     return NextResponse.json({
       ok: true,

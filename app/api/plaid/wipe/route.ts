@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
+import { getPlaidClient } from "@/lib/plaid-client";
 
 /**
  * POST /api/plaid/wipe
  * Nuclear option: deletes ALL data for the user (transactions, accounts, plaid, subscriptions).
- * Use when you want to start completely fresh before relinking.
+ * Calls Plaid item/remove per Item before deleting to stop billing.
  */
 export async function POST() {
   const effectiveUserId = await getEffectiveUserId();
@@ -14,10 +15,26 @@ export async function POST() {
   }
 
   try {
-  const db = getSupabase();
+    const db = getSupabase();
 
-  // Delete ALL transactions (manual + bank)
-  const { error: txErr } = await db
+    // Call item/remove so Plaid stops billing before we delete
+    const { data: items } = await db.from("plaid_items").select("access_token").eq("clerk_user_id", effectiveUserId);
+    const plaid = getPlaidClient();
+    if (plaid && items?.length) {
+      for (const item of items) {
+        const token = item.access_token as string;
+        if (!token) continue;
+        try {
+          await plaid.itemRemove({ access_token: token });
+          console.log("[wipe] itemRemove ok", { user_id: effectiveUserId });
+        } catch (e) {
+          console.warn("[wipe] itemRemove failed:", e instanceof Error ? e.message : e);
+        }
+      }
+    }
+
+    // Delete ALL transactions (manual + bank)
+    const { error: txErr } = await db
     .from("transactions")
     .delete()
     .eq("clerk_user_id", effectiveUserId);
