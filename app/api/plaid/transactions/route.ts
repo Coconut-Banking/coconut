@@ -9,11 +9,7 @@ import {
   needsLLMNormalization,
   normalizeMerchantsWithLLM,
 } from "@/lib/merchant-normalize-llm";
-import {
-  getCachedTransactions,
-  getCachedSplitTransactionIds,
-  CACHE_TAGS,
-} from "@/lib/cached-queries";
+import { getCachedTransactions, CACHE_TAGS } from "@/lib/cached-queries";
 
 export async function GET(request: NextRequest) {
   const effectiveUserId = await getEffectiveUserId();
@@ -75,7 +71,9 @@ export async function GET(request: NextRequest) {
 
     // Actually delete duplicate rows from Supabase (first occurrence stays)
     // Don't delete tx that are in splits — they're referenced by split_transactions
-    const protectedIds = await getCachedSplitTransactionIds({ bypassCache });
+    // Direct fetch to avoid unstable_cache Set serialization (d.has is not a function)
+    const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
+    const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
     const idsToDelete = bankOnly
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));

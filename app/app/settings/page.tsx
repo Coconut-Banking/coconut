@@ -103,8 +103,10 @@ export default function SettingsPage() {
     }
   };
 
+  // Fetch accounts on mount and when linked changes. Also fetch when linked=false as fallback
+  // (status can be stale/wrong; accounts API is source of truth for "has bank")
   useEffect(() => {
-    if (linked) fetchAccounts();
+    fetchAccounts();
   }, [linked]);
 
   const banks = (Array.isArray(plaidAccounts?.accounts) ? plaidAccounts.accounts : []).map((a) => ({
