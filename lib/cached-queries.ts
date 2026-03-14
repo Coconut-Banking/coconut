@@ -79,14 +79,20 @@ export async function getCachedSplitTransactionIds(
   // unstable_cache JSON-serializes; Set becomes {} so .has() fails. Cache array instead.
   const result = await unstable_cache(
     () => fetchSplitTransactionIds().then((s) => Array.from(s)),
-    ["split_transaction_ids"],
+    ["split_transaction_ids", "v2"],
     {
       tags: [CACHE_TAGS.splitTransactions],
       revalidate: CACHE.SPLIT_IDS_REVALIDATE_SEC,
     }
   )();
 
-  return new Set(Array.isArray(result) ? result : []);
+  // Defensive: cache can return {} if old Set was cached; ensure we always have a Set
+  if (result instanceof Set) return result;
+  if (Array.isArray(result)) return new Set(result);
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    return new Set(Object.values(result).filter((v): v is string => typeof v === "string"));
+  }
+  return new Set();
 }
 
 async function fetchSplitTransactionIds(): Promise<Set<string>> {
