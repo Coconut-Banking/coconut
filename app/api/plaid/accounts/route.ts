@@ -143,10 +143,10 @@ export async function GET(request: NextRequest) {
       .eq("clerk_user_id", effectiveUserId)
       .not("account_id", "is", null)
       .limit(500);
-    const accounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
-    if (accounts && accounts.length > 0) {
+    const txAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
+    if (txAccounts && txAccounts.length > 0) {
       // Backfill: fix clerk_user_id on accounts so future requests hit primary path
-      const acctIds = accounts.map((a) => a.id).filter(Boolean);
+      const acctIds = txAccounts.map((a) => a.id).filter(Boolean);
       if (acctIds.length > 0) {
         try {
           await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
           console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
         }
       }
-      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+      const deduped = deduplicateAccounts(db, effectiveUserId, txAccounts as unknown as AccountRow[]);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -188,7 +188,7 @@ export async function GET(request: NextRequest) {
       await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
     }
     const { data: updated } = await db.from("accounts").select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", effectiveUserId);
-    const accounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
+    const plaidAccounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
       account_id: String(row.plaid_account_id ?? ""),
       id: String(row.id ?? ""),
       name: String(row.name ?? ""),
@@ -199,7 +199,7 @@ export async function GET(request: NextRequest) {
       balance_available: (row.balance_available as number | null) ?? null,
       iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
-    const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+    const deduped = deduplicateAccounts(db, effectiveUserId, plaidAccounts);
     return NextResponse.json(
       { accounts: deduped },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
