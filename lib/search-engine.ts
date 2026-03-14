@@ -112,6 +112,12 @@ Date rules:
 - "today" → today only
 - If no date mentioned → last 30 days
 
+Examples for merchant (CRITICAL - extract the actual merchant name):
+- "how much did I spend on uber last month" → {"metric":"sum","merchant":"uber",...}
+- "my uber rides" / "uber expenses" → merchant:"uber"
+- "coffee last week" / "starbucks in january" → merchant:"coffee" or "starbucks"
+- "rideshare" → merchant:"uber" (expand to concrete names that appear in bank data)
+
 Examples for top_merchant:
 - "which restaurant do I eat the most from" → {"metric":"top_merchant","date_start":"...","date_end":"...","merchant":null,"category":"FOOD_AND_DRINK"}
 - "where do I get coffee most" → {"metric":"top_merchant","date_start":"...","date_end":"...","merchant":null,"category":"FOOD_AND_DRINK"}
@@ -175,15 +181,33 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
 
+type QueryBuilder = {
+  eq: (...a: unknown[]) => QueryBuilder;
+  gte: (...a: unknown[]) => QueryBuilder;
+  lte: (...a: unknown[]) => QueryBuilder;
+  ilike: (...a: unknown[]) => QueryBuilder;
+  or: (filter: string) => QueryBuilder;
+};
+
 function applyFilters(
   query: unknown,
   intent: SearchIntent,
   clerkUserId: string
 ): PromiseLike<{ data: unknown; error: unknown; count?: number }> {
-  type Builder = { eq: (...a: unknown[]) => Builder; gte: (...a: unknown[]) => Builder; lte: (...a: unknown[]) => Builder; ilike: (...a: unknown[]) => Builder };
-  const q = query as Builder;
-  let b: Builder = q.eq("clerk_user_id", clerkUserId).gte("date", intent.date_start).lte("date", intent.date_end);
-  if (intent.merchant) b = b.ilike("normalized_merchant", `%${normalize(intent.merchant)}%`);
+  const q = query as QueryBuilder;
+  let b: QueryBuilder = q
+    .eq("clerk_user_id", clerkUserId)
+    .gte("date", intent.date_start)
+    .lte("date", intent.date_end);
+
+  // Merchant: search across all merchant columns (hybrid robustness)
+  if (intent.merchant) {
+    const kw = normalize(intent.merchant);
+    const pattern = `%${kw}%`;
+    b = b.or(
+      `normalized_merchant.ilike.${pattern},merchant_name.ilike.${pattern},raw_name.ilike.${pattern}`
+    );
+  }
   if (intent.category) b = b.ilike("primary_category", `%${intent.category.toUpperCase()}%`);
   if (intent.amount_gt !== null) b = b.lte("amount", -intent.amount_gt);
   if (intent.amount_lt !== null) b = b.gte("amount", -intent.amount_lt);
@@ -345,15 +369,27 @@ function fmtPeriod(intent: SearchIntent): string {
   const s = intent.date_start;
   const e = intent.date_end;
   if (s === e) return `on ${s}`;
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const [sy, sm] = s.split("-").map(Number);
+  const [ey, em] = e.split("-").map(Number);
+  if (sy === ey && sm === em) {
+    const lastDay = new Date(sy, sm, 0).getDate();
+    if (e === `${sy}-${String(sm).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`)
+      return `in ${months[sm - 1]} ${sy}`;
+  }
   return `between ${s} and ${e}`;
 }
 
-function generateAnswer(result: Omit<SearchResult, "answer" | "usedVectorFallback">, intent: SearchIntent): string {
+function generateAnswer(
+  result: Omit<SearchResult, "answer" | "usedVectorFallback">,
+  intent: SearchIntent,
+  opts?: { dateRelaxed?: boolean }
+): string {
   const period = fmtPeriod(intent);
   const subject = intent.merchant
-    ? `at ${intent.merchant}`
+    ? intent.merchant
     : intent.category
-    ? `in ${intent.category.replace(/_/g, " ").toLowerCase()}`
+    ? intent.category.replace(/_/g, " ").toLowerCase()
     : "";
 
   if (result.metric === "top_merchant") {
@@ -364,11 +400,17 @@ function generateAnswer(result: Omit<SearchResult, "answer" | "usedVectorFallbac
     return `${names} are tied (${tm[0].count} visit${tm[0].count === 1 ? "" : "s"} each)`;
   }
   if (result.metric === "sum") {
-    if (!result.count) return `No expenses found ${subject} ${period}.`;
-    return `You spent ${fmt(result.total ?? 0)} ${subject} ${period} across ${result.count} transaction${result.count === 1 ? "" : "s"}.`;
+    if (!result.count) {
+      const friendly = subject ? `No ${subject} expenses ${period}.` : `No expenses found ${period}.`;
+      return opts?.dateRelaxed
+        ? `${friendly} Try a broader date range (e.g. "last 3 months").`
+        : friendly;
+    }
+    const relaxedNote = opts?.dateRelaxed ? " (expanded date range)" : "";
+    return `You spent ${fmt(result.total ?? 0)} on ${subject} ${period}${relaxedNote} — ${result.count} transaction${result.count === 1 ? "" : "s"}.`;
   }
   if (result.metric === "count") {
-    return `You had ${result.count ?? 0} transaction${result.count === 1 ? "" : "s"} ${subject} ${period}.`;
+    return `You had ${result.count ?? 0} transaction${result.count === 1 ? "" : "s"} ${subject ? `at ${subject} ` : ""}${period}.`;
   }
   if (result.metric === "breakdown") {
     if (!result.breakdown?.length) return `No spending data found ${period}.`;
@@ -376,16 +418,34 @@ function generateAnswer(result: Omit<SearchResult, "answer" | "usedVectorFallbac
     return `Your top categories ${period}: ${top}.`;
   }
   // list
-  if (!result.count) return `No transactions found ${subject} ${period}.`;
-  return `Found ${result.count} transaction${result.count === 1 ? "" : "s"} ${subject} ${period}.`;
+  if (!result.count) {
+    const friendly = subject ? `No ${subject} transactions ${period}.` : `No transactions found ${period}.`;
+    return opts?.dateRelaxed
+      ? `${friendly} Try "last 3 months" or "all time" for a broader search.`
+      : friendly;
+  }
+  const relaxedNote = opts?.dateRelaxed ? " (expanded date range)" : "";
+  return `Found ${result.count} ${subject ? `${subject} ` : ""}transaction${result.count === 1 ? "" : "s"} ${period}${relaxedNote}.`;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/** Expand intent to "last 90 days" for date-relaxation fallback. */
+function intentWithWiderDateRange(intent: SearchIntent): SearchIntent {
+  const end = today();
+  const start = new Date();
+  start.setDate(start.getDate() - 90);
+  return {
+    ...intent,
+    date_start: start.toISOString().split("T")[0],
+    date_end: end,
+  };
+}
+
 export async function search(clerkUserId: string, query: string): Promise<SearchResult> {
   const intent = await extractIntent(query);
   const filtersDesc = [
-    intent.merchant && `merchant ILIKE '%${normalize(intent.merchant)}%'`,
+    intent.merchant && `merchant OR(3 cols) '%${normalize(intent.merchant)}%'`,
     intent.category && `primary_category ILIKE '%${intent.category}%'`,
     intent.date_start && intent.date_end && `date ${intent.date_start}..${intent.date_end}`,
     intent.amount_gt != null && `amount <= -${intent.amount_gt}`,
@@ -400,7 +460,24 @@ export async function search(clerkUserId: string, query: string): Promise<Search
     intent.amount_lt !== null;
 
   try {
-    const structured = await runStructuredQuery(clerkUserId, intent);
+    let structured = await runStructuredQuery(clerkUserId, intent);
+    let dateRelaxed = false;
+
+    // Date relaxation: when 0 results with merchant/category filter, retry with last 90 days
+    const shouldRelaxDate =
+      structured.transactions.length === 0 &&
+      (intent.merchant !== null || intent.category !== null) &&
+      (intent.metric === "sum" || intent.metric === "list" || intent.metric === "count");
+
+    if (shouldRelaxDate) {
+      const relaxedIntent = intentWithWiderDateRange(intent);
+      const relaxed = await runStructuredQuery(clerkUserId, relaxedIntent);
+      if (relaxed.transactions.length > 0) {
+        structured = relaxed;
+        dateRelaxed = true;
+        console.log("[nl-search] date relaxation: 0 in narrow range → found", relaxed.transactions.length, "in last 90 days");
+      }
+    }
 
     // Use vector fallback only when: list query, no structured filters, and results are empty
     const shouldFallback =
@@ -415,7 +492,11 @@ export async function search(clerkUserId: string, query: string): Promise<Search
           ...structured,
           transactions: vectorResults,
           count: vectorResults.length,
-          answer: generateAnswer({ ...structured, transactions: vectorResults, count: vectorResults.length }, intent),
+          answer: generateAnswer(
+            { ...structured, transactions: vectorResults, count: vectorResults.length },
+            intent,
+            { dateRelaxed: false }
+          ),
           usedVectorFallback: true,
         };
       }
@@ -423,7 +504,7 @@ export async function search(clerkUserId: string, query: string): Promise<Search
 
     return {
       ...structured,
-      answer: generateAnswer(structured, intent),
+      answer: generateAnswer(structured, intent, { dateRelaxed }),
       usedVectorFallback: false,
     };
   } catch (e) {
