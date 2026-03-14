@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { hashColor, fmtDate } from "@/lib/plaid-mappers";
 
+export interface PriceChange {
+  previous: number;
+  change: number;
+  detectedAt: string;
+}
+
 export interface Subscription {
   id: string;
   merchant: string;
@@ -13,6 +19,8 @@ export interface Subscription {
   category: string;
   transactionCount: number;
   status: string;
+  confidence: number | null;
+  priceChange: PriceChange | null;
 }
 
 export function useSubscriptions() {
@@ -72,9 +80,27 @@ export function useSubscriptions() {
     }
   }, []);
 
+  const dismissPriceChange = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/subscriptions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dismissPriceChange: true }),
+      });
+      if (res.ok) {
+        setSubscriptions((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, priceChange: null } : s))
+        );
+      }
+    } catch (e) {
+      console.error("[subscriptions] dismissPriceChange:", e);
+    }
+  }, []);
+
   const totalMonthly = subscriptions.reduce((acc, s) => {
     if (s.frequency === "monthly") return acc + s.amount;
     if (s.frequency === "yearly") return acc + s.amount / 12;
+    if (s.frequency === "semiannual") return acc + s.amount / 6;
     if (s.frequency === "quarterly") return acc + s.amount / 3;
     if (s.frequency === "weekly") return acc + s.amount * 4.33;
     if (s.frequency === "biweekly") return acc + s.amount * 2.17;
@@ -95,6 +121,7 @@ export function useSubscriptions() {
     error,
     detect,
     dismiss,
+    dismissPriceChange,
     refetch: fetchSubs,
   };
 }

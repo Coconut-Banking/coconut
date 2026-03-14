@@ -1,26 +1,59 @@
 /**
- * Centralized currency formatting. Default is USD.
- * When we add user currency preferences, update DEFAULT_CURRENCY
- * and the format function will adapt automatically.
+ * Centralized currency formatting.
+ * Supports user-selectable currency preference via the useCurrency hook.
  */
 
 export const DEFAULT_CURRENCY = "usd";
 export const DEFAULT_CURRENCY_CODE = "USD";
 export const DEFAULT_LOCALE = "en-US";
 
-const formatter = new Intl.NumberFormat(DEFAULT_LOCALE, {
-  style: "currency",
-  currency: DEFAULT_CURRENCY_CODE,
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+/** Top 10 currencies with their display info. */
+export const SUPPORTED_CURRENCIES = [
+  { code: "USD", name: "US Dollar", symbol: "$", locale: "en-US" },
+  { code: "CAD", name: "Canadian Dollar", symbol: "C$", locale: "en-CA" },
+  { code: "EUR", name: "Euro", symbol: "\u20AC", locale: "de-DE" },
+  { code: "GBP", name: "British Pound", symbol: "\u00A3", locale: "en-GB" },
+  { code: "JPY", name: "Japanese Yen", symbol: "\u00A5", locale: "ja-JP" },
+  { code: "AUD", name: "Australian Dollar", symbol: "A$", locale: "en-AU" },
+  { code: "CHF", name: "Swiss Franc", symbol: "CHF", locale: "de-CH" },
+  { code: "CNY", name: "Chinese Yuan", symbol: "\u00A5", locale: "zh-CN" },
+  { code: "INR", name: "Indian Rupee", symbol: "\u20B9", locale: "en-IN" },
+  { code: "MXN", name: "Mexican Peso", symbol: "MX$", locale: "es-MX" },
+] as const;
 
-/** Format a number as currency (e.g. $12.99). Uses locale-aware formatting. */
-export function formatCurrency(amount: number): string {
-  return formatter.format(amount);
+export type CurrencyCode = (typeof SUPPORTED_CURRENCIES)[number]["code"];
+
+/** Cache formatters per currency to avoid recreating them */
+const formatterCache = new Map<string, Intl.NumberFormat>();
+
+function getFormatter(currencyCode: string): Intl.NumberFormat {
+  const cached = formatterCache.get(currencyCode);
+  if (cached) return cached;
+
+  const info = SUPPORTED_CURRENCIES.find((c) => c.code === currencyCode);
+  const locale = info?.locale ?? DEFAULT_LOCALE;
+  const fmt = new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: currencyCode,
+    minimumFractionDigits: currencyCode === "JPY" ? 0 : 2,
+    maximumFractionDigits: currencyCode === "JPY" ? 0 : 2,
+  });
+  formatterCache.set(currencyCode, fmt);
+  return fmt;
+}
+
+/** Format a number as currency (e.g. $12.99, C$12.99, etc.). */
+export function formatCurrency(amount: number, currencyCode: string = DEFAULT_CURRENCY_CODE): string {
+  return getFormatter(currencyCode).format(amount);
 }
 
 /** Format an absolute amount without sign (e.g. "$12.99") */
-export function formatCurrencyAbs(amount: number): string {
-  return formatter.format(Math.abs(amount));
+export function formatCurrencyAbs(amount: number, currencyCode: string = DEFAULT_CURRENCY_CODE): string {
+  return getFormatter(currencyCode).format(Math.abs(amount));
+}
+
+/** Get the currency symbol for a code */
+export function getCurrencySymbol(currencyCode: string = DEFAULT_CURRENCY_CODE): string {
+  const info = SUPPORTED_CURRENCIES.find((c) => c.code === currencyCode);
+  return info?.symbol ?? "$";
 }

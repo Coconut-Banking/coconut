@@ -8,6 +8,8 @@ import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGmail } from "@/hooks/useGmail";
 import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
+import { useCurrency } from "@/hooks/useCurrency";
+import { SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
 
 const sections = [
@@ -23,7 +25,7 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState("profile");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  const { currencyCode: currency, setCurrency } = useCurrency();
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [twoFA, setTwoFA] = useState(true);
@@ -75,7 +77,7 @@ export default function SettingsPage() {
     }
   }, [user]);
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = async (forceRefresh = false) => {
     setAccountsError(null);
     const res = await fetch(`/api/plaid/accounts?t=${Date.now()}`, { cache: "no-store", credentials: "include" });
     if (!res.ok) {
@@ -95,7 +97,7 @@ export default function SettingsPage() {
     try {
       await fetch("/api/plaid/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       await syncAndRefetch();
-      await fetchAccounts();
+      await fetchAccounts(true);
     } catch {
       setAccountsError("Refresh failed");
     } finally {
@@ -208,12 +210,14 @@ export default function SettingsPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Currency</label>
                       <select
                         value={currency}
-                        onChange={(e) => setCurrency(e.target.value)}
+                        onChange={(e) => setCurrency(e.target.value as typeof currency)}
                         className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none bg-white focus:ring-2 focus:ring-[#3D8E62]/20"
                       >
-                        <option value="USD">USD — US Dollar</option>
-                        <option value="EUR">EUR — Euro</option>
-                        <option value="GBP">GBP — British Pound</option>
+                        {SUPPORTED_CURRENCIES.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.code} — {c.name}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <button

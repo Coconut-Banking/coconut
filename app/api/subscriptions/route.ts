@@ -33,9 +33,25 @@ export async function GET() {
   }
   try {
     const db = getSupabase();
-    const { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false }).limit(200);
+    const { data, error } = await db.from("subscriptions").select("id, merchant_name, amount, frequency, last_charge_date, next_due_date, primary_category, transaction_count, status, previous_amount, price_change_amount, price_change_detected_at, confidence").eq("clerk_user_id", effectiveUserId).eq("status", "active").order("amount", { ascending: false }).limit(200);
     if (error) throw error;
-    const subs = (data ?? []).map((s) => ({ id: s.id, merchant: s.merchant_name ?? "Unknown", amount: Number(s.amount) || 0, frequency: s.frequency ?? "monthly", lastCharged: s.last_charge_date ?? null, nextDue: s.next_due_date ?? null, category: (s.primary_category ?? "SUBSCRIPTIONS").replace(/_/g, " "), transactionCount: s.transaction_count ?? 0, status: s.status ?? "active" }));
+    const subs = (data ?? []).map((s) => ({
+      id: s.id,
+      merchant: s.merchant_name ?? "Unknown",
+      amount: Number(s.amount) || 0,
+      frequency: s.frequency ?? "monthly",
+      lastCharged: s.last_charge_date ?? null,
+      nextDue: s.next_due_date ?? null,
+      category: (s.primary_category ?? "SUBSCRIPTIONS").replace(/_/g, " "),
+      transactionCount: s.transaction_count ?? 0,
+      status: s.status ?? "active",
+      confidence: s.confidence != null ? Number(s.confidence) : null,
+      priceChange: s.price_change_detected_at ? {
+        previous: Number(s.previous_amount) || 0,
+        change: Number(s.price_change_amount) || 0,
+        detectedAt: s.price_change_detected_at,
+      } : null,
+    }));
     return NextResponse.json(subs);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
