@@ -90,6 +90,49 @@ export async function savePlaidToken(
   }
 }
 
+/** Build dedupe key: same (merchant, amount, date) = same real transaction across Items */
+function dedupeKey(normalizedMerchant: string, amount: number, date: string): string {
+  return `${normalizedMerchant}|${amount}|${date}`;
+}
+
+/**
+ * Filter out rows that would duplicate an existing transaction.
+ * Plaid returns different transaction_ids for the same real tx when the same bank
+ * is linked multiple times (reconnect / duplicate Items). We skip inserting dupes.
+ */
+async function filterDuplicateTransactions<T extends { normalized_merchant: string; amount: number; date: string }>(
+  db: Awaited<ReturnType<typeof getSupabase>>,
+  clerkUserId: string,
+  rows: T[]
+): Promise<T[]> {
+  if (rows.length === 0) return rows;
+
+  const keys = rows.map((r) => dedupeKey(r.normalized_merchant, r.amount, r.date));
+  const uniqueKeys = [...new Set(keys)];
+
+  // Fetch existing (normalized_merchant, amount, date) for this user from DB
+  const { data: existing } = await db
+    .from("transactions")
+    .select("normalized_merchant, amount, date")
+    .eq("clerk_user_id", clerkUserId)
+    .not("plaid_transaction_id", "like", "manual_%");
+
+  const existingKeys = new Set(
+    (existing ?? []).map((r) =>
+      dedupeKey((r.normalized_merchant ?? "").trim(), Number(r.amount), (r.date as string) ?? "")
+    )
+  );
+
+  const seenInBatch = new Set<string>();
+  return rows.filter((r) => {
+    const key = dedupeKey(r.normalized_merchant, r.amount, r.date);
+    if (existingKeys.has(key)) return false;
+    if (seenInBatch.has(key)) return false;
+    seenInBatch.add(key);
+    return true;
+  });
+}
+
 async function syncSingleToken(
   clerkUserId: string,
   accessToken: string,
@@ -190,15 +233,25 @@ async function syncSingleToken(
     };
   });
 
+  // Sync-time dedupe: Plaid can return same tx with different IDs when same bank is linked
+  // multiple times (duplicate Items). Skip inserting rows that would duplicate existing
+  // (normalized_merchant, amount, date) for this user.
+  const rowsToInsert = await filterDuplicateTransactions(db, clerkUserId, rows);
+
   const BATCH = 100;
-  for (let i = 0; i < rows.length; i += BATCH) {
+  for (let i = 0; i < rowsToInsert.length; i += BATCH) {
     const { error } = await db
       .from("transactions")
-      .upsert(rows.slice(i, i + BATCH), { onConflict: "plaid_transaction_id" });
+      .upsert(rowsToInsert.slice(i, i + BATCH), { onConflict: "plaid_transaction_id" });
     if (error) console.error("[sync] upsert error:", error.message);
   }
 
-  return { synced: rows.length, removedIds: allRemovedIds };
+  const skipped = rows.length - rowsToInsert.length;
+  if (skipped > 0) {
+    console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
+  }
+
+  return { synced: rowsToInsert.length, removedIds: allRemovedIds };
 }
 
 export async function syncTransactionsForUser(
@@ -238,7 +291,81 @@ export async function syncTransactionsForUser(
     }
   }
 
+  // Post-sync cleanup: delete existing duplicates (from prior multi-Item state).
+  // Full-scan dedupe keeps first occurrence per (merchant, amount, date).
+  const deleted = await deleteDuplicateTransactionsForUser(db, clerkUserId);
+  if (deleted > 0) {
+    console.log("[sync] cleaned", deleted, "duplicate tx(s) for user", clerkUserId);
+  }
+
   return { synced: totalSynced };
+}
+
+/**
+ * Full-scan dedupe: delete duplicate transactions for a user.
+ * Keeps the first occurrence (by id) per (normalized_merchant, amount, date).
+ * Skips rows referenced by split_transactions or email_receipts.
+ */
+export async function deleteDuplicateTransactionsForUser(
+  db: Awaited<ReturnType<typeof getSupabase>>,
+  clerkUserId: string
+): Promise<number> {
+  const PAGE = 2000;
+  let offset = 0;
+  const seen = new Map<string, string>(); // key -> id to keep
+  const idsToDelete: string[] = [];
+
+  const { data: protectedSplits } = await db.from("split_transactions").select("transaction_id");
+  const { data: protectedReceipts } = await db
+    .from("email_receipts")
+    .select("transaction_id")
+    .not("transaction_id", "is", null);
+  const protectedIds = new Set(
+    [
+      ...(protectedSplits ?? []).map((r) => r.transaction_id as string),
+      ...(protectedReceipts ?? []).map((r) => r.transaction_id as string),
+    ].filter(Boolean)
+  );
+
+  while (true) {
+    const { data: rows } = await db
+      .from("transactions")
+      .select("id, normalized_merchant, amount, date, plaid_transaction_id")
+      .eq("clerk_user_id", clerkUserId)
+      .not("plaid_transaction_id", "like", "manual_%")
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+
+    if (!rows || rows.length === 0) break;
+
+    for (const r of rows) {
+      const norm = ((r.normalized_merchant ?? "") as string).trim();
+      const key = dedupeKey(norm, Number(r.amount), (r.date as string) ?? "");
+      if (protectedIds.has(r.id as string)) continue;
+      const keptId = seen.get(key);
+      if (keptId === undefined) {
+        seen.set(key, r.id as string);
+      } else {
+        idsToDelete.push(r.id as string);
+      }
+    }
+
+    offset += rows.length;
+    if (rows.length < PAGE) break;
+  }
+
+  if (idsToDelete.length === 0) return 0;
+
+  const BATCH = 100;
+  for (let i = 0; i < idsToDelete.length; i += BATCH) {
+    const batch = idsToDelete.slice(i, i + BATCH);
+    const { error } = await db.from("transactions").delete().in("id", batch);
+    if (error) {
+      console.warn("[sync] dedupe delete batch failed:", error.message);
+      return idsToDelete.length; // partial success
+    }
+  }
+  return idsToDelete.length;
 }
 
 // ─── AI Category Enrichment ──────────────────────────────────────────────────

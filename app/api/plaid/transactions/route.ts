@@ -55,11 +55,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Deduplicate: same merchant+amount+date can appear twice (sandbox vs production Plaid IDs)
+    // Deduplicate: same merchant+amount+date can appear twice (multi-Item or reconnect)
     const seen = new Set<string>();
     const keptIds = new Set<string>();
     const deduped = bankOnly.filter((tx) => {
-      const merchant = (tx.merchant_name || tx.raw_name || "").trim().toLowerCase();
+      const raw = (tx.merchant_name || tx.raw_name || "").trim().toLowerCase();
+      const norm = tx.normalized_merchant ?? raw.replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+      const merchant = norm || raw;
       const amount = Number(tx.amount);
       const date = tx.date as string;
       const key = `${merchant}|${amount}|${date}`;
@@ -86,6 +88,11 @@ export async function GET(request: NextRequest) {
         const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
         const { error: delErr } = await db.from("transactions").delete().in("id", batch);
         if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
+      }
+      try {
+        revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+      } catch (e) {
+        console.warn("[transactions] revalidateTag after dedupe failed:", e);
       }
     }
 

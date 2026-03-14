@@ -23,6 +23,7 @@ export interface TransactionRow {
   account_id: string | null;
   merchant_name: string | null;
   raw_name: string | null;
+  normalized_merchant?: string | null;
   amount: number;
   date: string;
   primary_category: string | null;
@@ -56,7 +57,7 @@ async function fetchTransactions(
   const { data, error } = await db
     .from("transactions")
     .select(
-      "id, plaid_transaction_id, account_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
     )
     .eq("clerk_user_id", userId)
     .order("date", { ascending: false })
