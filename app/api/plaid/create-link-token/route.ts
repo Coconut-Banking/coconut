@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
           redirect_uri: redirectUri,
           webhook: webhookUrl,
           access_token: accessTokenForUpdate,
-          account_selection_enabled: accountSelectionEnabled,
+          update: accountSelectionEnabled ? { account_selection_enabled: true } : undefined,
         })
       : await client.linkTokenCreate({
           user: { client_user_id: effectiveUserId },
