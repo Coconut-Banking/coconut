@@ -241,6 +241,152 @@ export async function syncTransactionsForUser(
   return { synced: totalSynced };
 }
 
+// ─── AI Category Enrichment ──────────────────────────────────────────────────
+// Re-categorize transactions using an LLM instead of relying on Plaid's often
+// inaccurate defaults (e.g. theScore as "GENERAL_SERVICES", gas as "OTHER").
+
+const AI_CATEGORIES = [
+  "FOOD_AND_DRINK", "GROCERIES", "COFFEE", "ALCOHOL", "FAST_FOOD",
+  "ENTERTAINMENT", "GAMBLING", "STREAMING",
+  "TRANSPORTATION", "GAS_AND_FUEL", "PARKING", "RIDESHARE",
+  "TRAVEL",
+  "SHOPPING", "CLOTHING", "ELECTRONICS",
+  "PERSONAL_CARE", "HAIRCUT",
+  "HEALTHCARE", "FITNESS",
+  "RENT_AND_UTILITIES", "HOME_IMPROVEMENT",
+  "SUBSCRIPTIONS",
+  "CANNABIS",
+  "EDUCATION",
+  "INCOME", "TRANSFER_IN", "TRANSFER_OUT", "LOAN_PAYMENTS",
+  "OTHER",
+] as const;
+
+const CATEGORIZE_BATCH = 50;
+
+interface TxForCategorization {
+  id: string;
+  merchant_name: string | null;
+  raw_name: string | null;
+  amount: number;
+  primary_category: string | null;
+}
+
+async function categorizeBatch(
+  txs: TxForCategorization[]
+): Promise<Map<string, string>> {
+  if (!openai || txs.length === 0) return new Map();
+
+  const lines = txs.map((tx, i) => {
+    const merchant = tx.merchant_name || tx.raw_name || "Unknown";
+    const amt = Math.abs(tx.amount).toFixed(2);
+    return `${i + 1}. "${merchant}" ($${amt})`;
+  });
+
+  const prompt = `Categorize each bank transaction into the most specific category from this list:
+${AI_CATEGORIES.join(", ")}
+
+Transactions:
+${lines.join("\n")}
+
+Return a JSON object: {"categories": ["CATEGORY_1", "CATEGORY_2", ...]}
+The array MUST have exactly ${txs.length} elements, one per transaction, in the same order.
+Pick the MOST SPECIFIC category that fits. Examples:
+- Gas stations → GAS_AND_FUEL (not TRANSPORTATION)
+- Sports betting apps (theScore, DraftKings, bet365) → GAMBLING (not ENTERTAINMENT)
+- Barber shops, salons → HAIRCUT (not PERSONAL_CARE)
+- Cannabis dispensaries → CANNABIS (not SHOPPING)
+- Bars, liquor stores → ALCOHOL (not FOOD_AND_DRINK)
+- Starbucks, Tim Hortons → COFFEE (not FOOD_AND_DRINK)
+- Netflix, Spotify → STREAMING (not ENTERTAINMENT)
+- Uber, Lyft → RIDESHARE (not TRANSPORTATION)
+- McDonald's, Burger King → FAST_FOOD (not FOOD_AND_DRINK)
+- Parking lots, ParkMobile → PARKING (not TRANSPORTATION)
+- Gym, fitness → FITNESS (not PERSONAL_CARE)
+- Amazon, Walmart (general) → SHOPPING
+- Clothing stores → CLOTHING
+Be precise. Do not explain.`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      temperature: 0,
+      max_tokens: 300 + txs.length * 5,
+    });
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return new Map();
+
+    const parsed = JSON.parse(raw) as { categories?: unknown };
+    const cats = Array.isArray(parsed.categories) ? parsed.categories : null;
+    if (!cats || cats.length !== txs.length) return new Map();
+
+    const result = new Map<string, string>();
+    const validSet = new Set<string>(AI_CATEGORIES);
+    for (let i = 0; i < txs.length; i++) {
+      const cat = typeof cats[i] === "string" ? cats[i] : null;
+      if (cat && validSet.has(cat)) {
+        result.set(txs[i].id, cat);
+      }
+    }
+    return result;
+  } catch (e) {
+    console.warn("[categorize] batch failed:", e);
+    return new Map();
+  }
+}
+
+/**
+ * Re-categorize transactions using AI. Processes transactions that have generic
+ * Plaid categories or all transactions if forceAll is true.
+ */
+export async function enrichCategoriesForUser(
+  clerkUserId: string,
+  opts?: { forceAll?: boolean }
+): Promise<number> {
+  if (!openai) return 0;
+  const db = getSupabase();
+
+  // Fetch transactions to categorize
+  let query = db
+    .from("transactions")
+    .select("id, merchant_name, raw_name, amount, primary_category")
+    .eq("clerk_user_id", clerkUserId)
+    .order("date", { ascending: false })
+    .limit(2000);
+
+  // Unless forceAll, only re-categorize poorly-tagged ones
+  if (!opts?.forceAll) {
+    query = query.in("primary_category", [
+      "OTHER", "GENERAL_SERVICES", "GENERAL_MERCHANDISE",
+      "TRANSFER_OUT", "TRANSFER_IN",
+    ]);
+  }
+
+  const { data: rows, error } = await query;
+  if (error || !rows?.length) return 0;
+
+  const txs = rows as TxForCategorization[];
+  let updated = 0;
+
+  for (let i = 0; i < txs.length; i += CATEGORIZE_BATCH) {
+    const batch = txs.slice(i, i + CATEGORIZE_BATCH);
+    const categories = await categorizeBatch(batch);
+
+    for (const [id, category] of categories) {
+      const { error: updateErr } = await db
+        .from("transactions")
+        .update({ primary_category: category })
+        .eq("id", id);
+      if (!updateErr) updated++;
+    }
+  }
+
+  console.log(`[categorize] enriched ${updated}/${txs.length} transactions for ${clerkUserId}`);
+  return updated;
+}
+
 // Called async after exchange-token — does not block the HTTP response
 export async function embedTransactionsForUser(clerkUserId: string): Promise<void> {
   if (!openai) return;

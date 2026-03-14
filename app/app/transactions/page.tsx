@@ -42,16 +42,31 @@ function isInvestmentAccount(acc: { type?: string; subtype?: string; name?: stri
 const CATEGORY_LABEL: Record<string, string> = {
   "FOOD AND DRINK": "Food & Drink",
   "GROCERIES": "Groceries",
+  "COFFEE": "Coffee",
+  "FAST FOOD": "Fast Food",
+  "ALCOHOL": "Alcohol",
   "ENTERTAINMENT": "Entertainment",
+  "GAMBLING": "Gambling",
+  "STREAMING": "Streaming",
   "TRANSPORTATION": "Transport",
+  "GAS AND FUEL": "Gas & Fuel",
+  "PARKING": "Parking",
+  "RIDESHARE": "Rideshare",
   "TRAVEL": "Travel",
   "SHOPPING": "Shopping",
+  "CLOTHING": "Clothing",
+  "ELECTRONICS": "Electronics",
   "GENERAL MERCHANDISE": "Shopping",
   "GENERAL SERVICES": "Services",
   "PERSONAL CARE": "Personal Care",
+  "HAIRCUT": "Haircut",
+  "FITNESS": "Fitness",
   "HEALTHCARE": "Health",
+  "CANNABIS": "Cannabis",
   "RENT AND UTILITIES": "Utilities",
   "HOME IMPROVEMENT": "Home",
+  "SUBSCRIPTIONS": "Subscriptions",
+  "EDUCATION": "Education",
   "LOAN PAYMENTS": "Loans",
   "INCOME": "Income",
   "TRANSFER IN": "Transfer In",
@@ -701,6 +716,14 @@ function TransactionsPageContent() {
     if (filterQuery.trim()) setSelectedCategory("All");
   }, [filterQuery]);
 
+  // When a semantic search is active, switch date filter to "All time"
+  // so the client-side filter doesn't hide results the backend returned
+  useEffect(() => {
+    if (semanticQuery.trim()) {
+      setDateFilter("All time");
+    }
+  }, [semanticQuery]);
+
   useEffect(() => {
     if (selectedAccountId && isHidden(selectedAccountId)) {
       setSelectedAccountId(null);
@@ -1059,7 +1082,12 @@ function TransactionsPageContent() {
             ))}
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            {filtered.length === 0 ? (
+            {semanticQuery && nlLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <div className="w-7 h-7 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+                <p className="text-sm text-gray-400">Searching your transactions...</p>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="text-center py-12 text-gray-400 text-sm">
                 {nlAnswer || (selectedAccountId ? "No transactions for this account" : "No transactions found")}
                 <div className="mt-2 text-xs text-gray-500 space-y-1">

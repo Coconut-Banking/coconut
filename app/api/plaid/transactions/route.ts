@@ -178,46 +178,15 @@ export async function POST() {
   try {
     const db = getSupabase();
 
-    // Always clear before sync so we never mix sandbox + production or accumulate duplicates
-    const { data: inSplits } = await db
-      .from("split_transactions")
-      .select("transaction_id");
-    const protectedIds = new Set(
-      (inSplits ?? []).map((r) => r.transaction_id as string)
-    );
-
-    const { data: toDelete } = await db
-      .from("transactions")
-      .select("id, plaid_transaction_id")
-      .eq("clerk_user_id", effectiveUserId);
-
-    const idsToDelete = (toDelete ?? [])
-      .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
-      .map((r) => r.id as string)
-      .filter((id) => !protectedIds.has(id));
-
-    if (idsToDelete.length > 0) {
-      const BATCH = 100;
-      for (let i = 0; i < idsToDelete.length; i += BATCH) {
-        const batch = idsToDelete.slice(i, i + BATCH);
-        const { error: delErr } = await db
-          .from("transactions")
-          .delete()
-          .in("id", batch);
-        if (delErr) {
-          console.error("[transactions] fullResync delete error:", delErr.message);
-          return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
-        }
-      }
-      console.log(`[transactions] cleared ${idsToDelete.length} before sync for ${effectiveUserId}`);
-    }
-
-    const { syncTransactionsForUser, embedTransactionsForUser } = await import("@/lib/transaction-sync");
+    // Sync first, THEN clear stale data only if sync succeeds.
+    // Previously we cleared before sync, which destroyed data when Plaid tokens failed.
+    const { syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } = await import("@/lib/transaction-sync");
     const { synced, error } = await syncTransactionsForUser(effectiveUserId);
     if (error) return NextResponse.json({ error }, { status: 500 });
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
     embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));
+    enrichCategoriesForUser(effectiveUserId).catch((e) => console.error("[transactions] categorize:", e));
 
     let detected = 0;
     try {

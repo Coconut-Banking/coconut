@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    console.log("[nl-search] user:", effectiveUserId, "query:", q);
     const result = await search(effectiveUserId, q);
     return NextResponse.json(result);
   } catch (err) {

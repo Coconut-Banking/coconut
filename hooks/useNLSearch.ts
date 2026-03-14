@@ -25,22 +25,8 @@ interface SearchResponse {
   usedVectorFallback: boolean;
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  ENTERTAINMENT: "bg-purple-100 text-purple-700",
-  RESTAURANTS: "bg-orange-100 text-orange-700",
-  GROCERIES: "bg-emerald-100 text-emerald-700",
-  TRAVEL: "bg-cyan-100 text-cyan-700",
-  TRANSPORTATION: "bg-blue-100 text-blue-700",
-  SHOPPING: "bg-amber-100 text-amber-700",
-  GENERAL_MERCHANDISE: "bg-amber-100 text-amber-700",
-  UTILITIES: "bg-gray-100 text-gray-700",
-  RENT_AND_UTILITIES: "bg-gray-100 text-gray-700",
-  HEALTHCARE: "bg-pink-100 text-pink-700",
-  PERSONAL_CARE: "bg-indigo-100 text-indigo-700",
-  GENERAL_SERVICES: "bg-slate-100 text-slate-700",
-  FOOD_AND_DRINK: "bg-orange-100 text-orange-700",
-  HOME_IMPROVEMENT: "bg-teal-100 text-teal-700",
-};
+// Import from shared source so NL search results use the same colors
+import { CATEGORY_COLORS } from "@/lib/plaid-mappers";
 
 function fmtDateShort(d: string) {
   const dt = new Date(d + "T12:00:00");

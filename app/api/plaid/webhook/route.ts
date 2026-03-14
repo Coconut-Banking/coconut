@@ -3,7 +3,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import * as jose from "jose";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getSupabase } from "@/lib/supabase";
-import { syncTransactionsForUser, embedTransactionsForUser } from "@/lib/transaction-sync";
+import { syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
 
 type PlaidWebhookPayload = {
   webhook_type?: string;
@@ -104,6 +104,9 @@ export async function POST(request: NextRequest) {
         embedTransactionsForUser(clerkUserId).catch((e) =>
           console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
         );
+        enrichCategoriesForUser(clerkUserId).catch((e) =>
+          console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
+        );
       })
       .catch((e) =>
         console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e)
@@ -120,6 +123,9 @@ export async function POST(request: NextRequest) {
           });
           embedTransactionsForUser(clerkUserId).catch((e) =>
             console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
+          );
+          enrichCategoriesForUser(clerkUserId).catch((e) =>
+            console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
           );
         })
         .catch((e) =>
