@@ -76,8 +76,9 @@ export async function getCachedSplitTransactionIds(
     return fetchSplitTransactionIds();
   }
 
+  // unstable_cache JSON-serializes; Set becomes {} so .has() fails. Cache array instead.
   const result = await unstable_cache(
-    () => fetchSplitTransactionIds(),
+    () => fetchSplitTransactionIds().then((s) => Array.from(s)),
     ["split_transaction_ids"],
     {
       tags: [CACHE_TAGS.splitTransactions],
@@ -85,7 +86,7 @@ export async function getCachedSplitTransactionIds(
     }
   )();
 
-  return result;
+  return new Set(Array.isArray(result) ? result : []);
 }
 
 async function fetchSplitTransactionIds(): Promise<Set<string>> {
