@@ -149,8 +149,8 @@ async function syncSingleToken(
   plaidItemId: string,
   plaid: ReturnType<typeof getPlaidClient>,
   db: ReturnType<typeof getSupabase>
-): Promise<{ synced: number; removedIds: string[] }> {
-  if (!plaid) return { synced: 0, removedIds: [] };
+): Promise<{ synced: number; removedIds: string[]; skipped: number }> {
+  if (!plaid) return { synced: 0, removedIds: [], skipped: 0 };
 
   // Upsert accounts for this bank (plaid_item_id links to institution for display)
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
@@ -230,7 +230,7 @@ async function syncSingleToken(
   }
 
   const allTxs = [...allAdded, ...allModified];
-  if (allTxs.length === 0 && allRemovedIds.length === 0) return { synced: 0, removedIds: [] };
+  if (allTxs.length === 0 && allRemovedIds.length === 0) return { synced: 0, removedIds: [], skipped: 0 };
 
   const rows = allTxs.map((tx) => {
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";
@@ -272,7 +272,7 @@ async function syncSingleToken(
     console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
   }
 
-  return { synced: rowsToInsert.length, removedIds: allRemovedIds };
+  return { synced: rowsToInsert.length, removedIds: allRemovedIds, skipped };
 }
 
 export async function syncTransactionsForUser(
@@ -289,14 +289,16 @@ export async function syncTransactionsForUser(
   const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
 
   let totalSynced = 0;
+  let totalSkipped = 0;
   const allRemovedIds: string[] = [];
 
   for (const token of accessTokens) {
     const item = tokenToItem.get(token);
     const plaidItemId = item?.plaid_item_id ?? "";
     try {
-      const { synced, removedIds } = await syncSingleToken(clerkUserId, token, plaidItemId, plaid, db);
+      const { synced, removedIds, skipped } = await syncSingleToken(clerkUserId, token, plaidItemId, plaid, db);
       totalSynced += synced;
+      totalSkipped += skipped;
       allRemovedIds.push(...removedIds);
     } catch (e) {
       console.error("[sync] error syncing token:", e instanceof Error ? e.message : e);
@@ -317,11 +319,14 @@ export async function syncTransactionsForUser(
     }
   }
 
-  // Post-sync cleanup: delete existing duplicates (from prior multi-Item state).
-  // Full-scan dedupe keeps first occurrence per (merchant, amount, date).
-  const deleted = await deleteDuplicateTransactionsForUser(db, clerkUserId);
-  if (deleted > 0) {
-    console.log("[sync] cleaned", deleted, "duplicate tx(s) for user", clerkUserId);
+  // Post-sync cleanup: only run when we actually skipped dupes (multi-Item state).
+  // Avoids full-scan on every sync once DB is clean. Plaid transaction_id is unique
+  // per Item, but same bank linked multiple times = same tx with different IDs.
+  if (totalSkipped > 0) {
+    const deleted = await deleteDuplicateTransactionsForUser(db, clerkUserId);
+    if (deleted > 0) {
+      console.log("[sync] cleaned", deleted, "duplicate tx(s) for user", clerkUserId);
+    }
   }
 
   return { synced: totalSynced };
@@ -465,13 +470,19 @@ Be precise. Do not explain.`;
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0,
-      max_tokens: 300 + txs.length * 5,
+      max_tokens: 500 + txs.length * 12,
     });
 
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return new Map();
 
-    const parsed = JSON.parse(raw) as { categories?: unknown };
+    let parsed: { categories?: unknown };
+    try {
+      parsed = JSON.parse(raw) as { categories?: unknown };
+    } catch {
+      // LLM can return truncated JSON (max_tokens, etc.). Skip this batch.
+      return new Map();
+    }
     const cats = Array.isArray(parsed.categories) ? parsed.categories : null;
     if (!cats || cats.length !== txs.length) return new Map();
 
