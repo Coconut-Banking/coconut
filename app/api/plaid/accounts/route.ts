@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
           console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
         }
       }
-      const deduped = deduplicateAccounts(db, effectiveUserId, txAccounts as unknown as AccountRow[]);
+      const deduped = await deduplicateAccounts(db, effectiveUserId, txAccounts as unknown as AccountRow[]);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -199,7 +199,7 @@ export async function GET(request: NextRequest) {
       balance_available: (row.balance_available as number | null) ?? null,
       iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
-    const deduped = deduplicateAccounts(db, effectiveUserId, plaidAccounts);
+    const deduped = await deduplicateAccounts(db, effectiveUserId, plaidAccounts);
     return NextResponse.json(
       { accounts: deduped },
       { headers: { "Cache-Control": "no-store, max-age=0" } }

@@ -28,24 +28,25 @@ export const BILL_MERCHANT_PATTERNS = [
   "home loan",
   "escrow",
   "electric",
-  "gas",
+  "gas utility",
+  "natural gas",
   "water",
   "sewer",
   "trash",
   "utility",
-  "power",
+  "power utility",
+  "power company",
   "insurance",
-  "premium",
   "hoa",
   "homeowners",
-  "autopay",
-  "automatic payment",
   "thank you", // "AUTOMATIC PAYMENT - THANK"
   "credit card",
   "ach electronic credit", // payroll, income
   "gusto pay",
   "cd deposit", // one-time CD, not a subscription
-  "transfer",
+  "bank transfer",
+  "wire transfer",
+  "ach transfer",
 ];
 
 function normalizeCategory(cat: string | null): string {

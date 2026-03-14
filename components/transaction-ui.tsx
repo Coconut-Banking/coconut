@@ -5,7 +5,7 @@ import { getMerchantLogoDomain } from "@/lib/merchant-logos";
 import { formatCurrencyAbs } from "@/lib/currency";
 
 /** Format amount with + / - . Only inflows (+) get green; outflows stay neutral. */
-export function AmountDisplay({ amount, className = "" }: { amount: number; className?: string }) {
+export function AmountDisplay({ amount, className = "", currencyCode }: { amount: number; className?: string; currencyCode?: string }) {
   const isInflow = amount > 0;
   const sign = isInflow ? "+" : "-";
   return (
@@ -16,7 +16,7 @@ export function AmountDisplay({ amount, className = "" }: { amount: number; clas
           : `font-semibold text-gray-900 ${className}`
       }
     >
-      {sign}{formatCurrencyAbs(amount)}
+      {sign}{formatCurrencyAbs(amount, currencyCode)}
     </span>
   );
 }

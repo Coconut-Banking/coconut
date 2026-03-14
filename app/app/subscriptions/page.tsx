@@ -1,8 +1,9 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, HelpCircle } from "lucide-react";
 import { motion } from "motion/react";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
+import { useCurrency } from "@/hooks/useCurrency";
 
 function MerchantAvatar({ name, color }: { name: string; color: string }) {
   return (
@@ -16,7 +17,8 @@ function MerchantAvatar({ name, color }: { name: string; color: string }) {
 }
 
 export default function SubscriptionsPage() {
-  const { subscriptions, totalMonthly, totalAnnual, loading, detecting, detect, dismiss } = useSubscriptions();
+  const { subscriptions, totalMonthly, totalAnnual, loading, detecting, detect, dismiss, dismissPriceChange } = useSubscriptions();
+  const { format: fc, formatAbs: fca } = useCurrency();
 
   if (loading) {
     return (
@@ -34,7 +36,7 @@ export default function SubscriptionsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Subscriptions</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {subscriptions.length} active · ${totalMonthly.toFixed(2)}/mo · ${totalAnnual.toFixed(0)}/yr
+          {subscriptions.length} active · {fc(totalMonthly)}/mo · {fc(totalAnnual)}/yr
         </p>
       </div>
       <button
@@ -58,11 +60,11 @@ export default function SubscriptionsPage() {
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-white rounded-2xl border border-gray-100 p-4">
               <div className="text-xs text-gray-400 mb-1">Monthly</div>
-              <div className="text-xl font-bold text-gray-900">${totalMonthly.toFixed(2)}</div>
+              <div className="text-xl font-bold text-gray-900">{fc(totalMonthly)}</div>
             </div>
             <div className="bg-white rounded-2xl border border-gray-100 p-4">
               <div className="text-xs text-gray-400 mb-1">Annual</div>
-              <div className="text-xl font-bold text-gray-900">${totalAnnual.toFixed(0)}</div>
+              <div className="text-xl font-bold text-gray-900">{fc(totalAnnual)}</div>
             </div>
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -74,16 +76,38 @@ export default function SubscriptionsPage() {
                 transition={{ delay: i * 0.06 }}
                 className="flex items-center gap-4 px-5 py-4 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors"
               >
-                <MerchantAvatar name={sub.merchant} color={sub.merchantColor} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-gray-900">{sub.merchant}</div>
+                <div className="relative">
+                  <MerchantAvatar name={sub.merchant} color={sub.merchantColor} />
+                  {sub.confidence != null && sub.confidence < 0.7 && (
+                    <span className="absolute -top-1 -right-1" title="Low confidence detection">
+                      <HelpCircle size={12} className="text-gray-400" />
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0" style={sub.confidence != null && sub.confidence < 0.7 ? { opacity: 0.75 } : undefined}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-900">{sub.merchant}</span>
+                    {sub.priceChange && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); dismissPriceChange(sub.id); }}
+                        className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                          sub.priceChange.change > 0
+                            ? "bg-red-50 text-red-600 border border-red-200"
+                            : "bg-green-50 text-green-600 border border-green-200"
+                        }`}
+                        title="Click to dismiss"
+                      >
+                        {sub.priceChange.change > 0 ? "↑" : "↓"} {fca(sub.priceChange.change)}
+                      </button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 text-xs text-gray-400">
                     {sub.category ?? "—"} · Last: {sub.lastChargedStr ?? "—"}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-bold text-gray-900">
-                    ${sub.amount.toFixed(2)}/{sub.frequency === "yearly" ? "yr" : "mo"}
+                    {fca(sub.amount)}/{sub.frequency === "yearly" ? "yr" : sub.frequency === "semiannual" ? "6mo" : "mo"}
                   </div>
                 </div>
                 <button
@@ -106,12 +130,14 @@ export default function SubscriptionsPage() {
                   const monthly =
                     sub.frequency === "monthly" ? sub.amount
                     : sub.frequency === "yearly" ? sub.amount / 12
+                    : sub.frequency === "semiannual" ? sub.amount / 6
                     : sub.frequency === "quarterly" ? sub.amount / 3
                     : sub.frequency === "weekly" ? sub.amount * 4.33
                     : sub.frequency === "biweekly" ? sub.amount * 2.17
                     : sub.amount;
                   const yearly =
                     sub.frequency === "yearly" ? sub.amount
+                    : sub.frequency === "semiannual" ? sub.amount * 2
                     : sub.frequency === "monthly" ? sub.amount * 12
                     : sub.frequency === "quarterly" ? sub.amount * 4
                     : sub.frequency === "weekly" ? sub.amount * 52
@@ -122,7 +148,7 @@ export default function SubscriptionsPage() {
                     <div key={sub.id}>
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="text-gray-600">{sub.merchant}</span>
-                        <span className="text-gray-500">${yearly.toFixed(2)}/yr</span>
+                        <span className="text-gray-500">{fc(yearly)}/yr</span>
                       </div>
                       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <motion.div

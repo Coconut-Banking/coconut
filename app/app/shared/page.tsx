@@ -21,6 +21,7 @@ import {
   type PersonDetail,
 } from "@/hooks/useGroups";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F"];
 const ACTIVITY_ICONS: Record<string, string> = {
@@ -83,6 +84,7 @@ function AddExpenseModal({
   selectedGroupId: string | null;
   selectedPersonKey: string | null;
 }) {
+  const { format: fc, symbol: currSymbol } = useCurrency();
   const [groupId, setGroupId] = useState<string | null>(selectedGroupId);
   const [personKey, setPersonKey] = useState<string | null>(selectedPersonKey);
   const [desc, setDesc] = useState("");
@@ -202,7 +204,7 @@ function AddExpenseModal({
                 Amount
               </label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg font-medium">$</span>
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg font-medium">{currSymbol}</span>
                 <input
                   value={amount}
                   onChange={(e) => {
@@ -336,13 +338,13 @@ function AddExpenseModal({
                 </div>
                 {splitMode === "custom" && amt > 0 && (
                   <div className="space-y-2 pt-1">
-                    <p className="text-xs text-gray-500">Enter each person&apos;s share (must total ${amt.toFixed(2)})</p>
+                    <p className="text-xs text-gray-500">Enter each person&apos;s share (must total {fc(amt)})</p>
                     {members.map((m, i) => (
                       <div key={m.id} className="flex items-center gap-3">
                         <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
                         <span className="text-sm font-medium w-24 truncate">{m.user_id === user?.id ? "You" : m.display_name}</span>
                         <div className="flex-1 relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{currSymbol}</span>
                             <input
                             value={customShares[m.id] ?? ""}
                             onChange={(e) => setCustomShares((prev) => ({ ...prev, [m.id]: e.target.value }))}
@@ -403,6 +405,7 @@ function SettleModal({
   onRequestPayment: () => void;
   recordSettlement: () => Promise<void>;
 }) {
+  const { format: fc } = useCurrency();
   const [done, setDone] = useState(false);
   const [recording, setRecording] = useState(false);
   const direction = person.balance > 0 ? "owes_you" : "you_owe";
@@ -452,7 +455,7 @@ function SettleModal({
                 direction === "owes_you" ? "text-[#3D8E62]" : "text-red-500"
               }`}
             >
-              ${amount.toFixed(2)}
+              {fc(amount)}
             </div>
             {done ? (
               <motion.div
@@ -506,7 +509,8 @@ function SharedPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user: _user } = useUser();
-  const { linked } = useTransactions();
+  const { linked, loading: txLoading } = useTransactions();
+  const { format: fc, formatAbs: fca } = useCurrency();
   const { summary, loading, error: summaryError, refetch: refetchSummary } = useGroupsSummary();
   const { activity, loading: activityLoading, refetch: refetchActivity } = useRecentActivity(linked);
 
@@ -679,6 +683,17 @@ function SharedPageContent() {
     refetchSummary();
   };
 
+  if (txLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Loading shared expenses...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!showRealUI) {
     return (
       <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
@@ -741,7 +756,7 @@ function SharedPageContent() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate">{a.merchant}</div>
                     <div className="text-xs text-gray-500">
-                      ${a.amount.toFixed(2)} · {(a as { paidByDisplayName?: string }).paidByDisplayName ?? "Someone"} paid · split {a.splitCount} ways
+                      {fc(a.amount)} · {(a as { paidByDisplayName?: string }).paidByDisplayName ?? "Someone"} paid · split {a.splitCount} ways
                     </div>
                   </div>
                 </div>
@@ -761,11 +776,11 @@ function SharedPageContent() {
                     <span className="text-sm">
                       <strong>{s.fromMember?.display_name ?? "?"}</strong> →{" "}
                       <strong>{s.toMember?.display_name ?? "?"}</strong>{" "}
-                      <strong className="text-[#3D8E62]">${s.amount.toFixed(2)}</strong>
+                      <strong className="text-[#3D8E62]">{fc(s.amount)}</strong>
                     </span>
                     <button
                       onClick={() => {
-                        if (window.confirm(`Mark $${s.amount.toFixed(2)} as paid?`)) {
+                        if (window.confirm(`Mark ${fc(s.amount)} as paid?`)) {
                           recordSettlement(s.fromMemberId, s.toMemberId, s.amount, selectedId!, { skipState: true });
                           refetchGroupDetail();
                           refetchSummary();
@@ -848,9 +863,9 @@ function SharedPageContent() {
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{pd.displayName}</h2>
             <p className="text-sm text-gray-500">
               {pd.balance > 0
-                ? `They owe you $${pd.balance.toFixed(2)}`
+                ? `They owe you ${fc(pd.balance)}`
                 : pd.balance < 0
-                  ? `You owe $${Math.abs(pd.balance).toFixed(2)}`
+                  ? `You owe ${fca(pd.balance)}`
                   : "All settled up"}
             </p>
           </div>
@@ -869,7 +884,7 @@ function SharedPageContent() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate">{a.merchant}</div>
                     <div className="text-xs text-gray-500">
-                      ${a.amount.toFixed(2)} · {a.groupName}
+                      {fc(a.amount)} · {a.groupName}
                       {a.effectOnBalance !== 0 && (
                         <span className={a.effectOnBalance > 0 ? "text-[#2D7A52]" : "text-amber-600"}>
                           {" "}
@@ -906,7 +921,7 @@ function SharedPageContent() {
             )}
             <button
               onClick={async () => {
-                if (!window.confirm(`Mark $${Math.abs(pd.balance).toFixed(2)} as paid?`)) return;
+                if (!window.confirm(`Mark ${fca(pd.balance)} as paid?`)) return;
                 setRecordingSettlement(true);
                 try {
                   for (const s of pd.settlements ?? []) {
@@ -1076,11 +1091,11 @@ function SharedPageContent() {
               <p className="text-base text-gray-800">
                 {netBalance > 0 ? (
                   <>
-                    You are owed <span className="text-xl font-bold text-[#3D8E62]">${netBalance.toFixed(2)}</span>
+                    You are owed <span className="text-xl font-bold text-[#3D8E62]">{fc(netBalance)}</span>
                   </>
                 ) : netBalance < 0 ? (
                   <>
-                    You owe <span className="text-xl font-bold text-red-500">${Math.abs(netBalance).toFixed(2)}</span>
+                    You owe <span className="text-xl font-bold text-red-500">{fca(netBalance)}</span>
                   </>
                 ) : (
                   <span className="text-xl font-bold text-gray-700">All settled up</span>
@@ -1090,12 +1105,12 @@ function SharedPageContent() {
             <div className="flex items-center gap-6 text-sm">
               <div className="text-right">
                 <p className="text-xs text-gray-400 mb-0.5">Owed to you</p>
-                <p className="font-bold text-[#3D8E62]">${netOwed.toFixed(2)}</p>
+                <p className="font-bold text-[#3D8E62]">{fc(netOwed)}</p>
               </div>
               <div className="w-px h-8 bg-gray-200 hidden sm:block" />
               <div className="text-right">
                 <p className="text-xs text-gray-400 mb-0.5">You owe</p>
-                <p className="font-bold text-red-500">${netOwing.toFixed(2)}</p>
+                <p className="font-bold text-red-500">{fc(netOwing)}</p>
               </div>
             </div>
           </motion.div>
@@ -1169,13 +1184,13 @@ function SharedPageContent() {
                         {group.direction === "owed" && (
                           <div className="text-right">
                             <p className="text-xs text-gray-400">owed</p>
-                            <p className="text-sm font-bold text-[#3D8E62]">${group.amount.toFixed(2)}</p>
+                            <p className="text-sm font-bold text-[#3D8E62]">{fc(group.amount)}</p>
                           </div>
                         )}
                         {group.direction === "you_owe" && (
                           <div className="text-right">
                             <p className="text-xs text-gray-400">you owe</p>
-                            <p className="text-sm font-bold text-red-500">${group.amount.toFixed(2)}</p>
+                            <p className="text-sm font-bold text-red-500">{fc(group.amount)}</p>
                           </div>
                         )}
                         {group.direction === "settled" && <p className="text-sm text-gray-400">settled up</p>}
@@ -1233,8 +1248,8 @@ function SharedPageContent() {
                               }`}
                             >
                               {item.direction === "get_back"
-                                ? `You get back $${item.amount.toFixed(2)}`
-                                : `You owe $${item.amount.toFixed(2)}`}
+                                ? `You get back ${fc(item.amount)}`
+                                : `You owe ${fc(item.amount)}`}
                             </p>
                           )}
                           <p className="text-[10px] text-gray-400 mt-1">{item.time}</p>
@@ -1342,6 +1357,7 @@ function PersonRow({
   onRemind: () => void;
   onViewDetails: () => void;
 }) {
+  const { format: fc } = useCurrency();
   const breakdown = (() => {
     const byGroup = new Map<string, number>();
     for (const a of personDetail?.activity ?? []) {
@@ -1377,13 +1393,13 @@ function PersonRow({
           {person.direction === "owes_you" && (
             <div className="text-right">
               <p className="text-xs text-gray-400">owes you</p>
-              <p className="text-sm font-bold text-[#3D8E62]">${person.amount.toFixed(2)}</p>
+              <p className="text-sm font-bold text-[#3D8E62]">{fc(person.amount)}</p>
             </div>
           )}
           {person.direction === "you_owe" && (
             <div className="text-right">
               <p className="text-xs text-gray-400">you owe</p>
-              <p className="text-sm font-bold text-red-500">${person.amount.toFixed(2)}</p>
+              <p className="text-sm font-bold text-red-500">{fc(person.amount)}</p>
             </div>
           )}
           {person.direction === "settled" && <p className="text-sm text-gray-400 font-medium">settled up</p>}
@@ -1407,7 +1423,7 @@ function PersonRow({
                     <div key={i} className="flex items-center justify-between text-xs">
                       <span className="text-gray-500">
                         {b.them_owe ? `${person.name} owes you` : `You owe ${person.name}`}{" "}
-                        <span className="text-gray-700 font-medium">${b.amount.toFixed(2)}</span> in{" "}
+                        <span className="text-gray-700 font-medium">{fc(b.amount)}</span> in{" "}
                         <span className="text-gray-700">{b.in}</span>
                       </span>
                     </div>

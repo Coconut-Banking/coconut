@@ -6,6 +6,7 @@ import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle,
 import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
 import { formatCurrency } from "@/lib/currency";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Receipt {
   id: string;
@@ -66,6 +67,7 @@ interface ScanResult {
 function EmailReceiptsContent() {
   const searchParams = useSearchParams();
   const gmail = useGmail();
+  const { currencyCode } = useCurrency();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState<ScanResult | null>(null);
@@ -402,7 +404,7 @@ function EmailReceiptsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500">Total Spent</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalAmount)}</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalAmount, currencyCode)}</p>
               </div>
               <Calendar className="w-8 h-8 text-gray-400" />
             </div>
@@ -463,7 +465,7 @@ function EmailReceiptsContent() {
                       </div>
                       <div className="text-right">
                         <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(receipt.amount)}
+                          {formatCurrency(receipt.amount, currencyCode)}
                         </p>
                         <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
                       </div>
@@ -517,7 +519,7 @@ function EmailReceiptsContent() {
                               <p className="text-xs text-gray-500">Qty: {quantity}</p>
                             </div>
                             <p className="text-sm font-medium text-gray-900">
-                              {formatCurrency(total)}
+                              {formatCurrency(total, currencyCode)}
                             </p>
                           </div>
                         );
@@ -527,7 +529,7 @@ function EmailReceiptsContent() {
                       <div className="flex justify-between">
                         <p className="text-lg font-semibold text-gray-900">Total</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(selectedReceipt.amount)}
+                          {formatCurrency(selectedReceipt.amount, currencyCode)}
                         </p>
                       </div>
                     </div>
@@ -540,7 +542,7 @@ function EmailReceiptsContent() {
                       <div className="flex justify-between">
                         <p className="text-lg font-semibold text-gray-900">Total</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(selectedReceipt.amount)}
+                          {formatCurrency(selectedReceipt.amount, currencyCode)}
                         </p>
                       </div>
                     </div>
