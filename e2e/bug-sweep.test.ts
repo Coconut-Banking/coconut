@@ -243,11 +243,13 @@ test.describe('Coconut App Bug Sweep', () => {
   });
 
   test.afterAll(async () => {
-    // Write bugs to file
-    const bugReportPath = '/Users/koushik/github/coconut/BUG_REPORT.md';
-    let content = fs.readFileSync(bugReportPath, 'utf-8');
-    
-    // Append bugs to table
+    const bugReportPath = path.join(process.cwd(), 'BUG_REPORT.md');
+    let content = '';
+    try {
+      content = fs.readFileSync(bugReportPath, 'utf-8');
+    } catch {
+      content = '| # | Page | Description | Severity | Observation |\n';
+    }
     for (const bug of bugs) {
       const row = `| ${bug.number} | ${bug.page} | ${bug.description} | ${bug.severity} | ${bug.observation} |\n`;
       content += row;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye } from "lucide-react";
 import { motion } from "motion/react";
@@ -9,6 +10,7 @@ import { useGmail } from "@/hooks/useGmail";
 import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
 import { useCurrency } from "@/hooks/useCurrency";
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
+import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
 
 const sections = [
   { id: "profile", label: "Profile", icon: User },
@@ -30,6 +32,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { linked, syncAndRefetch } = useTransactions();
   const gmail = useGmail();
+  const { needsReauth, newAccountsAvailable, refetch: refetchAlerts } = usePlaidAlerts();
   const { hide, unhide, isHidden } = useHiddenAccounts();
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
@@ -76,8 +79,7 @@ export default function SettingsPage() {
 
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsError(null);
-    const url = forceRefresh ? "/api/plaid/accounts?refresh=1" : "/api/plaid/accounts";
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(`/api/plaid/accounts?t=${Date.now()}`, { cache: "no-store", credentials: "include" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setAccountsError(body.error ?? `Failed to load accounts (${res.status})`);
@@ -103,11 +105,11 @@ export default function SettingsPage() {
     }
   };
 
+  // Fetch accounts on mount and when linked changes. Also fetch when linked=false as fallback
+  // (status can be stale/wrong; accounts API is source of truth for "has bank")
   useEffect(() => {
-    // Always attempt to fetch accounts — don't wait for `linked` which resolves async
-    // and can cause connected banks to not show up. The API returns 401 if no tokens.
     fetchAccounts();
-  }, []);
+  }, [linked]);
 
   const banks = (Array.isArray(plaidAccounts?.accounts) ? plaidAccounts.accounts : []).map((a) => ({
     id: (a as { id?: string }).id ?? a.account_id,
@@ -304,20 +306,22 @@ export default function SettingsPage() {
                             </button>
                           )}
                         </div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const r = await fetch("/api/plaid/debug");
-                              const d = await r.json();
-                              alert(JSON.stringify(d, null, 2));
-                            } catch {
-                              alert("Debug fetch failed");
-                            }
-                          }}
-                          className="mt-2 text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          Show debug info
-                        </button>
+                        {process.env.NODE_ENV !== "production" && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const r = await fetch("/api/plaid/debug");
+                                const d = await r.json();
+                                alert(JSON.stringify(d, null, 2));
+                              } catch {
+                                alert("Debug fetch failed");
+                              }
+                            }}
+                            className="mt-2 text-xs text-gray-400 hover:text-gray-600"
+                          >
+                            Show debug info
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <>
@@ -370,6 +374,25 @@ export default function SettingsPage() {
                           </div>
                         )}
                         <div className="pt-2 space-y-2">
+                          {newAccountsAvailable && (
+                            <Link
+                              href="/connect?update=1&new_accounts=1"
+                              className="block w-full text-sm text-[#3D8E62] hover:text-[#2D7A52] px-4 py-3 border border-[#C3E0D3] rounded-xl hover:bg-[#EEF7F2] transition-colors text-center"
+                              onClick={() => refetchAlerts()}
+                            >
+                              Add new accounts from your bank
+                            </Link>
+                          )}
+                          <Link
+                            href="/connect?update=1"
+                            className={`block w-full text-sm px-4 py-3 border rounded-xl transition-colors text-center ${
+                              needsReauth
+                                ? "font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-200"
+                                : "text-[#3D8E62] hover:text-[#2D7A52] border-[#C3E0D3] hover:bg-[#EEF7F2]"
+                            }`}
+                          >
+                            {needsReauth ? "Fix connection (re-auth at bank) — required" : "Fix connection (re-auth at bank)"}
+                          </Link>
                           <button
                             onClick={disconnectBank}
                             disabled={disconnecting || wiping}

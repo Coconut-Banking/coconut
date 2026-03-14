@@ -7,12 +7,19 @@ const isPublicRoute = createRouteMatcher([
   "/connect(.*)",
   "/auth(.*)",
   "/api/stripe/webhook",
+  "/api/plaid/webhook",
+  "/api/webhooks(.*)",
   "/api/gmail/callback",
   "/api/demo",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
   const path = req.nextUrl.pathname;
+
+  // Dev-only pages: redirect to dashboard in production
+  if (process.env.NODE_ENV === "production" && path === "/app/test-gmail") {
+    return NextResponse.redirect(new URL("/app/dashboard", req.url), 302);
+  }
 
   // Dedicated app entry: /connect-from-app always redirects to login (no caching, no race)
   if (path === "/connect-from-app") {
@@ -35,6 +42,11 @@ export default clerkMiddleware(async (auth, req) => {
   }
 
   if (isPublicRoute(req)) return;
+
+  // Bypass Clerk auth when CLERK_DISABLED=true (e.g. debugging user ID / Plaid issues)
+  if (process.env.CLERK_DISABLED === "true") {
+    return NextResponse.next();
+  }
 
   const { isAuthenticated } = await auth();
   if (!isAuthenticated) {

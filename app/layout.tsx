@@ -5,6 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Coconut — Personal finance with AI",
   description: "Rocket Money–style visibility, semantic search, and AI to learn from your data.",
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({

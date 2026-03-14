@@ -68,28 +68,3 @@ async function fetchTransactions(
     error: error ? { message: error.message } : null,
   };
 }
-
-export async function getCachedSplitTransactionIds(
-  opts?: { bypassCache?: boolean }
-): Promise<Set<string>> {
-  if (opts?.bypassCache) {
-    return fetchSplitTransactionIds();
-  }
-
-  const result = await unstable_cache(
-    () => fetchSplitTransactionIds(),
-    ["split_transaction_ids"],
-    {
-      tags: [CACHE_TAGS.splitTransactions],
-      revalidate: CACHE.SPLIT_IDS_REVALIDATE_SEC,
-    }
-  )();
-
-  return result;
-}
-
-async function fetchSplitTransactionIds(): Promise<Set<string>> {
-  const db = getSupabase();
-  const { data } = await db.from("split_transactions").select("transaction_id");
-  return new Set((data ?? []).map((r) => r.transaction_id as string));
-}

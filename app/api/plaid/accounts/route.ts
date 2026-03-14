@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
 import { getEffectiveUserId } from "@/lib/demo";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getAllPlaidTokensForUser } from "@/lib/transaction-sync";
+import { getAccountsFromTransactionIds } from "@/lib/accounts-for-user";
 
 type AccountRow = {
   account_id: string;
@@ -55,49 +58,105 @@ async function deduplicateAccounts(
   return result;
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
-
   try {
+    // Serve from Supabase cache first
     const db = getSupabase();
+    const { data: cached } = await db
+      .from("accounts")
+      .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+      .eq("clerk_user_id", effectiveUserId);
 
-    // When refresh=1, bypass cache and fetch live from Plaid (fixes newly connected banks not showing)
-    if (!forceRefresh) {
-      const { data: cached } = await db
-        .from("accounts")
-        .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
-        .eq("clerk_user_id", effectiveUserId);
-
-      if (cached && cached.length > 0) {
-        const accounts = cached.map((acc) => {
-          const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
-          return {
-            account_id: row.plaid_account_id,
-            id: row.id,
-            name: row.name,
-            type: row.type,
-            subtype: row.subtype,
-            mask: row.mask,
-            balance_current: row.balance_current ?? null,
-            balance_available: row.balance_available ?? null,
-            iso_currency_code: row.iso_currency_code ?? "USD",
-          };
-        });
-        const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
-        return NextResponse.json(
-          { accounts: deduped },
-          { headers: { "Cache-Control": "no-store, max-age=0" } }
-        );
-      }
+    if (cached && cached.length > 0) {
+      const accounts = cached.map((acc) => {
+        const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
+        return {
+          account_id: row.plaid_account_id,
+          id: row.id,
+          name: row.name,
+          type: row.type,
+          subtype: row.subtype,
+          mask: row.mask,
+          balance_current: row.balance_current ?? null,
+          balance_available: row.balance_available ?? null,
+          iso_currency_code: row.iso_currency_code ?? "USD",
+        };
+      });
+      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
     }
 
-    // Fetch live from Plaid (all connected banks)
+    // Fallback: accounts table empty but we may have tokens. Sync to populate accounts, then fetch from Plaid.
     const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
     if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
+    // One-time sync to ensure accounts table is populated (fixes "No accounts found" when transactions exist)
+    try {
+      const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
+      await syncTransactionsForUser(effectiveUserId);
+    } catch (e) {
+      console.warn("[plaid][accounts] sync to populate accounts failed:", e instanceof Error ? e.message : e);
+    }
+
+    // Re-check DB after sync (sync populates accounts)
+    const { data: afterSync } = await db
+      .from("accounts")
+      .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+      .eq("clerk_user_id", effectiveUserId);
+    if (afterSync && afterSync.length > 0) {
+      const accounts = afterSync.map((acc) => {
+        const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
+        return {
+          account_id: row.plaid_account_id,
+          id: row.id,
+          name: row.name,
+          type: row.type,
+          subtype: row.subtype,
+          mask: row.mask,
+          balance_current: row.balance_current ?? null,
+          balance_available: row.balance_available ?? null,
+          iso_currency_code: row.iso_currency_code ?? "USD",
+        };
+      });
+      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
+    // Fallback: get accounts via transaction account_ids (fixes clerk_user_id mismatch or stale data)
+    const { data: txWithAcct } = await db
+      .from("transactions")
+      .select("account_id")
+      .eq("clerk_user_id", effectiveUserId)
+      .not("account_id", "is", null)
+      .limit(500);
+    const fallbackAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
+    if (fallbackAccounts && fallbackAccounts.length > 0) {
+      // Backfill: fix clerk_user_id on accounts so future requests hit primary path
+      const acctIds = fallbackAccounts.map((a) => a.id).filter(Boolean);
+      if (acctIds.length > 0) {
+        try {
+          await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
+        } catch (e) {
+          console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
+        }
+      }
+      const deduped = await deduplicateAccounts(db, effectiveUserId, fallbackAccounts as unknown as AccountRow[]);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
+    // Last resort: fetch live from Plaid and upsert
     const client = getPlaidClient();
     if (!client) return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
 
@@ -124,7 +183,7 @@ export async function GET(request: NextRequest) {
       await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
     }
     const { data: updated } = await db.from("accounts").select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", effectiveUserId);
-    const accounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
+    const plaidAccounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
       account_id: String(row.plaid_account_id ?? ""),
       id: String(row.id ?? ""),
       name: String(row.name ?? ""),
@@ -135,7 +194,7 @@ export async function GET(request: NextRequest) {
       balance_available: (row.balance_available as number | null) ?? null,
       iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
-    const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+    const deduped = await deduplicateAccounts(db, effectiveUserId, plaidAccounts);
     return NextResponse.json(
       { accounts: deduped },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
