@@ -91,10 +91,46 @@ export async function GET() {
       );
     }
 
-    // Fallback: fetch live from Plaid (all connected banks)
+    // Fallback: accounts table empty but we may have tokens. Sync to populate accounts, then fetch from Plaid.
     const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
     if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
+    // One-time sync to ensure accounts table is populated (fixes "No accounts found" when transactions exist)
+    try {
+      const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
+      await syncTransactionsForUser(effectiveUserId);
+    } catch (e) {
+      console.warn("[plaid][accounts] sync to populate accounts failed:", e instanceof Error ? e.message : e);
+    }
+
+    // Re-check DB after sync (sync populates accounts)
+    const { data: afterSync } = await db
+      .from("accounts")
+      .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+      .eq("clerk_user_id", effectiveUserId);
+    if (afterSync && afterSync.length > 0) {
+      const accounts = afterSync.map((acc) => {
+        const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
+        return {
+          account_id: row.plaid_account_id,
+          id: row.id,
+          name: row.name,
+          type: row.type,
+          subtype: row.subtype,
+          mask: row.mask,
+          balance_current: row.balance_current ?? null,
+          balance_available: row.balance_available ?? null,
+          iso_currency_code: row.iso_currency_code ?? "USD",
+        };
+      });
+      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
+    // Still empty: fetch live from Plaid and upsert
     const client = getPlaidClient();
     if (!client) return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
 
