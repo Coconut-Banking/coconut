@@ -70,10 +70,13 @@ export async function GET(request: NextRequest) {
     });
 
     // Actually delete duplicate rows from Supabase (first occurrence stays)
-    // Don't delete tx that are in splits — they're referenced by split_transactions
-    // Direct fetch to avoid unstable_cache Set serialization (d.has is not a function)
+    // Don't delete tx that are in splits or email_receipts — they're referenced by FK
     const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-    const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
+    const { data: inReceipts } = await db.from("email_receipts").select("transaction_id").not("transaction_id", "is", null);
+    const protectedIds = new Set([
+      ...(inSplits ?? []).map((r) => r.transaction_id as string),
+      ...(inReceipts ?? []).map((r) => r.transaction_id as string),
+    ].filter(Boolean));
     const idsToDelete = bankOnly
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
@@ -176,8 +179,6 @@ export async function POST() {
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const db = getSupabase();
-
     // Sync first, THEN clear stale data only if sync succeeds.
     // Previously we cleared before sync, which destroyed data when Plaid tokens failed.
     const { syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } = await import("@/lib/transaction-sync");

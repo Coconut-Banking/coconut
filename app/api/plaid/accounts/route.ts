@@ -97,11 +97,36 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fallback: accounts table empty or refresh=1 — sync and fetch from Plaid.
+    // Try transaction-based lookup FIRST — transactions have account_id; fetch those accounts directly.
+    // Fixes "no accounts" when accounts.clerk_user_id is wrong or not set (e.g. multi-bank migration).
+    const { data: txWithAcct } = await db
+      .from("transactions")
+      .select("account_id")
+      .eq("clerk_user_id", effectiveUserId)
+      .not("account_id", "is", null)
+      .limit(500);
+    const txAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
+    if (txAccounts && txAccounts.length > 0) {
+      const acctIds = txAccounts.map((a) => a.id).filter(Boolean);
+      if (acctIds.length > 0) {
+        try {
+          await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
+        } catch (e) {
+          console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
+        }
+      }
+      const deduped = await deduplicateAccounts(db, effectiveUserId, txAccounts as unknown as AccountRow[]);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
+    // Sync and fetch from Plaid.
     const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
     if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
-    // One-time sync to ensure accounts table is populated (fixes "No accounts found" when transactions exist)
+    // One-time sync to ensure accounts table is populated
     try {
       const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
       await syncTransactionsForUser(effectiveUserId);
@@ -130,31 +155,6 @@ export async function GET(request: NextRequest) {
         };
       });
       const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
-      return NextResponse.json(
-        { accounts: deduped },
-        { headers: { "Cache-Control": "no-store, max-age=0" } }
-      );
-    }
-
-    // Fallback: get accounts via transaction account_ids (fixes clerk_user_id mismatch or stale data)
-    const { data: txWithAcct } = await db
-      .from("transactions")
-      .select("account_id")
-      .eq("clerk_user_id", effectiveUserId)
-      .not("account_id", "is", null)
-      .limit(500);
-    const txAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
-    if (txAccounts && txAccounts.length > 0) {
-      // Backfill: fix clerk_user_id on accounts so future requests hit primary path
-      const acctIds = txAccounts.map((a) => a.id).filter(Boolean);
-      if (acctIds.length > 0) {
-        try {
-          await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
-        } catch (e) {
-          console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
-        }
-      }
-      const deduped = await deduplicateAccounts(db, effectiveUserId, txAccounts as unknown as AccountRow[]);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }

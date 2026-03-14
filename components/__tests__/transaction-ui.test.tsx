@@ -19,6 +19,32 @@ describe("AmountDisplay", () => {
     const { container } = render(<AmountDisplay amount={10} className="text-xl" />);
     expect(container.querySelector("span")?.className).toContain("text-xl");
   });
+
+  it("shows green + for credit card payment (TRANSFER_OUT)", () => {
+    const { container } = render(
+      <AmountDisplay
+        amount={-150}
+        category="Transfer Out"
+        merchant="CREDIT CARD PAYMENT"
+        rawDescription="Payment to Chase"
+      />
+    );
+    expect(container.textContent).toBe("+$150.00");
+    expect(container.querySelector("span")?.className).toContain("emerald");
+  });
+
+  it("shows - for Zelle/Venmo TRANSFER_OUT (P2P send)", () => {
+    const { container } = render(
+      <AmountDisplay
+        amount={376}
+        category="Transfer Out"
+        merchant="Zelle to Aaron Real"
+        rawDescription="Zelle payment"
+      />
+    );
+    expect(container.textContent).toBe("-$376.00");
+    expect(container.querySelector("span")?.className).toContain("gray");
+  });
 });
 
 describe("MerchantLogo", () => {
