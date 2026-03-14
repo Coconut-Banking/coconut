@@ -3,10 +3,11 @@
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X, ExternalLink } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
-import { formatCurrency } from "@/lib/currency";
-import { useCurrency } from "@/hooks/useCurrency";
+import { formatCurrency, convertCurrency } from "@/lib/currency";
+import { useCurrency, useCompactView } from "@/hooks/useCurrency";
 
 interface Receipt {
   id: string;
@@ -68,6 +69,7 @@ function EmailReceiptsContent() {
   const searchParams = useSearchParams();
   const gmail = useGmail();
   const { currencyCode } = useCurrency();
+  const { compact: compactView } = useCompactView();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState<ScanResult | null>(null);
@@ -175,7 +177,10 @@ function EmailReceiptsContent() {
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [receipts, filter, datePreset, customStart, customEnd]);
 
-  const totalAmount = filteredReceipts.reduce((sum, r) => sum + r.amount, 0);
+  const totalAmount = filteredReceipts.reduce((sum, r) => {
+    const amt = r.currency && r.currency !== currencyCode ? convertCurrency(r.amount, r.currency, currencyCode) : r.amount;
+    return sum + amt;
+  }, 0);
 
   const activePresetLabel = DATE_PRESETS.find((p) => p.value === datePreset)?.label ?? "All Time";
 
@@ -422,10 +427,9 @@ function EmailReceiptsContent() {
           </div>
         </div>
 
-        {/* Receipts List */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-gray-700">Recent Receipts</h3>
+        {/* Receipts List — full width when detail opens in modal */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-gray-700">Recent Receipts</h3>
             {filteredReceipts.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-100 p-8 text-center">
                 <p className="text-sm text-gray-500">
@@ -444,28 +448,33 @@ function EmailReceiptsContent() {
                       selectedReceipt?.id === receipt.id
                         ? "border-[#3D8E62] ring-2 ring-[#3D8E62]/20"
                         : "border-gray-100 hover:border-gray-200"
-                    } p-4 cursor-pointer transition-all`}
+                    } cursor-pointer transition-all ${compactView ? "p-3" : "p-4"}`}
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-semibold text-gray-900">{receipt.merchant}</h4>
+                        <div className={`flex items-center gap-2 ${compactView ? "mb-0.5" : "mb-1"}`}>
+                          <h4 className={`font-semibold text-gray-900 ${compactView ? "text-sm" : ""}`}>{receipt.merchant}</h4>
                           {receipt.transaction_id && (
                             <span className="px-2 py-0.5 bg-[#EEF7F2] text-[#3D8E62] text-xs rounded-full font-medium">
                               Matched
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-500 line-clamp-1">{receipt.raw_subject}</p>
-                        <p className="text-xs text-gray-400 mt-1">
+                        <p className={`text-gray-500 line-clamp-1 ${compactView ? "text-xs" : "text-sm"}`}>{receipt.raw_subject}</p>
+                        <p className={`text-gray-400 ${compactView ? "text-[10px] mt-0.5" : "text-xs mt-1"}`}>
                           {new Date(receipt.date).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(receipt.amount, currencyCode)}
+                        <p className={`font-bold text-gray-900 ${compactView ? "text-base" : "text-lg"}`}>
+                          {formatCurrency(
+                            receipt.currency && receipt.currency !== currencyCode
+                              ? convertCurrency(receipt.amount, receipt.currency, currencyCode)
+                              : receipt.amount,
+                            currencyCode
+                          )}
                         </p>
                         <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
                       </div>
@@ -474,14 +483,38 @@ function EmailReceiptsContent() {
                 ))}
               </div>
             )}
-          </div>
+        </div>
 
-          {/* Receipt Details */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-gray-700">Receipt Details</h3>
-            {selectedReceipt ? (
-              <div className="bg-white rounded-xl border border-gray-100 p-6">
-                <div className="mb-6">
+        {/* Receipt Detail Modal — overlays content, no scroll jump */}
+        <AnimatePresence>
+          {selectedReceipt && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedReceipt(null)}
+                className="fixed inset-0 bg-black/30 z-40"
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="fixed inset-4 sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-lg sm:max-h-[85vh] bg-white rounded-2xl shadow-xl z-50 flex flex-col overflow-hidden"
+              >
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+                  <h3 className="text-sm font-semibold text-gray-900">Receipt Details</h3>
+                  <button
+                    onClick={() => setSelectedReceipt(null)}
+                    aria-label="Close"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6">
+                  <div className="mb-6">
                   <h4 className="text-xl font-bold text-gray-900">{selectedReceipt.merchant}</h4>
                   <p className="text-sm text-gray-500 mt-1">{selectedReceipt.raw_subject}</p>
                   <p className="text-xs text-gray-400 mt-2">
@@ -519,7 +552,12 @@ function EmailReceiptsContent() {
                               <p className="text-xs text-gray-500">Qty: {quantity}</p>
                             </div>
                             <p className="text-sm font-medium text-gray-900">
-                              {formatCurrency(total, currencyCode)}
+                              {formatCurrency(
+                                selectedReceipt.currency && selectedReceipt.currency !== currencyCode
+                                  ? convertCurrency(total, selectedReceipt.currency, currencyCode)
+                                  : total,
+                                currencyCode
+                              )}
                             </p>
                           </div>
                         );
@@ -529,7 +567,12 @@ function EmailReceiptsContent() {
                       <div className="flex justify-between">
                         <p className="text-lg font-semibold text-gray-900">Total</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(selectedReceipt.amount, currencyCode)}
+                          {formatCurrency(
+                            selectedReceipt.currency && selectedReceipt.currency !== currencyCode
+                              ? convertCurrency(selectedReceipt.amount, selectedReceipt.currency, currencyCode)
+                              : selectedReceipt.amount,
+                            currencyCode
+                          )}
                         </p>
                       </div>
                     </div>
@@ -542,21 +585,22 @@ function EmailReceiptsContent() {
                       <div className="flex justify-between">
                         <p className="text-lg font-semibold text-gray-900">Total</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(selectedReceipt.amount, currencyCode)}
+                          {formatCurrency(
+                            selectedReceipt.currency && selectedReceipt.currency !== currencyCode
+                              ? convertCurrency(selectedReceipt.amount, selectedReceipt.currency, currencyCode)
+                              : selectedReceipt.amount,
+                            currencyCode
+                          )}
                         </p>
                       </div>
                     </div>
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-                <Mail className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-sm text-gray-500">Select a receipt to view details</p>
-              </div>
-            )}
-          </div>
-        </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

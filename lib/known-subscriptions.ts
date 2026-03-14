@@ -13,7 +13,7 @@ export interface KnownSubscription {
 
 export const KNOWN_SUBSCRIPTIONS: KnownSubscription[] = [
   // ── Streaming Video ───────────────────────────────────────────────────────
-  { patterns: ["netflix"], name: "Netflix", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
+  { patterns: ["netflix", "netflix.com"], name: "Netflix", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
   { patterns: ["hulu"], name: "Hulu", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
   { patterns: ["disney+", "disney plus", "disneyplus"], name: "Disney+", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
   { patterns: ["hbo max", "hbomax", "max.com"], name: "Max (HBO)", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
@@ -141,7 +141,7 @@ export const KNOWN_SUBSCRIPTIONS: KnownSubscription[] = [
   { patterns: ["whoop"], name: "WHOOP", defaultFrequency: "monthly", category: "RECREATION" },
 
   // ── Delivery / Memberships ────────────────────────────────────────────────
-  { patterns: ["amazon prime", "amzn prime", "prime membership"], name: "Amazon Prime", defaultFrequency: "monthly", category: "SHOPPING" },
+  { patterns: ["amazon prime", "amzn prime", "prime membership", "amzn mktp", "amzn digital"], name: "Amazon Prime", defaultFrequency: "monthly", category: "SHOPPING" },
   { patterns: ["instacart", "instacart+"], name: "Instacart+", defaultFrequency: "monthly", category: "FOOD_AND_DRINK" },
   { patterns: ["doordash", "dashpass"], name: "DoorDash DashPass", defaultFrequency: "monthly", category: "FOOD_AND_DRINK" },
   { patterns: ["uber one", "uber pass", "uber eats pass"], name: "Uber One", defaultFrequency: "monthly", category: "FOOD_AND_DRINK" },

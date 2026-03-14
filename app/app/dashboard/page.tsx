@@ -383,7 +383,7 @@ export default function DashboardPage() {
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${tx.categoryColor}`}>{tx.category}</span>
               </div>
               <div className="text-right shrink-0">
-                <AmountDisplay amount={tx.amount} className="text-sm" currencyCode={currencyCode} />
+                <AmountDisplay amount={tx.amount} className="text-sm" currencyCode={currencyCode} isoCurrencyCode={tx.isoCurrencyCode} />
                 <div className="text-xs text-gray-400">{tx.dateStr}</div>
               </div>
             </motion.div>

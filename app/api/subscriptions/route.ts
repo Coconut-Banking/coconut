@@ -74,6 +74,13 @@ export async function POST(req: Request) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ added: true });
     }
+    // Sync transactions first so we have fresh data for detection
+    try {
+      const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
+      await syncTransactionsForUser(userId);
+    } catch (e) {
+      console.warn("[subscriptions] pre-detect sync failed:", e instanceof Error ? e.message : e);
+    }
     const removed = await deleteExcludedSubscriptions(userId);
     const detected = await detectSubscriptionsForUser(userId);
     await saveDetectedSubscriptions(userId, detected);

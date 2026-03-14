@@ -19,7 +19,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAccounts } from "@/hooks/useAccounts";
-import { useCurrency } from "@/hooks/useCurrency";
+import { useCurrency, useCompactView } from "@/hooks/useCurrency";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
 import { useNLSearch } from "@/hooks/useNLSearch";
@@ -210,7 +210,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
               <div className="flex-1">
                 <h2 className="text-lg font-bold text-gray-900">{tx.merchant}</h2>
                 <div className="text-2xl font-bold mt-1">
-                  <AmountDisplay amount={tx.amount} className="text-2xl" currencyCode={currencyCode} />
+                  <AmountDisplay amount={tx.amount} className="text-2xl" currencyCode={currencyCode} isoCurrencyCode={tx.isoCurrencyCode} />
                 </div>
                 <div className="text-sm text-gray-500 mt-0.5">{tx.dateStr}</div>
               </div>
@@ -540,6 +540,7 @@ function TxRow({
   setExpandedId,
   onSelect,
   currencyCode,
+  compactView,
 }: {
   tx: UITransaction;
   index: number;
@@ -547,6 +548,7 @@ function TxRow({
   setExpandedId: (id: string | null) => void;
   onSelect: () => void;
   currencyCode?: string;
+  compactView?: boolean;
 }) {
   return (
     <div>
@@ -554,13 +556,13 @@ function TxRow({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: index * 0.03 }}
-        className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
+        className={`flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0 ${compactView ? "px-4 py-2" : "px-5 py-3.5"}`}
         onClick={onSelect}
       >
         <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
+          <div className={`flex items-center gap-2 ${compactView ? "mb-0" : "mb-0.5"}`}>
+            <span className={`font-medium text-gray-900 ${compactView ? "text-xs" : "text-sm"}`}>{tx.merchant}</span>
             {tx.isRecurring && <RefreshCw size={11} className="text-gray-300" />}
             {tx.hasSplitSuggestion && (
               <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-2 py-0.5 rounded-full">
@@ -570,12 +572,12 @@ function TxRow({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${tx.categoryColor}`}>{tx.category}</span>
-            <span className="text-xs text-gray-400">{tx.dateStr}</span>
+            <span className={`px-2 py-0.5 rounded-full ${tx.categoryColor} ${compactView ? "text-[10px]" : "text-xs"}`}>{tx.category}</span>
+            <span className={`text-gray-400 ${compactView ? "text-[10px]" : "text-xs"}`}>{tx.dateStr}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <AmountDisplay amount={tx.amount} className="text-sm" currencyCode={currencyCode} />
+          <AmountDisplay amount={tx.amount} className="text-sm" currencyCode={currencyCode} isoCurrencyCode={tx.isoCurrencyCode} />
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -664,6 +666,7 @@ function TransactionsPageContent() {
   const { transactions, linked, loading, syncAndRefetch } = useTransactions();
   const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
   const { currencyCode, format: fc, symbol: currSymbol } = useCurrency();
+  const { compact: compactView } = useCompactView();
   const { isHidden, hidden: hiddenIds } = useHiddenAccounts();
   const [accountFilter, setAccountFilter] = useState<"spending" | "all">("spending");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -1084,7 +1087,7 @@ function TransactionsPageContent() {
               <>
                 {pendingTx.length > 0 && (
                   <div className="border-b border-gray-100">
-                    <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-100 text-xs font-semibold text-amber-800">
+                    <div className={`bg-amber-50 border-b border-amber-100 text-xs font-semibold text-amber-800 ${compactView ? "px-4 py-1.5" : "px-5 py-2.5"}`}>
                       Pending
                     </div>
                     {pendingTx.map((tx, i) => (
@@ -1096,13 +1099,14 @@ function TransactionsPageContent() {
                         setExpandedId={setExpandedId}
                         onSelect={() => setSelectedTx(tx)}
                         currencyCode={currencyCode}
+                        compactView={compactView}
                       />
                     ))}
                   </div>
                 )}
                 {postedTx.length > 0 && (
                   <div>
-                    <div className="px-5 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-600">
+                    <div className={`bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-600 ${compactView ? "px-4 py-1.5" : "px-5 py-2.5"}`}>
                       Posted
                     </div>
                     {postedTx.map((tx, i) => (
@@ -1114,6 +1118,7 @@ function TransactionsPageContent() {
                         setExpandedId={setExpandedId}
                         onSelect={() => setSelectedTx(tx)}
                         currencyCode={currencyCode}
+                        compactView={compactView}
                       />
                     ))}
                   </div>

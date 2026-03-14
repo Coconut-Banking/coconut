@@ -57,3 +57,32 @@ export function getCurrencySymbol(currencyCode: string = DEFAULT_CURRENCY_CODE):
   const info = SUPPORTED_CURRENCIES.find((c) => c.code === currencyCode);
   return info?.symbol ?? "$";
 }
+
+/** Static rates to USD (1 unit of currency = X USD). Approximate for display conversion. */
+const RATES_TO_USD: Record<string, number> = {
+  USD: 1,
+  CAD: 0.74,
+  EUR: 1.08,
+  GBP: 1.27,
+  JPY: 0.0067,
+  AUD: 0.65,
+  CHF: 1.12,
+  CNY: 0.14,
+  INR: 0.012,
+  MXN: 0.058,
+};
+
+/** Convert amount from source currency to display currency. Returns original amount if conversion not available. */
+export function convertCurrency(
+  amount: number,
+  fromCurrency: string,
+  toCurrency: string
+): number {
+  const from = (fromCurrency || "USD").toUpperCase();
+  const to = (toCurrency || "USD").toUpperCase();
+  if (from === to) return amount;
+  const fromRate = RATES_TO_USD[from] ?? 1;
+  const toRate = RATES_TO_USD[to] ?? 1;
+  const usdAmount = amount * fromRate;
+  return usdAmount / toRate;
+}

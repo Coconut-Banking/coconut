@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye } from "lucide-react";
@@ -8,7 +8,7 @@ import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGmail } from "@/hooks/useGmail";
 import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
-import { useCurrency } from "@/hooks/useCurrency";
+import { useCurrency, useCompactView } from "@/hooks/useCurrency";
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
 
@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const { currencyCode: currency, setCurrency } = useCurrency();
+  const { compact: compactView, setCompact: setCompactView } = useCompactView();
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [twoFA, setTwoFA] = useState(true);
@@ -41,6 +42,7 @@ export default function SettingsPage() {
   const [accountsRefreshing, setAccountsRefreshing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [wiping, setWiping] = useState(false);
+  const retriedAccountsRef = useRef(false);
 
   const disconnectBank = async () => {
     if (!confirm("Disconnect your bank? You can reconnect anytime to get real transactions.")) return;
@@ -106,8 +108,8 @@ export default function SettingsPage() {
     }
   };
 
-  // Fetch accounts on mount and when linked changes. Also fetch when linked=false as fallback
-  // (status can be stale/wrong; accounts API is source of truth for "has bank")
+  // Fetch accounts on mount and when linked changes. When linked but empty, retry with refresh=1
+  // to ensure sync runs (fixes "No accounts found" when bank is connected but cache is stale).
   useEffect(() => {
     fetchAccounts();
   }, [linked]);
@@ -121,6 +123,20 @@ export default function SettingsPage() {
   }));
   const visibleBanks = banks.filter((b) => !isHidden(b.id));
   const hiddenBanks = banks.filter((b) => isHidden(b.id));
+
+  // When linked and accounts empty, retry once with refresh=1 to run full sync path
+  useEffect(() => {
+    if (
+      linked &&
+      banks.length === 0 &&
+      !plaidAccounts?.accounts?.length &&
+      !accountsRefreshing &&
+      !retriedAccountsRef.current
+    ) {
+      retriedAccountsRef.current = true;
+      fetchAccounts(true);
+    }
+  }, [linked, banks.length, plaidAccounts?.accounts?.length, accountsRefreshing]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -185,8 +201,25 @@ export default function SettingsPage() {
                       </div>
                     )}
                     <div>
-                      <span className="text-sm text-gray-400 font-medium cursor-default">Change photo</span>
-                      <p className="text-xs text-gray-400 mt-0.5">Coming soon</p>
+                      <label className="text-sm font-medium text-[#3D8E62] hover:text-[#2D7A52] cursor-pointer">
+                        Change photo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file || !user) return;
+                            try {
+                              await user.setProfileImage({ file });
+                              e.target.value = "";
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : "Failed to update photo");
+                            }
+                          }}
+                        />
+                      </label>
+                      <p className="text-xs text-gray-400 mt-0.5">JPG, PNG or GIF. Max 5MB.</p>
                     </div>
                   </div>
                   <div className="space-y-4">
@@ -220,6 +253,21 @@ export default function SettingsPage() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                      <div>
+                        <div className="text-sm font-medium text-gray-800">Compact view</div>
+                        <div className="text-xs text-gray-400 mt-0.5">Show more items per screen in transactions and receipts</div>
+                      </div>
+                      <label className="relative inline-flex cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={compactView}
+                          onChange={(e) => setCompactView(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#3D8E62] rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                      </label>
                     </div>
                     <button
                       onClick={handleSave}
