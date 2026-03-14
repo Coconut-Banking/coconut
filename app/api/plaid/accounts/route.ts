@@ -86,13 +86,18 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getSupabase();
+    const baseSelect = "id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code";
 
     // When refresh=1, bypass cache to fetch live (fixes newly connected banks not showing)
     if (!forceRefresh) {
-      const { data: cached } = await db
+      let { data: cached, error: cachedErr } = await db
         .from("accounts")
-        .select("id, plaid_account_id, plaid_item_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+        .select(`${baseSelect}, plaid_item_id`)
         .eq("clerk_user_id", effectiveUserId);
+      if (cachedErr && /plaid_item_id|does not exist/i.test(cachedErr.message)) {
+        const fallback = await db.from("accounts").select(baseSelect).eq("clerk_user_id", effectiveUserId);
+        cached = (fallback.data ?? []).map((r) => Object.assign({}, r, { plaid_item_id: null }));
+      }
 
       if (cached && cached.length > 0) {
         const accounts = cached.map((acc) => {
@@ -158,10 +163,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Re-check DB after sync (sync populates accounts)
-    const { data: afterSync } = await db
+    let { data: afterSync, error: afterSyncErr } = await db
       .from("accounts")
-      .select("id, plaid_account_id, plaid_item_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+      .select(`${baseSelect}, plaid_item_id`)
       .eq("clerk_user_id", effectiveUserId);
+    if (afterSyncErr && /plaid_item_id|does not exist/i.test(afterSyncErr.message)) {
+      const fallback = await db.from("accounts").select(baseSelect).eq("clerk_user_id", effectiveUserId);
+      afterSync = (fallback.data ?? []).map((r) => Object.assign({}, r, { plaid_item_id: null }));
+    }
     if (afterSync && afterSync.length > 0) {
       const accounts = afterSync.map((acc) => {
         const row = acc as typeof acc & { id: string; plaid_item_id?: string | null; balance_current?: number; balance_available?: number; iso_currency_code?: string };
@@ -218,7 +227,11 @@ export async function GET(request: NextRequest) {
     if (allRows.length > 0) {
       await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
     }
-    const { data: updated } = await db.from("accounts").select("id, plaid_account_id, plaid_item_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", effectiveUserId);
+    let { data: updated, error: updatedErr } = await db.from("accounts").select(`${baseSelect}, plaid_item_id`).eq("clerk_user_id", effectiveUserId);
+    if (updatedErr && /plaid_item_id|does not exist/i.test(updatedErr.message)) {
+      const fallback = await db.from("accounts").select(baseSelect).eq("clerk_user_id", effectiveUserId);
+      updated = (fallback.data ?? []).map((r) => Object.assign({}, r, { plaid_item_id: null }));
+    }
     const plaidAccounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
       account_id: String(row.plaid_account_id ?? ""),
       id: String(row.id ?? ""),

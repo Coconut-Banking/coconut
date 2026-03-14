@@ -26,10 +26,16 @@ export async function getAccountsFromTransactionIds(
   const acctIds = [...new Set(txAccountIds.map((r) => r.account_id).filter(Boolean) as string[])];
   if (acctIds.length === 0) return null;
 
-  const { data } = await db
+  const baseSelect = "id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code";
+  let { data, error } = await db
     .from("accounts")
-    .select("id, plaid_account_id, plaid_item_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+    .select(`${baseSelect}, plaid_item_id`)
     .in("id", acctIds);
+
+  if (error && /plaid_item_id|does not exist/i.test(error.message)) {
+    const fallback = await db.from("accounts").select(baseSelect).in("id", acctIds);
+    data = fallback.data as typeof data;
+  }
 
   if (!data || data.length === 0) return null;
 
