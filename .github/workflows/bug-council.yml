@@ -14,9 +14,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      issues: write
-      id-token: write
-      actions: read
 
     env:
       # Placeholders so tsc/build don't fail during verification
@@ -34,6 +31,8 @@ jobs:
       STRIPE_SECRET_KEY: sk_test_placeholder
       STRIPE_WEBHOOK_SECRET: whsec_placeholder
       APP_URL: http://localhost:3000
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -50,20 +49,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Bug Council via Claude Code
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            You are the Bug Council Orchestrator. Read the file .claude/commands/bug-council.md for your full instructions.
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
 
-            Execute the Bug Council skill exactly as described in that file:
-            1. Create a branch named fix/bug-council-$(date +%Y%m%d)
-            2. Run Phase 1: Spawn all 12 audit agents in parallel (10 technical + 2 product flow)
-            3. Run Phase 2: Triage — collect, deduplicate, prioritize findings
-            4. Run Phase 3: Spawn fixer agents for each code-only bug, commit each fix
-            5. Run verification: tsc --noEmit and vitest run
-            6. Run Phase 4: Create a single PR with all fixes
+      - name: Configure git for commits
+        run: |
+          git config user.name "bug-council[bot]"
+          git config user.email "bug-council[bot]@users.noreply.github.com"
 
-            This is an automated daily run. Do not ask for confirmation — proceed through all phases automatically.
-          claude_args: "--max-turns 200"
+      - name: Run Bug Council
+        run: |
+          claude -p "$(cat .claude/commands/bug-council.md)
+
+          Execute the Bug Council skill exactly as described above:
+          1. Create a branch named fix/bug-council-$(date +%Y%m%d)
+          2. Run Phase 1: Spawn all 12 audit agents in parallel (10 technical + 2 product flow)
+          3. Run Phase 2: Triage — collect, deduplicate, prioritize findings
+          4. Run Phase 3: Spawn fixer agents for each code-only bug, commit each fix
+          5. Run verification: tsc --noEmit and vitest run
+          6. Run Phase 4: Create a single PR with all fixes
+
+          This is an automated daily run. Do not ask for confirmation — proceed through all phases automatically." \
+          --dangerously-skip-permissions \
+          --max-turns 200 \
+          --verbose
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
