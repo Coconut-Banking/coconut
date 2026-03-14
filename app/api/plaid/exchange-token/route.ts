@@ -106,17 +106,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Only clear existing transactions when this is the user's FIRST connection (avoids
+    // wiping other banks when adding a second account). Multi-bank: each item is separate.
+    const { getSupabase } = await import("@/lib/supabase");
+    const db = getSupabase();
+    const { data: existingItems } = await db
+      .from("plaid_items")
+      .select("id")
+      .eq("clerk_user_id", effectiveUserId);
+    const isFirstConnection = !existingItems || existingItems.length === 0;
+
     await savePlaidToken(effectiveUserId, access_token, item_id, institutionName, institutionId);
     console.log("[plaid][exchange-token] token_saved", {
       trace_id: traceId,
       user_id: effectiveUserId,
       item_id,
+      is_first_connection: isFirstConnection,
     });
 
-    // In production, clear stale/sandbox tx first so only real bank data remains
-    if (process.env.NODE_ENV === "production") {
-      const { getSupabase } = await import("@/lib/supabase");
-      const db = getSupabase();
+    // Only clear on first connection (sandbox→prod) so we don't wipe other banks
+    if (process.env.NODE_ENV === "production" && isFirstConnection) {
       const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
       const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
       const { data: toDelete } = await db
@@ -181,18 +190,38 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ ok: true, item_id, synced, trace_id: traceId });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to exchange token";
-    const plaidRequestId =
-      err && typeof err === "object" && "response" in err
-        ? (err.response as { data?: { request_id?: string } })?.data?.request_id
-        : undefined;
+    const errObj = err && typeof err === "object" ? err : {};
+    const response = "response" in errObj ? (errObj.response as { data?: unknown; status?: number }) : null;
+    const data = response?.data;
+    const plaidData = data && typeof data === "object" ? (data as { error_code?: string; error_type?: string; display_message?: string | null; error_message?: string }) : null;
+    const errorCode = plaidData?.error_code;
+    const displayMessage = plaidData?.display_message?.trim() || plaidData?.error_message;
+    const plaidRequestId = plaidData && "request_id" in plaidData ? (plaidData as { request_id?: string }).request_id : undefined;
+
+    // Map Plaid/known errors to user-friendly messages
+    let message: string;
+    let statusCode = 500;
+    if (errorCode === "INSTITUTION_NO_LONGER_SUPPORTED" || errorCode === "INSTITUTION_NOT_AVAILABLE" || errorCode === "UNSUPPORTED_RESPONSE") {
+      message = "This bank isn't supported yet. Please try another bank.";
+      statusCode = 400;
+    } else if (errorCode === "INSTITUTION_DOWN" || errorCode === "INSTITUTION_NOT_RESPONDING") {
+      message = "The bank is temporarily unavailable. Try again in a few hours, or connect a different bank.";
+      statusCode = 503;
+    } else if (displayMessage) {
+      message = displayMessage;
+      statusCode = response?.status && response.status >= 400 && response.status < 600 ? response.status : 500;
+    } else {
+      message = err instanceof Error ? err.message : "Failed to connect. Please try another bank.";
+    }
+
     console.error("[plaid][exchange-token] request_error", {
       trace_id: traceId,
       user_id: effectiveUserId,
       error: message,
+      error_code: errorCode ?? null,
       request_id: plaidRequestId ?? null,
       elapsed_ms: Date.now() - startedAt,
     });
-    return NextResponse.json({ error: message, trace_id: traceId }, { status: 500 });
+    return NextResponse.json({ error: message, code: errorCode ?? undefined, trace_id: traceId }, { status: statusCode });
   }
 }

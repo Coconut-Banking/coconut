@@ -210,7 +210,15 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
               <div className="flex-1">
                 <h2 className="text-lg font-bold text-gray-900">{tx.merchant}</h2>
                 <div className="text-2xl font-bold mt-1">
-                  <AmountDisplay amount={tx.amount} className="text-2xl" currencyCode={currencyCode} isoCurrencyCode={tx.isoCurrencyCode} />
+                  <AmountDisplay
+                  amount={tx.amount}
+                  className="text-2xl"
+                  currencyCode={currencyCode}
+                  isoCurrencyCode={tx.isoCurrencyCode}
+                  category={tx.category}
+                  merchant={tx.merchant}
+                  rawDescription={tx.rawDescription}
+                />
                 </div>
                 <div className="text-sm text-gray-500 mt-0.5">{tx.dateStr}</div>
               </div>
@@ -577,7 +585,15 @@ function TxRow({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <AmountDisplay amount={tx.amount} className="text-sm" currencyCode={currencyCode} isoCurrencyCode={tx.isoCurrencyCode} />
+          <AmountDisplay
+            amount={tx.amount}
+            className="text-sm"
+            currencyCode={currencyCode}
+            isoCurrencyCode={tx.isoCurrencyCode}
+            category={tx.category}
+            merchant={tx.merchant}
+            rawDescription={tx.rawDescription}
+          />
           <button
             onClick={(e) => {
               e.stopPropagation();
