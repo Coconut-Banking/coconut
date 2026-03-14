@@ -79,7 +79,8 @@ export default function SettingsPage() {
 
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsError(null);
-    const res = await fetch(`/api/plaid/accounts?t=${Date.now()}`, { cache: "no-store", credentials: "include" });
+    const url = forceRefresh ? `/api/plaid/accounts?refresh=1&t=${Date.now()}` : `/api/plaid/accounts?t=${Date.now()}`;
+    const res = await fetch(url, { cache: "no-store", credentials: "include" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setAccountsError(body.error ?? `Failed to load accounts (${res.status})`);

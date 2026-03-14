@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -58,20 +58,24 @@ async function deduplicateAccounts(
   return result;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  try {
-    // Serve from Supabase cache first
-    const db = getSupabase();
-    const { data: cached } = await db
-      .from("accounts")
-      .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
-      .eq("clerk_user_id", effectiveUserId);
+  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
 
-    if (cached && cached.length > 0) {
-      const accounts = cached.map((acc) => {
+  try {
+    const db = getSupabase();
+
+    // When refresh=1, bypass cache to fetch live (fixes newly connected banks not showing)
+    if (!forceRefresh) {
+      const { data: cached } = await db
+        .from("accounts")
+        .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+        .eq("clerk_user_id", effectiveUserId);
+
+      if (cached && cached.length > 0) {
+        const accounts = cached.map((acc) => {
         const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
         return {
           account_id: row.plaid_account_id,
@@ -84,15 +88,16 @@ export async function GET() {
           balance_available: row.balance_available ?? null,
           iso_currency_code: row.iso_currency_code ?? "USD",
         };
-      });
-      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
-      return NextResponse.json(
-        { accounts: deduped },
-        { headers: { "Cache-Control": "no-store, max-age=0" } }
-      );
+        });
+        const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+        return NextResponse.json(
+          { accounts: deduped },
+          { headers: { "Cache-Control": "no-store, max-age=0" } }
+        );
+      }
     }
 
-    // Fallback: accounts table empty but we may have tokens. Sync to populate accounts, then fetch from Plaid.
+    // Fallback: accounts table empty or refresh=1 — sync and fetch from Plaid.
     const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
     if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
@@ -138,10 +143,10 @@ export async function GET() {
       .eq("clerk_user_id", effectiveUserId)
       .not("account_id", "is", null)
       .limit(500);
-    const fallbackAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
-    if (fallbackAccounts && fallbackAccounts.length > 0) {
+    const txAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
+    if (txAccounts && txAccounts.length > 0) {
       // Backfill: fix clerk_user_id on accounts so future requests hit primary path
-      const acctIds = fallbackAccounts.map((a) => a.id).filter(Boolean);
+      const acctIds = txAccounts.map((a) => a.id).filter(Boolean);
       if (acctIds.length > 0) {
         try {
           await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
@@ -149,7 +154,7 @@ export async function GET() {
           console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
         }
       }
-      const deduped = await deduplicateAccounts(db, effectiveUserId, fallbackAccounts as unknown as AccountRow[]);
+      const deduped = await deduplicateAccounts(db, effectiveUserId, txAccounts as unknown as AccountRow[]);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
