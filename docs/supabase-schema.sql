@@ -26,6 +26,7 @@ create table if not exists accounts (
   id               uuid primary key default gen_random_uuid(),
   clerk_user_id    text not null,
   plaid_account_id text not null unique,
+  plaid_item_id    text,   -- links to plaid_items for institution_name display
   name             text,
   type             text,
   subtype          text,
@@ -34,6 +35,7 @@ create table if not exists accounts (
 );
 create index if not exists accounts_user_idx        on accounts(clerk_user_id);
 create index if not exists accounts_plaid_acct_idx  on accounts(plaid_account_id);
+create index if not exists accounts_plaid_item_idx   on accounts(plaid_item_id);
 
 -- 4. Transactions (core table — semantic search touches this only)
 create table if not exists transactions (

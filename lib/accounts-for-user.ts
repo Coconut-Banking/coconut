@@ -10,6 +10,8 @@ export type AccountForDisplay = {
   balance_current?: number | null;
   balance_available?: number | null;
   iso_currency_code?: string;
+  plaid_item_id?: string | null;
+  institution_name?: string | null;
 };
 
 /**
@@ -26,7 +28,7 @@ export async function getAccountsFromTransactionIds(
 
   const { data } = await db
     .from("accounts")
-    .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+    .select("id, plaid_account_id, plaid_item_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
     .in("id", acctIds);
 
   if (!data || data.length === 0) return null;
@@ -36,6 +38,7 @@ export async function getAccountsFromTransactionIds(
     return {
       account_id: String(r.plaid_account_id ?? ""),
       id: String(r.id ?? ""),
+      plaid_item_id: (r.plaid_item_id as string | null) ?? null,
       name: String(r.name ?? ""),
       type: r.type as string | undefined,
       subtype: r.subtype as string | null | undefined,

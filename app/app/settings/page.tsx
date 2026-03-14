@@ -36,7 +36,7 @@ export default function SettingsPage() {
   const { needsReauth, newAccountsAvailable, refetch: refetchAlerts } = usePlaidAlerts();
   const { hide, unhide, isHidden } = useHiddenAccounts();
   const [plaidAccounts, setPlaidAccounts] = useState<{
-    accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
+    accounts?: Array<{ account_id: string; id?: string; name: string; type?: string; subtype?: string; mask?: string | null; institution_name?: string | null }>;
   } | null>(null);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [accountsRefreshing, setAccountsRefreshing] = useState(false);
@@ -114,13 +114,18 @@ export default function SettingsPage() {
     fetchAccounts();
   }, [linked]);
 
-  const banks = (Array.isArray(plaidAccounts?.accounts) ? plaidAccounts.accounts : []).map((a) => ({
-    id: (a as { id?: string }).id ?? a.account_id,
-    name: a.name || "Account",
-    accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
-    color: "#3D8E62",
-    connected: "Connected",
-  }));
+  const banks = (Array.isArray(plaidAccounts?.accounts) ? plaidAccounts.accounts : []).map((a) => {
+    const inst = (a as { institution_name?: string | null }).institution_name;
+    const accountLabel = a.name || "Account";
+    const displayName = inst ? `${inst} - ${accountLabel}` : accountLabel;
+    return {
+      id: (a as { id?: string }).id ?? a.account_id,
+      name: displayName,
+      accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
+      color: "#3D8E62",
+      connected: "Connected",
+    };
+  });
   const visibleBanks = banks.filter((b) => !isHidden(b.id));
   const hiddenBanks = banks.filter((b) => isHidden(b.id));
 

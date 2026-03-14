@@ -56,6 +56,16 @@ export async function getAllPlaidTokensForUser(clerkUserId: string): Promise<str
   return (data ?? []).map((r: { access_token: string }) => r.access_token).filter(Boolean);
 }
 
+export type PlaidItemInfo = { access_token: string; plaid_item_id: string; institution_name: string | null };
+export async function getPlaidItemsForUser(clerkUserId: string): Promise<PlaidItemInfo[]> {
+  const db = getSupabase();
+  const { data } = await db
+    .from("plaid_items")
+    .select("access_token, plaid_item_id, institution_name")
+    .eq("clerk_user_id", clerkUserId);
+  return (data ?? []) as PlaidItemInfo[];
+}
+
 export async function savePlaidToken(
   clerkUserId: string,
   accessToken: string,
@@ -136,18 +146,20 @@ async function filterDuplicateTransactions<T extends { normalized_merchant: stri
 async function syncSingleToken(
   clerkUserId: string,
   accessToken: string,
+  plaidItemId: string,
   plaid: ReturnType<typeof getPlaidClient>,
   db: ReturnType<typeof getSupabase>
 ): Promise<{ synced: number; removedIds: string[] }> {
   if (!plaid) return { synced: 0, removedIds: [] };
 
-  // Upsert accounts for this bank
+  // Upsert accounts for this bank (plaid_item_id links to institution for display)
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
   for (const acct of acctResp.accounts) {
     const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
     const row: Record<string, unknown> = {
       clerk_user_id: clerkUserId,
       plaid_account_id: acct.account_id,
+      plaid_item_id: plaidItemId,
       name: acct.name,
       type: acct.type,
       subtype: acct.subtype ?? null,
@@ -158,8 +170,17 @@ async function syncSingleToken(
         { ...row, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
         { onConflict: "plaid_account_id" }
       );
-    } catch {
-      await db.from("accounts").upsert(row, { onConflict: "plaid_account_id" });
+    } catch (e) {
+      const errMsg = (e as Error).message ?? "";
+      if (/column.*plaid_item_id|does not exist/i.test(errMsg)) {
+        const { plaid_item_id: _pid, ...rowWithout } = row;
+        await db.from("accounts").upsert(
+          { ...rowWithout, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
+          { onConflict: "plaid_account_id" }
+        );
+      } else {
+        await db.from("accounts").upsert(row, { onConflict: "plaid_account_id" });
+      }
     }
   }
 
@@ -264,12 +285,17 @@ export async function syncTransactionsForUser(
   const plaid = getPlaidClient();
   if (!plaid) return { synced: 0, error: "Plaid not configured" };
 
+  const items = await getPlaidItemsForUser(clerkUserId);
+  const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
+
   let totalSynced = 0;
   const allRemovedIds: string[] = [];
 
   for (const token of accessTokens) {
+    const item = tokenToItem.get(token);
+    const plaidItemId = item?.plaid_item_id ?? "";
     try {
-      const { synced, removedIds } = await syncSingleToken(clerkUserId, token, plaid, db);
+      const { synced, removedIds } = await syncSingleToken(clerkUserId, token, plaidItemId, plaid, db);
       totalSynced += synced;
       allRemovedIds.push(...removedIds);
     } catch (e) {
