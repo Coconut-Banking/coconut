@@ -75,7 +75,7 @@ function ConnectedStep() {
 }
 
 function ConnectBankContent() {
-  const _router = useRouter();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("link");
   const [linkToken, setLinkToken] = useState<string | null>(null);
@@ -327,13 +327,20 @@ function ConnectBankContent() {
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
       <div className="px-8 py-5 flex items-center gap-4 border-b border-gray-100 bg-white">
-        <Link
-          href="/"
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              router.back();
+            } else {
+              router.push("/app/settings");
+            }
+          }}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
         >
           <ArrowLeft size={16} />
           Back
-        </Link>
+        </button>
         <div className="flex items-center gap-2.5 mx-auto">
           <div className="w-6 h-6 rounded-md bg-[#3D8E62] flex items-center justify-center">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
@@ -447,12 +454,23 @@ function ConnectBankContent() {
 }
 
 function ConnectFallback() {
+  const router = useRouter();
   return (
     <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
       <div className="px-8 py-5 flex items-center gap-4 border-b border-gray-100 bg-white">
-        <Link href="/login" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800">
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              router.back();
+            } else {
+              router.push("/app/settings");
+            }
+          }}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
           <ArrowLeft size={16} /> Back
-        </Link>
+        </button>
         <div className="flex-1" />
       </div>
       <div className="flex-1 flex items-center justify-center">

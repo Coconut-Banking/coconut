@@ -28,7 +28,7 @@ export async function deleteExcludedSubscriptions(clerkUserId: string): Promise<
   return ids.length;
 }
 
-export type SubscriptionFrequency = "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+export type SubscriptionFrequency = "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "yearly";
 
 export interface DetectedSubscription {
   merchantName: string;
@@ -42,6 +42,7 @@ export interface DetectedSubscription {
   transactionIds: string[];
   transactionDetails: Array<{ id: string; amount: number; date: string }>;
   source: "known" | "pattern" | "email";
+  confidence: number;
 }
 
 interface TxRow {
@@ -62,6 +63,7 @@ const DAYS_WEEKLY = { min: 5, max: 10 };
 const DAYS_BIWEEKLY = { min: 11, max: 18 };
 const DAYS_MONTHLY = { min: 22, max: 38 };
 const DAYS_QUARTERLY = { min: 80, max: 100 };
+const DAYS_SEMIANNUAL = { min: 170, max: 200 };
 const DAYS_YEARLY = { min: 340, max: 395 };
 
 const MERCHANT_STRIP_SUFFIXES = [
@@ -72,8 +74,16 @@ const MERCHANT_STRIP_SUFFIXES = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const PLAID_PREFIXES = ["sq ", "tst ", "sp ", "pos "];
+
 function normalizeMerchantName(raw: string): string {
   let s = raw.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  // Strip common Plaid POS prefixes (Square, Toast, Shopify POS)
+  for (const prefix of PLAID_PREFIXES) {
+    if (s.startsWith(prefix)) {
+      s = s.slice(prefix.length).trim();
+    }
+  }
   for (const suffix of MERCHANT_STRIP_SUFFIXES) {
     s = s.replace(new RegExp(`\\b${suffix}\\b`, "g"), "").trim();
   }
@@ -96,6 +106,7 @@ function inferFrequency(dayDiffs: number[]): SubscriptionFrequency | null {
   if (avg >= DAYS_BIWEEKLY.min && avg <= DAYS_BIWEEKLY.max) return "biweekly";
   if (avg >= DAYS_MONTHLY.min && avg <= DAYS_MONTHLY.max) return "monthly";
   if (avg >= DAYS_QUARTERLY.min && avg <= DAYS_QUARTERLY.max) return "quarterly";
+  if (avg >= DAYS_SEMIANNUAL.min && avg <= DAYS_SEMIANNUAL.max) return "semiannual";
   if (avg >= DAYS_YEARLY.min && avg <= DAYS_YEARLY.max) return "yearly";
   return null;
 }
@@ -112,6 +123,7 @@ function frequencyToDays(freq: SubscriptionFrequency): number {
     case "biweekly": return 14;
     case "monthly": return 30;
     case "quarterly": return 90;
+    case "semiannual": return 182;
     case "yearly": return 365;
   }
 }
@@ -137,7 +149,8 @@ function detectFromKnownMerchants(
     if (seenKnown.has(knownKey) || alreadyFound.has(normalized)) continue;
     seenKnown.add(knownKey);
 
-    if (shouldExcludeAsSubscription(tx.primary_category, raw, tx.raw_name || "")) continue;
+    // Known merchant matches are never excluded by bill heuristics —
+    // the curated database is authoritative.
 
     const allMatchingTxs = txs.filter((t) => {
       const tRaw = t.merchant_name || t.raw_name || t.normalized_merchant || "";
@@ -173,6 +186,7 @@ function detectFromKnownMerchants(
       transactionIds: allMatchingTxs.map((t) => t.id),
       transactionDetails: allMatchingTxs.map((t) => ({ id: t.id, amount: Math.abs(t.amount), date: t.date })),
       source: "known",
+      confidence: 0.95,
     });
 
     alreadyFound.add(normalized);
@@ -236,6 +250,7 @@ function detectFromPatterns(
       transactionIds: list.map((t) => t.id),
       transactionDetails: list.map((t) => ({ id: t.id, amount: Math.abs(t.amount), date: t.date })),
       source: "pattern",
+      confidence: list.length >= 4 ? 0.85 : 0.65,
     });
 
     alreadyFound.add(key);
@@ -293,13 +308,16 @@ async function detectFromEmailReceipts(
     const frequency = inferFrequency(dayDiffs);
     if (!frequency) continue;
 
+    const latest = list[0];
+
+    // Exclude bills from email-detected subscriptions
+    if (shouldExcludeAsSubscription(null, latest.merchant, "")) continue;
+
     // Find matching transactions for these email receipts
     const matchingTxs = txs.filter((tx) => {
       const txKey = normalizeMerchantName(tx.merchant_name || tx.raw_name || tx.normalized_merchant || "");
       return txKey === key || txKey.includes(key) || key.includes(txKey);
     });
-
-    const latest = list[0];
     const avgDays = dayDiffs.reduce((s, d) => s + d, 0) / dayDiffs.length;
     const nextDue = addDays(latest.date, Math.round(avgDays));
 
@@ -315,6 +333,7 @@ async function detectFromEmailReceipts(
       transactionIds: matchingTxs.map((t) => t.id),
       transactionDetails: matchingTxs.map((t) => ({ id: t.id, amount: Math.abs(t.amount), date: t.date })),
       source: "email",
+      confidence: 0.55,
     });
 
     alreadyFound.add(key);
@@ -348,6 +367,12 @@ export async function detectSubscriptionsForUser(clerkUserId: string): Promise<D
   }
 
   const txs = (rows ?? []) as TxRow[];
+
+  console.log(`[subscription-detect] Loaded ${txs.length} expense transactions (amount < 0) since ${cutoffStr}`);
+  if (txs.length === 0) {
+    console.warn("[subscription-detect] Zero transactions loaded — check amount sign convention (expenses should be negative)");
+  }
+
   const alreadyFound = new Set<string>();
 
   // Layer 1: Known merchants (highest priority — needs only 1 transaction)
@@ -377,12 +402,26 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
   for (const d of detected) {
     const { data: existing } = await db
       .from("subscriptions")
-      .select("id, status")
+      .select("id, status, amount")
       .eq("clerk_user_id", clerkUserId)
       .eq("normalized_merchant", d.normalizedMerchant)
       .maybeSingle();
 
     if (existing?.status === "dismissed") continue;
+
+    // Detect price changes: >$0.50 or >5% difference
+    const priceChangeFields: Record<string, unknown> = {};
+    if (existing?.amount != null) {
+      const oldAmount = Number(existing.amount);
+      const diff = d.amount - oldAmount;
+      const absDiff = Math.abs(diff);
+      const pctChange = oldAmount > 0 ? absDiff / oldAmount : 0;
+      if (absDiff > 0.50 || pctChange > 0.05) {
+        priceChangeFields.previous_amount = oldAmount;
+        priceChangeFields.price_change_amount = diff;
+        priceChangeFields.price_change_detected_at = new Date().toISOString();
+      }
+    }
 
     const { error } = await db
       .from("subscriptions")
@@ -397,8 +436,10 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
           next_due_date: d.nextDueDate,
           primary_category: d.primaryCategory,
           transaction_count: d.transactionCount,
+          confidence: d.confidence,
           status: "active",
           updated_at: new Date().toISOString(),
+          ...priceChangeFields,
         },
         { onConflict: "clerk_user_id,normalized_merchant" }
       );

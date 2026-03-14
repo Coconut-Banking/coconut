@@ -15,6 +15,11 @@ export async function PATCH(
     const status = body?.status as string | undefined;
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (status && ["active", "cancelled", "paused", "dismissed"].includes(status)) updates.status = status;
+    if (body?.dismissPriceChange === true) {
+      updates.previous_amount = null;
+      updates.price_change_amount = null;
+      updates.price_change_detected_at = null;
+    }
     const db = getSupabase();
     const { data, error } = await db
       .from("subscriptions")

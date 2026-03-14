@@ -19,11 +19,13 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useCurrency } from "@/hooks/useCurrency";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
 import { useNLSearch } from "@/hooks/useNLSearch";
 import type { UITransaction } from "@/lib/transaction-types";
 import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
+import { formatCurrencyAbs } from "@/lib/currency";
 
 // Display labels for known Plaid primary categories
 function isInvestmentAccount(acc: { type?: string; subtype?: string; name?: string }): boolean {
@@ -59,7 +61,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 type SplitMode = "person" | "group";
 
-function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => void }) {
+function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; onClose: () => void; currencyCode?: string }) {
   const [note, setNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [showAddToShared, setShowAddToShared] = useState(false);
@@ -208,7 +210,7 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
               <div className="flex-1">
                 <h2 className="text-lg font-bold text-gray-900">{tx.merchant}</h2>
                 <div className="text-2xl font-bold mt-1">
-                  <AmountDisplay amount={tx.amount} className="text-2xl" />
+                  <AmountDisplay amount={tx.amount} className="text-2xl" currencyCode={currencyCode} />
                 </div>
                 <div className="text-sm text-gray-500 mt-0.5">{tx.dateStr}</div>
               </div>
@@ -493,8 +495,8 @@ function TransactionDrawer({ tx, onClose }: { tx: UITransaction; onClose: () => 
                   <div className="rounded-xl bg-gray-50 p-4">
                     <div className="text-sm font-medium text-gray-700 mb-2">Equal split</div>
                     <div className="text-xs text-gray-500 mb-2">
-                      ${Math.abs(tx.amount).toFixed(2)} ÷ {members.length} ≈ $
-                      {(Math.floor(Math.round(Math.abs(tx.amount) * 100) / members.length) / 100).toFixed(2)} each
+                      {formatCurrencyAbs(tx.amount, currencyCode)} ÷ {members.length} ≈{" "}
+                      {formatCurrencyAbs(Math.floor(Math.round(Math.abs(tx.amount) * 100) / members.length) / 100, currencyCode)} each
                     </div>
                     <ul className="space-y-1">
                       {members.map((m) => (
@@ -537,12 +539,14 @@ function TxRow({
   expandedId,
   setExpandedId,
   onSelect,
+  currencyCode,
 }: {
   tx: UITransaction;
   index: number;
   expandedId: string | null;
   setExpandedId: (id: string | null) => void;
   onSelect: () => void;
+  currencyCode?: string;
 }) {
   return (
     <div>
@@ -571,7 +575,7 @@ function TxRow({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <AmountDisplay amount={tx.amount} className="text-sm" />
+          <AmountDisplay amount={tx.amount} className="text-sm" currencyCode={currencyCode} />
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -623,7 +627,7 @@ function TxRow({
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Split suggestion</div>
                   <div className="text-xs text-[#3D8E62] font-medium">
-                    Split with {tx.splitWith} — ${(Math.round(Math.round(Math.abs(tx.amount) * 100) / 2) / 100).toFixed(2)} each
+                    Split with {tx.splitWith} — {formatCurrencyAbs(Math.round(Math.round(Math.abs(tx.amount) * 100) / 2) / 100, currencyCode)} each
                   </div>
                 </div>
               )}
@@ -659,6 +663,7 @@ function TransactionsPageContent() {
   const searchParams = useSearchParams();
   const { transactions, linked, loading, syncAndRefetch } = useTransactions();
   const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
+  const { currencyCode, format: fc, symbol: currSymbol } = useCurrency();
   const { isHidden, hidden: hiddenIds } = useHiddenAccounts();
   const [accountFilter, setAccountFilter] = useState<"spending" | "all">("spending");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -708,12 +713,12 @@ function TransactionsPageContent() {
 
   usePullToRefresh(syncAndRefetch, !!linked);
 
-  if (linked && loading) {
+  if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
         <div className="flex flex-col items-center gap-4">
           <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Loading your data...</p>
+          <p className="text-sm text-gray-500">Fetching your transactions...</p>
         </div>
       </div>
     );
@@ -1090,6 +1095,7 @@ function TransactionsPageContent() {
                         expandedId={expandedId}
                         setExpandedId={setExpandedId}
                         onSelect={() => setSelectedTx(tx)}
+                        currencyCode={currencyCode}
                       />
                     ))}
                   </div>
@@ -1107,6 +1113,7 @@ function TransactionsPageContent() {
                         expandedId={expandedId}
                         setExpandedId={setExpandedId}
                         onSelect={() => setSelectedTx(tx)}
+                        currencyCode={currencyCode}
                       />
                     ))}
                   </div>
@@ -1200,7 +1207,7 @@ function TransactionsPageContent() {
 
       <AnimatePresence>
         {selectedTx && (
-          <TransactionDrawer tx={selectedTx} onClose={() => setSelectedTx(null)} />
+          <TransactionDrawer tx={selectedTx} onClose={() => setSelectedTx(null)} currencyCode={currencyCode} />
         )}
       </AnimatePresence>
     </div>

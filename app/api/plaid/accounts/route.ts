@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -55,41 +55,46 @@ async function deduplicateAccounts(
   return result;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  try {
-    // Serve from Supabase cache first
-    const db = getSupabase();
-    const { data: cached } = await db
-      .from("accounts")
-      .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
-      .eq("clerk_user_id", effectiveUserId);
+  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
 
-    if (cached && cached.length > 0) {
-      const accounts = cached.map((acc) => {
-        const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
-        return {
-          account_id: row.plaid_account_id,
-          id: row.id,
-          name: row.name,
-          type: row.type,
-          subtype: row.subtype,
-          mask: row.mask,
-          balance_current: row.balance_current ?? null,
-          balance_available: row.balance_available ?? null,
-          iso_currency_code: row.iso_currency_code ?? "USD",
-        };
-      });
-      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
-      return NextResponse.json(
-        { accounts: deduped },
-        { headers: { "Cache-Control": "no-store, max-age=0" } }
-      );
+  try {
+    const db = getSupabase();
+
+    // When refresh=1, bypass cache and fetch live from Plaid (fixes newly connected banks not showing)
+    if (!forceRefresh) {
+      const { data: cached } = await db
+        .from("accounts")
+        .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+        .eq("clerk_user_id", effectiveUserId);
+
+      if (cached && cached.length > 0) {
+        const accounts = cached.map((acc) => {
+          const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
+          return {
+            account_id: row.plaid_account_id,
+            id: row.id,
+            name: row.name,
+            type: row.type,
+            subtype: row.subtype,
+            mask: row.mask,
+            balance_current: row.balance_current ?? null,
+            balance_available: row.balance_available ?? null,
+            iso_currency_code: row.iso_currency_code ?? "USD",
+          };
+        });
+        const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+        return NextResponse.json(
+          { accounts: deduped },
+          { headers: { "Cache-Control": "no-store, max-age=0" } }
+        );
+      }
     }
 
-    // Fallback: fetch live from Plaid (all connected banks)
+    // Fetch live from Plaid (all connected banks)
     const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
     if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
