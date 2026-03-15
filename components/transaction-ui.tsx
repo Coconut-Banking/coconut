@@ -4,23 +4,67 @@ import { useState } from "react";
 import { getMerchantLogoDomain } from "@/lib/merchant-logos";
 import { formatCurrencyAbs, convertCurrency } from "@/lib/currency";
 
+/** P2P sends (Zelle, Venmo, Cash App TRANSFER_OUT) display as outflow (-) even if amount is positive. */
+export function isDisplayAsOutflow(
+  amount: number,
+  opts?: { category?: string; merchant?: string; rawDescription?: string }
+): boolean {
+  if (amount <= 0) return false;
+  const cat = (opts?.category ?? "").toUpperCase();
+  const text = `${opts?.merchant ?? ""} ${opts?.rawDescription ?? ""}`.toLowerCase();
+  const isTransferOut = cat.includes("TRANSFER") && cat.includes("OUT");
+  const looksLikeP2PSend = /zelle|venmo|cash\s*app/i.test(text);
+  if (isTransferOut && looksLikeP2PSend) return true;
+  // Rideshare/transportation (Uber, Lyft) are always expenses — never show green
+  const isTransport = cat.includes("TRANSPORTATION") || /uber|lyft|rideshare|taxi/i.test(text);
+  return !!isTransport;
+}
+
+/** Credit card payments (TRANSFER_OUT reducing debt) display as positive/green like income. */
+export function isDisplayAsInflow(
+  amount: number,
+  opts?: { category?: string; merchant?: string; rawDescription?: string }
+): boolean {
+  if (isDisplayAsOutflow(amount, opts)) return false;
+  if (amount > 0) return true;
+  if (!opts) return false;
+  const cat = (opts.category ?? "").toUpperCase();
+  const merchant = (opts.merchant ?? opts.rawDescription ?? "").toLowerCase();
+  const raw = (opts.rawDescription ?? "").toLowerCase();
+  const isTransferOut = cat.includes("TRANSFER") && cat.includes("OUT");
+  const looksLikeCardPayment =
+    /credit\s*card|card\s*payment|payment\s*to|autopay|pay\s*\d|payment\s*[- ]?credit|^payment$/i.test(merchant) ||
+    /credit\s*card|card\s*payment|payment\s*to|autopay|payment\s*[- ]?credit/i.test(raw);
+  return !!(isTransferOut && looksLikeCardPayment);
+}
+
 /** Format amount with + / - . Only inflows (+) get green; outflows stay neutral. */
 export function AmountDisplay({
   amount,
   className = "",
   currencyCode,
   isoCurrencyCode,
+  treatAsInflow,
+  category,
+  merchant,
+  rawDescription,
 }: {
   amount: number;
   className?: string;
   currencyCode?: string;
   isoCurrencyCode?: string;
+  /** Override: treat as inflow (green +) e.g. for credit card payments */
+  treatAsInflow?: boolean;
+  category?: string;
+  merchant?: string;
+  rawDescription?: string;
 }) {
   const displayCode = currencyCode || "USD";
   const txCode = isoCurrencyCode || "USD";
   const displayAmount =
     txCode !== displayCode ? convertCurrency(amount, txCode, displayCode) : amount;
-  const isInflow = amount > 0;
+  const isInflow =
+    treatAsInflow ?? isDisplayAsInflow(amount, { category, merchant, rawDescription });
   const sign = isInflow ? "+" : "-";
   return (
     <span

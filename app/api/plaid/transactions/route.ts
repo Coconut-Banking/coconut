@@ -55,11 +55,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Deduplicate: same merchant+amount+date can appear twice (sandbox vs production Plaid IDs)
+    // Deduplicate: same merchant+amount+date can appear twice (multi-Item or reconnect)
     const seen = new Set<string>();
     const keptIds = new Set<string>();
     const deduped = bankOnly.filter((tx) => {
-      const merchant = (tx.merchant_name || tx.raw_name || "").trim().toLowerCase();
+      const raw = (tx.merchant_name || tx.raw_name || "").trim().toLowerCase();
+      const norm = tx.normalized_merchant ?? raw.replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+      const merchant = norm || raw;
       const amount = Number(tx.amount);
       const date = tx.date as string;
       const key = `${merchant}|${amount}|${date}`;
@@ -70,10 +72,13 @@ export async function GET(request: NextRequest) {
     });
 
     // Actually delete duplicate rows from Supabase (first occurrence stays)
-    // Don't delete tx that are in splits — they're referenced by split_transactions
-    // Direct fetch to avoid unstable_cache Set serialization (d.has is not a function)
+    // Don't delete tx that are in splits or email_receipts — they're referenced by FK
     const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-    const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
+    const { data: inReceipts } = await db.from("email_receipts").select("transaction_id").not("transaction_id", "is", null);
+    const protectedIds = new Set([
+      ...(inSplits ?? []).map((r) => r.transaction_id as string),
+      ...(inReceipts ?? []).map((r) => r.transaction_id as string),
+    ].filter(Boolean));
     const idsToDelete = bankOnly
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
@@ -83,6 +88,11 @@ export async function GET(request: NextRequest) {
         const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
         const { error: delErr } = await db.from("transactions").delete().in("id", batch);
         if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
+      }
+      try {
+        revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+      } catch (e) {
+        console.warn("[transactions] revalidateTag after dedupe failed:", e);
       }
     }
 
@@ -176,48 +186,15 @@ export async function POST() {
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const db = getSupabase();
-
-    // Always clear before sync so we never mix sandbox + production or accumulate duplicates
-    const { data: inSplits } = await db
-      .from("split_transactions")
-      .select("transaction_id");
-    const protectedIds = new Set(
-      (inSplits ?? []).map((r) => r.transaction_id as string)
-    );
-
-    const { data: toDelete } = await db
-      .from("transactions")
-      .select("id, plaid_transaction_id")
-      .eq("clerk_user_id", effectiveUserId);
-
-    const idsToDelete = (toDelete ?? [])
-      .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
-      .map((r) => r.id as string)
-      .filter((id) => !protectedIds.has(id));
-
-    if (idsToDelete.length > 0) {
-      const BATCH = 100;
-      for (let i = 0; i < idsToDelete.length; i += BATCH) {
-        const batch = idsToDelete.slice(i, i + BATCH);
-        const { error: delErr } = await db
-          .from("transactions")
-          .delete()
-          .in("id", batch);
-        if (delErr) {
-          console.error("[transactions] fullResync delete error:", delErr.message);
-          return NextResponse.json({ error: "Failed to clear stale data" }, { status: 500 });
-        }
-      }
-      console.log(`[transactions] cleared ${idsToDelete.length} before sync for ${effectiveUserId}`);
-    }
-
-    const { syncTransactionsForUser, embedTransactionsForUser } = await import("@/lib/transaction-sync");
+    // Sync first, THEN clear stale data only if sync succeeds.
+    // Previously we cleared before sync, which destroyed data when Plaid tokens failed.
+    const { syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } = await import("@/lib/transaction-sync");
     const { synced, error } = await syncTransactionsForUser(effectiveUserId);
     if (error) return NextResponse.json({ error }, { status: 500 });
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
     embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));
+    enrichCategoriesForUser(effectiveUserId).catch((e) => console.error("[transactions] categorize:", e));
 
     let detected = 0;
     try {

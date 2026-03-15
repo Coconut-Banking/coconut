@@ -7,7 +7,7 @@ export const SEARCH = {
   DEFAULT_LIMIT: 20,
   MAX_LIMIT: 50,
   TX_FETCH_LIMIT: 2000,
-  VECTOR_LIMIT: 20,
+  VECTOR_LIMIT: 50,
   RESULT_LIMIT: 50,
 } as const;
 

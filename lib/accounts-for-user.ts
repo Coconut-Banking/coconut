@@ -10,6 +10,8 @@ export type AccountForDisplay = {
   balance_current?: number | null;
   balance_available?: number | null;
   iso_currency_code?: string;
+  plaid_item_id?: string | null;
+  institution_name?: string | null;
 };
 
 /**
@@ -24,10 +26,16 @@ export async function getAccountsFromTransactionIds(
   const acctIds = [...new Set(txAccountIds.map((r) => r.account_id).filter(Boolean) as string[])];
   if (acctIds.length === 0) return null;
 
-  const { data } = await db
+  const baseSelect = "id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code";
+  let { data, error } = await db
     .from("accounts")
-    .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+    .select(`${baseSelect}, plaid_item_id`)
     .in("id", acctIds);
+
+  if (error && /plaid_item_id|does not exist/i.test(error.message)) {
+    const fallback = await db.from("accounts").select(baseSelect).in("id", acctIds);
+    data = fallback.data as typeof data;
+  }
 
   if (!data || data.length === 0) return null;
 
@@ -36,6 +44,7 @@ export async function getAccountsFromTransactionIds(
     return {
       account_id: String(r.plaid_account_id ?? ""),
       id: String(r.id ?? ""),
+      plaid_item_id: (r.plaid_item_id as string | null) ?? null,
       name: String(r.name ?? ""),
       type: r.type as string | undefined,
       subtype: r.subtype as string | null | undefined,

@@ -39,7 +39,7 @@ export default function SettingsPage() {
   const { hide, unhide, isHidden } = useHiddenAccounts();
   const [incomeInput, setIncomeInput] = useState("");
   const [plaidAccounts, setPlaidAccounts] = useState<{
-    accounts?: Array<{ account_id: string; name: string; type?: string; subtype?: string; mask?: string | null }>;
+    accounts?: Array<{ account_id: string; id?: string; name: string; type?: string; subtype?: string; mask?: string | null; institution_name?: string | null }>;
   } | null>(null);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [accountsRefreshing, setAccountsRefreshing] = useState(false);
@@ -122,23 +122,15 @@ export default function SettingsPage() {
   }, [linked]);
 
   const banks = (Array.isArray(plaidAccounts?.accounts) ? plaidAccounts.accounts : []).map((a) => {
-    const raw = a as {
-      id?: string; account_id: string; name: string; type?: string; subtype?: string | null;
-      mask?: string | null; balance_current?: number | null; balance_available?: number | null; iso_currency_code?: string;
-    };
-    const liabilityTypes = new Set(["credit", "loan"]);
-    const isLiability = liabilityTypes.has((raw.type ?? "").toLowerCase());
-    const balance = !isLiability && raw.balance_available != null
-      ? Number(raw.balance_available)
-      : raw.balance_current != null ? Number(raw.balance_current) : null;
+    const inst = (a as { institution_name?: string | null }).institution_name;
+    const accountLabel = a.name || "Account";
+    const displayName = inst ? `${inst} - ${accountLabel}` : accountLabel;
     return {
-      id: raw.id ?? raw.account_id,
-      name: raw.name || "Account",
-      subtype: raw.subtype ?? raw.type ?? "account",
-      mask: raw.mask ?? null,
-      balance,
-      isLiability,
-      iso_currency_code: raw.iso_currency_code ?? "USD",
+      id: (a as { id?: string }).id ?? a.account_id,
+      name: displayName,
+      accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
+      color: "#3D8E62",
+      connected: "Connected",
     };
   });
   const visibleBanks = banks.filter((b) => !isHidden(b.id));

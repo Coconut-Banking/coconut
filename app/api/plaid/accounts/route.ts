@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { getEffectiveUserId } from "@/lib/demo";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlaidClient } from "@/lib/plaid-client";
-import { getAllPlaidTokensForUser } from "@/lib/transaction-sync";
+import { getAllPlaidTokensForUser, getPlaidItemsForUser } from "@/lib/transaction-sync";
 import { getAccountsFromTransactionIds } from "@/lib/accounts-for-user";
 
 type AccountRow = {
@@ -18,7 +18,27 @@ type AccountRow = {
   balance_current?: number | null;
   balance_available?: number | null;
   iso_currency_code?: string;
+  institution_name?: string | null;
+  plaid_item_id?: string | null;
 };
+
+/** Enrich accounts with institution_name from plaid_items */
+async function enrichAccountsWithInstitution(
+  db: SupabaseClient,
+  accounts: AccountRow[]
+): Promise<AccountRow[]> {
+  const itemIds = [...new Set(accounts.map((a) => a.plaid_item_id).filter(Boolean))] as string[];
+  if (itemIds.length === 0) return accounts;
+  const { data: items } = await db
+    .from("plaid_items")
+    .select("plaid_item_id, institution_name")
+    .in("plaid_item_id", itemIds);
+  const instByItem = new Map((items ?? []).map((i) => [i.plaid_item_id as string, (i.institution_name as string) ?? null]));
+  return accounts.map((a) => {
+    const itemId = (a as { plaid_item_id?: string | null }).plaid_item_id;
+    return { ...a, institution_name: itemId ? instByItem.get(itemId) ?? null : null };
+  });
+}
 
 /** Dedupe accounts with same name+mask; prefer the one that has transactions. */
 async function deduplicateAccounts(
@@ -66,20 +86,26 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getSupabase();
+    const baseSelect = "id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code";
 
     // When refresh=1, bypass cache to fetch live (fixes newly connected banks not showing)
     if (!forceRefresh) {
-      const { data: cached } = await db
+      let { data: cached, error: cachedErr } = await db
         .from("accounts")
-        .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+        .select(`${baseSelect}, plaid_item_id`)
         .eq("clerk_user_id", effectiveUserId);
+      if (cachedErr && /plaid_item_id|does not exist/i.test(cachedErr.message)) {
+        const fallback = await db.from("accounts").select(baseSelect).eq("clerk_user_id", effectiveUserId);
+        cached = (fallback.data ?? []).map((r) => Object.assign({}, r, { plaid_item_id: null }));
+      }
 
       if (cached && cached.length > 0) {
         const accounts = cached.map((acc) => {
-        const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
+        const row = acc as typeof acc & { id: string; plaid_item_id?: string | null; balance_current?: number; balance_available?: number; iso_currency_code?: string };
         return {
           account_id: row.plaid_account_id,
           id: row.id,
+          plaid_item_id: row.plaid_item_id ?? null,
           name: row.name,
           type: row.type,
           subtype: row.subtype,
@@ -89,7 +115,8 @@ export async function GET(request: NextRequest) {
           iso_currency_code: row.iso_currency_code ?? "USD",
         };
         });
-        const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
+        const withInstitution = await enrichAccountsWithInstitution(db, accounts);
+        const deduped = deduplicateAccounts(db, effectiveUserId, withInstitution);
         return NextResponse.json(
           { accounts: deduped },
           { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -97,11 +124,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fallback: accounts table empty or refresh=1 — sync and fetch from Plaid.
+    // Try transaction-based lookup FIRST — transactions have account_id; fetch those accounts directly.
+    // Fixes "no accounts" when accounts.clerk_user_id is wrong or not set (e.g. multi-bank migration).
+    const { data: txWithAcct } = await db
+      .from("transactions")
+      .select("account_id")
+      .eq("clerk_user_id", effectiveUserId)
+      .not("account_id", "is", null)
+      .limit(500);
+    const txAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
+    if (txAccounts && txAccounts.length > 0) {
+      const acctIds = txAccounts.map((a) => a.id).filter(Boolean);
+      if (acctIds.length > 0) {
+        try {
+          await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
+        } catch (e) {
+          console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
+        }
+      }
+      const withInstitution = await enrichAccountsWithInstitution(db, txAccounts as unknown as AccountRow[]);
+      const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
+    // Sync and fetch from Plaid.
     const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
     if (!accessTokens || accessTokens.length === 0) return NextResponse.json({ error: "Not linked" }, { status: 401 });
 
-    // One-time sync to ensure accounts table is populated (fixes "No accounts found" when transactions exist)
+    // One-time sync to ensure accounts table is populated
     try {
       const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
       await syncTransactionsForUser(effectiveUserId);
@@ -110,16 +163,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Re-check DB after sync (sync populates accounts)
-    const { data: afterSync } = await db
+    let { data: afterSync, error: afterSyncErr } = await db
       .from("accounts")
-      .select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
+      .select(`${baseSelect}, plaid_item_id`)
       .eq("clerk_user_id", effectiveUserId);
+    if (afterSyncErr && /plaid_item_id|does not exist/i.test(afterSyncErr.message)) {
+      const fallback = await db.from("accounts").select(baseSelect).eq("clerk_user_id", effectiveUserId);
+      afterSync = (fallback.data ?? []).map((r) => Object.assign({}, r, { plaid_item_id: null }));
+    }
     if (afterSync && afterSync.length > 0) {
       const accounts = afterSync.map((acc) => {
-        const row = acc as typeof acc & { id: string; balance_current?: number; balance_available?: number; iso_currency_code?: string };
+        const row = acc as typeof acc & { id: string; plaid_item_id?: string | null; balance_current?: number; balance_available?: number; iso_currency_code?: string };
         return {
           account_id: row.plaid_account_id,
           id: row.id,
+          plaid_item_id: row.plaid_item_id ?? null,
           name: row.name,
           type: row.type,
           subtype: row.subtype,
@@ -129,32 +187,8 @@ export async function GET(request: NextRequest) {
           iso_currency_code: row.iso_currency_code ?? "USD",
         };
       });
-      const deduped = deduplicateAccounts(db, effectiveUserId, accounts);
-      return NextResponse.json(
-        { accounts: deduped },
-        { headers: { "Cache-Control": "no-store, max-age=0" } }
-      );
-    }
-
-    // Fallback: get accounts via transaction account_ids (fixes clerk_user_id mismatch or stale data)
-    const { data: txWithAcct } = await db
-      .from("transactions")
-      .select("account_id")
-      .eq("clerk_user_id", effectiveUserId)
-      .not("account_id", "is", null)
-      .limit(500);
-    const txAccounts = await getAccountsFromTransactionIds(db, effectiveUserId, txWithAcct ?? []);
-    if (txAccounts && txAccounts.length > 0) {
-      // Backfill: fix clerk_user_id on accounts so future requests hit primary path
-      const acctIds = txAccounts.map((a) => a.id).filter(Boolean);
-      if (acctIds.length > 0) {
-        try {
-          await db.from("accounts").update({ clerk_user_id: effectiveUserId }).in("id", acctIds);
-        } catch (e) {
-          console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
-        }
-      }
-      const deduped = await deduplicateAccounts(db, effectiveUserId, txAccounts as unknown as AccountRow[]);
+      const withInstitution = await enrichAccountsWithInstitution(db, accounts);
+      const deduped = deduplicateAccounts(db, effectiveUserId, withInstitution);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -165,12 +199,16 @@ export async function GET(request: NextRequest) {
     const client = getPlaidClient();
     if (!client) return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
 
-    const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
+    const items = await getPlaidItemsForUser(effectiveUserId);
+    const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
+
+    const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
     for (const accessToken of accessTokens) {
+      const item = tokenToItem.get(accessToken);
       const response = await client.accountsGet({ access_token: accessToken });
       const rows = response.data.accounts.map((acct) => {
         const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-        return {
+        const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
           clerk_user_id: effectiveUserId,
           plaid_account_id: acct.account_id,
           name: acct.name,
@@ -181,16 +219,23 @@ export async function GET(request: NextRequest) {
           balance_available: bal?.available ?? null,
           iso_currency_code: bal?.iso_currency_code ?? "USD",
         };
+        if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
+        return row;
       });
       allRows.push(...rows);
     }
     if (allRows.length > 0) {
       await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
     }
-    const { data: updated } = await db.from("accounts").select("id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code").eq("clerk_user_id", effectiveUserId);
+    let { data: updated, error: updatedErr } = await db.from("accounts").select(`${baseSelect}, plaid_item_id`).eq("clerk_user_id", effectiveUserId);
+    if (updatedErr && /plaid_item_id|does not exist/i.test(updatedErr.message)) {
+      const fallback = await db.from("accounts").select(baseSelect).eq("clerk_user_id", effectiveUserId);
+      updated = (fallback.data ?? []).map((r) => Object.assign({}, r, { plaid_item_id: null }));
+    }
     const plaidAccounts: AccountRow[] = (updated ?? []).map((row: Record<string, unknown>) => ({
       account_id: String(row.plaid_account_id ?? ""),
       id: String(row.id ?? ""),
+      plaid_item_id: (row.plaid_item_id as string | null) ?? null,
       name: String(row.name ?? ""),
       type: row.type as string | undefined,
       subtype: row.subtype as string | null | undefined,
@@ -199,7 +244,8 @@ export async function GET(request: NextRequest) {
       balance_available: (row.balance_available as number | null) ?? null,
       iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
-    const deduped = await deduplicateAccounts(db, effectiveUserId, plaidAccounts);
+    const withInstitution = await enrichAccountsWithInstitution(db, plaidAccounts);
+    const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
     return NextResponse.json(
       { accounts: deduped },
       { headers: { "Cache-Control": "no-store, max-age=0" } }

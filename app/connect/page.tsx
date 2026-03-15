@@ -316,7 +316,15 @@ function ConnectBankContent() {
           displayMessage?: string | null;
           requestId?: string | null;
         };
-        const msg = e.displayMessage || e.errorMessage || "Link exited";
+        const code = e.errorCode ?? "";
+        const rawMsg = e.displayMessage || e.errorMessage || "Link exited";
+        // Friendlier messages for unsupported/temporary institution issues
+        const msg =
+          /INSTITUTION_NO_LONGER_SUPPORTED|INSTITUTION_NOT_AVAILABLE|INSTITUTION_NOT_SUPPORTED|UNSUPPORTED_RESPONSE|INVALID_INSTITUTION/i.test(code)
+            ? "This bank isn't supported yet. Please try another bank."
+            : /INSTITUTION_DOWN|INSTITUTION_NOT_RESPONDING/i.test(code)
+              ? "The bank is temporarily unavailable. Try again later or connect a different bank."
+              : rawMsg;
         setError(msg);
         const detail = [
           e.errorCode ? `error_code=${e.errorCode}` : null,
@@ -419,6 +427,14 @@ function ConnectBankContent() {
                             Sign in again
                           </a>
                         ) : null}
+                        {typeof window !== "undefined" && sessionStorage.getItem("connect_from_app") === "1" && (
+                          <a
+                            href={`${APP_DEEP_LINK}settings`}
+                            className="mt-3 inline-flex items-center rounded-lg bg-[#3D8E62] px-3 py-2 text-xs font-medium text-white hover:bg-[#2D7A52] ml-2"
+                          >
+                            Return to app
+                          </a>
+                        )}
                       </div>
                     )}
                     {linkToken ? (
