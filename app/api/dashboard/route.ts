@@ -79,8 +79,27 @@ export async function GET() {
     .filter((s) => s.nextDue)
     .slice(0, 5);
 
+  const accountList = accounts.map((a) => {
+    const type = (a.type || "").toLowerCase();
+    const isLiability = liabilityTypes.has(type);
+    const bal =
+      !isLiability && a.balance_available != null
+        ? Number(a.balance_available)
+        : Number(a.balance_current) || 0;
+    return {
+      name: a.name ?? "Account",
+      type: a.type ?? "depository",
+      subtype: a.subtype ?? null,
+      mask: a.mask ?? null,
+      balance: bal,
+      isLiability,
+      iso_currency_code: a.iso_currency_code ?? "USD",
+    };
+  });
+
   return NextResponse.json({
     netWorth: { assets, liabilities, total: assets - liabilities },
     subscriptions: { totalMonthly, count: subs.length, upcomingBills },
+    accounts: accountList,
   });
 }
