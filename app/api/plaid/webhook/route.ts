@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       );
   } else if (webhook_type === "ITEM") {
     if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
-      db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id).then(() => {}, () => {});
+      db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
       syncTransactionsForUser(clerkUserId)
         .then((r) => {
           console.log("[plaid][webhook] NEW_ACCOUNTS_AVAILABLE synced", {
@@ -133,13 +133,13 @@ export async function POST(request: NextRequest) {
         );
     } else if (webhook_code === "ERROR" && payload.error?.error_code === "ITEM_LOGIN_REQUIRED") {
       console.log("[plaid][webhook] ITEM_LOGIN_REQUIRED", { item_id, user_id: clerkUserId });
-      db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id).then(() => {}, () => {});
+      db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
     } else if (webhook_code === "PENDING_EXPIRATION" || webhook_code === "PENDING_DISCONNECT") {
       console.log("[plaid][webhook] expiration/disconnect", { webhook_code, item_id, user_id: clerkUserId });
-      db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id).then(() => {}, () => {});
+      db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
     } else if (webhook_code === "LOGIN_REPAIRED") {
       console.log("[plaid][webhook] LOGIN_REPAIRED", { item_id, user_id: clerkUserId });
-      db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id).then(() => {}, () => {});
+      db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
       syncTransactionsForUser(clerkUserId).catch((e) =>
         console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e)
       );
