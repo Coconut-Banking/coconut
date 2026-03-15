@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import { getPlaidClient } from "@/lib/plaid-client";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 /**
  * POST /api/plaid/disconnect
@@ -51,6 +53,8 @@ export async function POST() {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import { getPlaidClient } from "@/lib/plaid-client";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 /**
  * POST /api/plaid/wipe
@@ -50,6 +52,8 @@ export async function POST() {
 
   // Delete subscriptions
   await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
+
+  revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
 
   return NextResponse.json({ ok: true });
   } catch (err) {

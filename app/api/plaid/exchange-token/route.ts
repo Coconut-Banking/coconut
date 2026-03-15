@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { savePlaidToken, syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
 import { getEffectiveUserId } from "@/lib/demo";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 type ExchangeTokenBody = {
   public_token?: string;
@@ -171,6 +173,9 @@ export async function POST(request: NextRequest) {
       });
       if (synced > 0) break;
     }
+
+    // Invalidate cached transactions so the user sees fresh data immediately
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
 
     embedTransactionsForUser(effectiveUserId).catch((e) =>
       console.error("[plaid][exchange-token] background_embed_failed", {
