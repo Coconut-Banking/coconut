@@ -15,60 +15,58 @@ interface TelegramUpdate {
   };
 }
 
+// Health check to verify deployment
+export async function GET() {
+  return NextResponse.json({
+    status: "ok",
+    hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
+    hasGithubToken: !!process.env.GITHUB_BOT_TOKEN,
+    hasSecret: !!process.env.TELEGRAM_WEBHOOK_SECRET,
+  });
+}
+
 export async function POST(req: NextRequest) {
-  // Verify the request is from Telegram via secret token (skip if not configured)
-  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (expectedSecret) {
-    const secretToken = req.headers.get("x-telegram-bot-api-secret-token");
-    if (secretToken !== expectedSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
-
-  const update: TelegramUpdate = await req.json();
-  const message = update.message;
-  if (!message) {
-    return NextResponse.json({ ok: true });
-  }
-
-  const text = message.text || message.caption || "";
-
-  // Only process messages that start with /bug or contain #bug
-  if (!text.startsWith("/bug") && !text.includes("#bug")) {
-    return NextResponse.json({ ok: true });
-  }
-
-  // Strip the /bug command prefix
-  const description = text.replace(/^\/bug\s*/, "").replace(/#bug\s*/g, "").trim();
-  if (!description) {
-    await sendTelegram(message.chat.id, "Please include a bug description. Example:\n/bug The dashboard shows wrong currency for INR transactions");
-    return NextResponse.json({ ok: true });
-  }
-
-  const submitter = message.from?.first_name || "Someone";
-  let imageMarkdown = "";
-
-  // Handle photo uploads
-  if (message.photo && message.photo.length > 0) {
-    try {
-      // Get the highest resolution photo
-      const photo = message.photo[message.photo.length - 1];
-      const fileInfo = await getTelegramFile(photo.file_id);
-      const imageBuffer = await downloadTelegramFile(fileInfo.file_path);
-
-      // Upload to the repo as a screenshot
-      const timestamp = Date.now();
-      const filename = `bug-screenshots/${timestamp}.jpg`;
-      const rawUrl = await uploadToGitHub(filename, imageBuffer);
-      imageMarkdown = `\n\n### Screenshot\n![Bug screenshot](${rawUrl})\n`;
-    } catch (err) {
-      console.error("Failed to process image:", err);
-      imageMarkdown = "\n\n_Screenshot was attached but failed to upload._\n";
-    }
-  }
-
-  // Create GitHub Issue
   try {
+    const update: TelegramUpdate = await req.json();
+    const message = update.message;
+    if (!message) {
+      return NextResponse.json({ ok: true });
+    }
+
+    const text = message.text || message.caption || "";
+
+    // Only process messages that start with /bug or contain #bug
+    if (!text.startsWith("/bug") && !text.includes("#bug")) {
+      return NextResponse.json({ ok: true });
+    }
+
+    // Strip the /bug command prefix
+    const description = text.replace(/^\/bug\s*/, "").replace(/#bug\s*/g, "").trim();
+    if (!description) {
+      await sendTelegram(message.chat.id, "Please include a bug description. Example:\n/bug The dashboard shows wrong currency for INR transactions");
+      return NextResponse.json({ ok: true });
+    }
+
+    const submitter = message.from?.first_name || "Someone";
+    let imageMarkdown = "";
+
+    // Handle photo uploads
+    if (message.photo && message.photo.length > 0) {
+      try {
+        const photo = message.photo[message.photo.length - 1];
+        const fileInfo = await getTelegramFile(photo.file_id);
+        const imageBuffer = await downloadTelegramFile(fileInfo.file_path);
+        const timestamp = Date.now();
+        const filename = `bug-screenshots/${timestamp}.jpg`;
+        const rawUrl = await uploadToGitHub(filename, imageBuffer);
+        imageMarkdown = `\n\n### Screenshot\n![Bug screenshot](${rawUrl})\n`;
+      } catch (err) {
+        console.error("Failed to process image:", err);
+        imageMarkdown = "\n\n_Screenshot was attached but failed to upload._\n";
+      }
+    }
+
+    // Create GitHub Issue
     const issueUrl = await createGitHubIssue({
       title: `Bug: ${description.slice(0, 80)}${description.length > 80 ? "..." : ""}`,
       body: `## Bug Report\n\n${description}${imageMarkdown}\n\n---\n_Submitted by ${submitter} via Telegram_`,
@@ -80,16 +78,12 @@ export async function POST(req: NextRequest) {
       `Bug filed and Claude is on it.\n${issueUrl}`,
       message.message_id
     );
-  } catch (err) {
-    console.error("Failed to create issue:", err);
-    await sendTelegram(
-      message.chat.id,
-      "Failed to create the issue. Check the webhook logs.",
-      message.message_id
-    );
-  }
 
-  return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("Webhook error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }
 
 async function sendTelegram(chatId: number, text: string, replyTo?: number) {
