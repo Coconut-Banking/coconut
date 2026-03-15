@@ -271,7 +271,7 @@ async function syncSingleToken(
     if (error) console.error("[sync] upsert error:", error.message);
   }
 
-  const skipped = rows.length - rowsToInsert.length;
+  const skipped = addedRows.length - filteredAdded.length;
   if (skipped > 0) {
     console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
   }
