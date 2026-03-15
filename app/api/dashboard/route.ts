@@ -52,7 +52,12 @@ export async function GET() {
           : Number(a.balance_current) || 0;
 
       if (isLiability) {
-        liabilities += Math.abs(bal);
+        if (bal >= 0) {
+          liabilities += bal;
+        } else {
+          // Negative balance on credit/loan = overpayment, treat as asset
+          assets += Math.abs(bal);
+        }
       } else {
         assets += bal;
       }
