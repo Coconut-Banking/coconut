@@ -35,6 +35,15 @@ export async function POST() {
       }
     }
 
+    // Clear email_receipts FK before deleting transactions (prevents FK violation)
+    try {
+      await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
+    } catch { /* table may not exist */ }
+
+    // Protect bank transactions that are referenced by split_transactions
+    const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
+    const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string).filter(Boolean));
+
     // Delete only bank transactions (keep manual expenses from Shared)
     const { data: allTx } = await db
       .from("transactions")
@@ -42,10 +51,14 @@ export async function POST() {
       .eq("clerk_user_id", effectiveUserId);
     const bankIds = (allTx ?? [])
       .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
+      .filter((r) => !protectedIds.has(r.id as string))
       .map((r) => r.id);
     if (bankIds.length > 0) {
       await db.from("transactions").delete().in("id", bankIds);
     }
+
+    // Delete subscriptions (will be re-detected on reconnect)
+    await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
 
     // Delete accounts and plaid_items
     await db.from("accounts").delete().eq("clerk_user_id", effectiveUserId);

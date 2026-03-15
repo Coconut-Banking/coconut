@@ -35,6 +35,12 @@ export async function POST() {
       }
     }
 
+    // Clear email_receipts FK before deleting transactions (prevents FK violation)
+    try {
+      await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
+      await db.from("email_receipts").delete().eq("clerk_user_id", effectiveUserId);
+    } catch { /* table may not exist */ }
+
     // Delete ALL transactions (manual + bank)
     const { error: txErr } = await db
     .from("transactions")
