@@ -58,12 +58,14 @@ export async function POST(request: NextRequest) {
   }
 
   const verificationHeader = request.headers.get("plaid-verification");
-  if (verificationHeader) {
-    const ok = await verifyPlaidWebhook(body, verificationHeader);
-    if (!ok) {
-      console.warn("[plaid][webhook] verification failed");
-      return NextResponse.json({ error: "Verification failed" }, { status: 401 });
-    }
+  if (!verificationHeader) {
+    console.warn("[plaid][webhook] missing verification header");
+    return NextResponse.json({ error: "Missing verification" }, { status: 401 });
+  }
+  const ok = await verifyPlaidWebhook(body, verificationHeader);
+  if (!ok) {
+    console.warn("[plaid][webhook] verification failed");
+    return NextResponse.json({ error: "Verification failed" }, { status: 401 });
   }
 
   let payload: PlaidWebhookPayload;
