@@ -16,10 +16,13 @@ interface TelegramUpdate {
 }
 
 export async function POST(req: NextRequest) {
-  // Verify the request is from Telegram via secret token
-  const secretToken = req.headers.get("x-telegram-bot-api-secret-token");
-  if (secretToken !== process.env.TELEGRAM_WEBHOOK_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify the request is from Telegram via secret token (skip if not configured)
+  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (expectedSecret) {
+    const secretToken = req.headers.get("x-telegram-bot-api-secret-token");
+    if (secretToken !== expectedSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const update: TelegramUpdate = await req.json();
