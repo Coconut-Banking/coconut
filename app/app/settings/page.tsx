@@ -125,12 +125,18 @@ export default function SettingsPage() {
     const inst = (a as { institution_name?: string | null }).institution_name;
     const accountLabel = a.name || "Account";
     const displayName = inst ? `${inst} - ${accountLabel}` : accountLabel;
+    const liabilityTypes = new Set(["credit", "loan"]);
     return {
       id: (a as { id?: string }).id ?? a.account_id,
       name: displayName,
       accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
       color: "#3D8E62",
       connected: "Connected",
+      subtype: a.subtype ?? a.type ?? "account",
+      mask: a.mask ?? null,
+      balance: (a as { balance_current?: number | null }).balance_current ?? null,
+      iso_currency_code: (a as { iso_currency_code?: string }).iso_currency_code ?? "USD",
+      isLiability: liabilityTypes.has(a.type ?? ""),
     };
   });
   const visibleBanks = banks.filter((b) => !isHidden(b.id));
