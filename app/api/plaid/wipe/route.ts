@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import { getPlaidClient } from "@/lib/plaid-client";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 /**
  * POST /api/plaid/wipe
@@ -33,6 +35,12 @@ export async function POST() {
       }
     }
 
+    // Clear email_receipts FK before deleting transactions (prevents FK violation)
+    try {
+      await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
+      await db.from("email_receipts").delete().eq("clerk_user_id", effectiveUserId);
+    } catch { /* table may not exist */ }
+
     // Delete ALL transactions (manual + bank)
     const { error: txErr } = await db
     .from("transactions")
@@ -50,6 +58,8 @@ export async function POST() {
 
   // Delete subscriptions
   await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
+
+  revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
 
   return NextResponse.json({ ok: true });
   } catch (err) {

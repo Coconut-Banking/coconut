@@ -11,6 +11,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/gmail/callback",
   "/api/demo",
+  "/api/telegram-webhook",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
@@ -43,8 +44,8 @@ export default clerkMiddleware(async (auth, req) => {
 
   if (isPublicRoute(req)) return;
 
-  // Bypass Clerk auth when CLERK_DISABLED=true (e.g. debugging user ID / Plaid issues)
-  if (process.env.CLERK_DISABLED === "true") {
+  // Bypass Clerk auth when CLERK_DISABLED=true (dev only — never in production)
+  if (process.env.CLERK_DISABLED === "true" && process.env.NODE_ENV !== "production") {
     return NextResponse.next();
   }
 

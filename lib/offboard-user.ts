@@ -33,22 +33,23 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
   // 3. Remove user from groups they're in but don't own
   await db.from("group_members").delete().eq("user_id", clerkUserId);
 
-  // 4. Delete transactions, accounts, plaid_items
-  await db.from("transactions").delete().eq("clerk_user_id", clerkUserId);
-  await db.from("accounts").delete().eq("clerk_user_id", clerkUserId);
-  await db.from("plaid_items").delete().eq("clerk_user_id", clerkUserId);
-
-  // 5. Subscriptions
-  await db.from("subscriptions").delete().eq("clerk_user_id", clerkUserId);
-
-  // 6. Gmail / email
+  // 4. Gmail / email — must clear email_receipts.transaction_id FK before deleting transactions
   try {
-    await db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId);
+    await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", clerkUserId);
     await db.from("email_receipts").delete().eq("clerk_user_id", clerkUserId);
+    await db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId);
     await db.from("gmail_scan_log").delete().eq("clerk_user_id", clerkUserId);
   } catch {
     // Tables may not exist
   }
+
+  // 5. Delete transactions, accounts, plaid_items
+  await db.from("transactions").delete().eq("clerk_user_id", clerkUserId);
+  await db.from("accounts").delete().eq("clerk_user_id", clerkUserId);
+  await db.from("plaid_items").delete().eq("clerk_user_id", clerkUserId);
+
+  // 6. Subscriptions
+  await db.from("subscriptions").delete().eq("clerk_user_id", clerkUserId);
 
   console.log("[offboard] completed", { user_id: clerkUserId });
 }

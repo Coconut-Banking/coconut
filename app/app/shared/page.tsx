@@ -512,7 +512,7 @@ function SharedPageContent() {
   const { linked, loading: txLoading } = useTransactions();
   const { format: fc, formatAbs: fca } = useCurrency();
   const { summary, loading, error: summaryError, refetch: refetchSummary } = useGroupsSummary();
-  const { activity, loading: activityLoading, refetch: refetchActivity } = useRecentActivity(linked);
+  const { activity, loading: activityLoading, refetch: refetchActivity } = useRecentActivity(true);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedPersonKey, setSelectedPersonKey] = useState<string | null>(null);
@@ -536,12 +536,17 @@ function SharedPageContent() {
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
 
+  // Known contacts for quick-add when creating a group
+  const [knownContacts, setKnownContacts] = useState<{ displayName: string; email: string | null }[]>([]);
+  const [pendingMembers, setPendingMembers] = useState<{ displayName: string; email: string | null }[]>([]);
+  const [newMemberInput, setNewMemberInput] = useState("");
+
   const { detail: groupDetail, refetch: refetchGroupDetail } = useGroupDetail(selectedId);
   const { detail: personDetail, loading: personDetailLoading, refetch: refetchPersonDetail } = usePersonDetail(
     settleTarget?.key ?? expandedPerson ?? selectedPersonKey ?? null
   );
 
-  const showRealUI = linked;
+  const showRealUI = true; // Groups don't require bank link — always show
 
   useEffect(() => {
     if (!selectedId && !selectedPersonKey && showRealUI) refetchSummary();
@@ -564,6 +569,26 @@ function SharedPageContent() {
     return () => clearTimeout(t);
   }, [searchParams, showRealUI, refetchSummary, refetchGroupDetail, refetchPersonDetail, selectedId, selectedPersonKey, router]);
 
+  const openCreate = () => {
+    setNewGroupName("");
+    setNewGroupType("other");
+    setCreateError(null);
+    setPendingMembers([]);
+    setNewMemberInput("");
+    setShowCreate(true);
+    // Fetch known contacts for quick-add
+    fetch("/api/groups/people")
+      .then((r) => r.ok ? r.json() : { people: [] })
+      .then((d) => {
+        const people = Array.isArray(d.people) ? d.people : [];
+        setKnownContacts(people.map((p: { displayName: string; email?: string | null }) => ({
+          displayName: p.displayName,
+          email: p.email ?? null,
+        })));
+      })
+      .catch(() => {});
+  };
+
   const createGroup = async () => {
     if (!newGroupName.trim()) return;
     setCreateError(null);
@@ -580,7 +605,19 @@ function SharedPageContent() {
       });
       const data = await res.json();
       if (res.ok) {
+        // Add all pending members to the newly created group
+        if (pendingMembers.length > 0) {
+          await Promise.all(pendingMembers.map((m) =>
+            fetch(`/api/groups/${data.id}/members`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ displayName: m.displayName, email: m.email }),
+            })
+          ));
+        }
         setNewGroupName("");
+        setPendingMembers([]);
+        setNewMemberInput("");
         setShowCreate(false);
         refetchSummary();
         setSelectedId(data.id);
@@ -694,29 +731,7 @@ function SharedPageContent() {
     );
   }
 
-  if (!showRealUI) {
-    return (
-      <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight mb-4">Shared Expenses</h1>
-        <p className="text-sm text-gray-500 mb-6">
-          Create groups, attach bank transactions, split, and settle. Connect your bank to start.
-        </p>
-        <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
-          <Users size={40} className="text-gray-400 mx-auto mb-4" />
-          <p className="text-sm font-medium text-gray-600">Connect your bank</p>
-          <p className="text-xs text-gray-500 mt-1 mb-4">
-            Create groups and split transactions from real bank data
-          </p>
-          <a
-            href="/connect"
-            className="inline-flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
-          >
-            Connect bank
-          </a>
-        </div>
-      </div>
-    );
-  }
+  // (Bank link gate removed — groups work without a linked bank account)
 
   // Group detail view
   if (selectedId && groupDetail) {
@@ -992,7 +1007,7 @@ function SharedPageContent() {
               Add expense
             </button>
             <button
-              onClick={() => setShowCreate(true)}
+              onClick={() => openCreate()}
               className="flex items-center gap-2 border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-2xl text-sm font-medium transition-colors"
             >
               <Users size={18} />
@@ -1040,16 +1055,108 @@ function SharedPageContent() {
                 ))}
               </div>
             </div>
+
+            {/* Members */}
+            <div>
+              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Members</label>
+
+              {/* Known contacts quick-add */}
+              {knownContacts.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs text-gray-400 mb-2">From your contacts</p>
+                  <div className="flex flex-wrap gap-2">
+                    {knownContacts.map((c) => {
+                      const already = pendingMembers.some(
+                        (m) => m.displayName === c.displayName && m.email === c.email
+                      );
+                      return (
+                        <button
+                          key={c.email ?? c.displayName}
+                          onClick={() => {
+                            if (already) {
+                              setPendingMembers((prev) =>
+                                prev.filter((m) => !(m.displayName === c.displayName && m.email === c.email))
+                              );
+                            } else {
+                              setPendingMembers((prev) => [...prev, { displayName: c.displayName, email: c.email }]);
+                            }
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-all ${
+                            already
+                              ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52] font-medium"
+                              : "border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <span className="w-5 h-5 rounded-full bg-[#3D8E62]/10 flex items-center justify-center text-[10px] font-bold text-[#3D8E62]">
+                            {c.displayName[0]?.toUpperCase()}
+                          </span>
+                          {c.displayName}
+                          {already && <CheckCircle2 size={12} className="text-[#3D8E62]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Manual entry */}
+              <div className="flex gap-2">
+                <input
+                  value={newMemberInput}
+                  onChange={(e) => setNewMemberInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newMemberInput.trim()) {
+                      setPendingMembers((prev) => [...prev, { displayName: newMemberInput.trim(), email: null }]);
+                      setNewMemberInput("");
+                    }
+                  }}
+                  placeholder="Add someone new…"
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30"
+                />
+                <button
+                  onClick={() => {
+                    if (!newMemberInput.trim()) return;
+                    setPendingMembers((prev) => [...prev, { displayName: newMemberInput.trim(), email: null }]);
+                    setNewMemberInput("");
+                  }}
+                  disabled={!newMemberInput.trim()}
+                  className="px-3 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium disabled:opacity-40 transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+
+              {/* Pending members list */}
+              {pendingMembers.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {pendingMembers.map((m, i) => (
+                    <span
+                      key={i}
+                      className="flex items-center gap-1 bg-[#EEF7F2] text-[#2D7A52] text-xs px-2.5 py-1 rounded-full border border-[#C3E0D3]"
+                    >
+                      {m.displayName}
+                      <button
+                        onClick={() => setPendingMembers((prev) => prev.filter((_, j) => j !== i))}
+                        className="ml-0.5 hover:text-red-500 transition-colors"
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-2 pt-1">
               <button
                 onClick={createGroup}
                 disabled={!newGroupName.trim() || creating}
                 className="flex-1 py-3 rounded-xl bg-[#3D8E62] text-white text-sm font-semibold disabled:opacity-50 hover:bg-[#2D7A52] transition-colors"
               >
-                {creating ? "Creating…" : "Create"}
+                {creating ? "Creating…" : `Create${pendingMembers.length > 0 ? ` with ${pendingMembers.length} member${pendingMembers.length > 1 ? "s" : ""}` : ""}`}
               </button>
               <button
-                onClick={() => { setShowCreate(false); setNewGroupName(""); setCreateError(null); }}
+                onClick={() => { setShowCreate(false); setNewGroupName(""); setCreateError(null); setPendingMembers([]); setNewMemberInput(""); }}
                 disabled={creating}
                 className="px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
               >
@@ -1059,6 +1166,14 @@ function SharedPageContent() {
           </div>
           {createError && <p className="text-sm text-red-600 mt-3">{createError}</p>}
         </motion.div>
+      )}
+
+      {!linked && (
+        <div className="flex items-center gap-3 bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3 mb-4 text-sm">
+          <span className="text-[#3D8E62]">💡</span>
+          <span className="text-[#2D5A44] flex-1">Connect your bank to attach real transactions when splitting expenses.</span>
+          <a href="/connect" className="text-[#3D8E62] font-medium hover:underline shrink-0">Connect →</a>
+        </div>
       )}
 
       {summaryError ? (
@@ -1199,7 +1314,7 @@ function SharedPageContent() {
                     </motion.div>
                   ))}
                   <button
-                    onClick={() => setShowCreate(true)}
+                    onClick={() => openCreate()}
                     className="flex items-center gap-4 px-5 py-4 w-full hover:bg-gray-50 transition-colors text-left"
                   >
                     <div className="w-10 h-10 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center shrink-0">

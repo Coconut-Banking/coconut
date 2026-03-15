@@ -225,13 +225,19 @@ function applyFilters(
     .gte("date", intent.date_start)
     .lte("date", intent.date_end);
 
+  // Sanitize PostgREST filter values to prevent injection via .or() clauses
+  const sanitizeFilterValue = (s: string): string =>
+    s.replace(/[,()\.]/g, "").trim();
+
   // Merchant: search across all merchant columns (hybrid robustness)
   if (intent.merchant) {
-    const kw = normalize(intent.merchant);
-    const pattern = `%${kw}%`;
-    b = b.or(
-      `normalized_merchant.ilike.${pattern},merchant_name.ilike.${pattern},raw_name.ilike.${pattern}`
-    );
+    const kw = sanitizeFilterValue(normalize(intent.merchant));
+    if (kw) {
+      const pattern = `%${kw}%`;
+      b = b.or(
+        `normalized_merchant.ilike.${pattern},merchant_name.ilike.${pattern},raw_name.ilike.${pattern}`
+      );
+    }
   }
 
   // Merchant keywords: OR across multiple keyword patterns against all merchant columns
@@ -239,26 +245,28 @@ function applyFilters(
   // to avoid "Uber" matching "Uber Eats"
   if (intent.merchant_keywords && intent.merchant_keywords.length > 0) {
     const clauses = intent.merchant_keywords.flatMap((kw) => {
+      const sanitized = sanitizeFilterValue(kw);
+      if (!sanitized) return [];
       // If the keyword looks like an exact merchant name (has spaces, mixed case, >3 chars),
       // use exact case-insensitive match. Otherwise use fuzzy ILIKE for short concept terms.
-      const isExactName = kw.includes(" ") || kw.length > 8 || /[A-Z]/.test(kw);
+      const isExactName = sanitized.includes(" ") || sanitized.length > 8 || /[A-Z]/.test(sanitized);
       if (isExactName) {
-        // Exact match on merchant_name (case-insensitive)
-        const escaped = kw.replace(/'/g, "''");
         return [
-          `merchant_name.ilike.${kw}`,
-          `raw_name.ilike.${kw}`,
+          `merchant_name.ilike.${sanitized}`,
+          `raw_name.ilike.${sanitized}`,
         ];
       }
       // Fuzzy match for short concept keywords (fallback when resolution fails)
-      const pattern = `%${normalize(kw)}%`;
+      const pattern = `%${normalize(sanitized)}%`;
       return [
         `normalized_merchant.ilike.${pattern}`,
         `merchant_name.ilike.${pattern}`,
         `raw_name.ilike.${pattern}`,
       ];
     });
-    b = b.or(clauses.join(","));
+    if (clauses.length > 0) {
+      b = b.or(clauses.join(","));
+    }
   }
 
   if (intent.category) b = b.ilike("primary_category", `%${intent.category.toUpperCase()}%`);
