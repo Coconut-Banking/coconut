@@ -80,6 +80,22 @@ Clean the receipt to be super readable:
 
 Return the SAME JSON structure. Items array must only contain real line items.`;
 
+/** Ensure parsed receipt has required fields to prevent crashes on missing data. */
+function validateParsedReceipt(raw: unknown): ParsedReceipt {
+  const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  return {
+    merchant_name: typeof obj.merchant_name === "string" ? obj.merchant_name : "Unknown",
+    date: typeof obj.date === "string" ? obj.date : null,
+    currency: typeof obj.currency === "string" ? obj.currency : "USD",
+    items: Array.isArray(obj.items) ? obj.items : [],
+    subtotal: typeof obj.subtotal === "number" ? obj.subtotal : 0,
+    tax: typeof obj.tax === "number" ? obj.tax : 0,
+    tip: typeof obj.tip === "number" ? obj.tip : 0,
+    other_fees: Array.isArray(obj.other_fees) ? obj.other_fees : [],
+    total: typeof obj.total === "number" ? obj.total : 0,
+  };
+}
+
 /** Call PaddleOCR AI Studio layout-parsing API; returns markdown text or null. */
 async function paddleAistudioOcr(
   imageBase64: string,
@@ -135,7 +151,7 @@ async function cleanReceiptWithLLM(parsed: ParsedReceipt): Promise<ParsedReceipt
     });
     const raw = completion.choices[0]?.message?.content ?? "{}";
     try {
-      return JSON.parse(raw) as ParsedReceipt;
+      return validateParsedReceipt(JSON.parse(raw));
     } catch (parseErr) {
       console.warn("[receipt-ocr] LLM cleanup returned malformed JSON, using raw:", parseErr);
       return parsed;
@@ -167,7 +183,7 @@ async function parseReceiptFromText(text: string): Promise<ParsedReceipt> {
   });
   const raw = completion.choices[0]?.message?.content ?? "{}";
   try {
-    return JSON.parse(raw) as ParsedReceipt;
+    return validateParsedReceipt(JSON.parse(raw));
   } catch (e) {
     throw new Error(`[receipt-ocr] Malformed AI response when parsing receipt text: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -248,7 +264,7 @@ export async function parseReceiptImage(
   const raw = completion.choices[0]?.message?.content ?? "{}";
   let parsed: ParsedReceipt;
   try {
-    parsed = JSON.parse(raw) as ParsedReceipt;
+    parsed = validateParsedReceipt(JSON.parse(raw));
   } catch (e) {
     throw new Error(`[receipt-ocr] Malformed AI response when parsing receipt image: ${e instanceof Error ? e.message : String(e)}`);
   }
