@@ -44,12 +44,15 @@ export function cleanMerchantForDisplay(
     return m ? m[1] : s;
   }
 
-  // 5. INCOME/TRANSFER_IN: payroll junk (PPD ID, -OSV, etc.)
+  // 5. INCOME/TRANSFER_IN: payroll junk (PPD ID, -OSV, Rippling, People Center, etc.)
   const incomeCategories = ["INCOME", "TRANSFER_IN"];
   if (incomeCategories.includes(cat)) {
     const hasPayrollJunk =
-      /PPD\s*ID|-OSV|ACH\s+CREDIT|DIRECT\s+DEP|PAYROLL|DIR\s+DEP|CREDIT\s+ENTRY/i.test(s);
+      /PPD\s*ID|-OSV|ACH\s+CREDIT|DIRECT\s+DEP|PAYROLL|DIR\s+DEP|CREDIT\s+ENTRY|RIPPLING|PEOPLE\s*CENTER|PEOPLECENTER/i.test(s);
     if (hasPayrollJunk) {
+      // Known payroll processors (Rippling, People Center, etc.)
+      if (/rippling/i.test(s)) return "Rippling Pay";
+      if (/people\s*center|peoplecenter/i.test(s)) return "People Center Pay";
       let company = s.split(",")[0].trim();
       if (!s.includes(",")) {
         const match = s.match(/^(.+?)\s+(?:PPD\s*ID|-OSV|PAYROLL|ACH|DIRECT\s+DEP)/i);

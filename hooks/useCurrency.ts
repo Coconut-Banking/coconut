@@ -47,6 +47,29 @@ export function useCurrency() {
   return { currencyCode, symbol, format, formatAbs, setCurrency };
 }
 
+/** Expected monthly income when bank doesn't sync payroll (Rippling, People Center, etc.). */
+export function useManualMonthlyIncome() {
+  const { user } = useUser();
+
+  const manualMonthlyIncome = useMemo(() => {
+    const v = (user?.unsafeMetadata as { manualMonthlyIncome?: number } | undefined)?.manualMonthlyIncome;
+    return typeof v === "number" && v >= 0 ? v : 0;
+  }, [user?.unsafeMetadata]);
+
+  const setManualMonthlyIncome = useCallback(
+    async (value: number) => {
+      if (!user) return;
+      const num = Math.max(0, Number(value) || 0);
+      await user.update({
+        unsafeMetadata: { ...user.unsafeMetadata, manualMonthlyIncome: num },
+      });
+    },
+    [user]
+  );
+
+  return { manualMonthlyIncome, setManualMonthlyIncome };
+}
+
 /** Compact view preference — reduces padding, line height, font size in lists. */
 export function useCompactView() {
   const { user } = useUser();
