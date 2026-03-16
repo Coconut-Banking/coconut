@@ -11,6 +11,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/gmail/callback",
   "/api/demo",
+  "/api/telegram-webhook",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
