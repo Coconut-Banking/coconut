@@ -48,7 +48,32 @@ export async function POST(request: NextRequest) {
       rawDescription: t.raw_name ?? "",
     }));
 
-    const reply = await chatWithContext(message, transactions, subsSummary);
+    let emailLineItems: string | undefined;
+    try {
+      const txIds = txs.map(t => t.id).filter(Boolean);
+      if (txIds.length > 0) {
+        const { data: receipts } = await db
+          .from("email_receipts")
+          .select("merchant_name, total_amount, order_date, line_items, matched_transaction_id")
+          .in("matched_transaction_id", txIds);
+        if (receipts && receipts.length > 0) {
+          emailLineItems = (receipts as Array<{ merchant_name: string; total_amount: number; order_date: string; line_items: unknown; matched_transaction_id: string }>)
+            .map(r => {
+              const items = Array.isArray(r.line_items)
+                ? (r.line_items as Array<{ name?: string; quantity?: number; price?: number }>)
+                    .map(i => `  - ${i.name ?? "item"} ${i.quantity && i.quantity > 1 ? `×${i.quantity}` : ""} $${(i.price ?? 0).toFixed(2)}`)
+                    .join("\n")
+                : "";
+              return `${r.merchant_name} (${r.order_date}) $${r.total_amount?.toFixed(2) ?? "?"}:\n${items}`;
+            })
+            .join("\n\n");
+        }
+      }
+    } catch (e) {
+      console.warn("[chat] email line items fetch failed:", e instanceof Error ? e.message : e);
+    }
+
+    const reply = await chatWithContext(message, transactions, subsSummary, emailLineItems);
 
     return NextResponse.json({ reply });
   } catch (e) {

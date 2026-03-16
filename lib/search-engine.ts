@@ -19,13 +19,13 @@ const openai = process.env.OPENAI_API_KEY
 // ─── Intent schema ────────────────────────────────────────────────────────────
 
 export interface SearchIntent {
-  metric: "sum" | "count" | "list" | "breakdown" | "top_merchant";
+  metric: "sum" | "count" | "list" | "breakdown" | "top_merchant" | "compare" | "trend" | "max" | "average" | "anomaly";
   date_start: string;   // YYYY-MM-DD
   date_end: string;     // YYYY-MM-DD
   merchant: string | null;
-  merchant_keywords: string[] | null; // multiple merchant name patterns for conceptual queries
-  category: string | null;  // Plaid primary category, e.g. FOOD_AND_DRINK
-  amount_gt: number | null; // absolute value threshold
+  merchant_keywords: string[] | null;
+  category: string | null;
+  amount_gt: number | null;
   amount_lt: number | null;
 }
 
@@ -52,7 +52,7 @@ function defaultIntent(): SearchIntent {
 function validateIntent(raw: unknown): SearchIntent | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const METRICS = ["sum", "count", "list", "breakdown", "top_merchant"];
+  const METRICS = ["sum", "count", "list", "breakdown", "top_merchant", "compare", "trend", "max", "average", "anomaly"];
   if (!METRICS.includes(r.metric as string)) return null;
   if (typeof r.date_start !== "string" || typeof r.date_end !== "string") return null;
   const merchant = typeof r.merchant === "string" && r.merchant.toLowerCase() !== "null"
@@ -130,7 +130,7 @@ Schema:
   "amount_lt": number or null
 }
 
-metric: sum (total spent), count (how many), list (show transactions), breakdown (by category), top_merchant (most visited)
+metric: sum (total spent), count (how many), list (show transactions), breakdown (by category), top_merchant (most visited), compare (current vs previous period), trend (monthly totals over time), max (single largest transaction), average (average per week/month), anomaly (unusual spending)
 
 Choosing merchant vs merchant_keywords vs category:
 
@@ -369,7 +369,133 @@ async function runStructuredQuery(
     return { metric: "breakdown", transactions: rows, total: null, count: rows.length, breakdown, topMerchants: null };
   }
 
-  // list
+  // ── max: single largest transaction ──
+  if (intent.metric === "max") {
+    const { data, error } = await applyFilters(
+      db.from("transactions").select(
+        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      ).lt("amount", 0).order("amount", { ascending: true }).limit(1),
+      intent, clerkUserId
+    );
+    if (error) throw error;
+    const rows = (data ?? []) as DBTransaction[];
+    return { metric: "max", transactions: rows, total: rows[0] ? Math.abs(rows[0].amount) : null, count: rows.length, breakdown: null, topMerchants: null };
+  }
+
+  // ── compare: current period vs previous period ──
+  if (intent.metric === "compare") {
+    const startDate = new Date(intent.date_start);
+    const endDate = new Date(intent.date_end);
+    const periodMs = endDate.getTime() - startDate.getTime();
+    const prevStart = new Date(startDate.getTime() - periodMs - 86400000);
+    const prevEnd = new Date(startDate.getTime() - 86400000);
+
+    const currentIntent = intent;
+    const prevIntent = { ...intent, date_start: prevStart.toISOString().split("T")[0], date_end: prevEnd.toISOString().split("T")[0] };
+
+    const [currentResult, prevResult] = await Promise.all([
+      runStructuredQuery(clerkUserId, { ...currentIntent, metric: "sum" }),
+      runStructuredQuery(clerkUserId, { ...prevIntent, metric: "sum" }),
+    ]);
+
+    const currentTotal = currentResult.total ?? 0;
+    const prevTotal = prevResult.total ?? 0;
+    const change = prevTotal > 0 ? ((currentTotal - prevTotal) / prevTotal) * 100 : 0;
+
+    return {
+      metric: "compare",
+      transactions: currentResult.transactions,
+      total: currentTotal,
+      count: currentResult.count,
+      breakdown: [
+        { category: "Current period", total: currentTotal, count: currentResult.count ?? 0 },
+        { category: "Previous period", total: prevTotal, count: prevResult.count ?? 0 },
+        { category: "Change", total: change, count: 0 },
+      ],
+      topMerchants: null,
+    };
+  }
+
+  // ── trend: monthly totals over time ──
+  if (intent.metric === "trend") {
+    const { data, error } = await applyFilters(
+      db.from("transactions").select(
+        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      ).lt("amount", 0).order("date", { ascending: true }),
+      intent, clerkUserId
+    );
+    if (error) throw error;
+    const rows = (data ?? []) as DBTransaction[];
+    const byMonth = new Map<string, { total: number; count: number }>();
+    for (const r of rows) {
+      const month = r.date.slice(0, 7);
+      const existing = byMonth.get(month) ?? { total: 0, count: 0 };
+      byMonth.set(month, { total: existing.total + Math.abs(r.amount), count: existing.count + 1 });
+    }
+    const breakdown = [...byMonth.entries()].map(([month, v]) => ({ category: month, total: v.total, count: v.count }));
+    return { metric: "trend", transactions: rows, total: null, count: rows.length, breakdown, topMerchants: null };
+  }
+
+  // ── average: time-averaged spending ──
+  if (intent.metric === "average") {
+    const { data, error } = await applyFilters(
+      db.from("transactions").select(
+        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      ).lt("amount", 0).order("date", { ascending: false }),
+      intent, clerkUserId
+    );
+    if (error) throw error;
+    const rows = (data ?? []) as DBTransaction[];
+    const total = rows.reduce((s, r) => s + Math.abs(r.amount), 0);
+    const startD = new Date(intent.date_start);
+    const endD = new Date(intent.date_end);
+    const weeks = Math.max(1, (endD.getTime() - startD.getTime()) / (7 * 86400000));
+    const months = Math.max(1, weeks / 4.33);
+    return {
+      metric: "average",
+      transactions: rows.slice(0, SEARCH.RESULT_LIMIT),
+      total,
+      count: rows.length,
+      breakdown: [
+        { category: "Per week", total: total / weeks, count: Math.round(rows.length / weeks) },
+        { category: "Per month", total: total / months, count: Math.round(rows.length / months) },
+      ],
+      topMerchants: null,
+    };
+  }
+
+  // ── anomaly: unusual spending (z-score > 2) ──
+  if (intent.metric === "anomaly") {
+    const { data, error } = await applyFilters(
+      db.from("transactions").select(
+        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      ).lt("amount", 0).order("date", { ascending: false }).limit(2000),
+      intent, clerkUserId
+    );
+    if (error) throw error;
+    const rows = (data ?? []) as DBTransaction[];
+    const byMerchant = new Map<string, number[]>();
+    for (const r of rows) {
+      const name = (r.merchant_name || r.raw_name || "").trim().toLowerCase();
+      if (!name) continue;
+      const arr = byMerchant.get(name) ?? [];
+      arr.push(Math.abs(r.amount));
+      byMerchant.set(name, arr);
+    }
+    const anomalies = rows.filter((r) => {
+      const name = (r.merchant_name || r.raw_name || "").trim().toLowerCase();
+      const amounts = byMerchant.get(name);
+      if (!amounts || amounts.length < 3) return false;
+      const mean = amounts.reduce((s, a) => s + a, 0) / amounts.length;
+      const stdDev = Math.sqrt(amounts.reduce((s, a) => s + (a - mean) ** 2, 0) / amounts.length);
+      if (stdDev < 1) return false;
+      const zScore = (Math.abs(r.amount) - mean) / stdDev;
+      return zScore > 2;
+    });
+    return { metric: "anomaly", transactions: anomalies, total: null, count: anomalies.length, breakdown: null, topMerchants: null };
+  }
+
+  // list (default)
   const { data, error } = await applyFilters(
     db.from("transactions").select(
       "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
@@ -389,31 +515,89 @@ async function runStructuredQuery(
   };
 }
 
-// ─── Vector fallback ──────────────────────────────────────────────────────────
+// ─── HyDE: Hypothetical Document Embeddings ──────────────────────────────────
+// Generate a hypothetical transaction that would perfectly answer the query,
+// then embed that instead of the raw query. Bridges query-document vocabulary gap.
+
+async function generateHyDE(query: string, intent: SearchIntent): Promise<string> {
+  if (!openai) return query;
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{
+        role: "user",
+        content: `Generate a realistic bank transaction line that would match this search query. Include merchant name, category, dollar amount, day of week, date, location, and whether it's in-store or online. Return ONLY the transaction text, nothing else.
+
+Query: "${query.trim()}"
+Example output: "Shell gas station | transportation gas and fuel | $48.50 | Wednesday March 12 2025 | in-store purchase | San Francisco, CA"`,
+      }],
+      temperature: 0.3,
+      max_tokens: 150,
+    });
+    const hydeText = completion.choices[0]?.message?.content?.trim();
+    if (hydeText && hydeText.length > 10) {
+      console.log("[hyde] generated:", hydeText.slice(0, 80));
+      return hydeText;
+    }
+  } catch (e) {
+    console.warn("[hyde] generation failed:", e instanceof Error ? e.message : e);
+  }
+  return query;
+}
+
+// ─── BM25 full-text search ────────────────────────────────────────────────────
+
+async function runBM25Search(
+  clerkUserId: string,
+  query: string,
+  intent: SearchIntent
+): Promise<DBTransaction[]> {
+  const db = getSupabase();
+  try {
+    const { data, error } = await db.rpc("bm25_search_transactions", {
+      p_user_id: clerkUserId,
+      p_query: query,
+      p_date_start: intent.date_start,
+      p_date_end: intent.date_end,
+      p_limit: SEARCH.VECTOR_LIMIT,
+    });
+    if (error) {
+      console.warn("[bm25] RPC error:", error.message);
+      return [];
+    }
+    return (data ?? []).map((r: DBTransaction & { rank?: number }) => {
+      const { rank: _rank, ...tx } = r as DBTransaction & { rank?: number };
+      return tx as DBTransaction;
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ─── Vector search (with HyDE) ───────────────────────────────────────────────
 
 async function runVectorSearch(
   clerkUserId: string,
   query: string,
-  intent: SearchIntent
+  intent: SearchIntent,
+  useHyDE = true
 ): Promise<DBTransaction[]> {
   if (!openai) return [];
 
   const db = getSupabase();
 
-  // Enrich the query for better embedding match
-  // Transaction embeddings encode "merchant category $amount date"
-  // so we expand the query to include related terms the embeddings would contain
-  let enrichedQuery = query;
-  if (intent.merchant_keywords && intent.merchant_keywords.length > 0) {
-    enrichedQuery = `${query} ${intent.merchant_keywords.join(" ")}`;
-  }
-  if (intent.merchant) {
-    enrichedQuery = `${query} ${intent.merchant}`;
+  let searchText = query;
+  if (useHyDE) {
+    searchText = await generateHyDE(query, intent);
+  } else {
+    if (intent.merchant_keywords?.length) searchText = `${query} ${intent.merchant_keywords.join(" ")}`;
+    if (intent.merchant) searchText = `${query} ${intent.merchant}`;
   }
 
   const { data: embData } = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: enrichedQuery,
+    input: searchText,
+    dimensions: 256,
   });
   if (!embData?.length || !embData[0]?.embedding) return [];
   const queryEmbedding = embData[0].embedding;
@@ -431,6 +615,50 @@ async function runVectorSearch(
     return [];
   }
   return (data ?? []) as DBTransaction[];
+}
+
+// ─── Hybrid search: BM25 + Vector with Reciprocal Rank Fusion ────────────────
+
+async function runHybridSearch(
+  clerkUserId: string,
+  query: string,
+  intent: SearchIntent
+): Promise<{ transactions: DBTransaction[]; usedVector: boolean }> {
+  const [bm25Results, vectorResults] = await Promise.all([
+    runBM25Search(clerkUserId, query, intent),
+    runVectorSearch(clerkUserId, query, intent, true),
+  ]);
+
+  if (bm25Results.length === 0 && vectorResults.length === 0) {
+    return { transactions: [], usedVector: false };
+  }
+  if (bm25Results.length === 0) return { transactions: vectorResults, usedVector: true };
+  if (vectorResults.length === 0) return { transactions: bm25Results, usedVector: false };
+
+  const K = 60;
+  const scores = new Map<string, { score: number; tx: DBTransaction }>();
+
+  bm25Results.forEach((tx, rank) => {
+    const key = tx.plaid_transaction_id;
+    const existing = scores.get(key);
+    const s = 1 / (K + rank);
+    scores.set(key, { score: (existing?.score ?? 0) + s, tx });
+  });
+
+  vectorResults.forEach((tx, rank) => {
+    const key = tx.plaid_transaction_id;
+    const existing = scores.get(key);
+    const s = 1 / (K + rank);
+    scores.set(key, { score: (existing?.score ?? 0) + s, tx: existing?.tx ?? tx });
+  });
+
+  const merged = [...scores.values()]
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.tx)
+    .slice(0, SEARCH.RESULT_LIMIT);
+
+  console.log(`[hybrid] BM25: ${bm25Results.length}, Vector: ${vectorResults.length}, Merged: ${merged.length}`);
+  return { transactions: merged, usedVector: vectorResults.length > 0 };
 }
 
 // ─── Conceptual merchant resolution ──────────────────────────────────────────
@@ -706,6 +934,37 @@ function generateAnswer(
     ? intent.category.replace(/_/g, " ").toLowerCase()
     : "";
 
+  if (result.metric === "max") {
+    if (!result.transactions.length) return `No expenses found ${period}.`;
+    const tx = result.transactions[0];
+    const name = tx.merchant_name || tx.raw_name || "Unknown";
+    return `Your biggest expense ${period}: ${fmt(Math.abs(tx.amount))} at ${name} on ${tx.date}.`;
+  }
+  if (result.metric === "compare") {
+    const bd = result.breakdown ?? [];
+    const curr = bd.find(b => b.category === "Current period");
+    const prev = bd.find(b => b.category === "Previous period");
+    const change = bd.find(b => b.category === "Change");
+    if (!curr || !prev) return `No comparison data ${period}.`;
+    const dir = (change?.total ?? 0) > 0 ? "more" : "less";
+    return `You spent ${fmt(curr.total)} ${period} vs ${fmt(prev.total)} in the previous period — ${Math.abs(change?.total ?? 0).toFixed(0)}% ${dir}.`;
+  }
+  if (result.metric === "trend") {
+    const bd = result.breakdown ?? [];
+    if (bd.length === 0) return `No trend data ${period}.`;
+    const latest = bd[bd.length - 1];
+    const first = bd[0];
+    return `${subject ? `${subject} spending ` : "Spending "}trend: ${fmt(first.total)} in ${first.category} → ${fmt(latest.total)} in ${latest.category} (${bd.length} months).`;
+  }
+  if (result.metric === "average") {
+    const weekly = result.breakdown?.find(b => b.category === "Per week");
+    const monthly = result.breakdown?.find(b => b.category === "Per month");
+    return `Average ${subject ? `${subject} ` : ""}spending: ${fmt(weekly?.total ?? 0)}/week (${fmt(monthly?.total ?? 0)}/month) ${period}.`;
+  }
+  if (result.metric === "anomaly") {
+    if (!result.count) return `No unusual spending detected ${period}.`;
+    return `Found ${result.count} unusual transaction${result.count === 1 ? "" : "s"} ${period} — amounts significantly above your typical spending at those merchants.`;
+  }
   if (result.metric === "top_merchant") {
     const tm = result.topMerchants ?? [];
     if (tm.length === 0) return `No restaurant/food transactions found ${period}.`;
@@ -821,51 +1080,23 @@ export async function search(clerkUserId: string, query: string): Promise<Search
     let usedVector = false;
 
     if (isConceptualQuery && openai) {
-      // ── Check embedding coverage before using vector search ──
-      const db = getSupabase();
-      const { count: totalTx } = await db.from("transactions").select("id", { count: "exact", head: true }).eq("clerk_user_id", clerkUserId);
-      const { count: embeddedTx } = await db.from("transactions").select("id", { count: "exact", head: true }).eq("clerk_user_id", clerkUserId).not("embedding", "is", null);
-      const coverage = (totalTx ?? 0) > 0 ? ((embeddedTx ?? 0) / (totalTx ?? 1)) : 0;
-      console.log("[nl-search] embedding coverage:", embeddedTx, "/", totalTx, `(${Math.round(coverage * 100)}%)`);
+      // ── HYBRID: BM25 + Vector (with HyDE) in parallel ──
+      const { transactions: hybridTxs, usedVector: hybridUsedVector } =
+        await runHybridSearch(clerkUserId, query, intent);
+      usedVector = hybridUsedVector;
 
-      if (coverage >= 0.3) {
-        // ── PRIMARY: Vector search (≥30% embeddings) ──
-        const vectorResults = await runVectorSearch(clerkUserId, query, intent);
-        if (vectorResults.length > 0) {
-          // Strict LLM filter — removes anything not genuinely related to query
-          const filtered = await filterResultsWithLLM(query, vectorResults);
-          console.log("[nl-search] vector:", vectorResults.length, "→ final pass:", filtered.length);
+      if (hybridTxs.length > 0) {
+        const filtered = await filterResultsWithLLM(query, hybridTxs);
+        console.log("[nl-search] hybrid:", hybridTxs.length, "→ final pass:", filtered.length);
 
-          if (filtered.length > 0) {
-            const total = intent.metric === "sum"
-              ? filtered.filter((t) => t.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
-              : null;
-            structured = { metric: intent.metric, transactions: filtered, total, count: filtered.length, breakdown: null, topMerchants: null };
-            usedVector = true;
-          } else {
-            // Vector results were all irrelevant — fall back to structured
-            console.log("[nl-search] final pass removed all vector results, falling back to structured");
-            structured = await runStructuredQuery(clerkUserId, intent);
-          }
-        } else {
-          console.log("[nl-search] vector returned 0, falling back to structured");
-          structured = await runStructuredQuery(clerkUserId, intent);
-        }
+        const txs = filtered.length > 0 ? filtered : hybridTxs;
+        const total = intent.metric === "sum"
+          ? txs.filter((t) => t.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
+          : null;
+        structured = { metric: intent.metric, transactions: txs, total, count: txs.length, breakdown: null, topMerchants: null };
       } else {
-        // ── FALLBACK: Structured search (low embedding coverage) ──
-        console.log("[nl-search] low embedding coverage, using structured search");
+        console.log("[nl-search] hybrid returned 0, falling back to structured SQL");
         structured = await runStructuredQuery(clerkUserId, intent);
-
-        // Still apply final-pass LLM filter to remove false positives from keyword matching
-        if (structured.transactions.length > 0) {
-          const filtered = await filterResultsWithLLM(query, structured.transactions);
-          if (filtered.length > 0 && filtered.length !== structured.transactions.length) {
-            const total = intent.metric === "sum"
-              ? filtered.filter((t) => t.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
-              : structured.total;
-            structured = { ...structured, transactions: filtered, count: filtered.length, total };
-          }
-        }
       }
     } else {
       // ── Specific merchant / category / general → SQL structured query ──

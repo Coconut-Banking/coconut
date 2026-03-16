@@ -10,6 +10,7 @@ import {
   computeTwoWayShares,
   toCents,
 } from "@/lib/expense-shares";
+import { createRecurringExpense } from "@/lib/recurring-expenses";
 
 /**
  * POST /api/manual-expense
@@ -199,5 +200,18 @@ export async function POST(req: NextRequest) {
 
   revalidateTag(CACHE_TAGS.splitTransactions, "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");
+
+  const recurringFrequency = body.recurringFrequency ?? body.recurring_frequency;
+  if (recurringFrequency && ["weekly", "biweekly", "monthly"].includes(recurringFrequency)) {
+    await createRecurringExpense({
+      clerkUserId: userId,
+      groupId,
+      personKey,
+      amount,
+      description,
+      frequency: recurringFrequency,
+    });
+  }
+
   return NextResponse.json({ id: splitTx.id });
 }
