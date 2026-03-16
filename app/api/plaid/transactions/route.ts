@@ -72,12 +72,14 @@ export async function GET(request: NextRequest) {
     });
 
     // Actually delete duplicate rows from Supabase (first occurrence stays)
-    // Don't delete tx that are in splits or email_receipts — they're referenced by FK
-    const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-    const { data: inReceipts } = await db.from("email_receipts").select("transaction_id").not("transaction_id", "is", null);
+    // Don't delete tx that are in splits, email_receipts, or subscriptions — they're referenced by FK
+    const { data: inSplits } = await db.from("split_transactions").select("transaction_id").in("transaction_id", bankOnly.map(tx => tx.id));
+    const { data: inReceipts } = await db.from("email_receipts").select("transaction_id").not("transaction_id", "is", null).eq("clerk_user_id", effectiveUserId);
+    const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
     const protectedIds = new Set([
       ...(inSplits ?? []).map((r) => r.transaction_id as string),
       ...(inReceipts ?? []).map((r) => r.transaction_id as string),
+      ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
     ].filter(Boolean));
     const idsToDelete = bankOnly
       .map((tx) => tx.id as string)
