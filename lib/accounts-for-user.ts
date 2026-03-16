@@ -30,10 +30,11 @@ export async function getAccountsFromTransactionIds(
   let { data, error } = await db
     .from("accounts")
     .select(`${baseSelect}, plaid_item_id`)
-    .in("id", acctIds);
+    .in("id", acctIds)
+    .eq("clerk_user_id", userId);
 
   if (error && /plaid_item_id|does not exist/i.test(error.message)) {
-    const fallback = await db.from("accounts").select(baseSelect).in("id", acctIds);
+    const fallback = await db.from("accounts").select(baseSelect).in("id", acctIds).eq("clerk_user_id", userId);
     data = fallback.data as typeof data;
   }
 

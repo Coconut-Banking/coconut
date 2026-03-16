@@ -83,7 +83,11 @@ export async function getGmailClient(clerkUserId: string) {
     if (tokens.refresh_token) updates.refresh_token = tokens.refresh_token;
     if (tokens.expiry_date) updates.token_expiry = new Date(tokens.expiry_date).toISOString();
     if (Object.keys(updates).length > 0) {
-      await db.from("gmail_connections").update(updates).eq("clerk_user_id", clerkUserId);
+      try {
+        await db.from("gmail_connections").update(updates).eq("clerk_user_id", clerkUserId);
+      } catch (error) {
+        console.error("[getGmailClient] Failed to persist refreshed tokens for user:", clerkUserId, error);
+      }
     }
   });
 
