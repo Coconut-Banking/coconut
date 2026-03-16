@@ -102,30 +102,81 @@ run_for_repo() {
   git reset --hard origin/main
   npm install --prefer-offline --no-audit 2>/dev/null || npm ci
 
-  # Fetch ai-fix issues for this repo
+  # Fetch ai-fix issues for this repo (labeled + title fallback for repos without the label)
   echo "Fetching ai-fix issues for $name..."
-  local issues_json
-  issues_json=$(gh issue list \
+  local labeled_json unlabeled_json issues_json
+  labeled_json=$(gh issue list \
     --repo "$full_repo" \
     --label "ai-fix" \
     --state open \
     --json number,title,body,labels,comments \
-    --limit 50)
+    --limit 50 2>/dev/null || echo "[]")
 
-  # Filter out issues with "test" label and issues with no title
-  issues_json=$(echo "$issues_json" | python3 -c "
+  # Fallback: also find issues with "Bug:" title prefix (for repos missing ai-fix label)
+  unlabeled_json=$(gh issue list \
+    --repo "$full_repo" \
+    --state open \
+    --search "Bug: in:title" \
+    --json number,title,body,labels,comments \
+    --limit 50 2>/dev/null || echo "[]")
+
+  # Merge, deduplicate, filter out junk, and auto-close test/spam issues
+  issues_json=$(python3 -c "
 import sys, json
-issues = json.load(sys.stdin)
-filtered = []
-for issue in issues:
+
+labeled = json.loads('''$labeled_json''')
+unlabeled = json.loads('''$unlabeled_json''')
+
+# Merge and deduplicate
+seen = set()
+merged = []
+for issue in labeled + unlabeled:
+    if issue['number'] not in seen:
+        seen.add(issue['number'])
+        merged.append(issue)
+
+# Separate junk from real issues
+junk_words = {'test', 'testing', 'asdf', 'hello', 'hi', 'foo', 'bar', 'try', 'trying'}
+real = []
+junk = []
+for issue in merged:
     label_names = [l['name'].lower() for l in issue.get('labels', [])]
     if 'test' in label_names:
+        junk.append(issue)
         continue
     title = (issue.get('title') or '').strip()
     if not title:
+        junk.append(issue)
         continue
-    filtered.append(issue)
-print(json.dumps(filtered))
+    # Check if description is just a test word
+    desc = title.replace('Bug:', '').replace('bug:', '').strip().lower()
+    if desc in junk_words:
+        junk.append(issue)
+        continue
+    real.append(issue)
+
+# Output both lists separated by a marker
+print(json.dumps({'real': real, 'junk': junk}))
+")
+
+  # Auto-close junk/test issues
+  local junk_numbers
+  junk_numbers=$(echo "$issues_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for i in data.get('junk', []):
+    print(i['number'])
+")
+  for junk_num in $junk_numbers; do
+    echo "Auto-closing test/spam issue #$junk_num..."
+    gh issue close "$junk_num" --repo "$full_repo" --comment "Closed by AI Fix Bot: test/spam issue." 2>/dev/null || true
+  done
+
+  # Extract real issues
+  issues_json=$(echo "$issues_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(json.dumps(data['real']))
 ")
 
   local issue_count
