@@ -261,7 +261,7 @@ export async function scanGmailForReceipts(
     { attempts: 3, label: "gmail.messages.list" }
   );
 
-  const messageIds = (listResp.data.messages || []).map((m) => m.id!).filter(Boolean);
+  const messageIds = (listResp.data.messages || []).map((m) => m.id).filter((id): id is string => Boolean(id));
   if (messageIds.length === 0) {
     return {
       emailsFetched: 0, alreadyProcessed: 0, parsed: 0, notReceipt: 0,
