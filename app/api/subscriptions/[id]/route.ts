@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 export async function PATCH(
   _req: Request,
@@ -30,6 +32,7 @@ export async function PATCH(
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!data) return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
+    revalidateTag(CACHE_TAGS.transactions(userId), "max");
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });

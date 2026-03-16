@@ -11,7 +11,7 @@ function createMockDb(accountsResult: Array<Record<string, unknown>> | null) {
     limit: vi.fn().mockReturnThis(),
   };
   const from = vi.fn().mockImplementation(() => {
-    chain.in.mockResolvedValueOnce({ data: accountsResult });
+    chain.eq.mockResolvedValueOnce({ data: accountsResult });
     return chain;
   });
   return {

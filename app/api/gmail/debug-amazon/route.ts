@@ -38,7 +38,8 @@ export async function GET() {
 
         if (listResp.data.messages && listResp.data.messages.length > 0) {
           // Get details of first message for debugging
-          const msgId = listResp.data.messages[0].id!;
+          const msgId = listResp.data.messages[0].id;
+          if (!msgId) continue;
           const msg = await gmail.users.messages.get({
             userId: "me",
             id: msgId,

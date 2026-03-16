@@ -57,6 +57,11 @@ export async function POST() {
       await db.from("transactions").delete().in("id", bankIds);
     }
 
+    // Delete subscription_transactions before subscriptions to avoid orphaned rows
+    const { data: userSubs } = await db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId);
+    if (userSubs?.length) {
+      await db.from("subscription_transactions").delete().in("subscription_id", userSubs.map(s => s.id));
+    }
     // Delete subscriptions (will be re-detected on reconnect)
     await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
 

@@ -410,10 +410,15 @@ export async function deleteDuplicateTransactionsForUser(
     .from("email_receipts")
     .select("transaction_id")
     .not("transaction_id", "is", null);
+  const { data: protectedSubTxs } = await db
+    .from("subscription_transactions")
+    .select("transaction_id")
+    .not("transaction_id", "is", null);
   const protectedIds = new Set(
     [
       ...(protectedSplits ?? []).map((r) => r.transaction_id as string),
       ...(protectedReceipts ?? []).map((r) => r.transaction_id as string),
+      ...(protectedSubTxs ?? []).map((r) => r.transaction_id as string),
     ].filter(Boolean)
   );
 

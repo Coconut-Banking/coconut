@@ -68,34 +68,50 @@ export function useSubscriptions() {
   }, [fetchSubs]);
 
   const dismiss = useCallback(async (id: string) => {
+    // Optimistic update with rollback on failure
+    const previousSubscriptions = subscriptions;
+    setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+
     try {
       const res = await fetch(`/api/subscriptions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "dismissed" }),
       });
-      if (res.ok) setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+      if (!res.ok) {
+        // Rollback on API error
+        setSubscriptions(previousSubscriptions);
+      }
     } catch (e) {
       console.error("[subscriptions] dismiss:", e);
+      // Rollback on network error
+      setSubscriptions(previousSubscriptions);
     }
-  }, []);
+  }, [subscriptions]);
 
   const dismissPriceChange = useCallback(async (id: string) => {
+    // Optimistic update with rollback on failure
+    const previousSubscriptions = subscriptions;
+    setSubscriptions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, priceChange: null } : s))
+    );
+
     try {
       const res = await fetch(`/api/subscriptions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dismissPriceChange: true }),
       });
-      if (res.ok) {
-        setSubscriptions((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, priceChange: null } : s))
-        );
+      if (!res.ok) {
+        // Rollback on API error
+        setSubscriptions(previousSubscriptions);
       }
     } catch (e) {
       console.error("[subscriptions] dismissPriceChange:", e);
+      // Rollback on network error
+      setSubscriptions(previousSubscriptions);
     }
-  }, []);
+  }, [subscriptions]);
 
   const totalMonthly = subscriptions.reduce((acc, s) => {
     if (s.frequency === "monthly") return acc + s.amount;

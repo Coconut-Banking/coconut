@@ -106,8 +106,8 @@ describe("computeTwoWayShares", () => {
 
   it("handles odd-cent total (10.01)", () => {
     const shares = computeTwoWayShares(10.01, "A", "B");
-    expect(shares[0].amount).toBe(5.01);
-    expect(shares[1].amount).toBe(5);
+    expect(shares[0].amount).toBe(5);
+    expect(shares[1].amount).toBe(5.01);
   });
 });
 

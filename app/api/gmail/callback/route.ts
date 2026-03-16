@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       client.setCredentials(tokens);
       const gmail = google.gmail({ version: "v1", auth: client });
       const profile = await gmail.users.getProfile({ userId: "me" });
-      email = profile.data.emailAddress || undefined;
+      email = profile.data.emailAddress ?? undefined;
       console.log("[Gmail Callback] Got email:", email);
     } catch (e) {
       console.warn("[Gmail Callback] Failed to get email (non-critical):", e);
