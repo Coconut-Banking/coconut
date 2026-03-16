@@ -1,5 +1,6 @@
 #!/bin/bash
 # Bug Council Runner — Runs the daily bug council audit, polls CI, and notifies when ready.
+# Uses a dedicated git worktree so it never touches your main checkout.
 
 set -euo pipefail
 
@@ -7,8 +8,9 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:/Users/koushik/.n
 
 # ── Config ──────────────────────────────────────────────────────────────────
 REPO="Coconut-Banking/coconut"
-REPO_DIR="/Users/koushik/github/coconut"
-LOG_DIR="$REPO_DIR/.bug-council-logs"
+MAIN_REPO="/Users/koushik/github/coconut"
+WORK_DIR="/Users/koushik/github/coconut-worktrees/bug-council"
+LOG_DIR="$MAIN_REPO/.bug-council-logs"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 DATE_TAG=$(date +%Y%m%d)
 BRANCH="fix/bug-council-$DATE_TAG"
@@ -32,9 +34,18 @@ notify_telegram() {
     -d text="$1" > /dev/null 2>&1 || true
 }
 
-# ── Step 1: Update repo ────────────────────────────────────────────────────
-cd "$REPO_DIR"
-git fetch origin main && git checkout main && git pull origin main
+# ── Step 1: Ensure worktree exists and is on latest main ────────────────────
+if [ ! -d "$WORK_DIR/.git" ] && [ ! -f "$WORK_DIR/.git" ]; then
+  echo "Creating worktree..."
+  git -C "$MAIN_REPO" worktree add "$WORK_DIR" main 2>/dev/null || \
+    git -C "$MAIN_REPO" worktree add "$WORK_DIR" --detach origin/main
+fi
+
+cd "$WORK_DIR"
+git fetch origin main
+git checkout main 2>/dev/null || git checkout --detach origin/main
+git reset --hard origin/main
+npm install --prefer-offline --no-audit 2>/dev/null || npm ci
 
 # ── Step 2: Run Bug Council ────────────────────────────────────────────────
 echo "Starting Bug Council audit..."
@@ -57,7 +68,6 @@ if [ -z "$PR_NUMBER" ]; then
   PR_NUMBER=$(gh pr list --repo "$REPO" --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
 fi
 
-# Also try branches with different naming patterns the council might use
 if [ -z "$PR_NUMBER" ]; then
   PR_NUMBER=$(gh pr list --repo "$REPO" --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("fix/bug-council")) | .number' 2>/dev/null | head -1 || true)
 fi
