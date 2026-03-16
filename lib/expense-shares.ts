@@ -26,10 +26,12 @@ export function computeTwoWayShares(
   memberIdA: string,
   memberIdB: string
 ): { memberId: string; amount: number }[] {
-  const half = Math.round((amount / 2) * 100) / 100;
+  const totalCents = toCents(amount);
+  const halfCents = Math.floor(totalCents / 2);
+  const remainderCents = totalCents - halfCents;
   return [
-    { memberId: memberIdA, amount: half },
-    { memberId: memberIdB, amount: amount - half },
+    { memberId: memberIdA, amount: halfCents / 100 },
+    { memberId: memberIdB, amount: remainderCents / 100 },
   ];
 }
 
