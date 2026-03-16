@@ -55,6 +55,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    // Handle /status command
+    if (text.startsWith("/status")) {
+      const statusMsg = await getAiFixStatus();
+      await sendTelegram(message.chat.id, statusMsg, message.message_id);
+      return NextResponse.json({ ok: true });
+    }
+
     // Only process /bug commands
     if (!isBugCommand) {
       return NextResponse.json({ ok: true });
@@ -149,6 +156,78 @@ async function addCommentToIssue(issueNumber: number, body: string) {
       body: JSON.stringify({ body }),
     }
   );
+}
+
+async function getAiFixStatus(): Promise<string> {
+  const headers = { Authorization: `Bearer ${GITHUB_TOKEN}` };
+
+  // Fetch open ai-fix issues (the queue)
+  const issuesRes = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/issues?labels=ai-fix&state=open&sort=created&direction=desc&per_page=20`,
+    { headers }
+  );
+  const openIssues = issuesRes.ok ? await issuesRes.json() : [];
+
+  // Fetch open PRs from the ai-fix bot
+  const prsRes = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/pulls?state=open&sort=created&direction=desc&per_page=10`,
+    { headers }
+  );
+  const allPRs = prsRes.ok ? await prsRes.json() : [];
+  const fixPRs = allPRs.filter(
+    (pr: { head: { ref: string } }) =>
+      pr.head.ref.startsWith("fix/ai-fix-") || pr.head.ref.startsWith("fix/bug-council-")
+  );
+
+  // Check CI status on active PRs
+  const prStatuses: string[] = [];
+  for (const pr of fixPRs) {
+    const checksRes = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/commits/${pr.head.sha}/check-runs?per_page=10`,
+      { headers }
+    );
+    let ciStatus = "unknown";
+    if (checksRes.ok) {
+      const checksData = await checksRes.json();
+      const runs = checksData.check_runs || [];
+      if (runs.length === 0) {
+        ciStatus = "pending";
+      } else if (runs.every((r: { conclusion: string }) => r.conclusion === "success")) {
+        ciStatus = "passing";
+      } else if (runs.some((r: { conclusion: string }) => r.conclusion === "failure")) {
+        ciStatus = "failing";
+      } else {
+        ciStatus = "in progress";
+      }
+    }
+    prStatuses.push(`  PR #${pr.number}: ${pr.title}\n  CI: ${ciStatus}\n  ${pr.html_url}`);
+  }
+
+  // Build the status message
+  const lines: string[] = ["--- AI Fix Bot Status ---\n"];
+
+  if (openIssues.length > 0) {
+    lines.push(`Open ai-fix issues: ${openIssues.length}`);
+    for (const issue of openIssues.slice(0, 10)) {
+      lines.push(`  #${issue.number}: ${issue.title}`);
+    }
+    if (openIssues.length > 10) {
+      lines.push(`  ... and ${openIssues.length - 10} more`);
+    }
+  } else {
+    lines.push("Open ai-fix issues: 0 (all clear!)");
+  }
+
+  lines.push("");
+
+  if (prStatuses.length > 0) {
+    lines.push(`Active fix PRs: ${prStatuses.length}`);
+    lines.push(prStatuses.join("\n\n"));
+  } else {
+    lines.push("Active fix PRs: none");
+  }
+
+  return lines.join("\n");
 }
 
 async function sendTelegram(chatId: number, text: string, replyTo?: number) {
