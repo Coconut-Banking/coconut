@@ -10,17 +10,54 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
 
-function buildEmbedText(row: {
+interface EmbedRow {
   merchant_name?: string | null;
   raw_name?: string | null;
   primary_category?: string | null;
+  detailed_category?: string | null;
   amount: number;
   date: string;
-}): string {
-  const merchant = row.merchant_name || row.raw_name || "";
-  const category = (row.primary_category || "").replace(/_/g, " ").toLowerCase();
-  return `${merchant} ${category} ${Math.abs(row.amount).toLocaleString("en-US", { style: "currency", currency: "USD" })} ${row.date}`.trim();
+  payment_channel?: string | null;
+  authorized_date?: string | null;
+  city?: string | null;
+  region?: string | null;
+  counterparty_name?: string | null;
+  website?: string | null;
 }
+
+function buildEmbedText(row: EmbedRow): string {
+  const parts: string[] = [];
+
+  const merchant = row.counterparty_name || row.merchant_name || row.raw_name || "";
+  if (merchant) parts.push(merchant);
+
+  const cat = (row.primary_category || "").replace(/_/g, " ").toLowerCase();
+  const detail = (row.detailed_category || "").replace(/_/g, " ").toLowerCase();
+  if (detail && detail !== cat) parts.push(`${cat} ${detail}`);
+  else if (cat) parts.push(cat);
+
+  parts.push(Math.abs(row.amount).toLocaleString("en-US", { style: "currency", currency: "USD" }));
+
+  const d = new Date(row.authorized_date || row.date);
+  if (!isNaN(d.getTime())) {
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    parts.push(`${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`);
+  } else {
+    parts.push(row.date);
+  }
+
+  if (row.payment_channel) parts.push(row.payment_channel === "in store" ? "in-store purchase" : row.payment_channel === "online" ? "online purchase" : "");
+
+  const loc = [row.city, row.region].filter(Boolean).join(", ");
+  if (loc) parts.push(loc);
+
+  if (row.website) parts.push(row.website);
+
+  return parts.filter(Boolean).join(" | ").trim();
+}
+
+const EMBED_DIMENSIONS = 256;
 
 async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
   if (!openai || texts.length === 0) return texts.map(() => null);
@@ -28,6 +65,7 @@ async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
     const { data } = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: texts,
+      dimensions: EMBED_DIMENSIONS,
     });
     return data.map((d) => d.embedding);
   } catch (e) {
@@ -233,10 +271,13 @@ async function syncSingleToken(
 
   const mapTxToRow = (tx: Record<string, unknown>) => {
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";
-    const pfc = tx.personal_finance_category as { primary?: string; detailed?: string } | null;
+    const pfc = tx.personal_finance_category as { primary?: string; detailed?: string; confidence_level?: string } | null;
     const category = tx.category as string[] | null;
     const rawAmount = tx.amount as number;
     const amount = rawAmount > 0 ? -Math.abs(rawAmount) : Math.abs(rawAmount);
+    const location = tx.location as { city?: string; region?: string; postal_code?: string; country?: string } | null;
+    const counterparties = tx.counterparties as Array<{ name?: string; type?: string; website?: string; logo_url?: string; entity_id?: string }> | null;
+    const cp = counterparties?.[0];
     return {
       clerk_user_id: clerkUserId,
       plaid_transaction_id: tx.transaction_id as string,
@@ -250,6 +291,20 @@ async function syncSingleToken(
       primary_category: pfc?.primary ?? category?.[0] ?? "OTHER",
       detailed_category: pfc?.detailed ?? category?.[1] ?? null,
       is_pending: (tx.pending as boolean) ?? false,
+      payment_channel: (tx.payment_channel as string) ?? null,
+      authorized_date: (tx.authorized_date as string) ?? null,
+      city: location?.city ?? null,
+      region: location?.region ?? null,
+      postal_code: location?.postal_code ?? null,
+      country: location?.country ?? null,
+      merchant_entity_id: (tx.merchant_entity_id as string) ?? cp?.entity_id ?? null,
+      website: (tx.website as string) ?? cp?.website ?? null,
+      category_confidence: pfc?.confidence_level ?? null,
+      pending_transaction_id: (tx.pending_transaction_id as string) ?? null,
+      counterparty_name: cp?.name ?? null,
+      counterparty_type: cp?.type ?? null,
+      counterparty_website: cp?.website ?? null,
+      counterparty_logo_url: cp?.logo_url ?? null,
     };
   };
 
@@ -568,7 +623,7 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
 
   const { data: rows } = await db
     .from("transactions")
-    .select("id, merchant_name, raw_name, primary_category, amount, date")
+    .select("id, merchant_name, raw_name, primary_category, detailed_category, amount, date, payment_channel, authorized_date, city, region, counterparty_name, website")
     .eq("clerk_user_id", clerkUserId)
     .is("embedding", null)
     .limit(1000);
@@ -577,14 +632,7 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
 
   const EMBED_BATCH = 100;
   for (let i = 0; i < rows.length; i += EMBED_BATCH) {
-    const batch = rows.slice(i, i + EMBED_BATCH) as Array<{
-      id: string;
-      merchant_name: string | null;
-      raw_name: string | null;
-      primary_category: string | null;
-      amount: number;
-      date: string;
-    }>;
+    const batch = rows.slice(i, i + EMBED_BATCH) as Array<EmbedRow & { id: string }>;
     const texts = batch.map((t) => buildEmbedText(t));
     const embeddings = await embedBatch(texts);
     for (let j = 0; j < batch.length; j++) {

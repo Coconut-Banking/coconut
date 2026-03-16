@@ -185,12 +185,74 @@ export const KNOWN_SUBSCRIPTIONS: KnownSubscription[] = [
   { patterns: ["spectrum"], name: "Spectrum", defaultFrequency: "monthly", category: "TELECOM" },
   { patterns: ["cox communications"], name: "Cox", defaultFrequency: "monthly", category: "TELECOM" },
 
+  // ── Meal Kits / Food Delivery ───────────────────────────────────────────
+  { patterns: ["hellofresh", "hello fresh"], name: "HelloFresh", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["blue apron"], name: "Blue Apron", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["factor", "factor75", "factor meals"], name: "Factor", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["home chef", "homechef"], name: "Home Chef", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["freshly"], name: "Freshly", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["daily harvest", "dailyharvest"], name: "Daily Harvest", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["hungryroot"], name: "Hungryroot", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["green chef"], name: "Green Chef", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["gobble"], name: "Gobble", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+  { patterns: ["sunbasket", "sun basket"], name: "Sun Basket", defaultFrequency: "weekly", category: "FOOD_AND_DRINK" },
+
+  // ── Car / Rideshare ───────────────────────────────────────────────────────
+  { patterns: ["sirius", "siriusxm"], name: "SiriusXM", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
+  { patterns: ["onstar"], name: "OnStar", defaultFrequency: "monthly", category: "TRANSPORTATION" },
+  { patterns: ["turo"], name: "Turo", defaultFrequency: "monthly", category: "TRANSPORTATION" },
+  { patterns: ["zipcar"], name: "Zipcar", defaultFrequency: "monthly", category: "TRANSPORTATION" },
+  { patterns: ["aaa", "american automobile"], name: "AAA", defaultFrequency: "yearly", category: "TRANSPORTATION" },
+
+  // ── Beauty / Personal Care Boxes ──────────────────────────────────────────
+  { patterns: ["ipsy"], name: "Ipsy", defaultFrequency: "monthly", category: "PERSONAL_CARE" },
+  { patterns: ["birchbox"], name: "Birchbox", defaultFrequency: "monthly", category: "PERSONAL_CARE" },
+  { patterns: ["boxycharm", "boxy charm"], name: "BoxyCharm", defaultFrequency: "monthly", category: "PERSONAL_CARE" },
+  { patterns: ["fabfitfun", "fab fit fun"], name: "FabFitFun", defaultFrequency: "monthly", category: "PERSONAL_CARE" },
+  { patterns: ["dollar shave", "dollarshave"], name: "Dollar Shave Club", defaultFrequency: "monthly", category: "PERSONAL_CARE" },
+  { patterns: ["harry's", "harrys"], name: "Harry's", defaultFrequency: "monthly", category: "PERSONAL_CARE" },
+  { patterns: ["manscaped"], name: "Manscaped", defaultFrequency: "monthly", category: "PERSONAL_CARE" },
+
+  // ── Security / Smart Home ─────────────────────────────────────────────────
+  { patterns: ["ring protect", "ring.com"], name: "Ring Protect", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["nest aware", "google nest"], name: "Nest Aware", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["adt"], name: "ADT", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["simplisafe"], name: "SimpliSafe", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["wyze"], name: "Wyze", defaultFrequency: "monthly", category: "SOFTWARE" },
+
+  // ── Pet ───────────────────────────────────────────────────────────────────
+  { patterns: ["barkbox", "bark box"], name: "BarkBox", defaultFrequency: "monthly", category: "SHOPPING" },
+  { patterns: ["chewy"], name: "Chewy Autoship", defaultFrequency: "monthly", category: "SHOPPING" },
+  { patterns: ["farmer's dog", "farmersdog"], name: "The Farmer's Dog", defaultFrequency: "monthly", category: "SHOPPING" },
+
+  // ── Fashion / Clothing ────────────────────────────────────────────────────
+  { patterns: ["stitch fix", "stitchfix"], name: "Stitch Fix", defaultFrequency: "monthly", category: "SHOPPING" },
+  { patterns: ["rent the runway"], name: "Rent the Runway", defaultFrequency: "monthly", category: "SHOPPING" },
+  { patterns: ["fabletics"], name: "Fabletics", defaultFrequency: "monthly", category: "SHOPPING" },
+  { patterns: ["savage x", "savagex"], name: "Savage X Fenty", defaultFrequency: "monthly", category: "SHOPPING" },
+
+  // ── Education / Certification ─────────────────────────────────────────────
+  { patterns: ["chegg"], name: "Chegg", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
+  { patterns: ["udemy"], name: "Udemy", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
+  { patterns: ["linkedin premium", "linkedin learning"], name: "LinkedIn Premium", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["pluralsight"], name: "Pluralsight", defaultFrequency: "monthly", category: "SOFTWARE" },
+
   // ── Miscellaneous ─────────────────────────────────────────────────────────
   { patterns: ["patreon"], name: "Patreon", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
   { patterns: ["onlyfans"], name: "OnlyFans", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
   { patterns: ["buy me a coffee", "buymeacoffee"], name: "Buy Me a Coffee", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
   { patterns: ["google play", "google store"], name: "Google Play", defaultFrequency: "monthly", category: "SOFTWARE" },
   { patterns: ["apple app store", "apple store"], name: "Apple App Store", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["chaturbate"], name: "Chaturbate", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
+  { patterns: ["ancestry", "ancestry.com"], name: "Ancestry", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
+  { patterns: ["23andme"], name: "23andMe+", defaultFrequency: "yearly", category: "ENTERTAINMENT" },
+  { patterns: ["life360"], name: "Life360", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["find my", "airtag"], name: "Apple Find My", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["replika"], name: "Replika", defaultFrequency: "monthly", category: "ENTERTAINMENT" },
+  { patterns: ["character.ai", "character ai"], name: "Character.AI", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["eleven labs", "elevenlabs"], name: "ElevenLabs", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["suno.ai", "suno ai"], name: "Suno AI", defaultFrequency: "monthly", category: "SOFTWARE" },
+  { patterns: ["udio"], name: "Udio", defaultFrequency: "monthly", category: "SOFTWARE" },
 ];
 
 /**
