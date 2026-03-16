@@ -73,6 +73,7 @@ export function useNLSearch<T extends UITransaction>(
   const [loading, setLoading] = useState(false);
   const [usedVectorFallback, setUsedVectorFallback] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const abortRef = useRef<AbortController>();
 
   useEffect(() => {
     const q = query.trim();
@@ -91,13 +92,21 @@ export function useNLSearch<T extends UITransaction>(
     clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
+      // Abort any in-flight request so stale results don't overwrite fresh ones
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
         const res = await fetch("/api/nl-search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ q }),
+          signal: controller.signal,
         });
         const data: SearchResponse = await res.json();
+
+        if (controller.signal.aborted) return;
 
         const mapped = (data.transactions ?? []).map(toUITransaction) as T[];
         setResults(mapped);
@@ -106,16 +115,20 @@ export function useNLSearch<T extends UITransaction>(
         setTotal(data.total ?? null);
         setBreakdown(data.breakdown ?? null);
         setUsedVectorFallback(data.usedVectorFallback ?? false);
-      } catch {
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         setResults(fallbackTransactions);
         setAnswer("");
         setMetric("list");
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, DEBOUNCE_MS);
 
-    return () => clearTimeout(debounceRef.current);
+    return () => {
+      clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
+    };
   }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = query.trim().length > 0;

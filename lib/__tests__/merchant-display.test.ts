@@ -29,6 +29,12 @@ describe("cleanMerchantForDisplay", () => {
     ).toBe("Databricks Pay");
   });
 
+  it("cleans Rippling and People Center payroll", () => {
+    expect(cleanMerchantForDisplay("RIPPLING PAYROLL", "INCOME")).toBe("Rippling Pay");
+    expect(cleanMerchantForDisplay("ACH CREDIT FROM PEOPLE CENTER", "TRANSFER_IN")).toBe("People Center Pay");
+    expect(cleanMerchantForDisplay("PEOPLECENTER PAY", "INCOME")).toBe("People Center Pay");
+  });
+
   it("leaves normal merchants unchanged", () => {
     expect(cleanMerchantForDisplay("Starbucks, Coffee Shop #1234", "FOOD_AND_DRINK")).toBe("Starbucks, Coffee Shop #1234");
     expect(cleanMerchantForDisplay("Lyft", "TRANSPORTATION")).toBe("Lyft");

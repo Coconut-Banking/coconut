@@ -3,13 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye } from "lucide-react";
+import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye, Building2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGmail } from "@/hooks/useGmail";
 import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
-import { useCurrency, useCompactView } from "@/hooks/useCurrency";
+import { useCurrency, useCompactView, useManualMonthlyIncome } from "@/hooks/useCurrency";
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
+import { formatCurrency } from "@/lib/currency";
 import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
 
 const sections = [
@@ -27,6 +28,7 @@ export default function SettingsPage() {
   const [email, setEmail] = useState("");
   const { currencyCode: currency, setCurrency } = useCurrency();
   const { compact: compactView, setCompact: setCompactView } = useCompactView();
+  const { manualMonthlyIncome, setManualMonthlyIncome } = useManualMonthlyIncome();
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [twoFA, setTwoFA] = useState(true);
@@ -35,6 +37,7 @@ export default function SettingsPage() {
   const gmail = useGmail();
   const { needsReauth, newAccountsAvailable, refetch: refetchAlerts } = usePlaidAlerts();
   const { hide, unhide, isHidden } = useHiddenAccounts();
+  const [incomeInput, setIncomeInput] = useState("");
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; id?: string; name: string; type?: string; subtype?: string; mask?: string | null; institution_name?: string | null }>;
   } | null>(null);
@@ -79,6 +82,10 @@ export default function SettingsPage() {
     }
   }, [user]);
 
+  useEffect(() => {
+    setIncomeInput(manualMonthlyIncome > 0 ? String(manualMonthlyIncome) : "");
+  }, [manualMonthlyIncome]);
+
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsError(null);
     const url = forceRefresh ? `/api/plaid/accounts?refresh=1&t=${Date.now()}` : `/api/plaid/accounts?t=${Date.now()}`;
@@ -118,12 +125,18 @@ export default function SettingsPage() {
     const inst = (a as { institution_name?: string | null }).institution_name;
     const accountLabel = a.name || "Account";
     const displayName = inst ? `${inst} - ${accountLabel}` : accountLabel;
+    const liabilityTypes = new Set(["credit", "loan"]);
     return {
       id: (a as { id?: string }).id ?? a.account_id,
       name: displayName,
       accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
       color: "#3D8E62",
       connected: "Connected",
+      subtype: a.subtype ?? a.type ?? "account",
+      mask: a.mask ?? null,
+      balance: (a as { balance_current?: number | null }).balance_current ?? null,
+      iso_currency_code: (a as { iso_currency_code?: string }).iso_currency_code ?? "USD",
+      isLiability: liabilityTypes.has(a.type ?? ""),
     };
   });
   const visibleBanks = banks.filter((b) => !isHidden(b.id));
@@ -241,9 +254,10 @@ export default function SettingsPage() {
                       <input
                         type="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+                        readOnly
+                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 text-gray-500 cursor-not-allowed"
                       />
+                      <p className="text-xs text-gray-400 mt-1">Email is managed by your authentication provider.</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Currency</label>
@@ -258,6 +272,28 @@ export default function SettingsPage() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Expected monthly income</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={100}
+                        placeholder="e.g. 5000"
+                        value={incomeInput}
+                        onChange={(e) => setIncomeInput(e.target.value)}
+                        onBlur={async () => {
+                          const v = parseFloat(incomeInput);
+                          if (!Number.isNaN(v) && v >= 0) {
+                            await setManualMonthlyIncome(v);
+                            setIncomeInput(v > 0 ? String(v) : "");
+                          } else {
+                            setIncomeInput(manualMonthlyIncome > 0 ? String(manualMonthlyIncome) : "");
+                          }
+                        }}
+                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+                      />
+                      <p className="text-xs text-gray-400 mt-0.5">Add if your bank doesn&apos;t sync payroll (Rippling, People Center, etc.) — improves cash flow accuracy</p>
                     </div>
                     <div className="flex items-center justify-between py-3 border-b border-gray-100">
                       <div>
@@ -380,16 +416,30 @@ export default function SettingsPage() {
                     ) : (
                       <>
                         {visibleBanks.map((bank) => (
-                          <div key={bank.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl">
-                            <div
-                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
-                              style={{ backgroundColor: bank.color }}
-                            >
-                              {bank.name[0]}
+                          <div key={bank.id} className="flex items-center gap-3 p-4 border border-gray-100 rounded-xl">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bank.isLiability ? "bg-red-50" : "bg-[#EEF7F2]"}`}>
+                              {bank.isLiability
+                                ? <CreditCard size={15} className="text-red-400" />
+                                : <Building2 size={15} className="text-[#3D8E62]" />
+                              }
                             </div>
-                            <div className="flex-1">
-                              <div className="text-sm font-semibold text-gray-900">{bank.name}</div>
-                              <div className="text-xs text-gray-400">{bank.accounts}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 truncate">{bank.name}</div>
+                              <div className="text-xs text-gray-400 capitalize">
+                                {bank.subtype.replace(/_/g, " ")}{bank.mask ? ` ••${bank.mask}` : ""}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 mr-2">
+                              {bank.balance != null ? (
+                                <>
+                                  <div className={`text-sm font-semibold ${bank.isLiability ? "text-red-500" : "text-gray-900"}`}>
+                                    {bank.isLiability ? "-" : ""}{formatCurrency(bank.balance, bank.iso_currency_code)}
+                                  </div>
+                                  <div className="text-xs text-gray-400">{bank.isLiability ? "owed" : "available"}</div>
+                                </>
+                              ) : (
+                                <div className="text-xs text-gray-400">—</div>
+                              )}
                             </div>
                             <button
                               onClick={() => hide(bank.id)}
@@ -405,16 +455,18 @@ export default function SettingsPage() {
                           <div className="pt-2 border-t border-gray-100">
                             <div className="text-xs font-medium text-gray-500 mb-2">Hidden accounts</div>
                             {hiddenBanks.map((bank) => (
-                              <div key={bank.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl mb-2">
-                                <div
-                                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 text-xs font-bold shrink-0"
-                                  style={{ backgroundColor: "rgba(0,0,0,0.05)" }}
-                                >
-                                  {bank.name[0]}
+                              <div key={bank.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl mb-2">
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-gray-200/60">
+                                  {bank.isLiability
+                                    ? <CreditCard size={13} className="text-gray-400" />
+                                    : <Building2 size={13} className="text-gray-400" />
+                                  }
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm text-gray-600 truncate">{bank.name}</div>
-                                  <div className="text-xs text-gray-400">{bank.accounts}</div>
+                                  <div className="text-xs text-gray-400 capitalize">
+                                    {bank.subtype.replace(/_/g, " ")}{bank.mask ? ` ••${bank.mask}` : ""}
+                                  </div>
                                 </div>
                                 <button
                                   onClick={() => unhide(bank.id)}

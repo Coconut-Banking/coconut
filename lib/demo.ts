@@ -55,7 +55,7 @@ export async function getEffectiveUserId(): Promise<string | null> {
   const { userId } = await auth();
   if (userId) return userId;
 
-  if (process.env.CLERK_DISABLED === "true") {
+  if (process.env.CLERK_DISABLED === "true" && process.env.NODE_ENV !== "production") {
     return getClerkBypassUserId();
   }
 

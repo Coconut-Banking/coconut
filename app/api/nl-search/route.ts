@@ -33,6 +33,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("[nl-search]", err);
-    return NextResponse.json({ transactions: [], answer: "Search failed.", metric: "list" });
+    return NextResponse.json(
+      { transactions: [], answer: "Search failed.", metric: "list" },
+      { status: 500 }
+    );
   }
 }

@@ -113,7 +113,7 @@ export async function POST(
     .insert({
       group_id: groupId,
       transaction_id: transaction.id,
-      created_by: payerMember.display_name || "Unknown",
+      created_by: userId,
     })
     .select()
     .single();

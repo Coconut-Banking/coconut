@@ -107,7 +107,7 @@ export default function SubscriptionsPage() {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-bold text-gray-900">
-                    {fca(sub.amount)}/{sub.frequency === "yearly" ? "yr" : sub.frequency === "semiannual" ? "6mo" : "mo"}
+                    {fca(sub.amount)}/{sub.frequency === "yearly" ? "yr" : sub.frequency === "semiannual" ? "6mo" : sub.frequency === "quarterly" ? "qtr" : sub.frequency === "biweekly" ? "2wk" : sub.frequency === "weekly" ? "wk" : "mo"}
                   </div>
                 </div>
                 <button

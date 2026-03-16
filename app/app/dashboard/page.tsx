@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
   TrendingDown, TrendingUp, RefreshCw, Users, DollarSign, ArrowRight,
-  Wallet, CalendarClock, ArrowUpRight, ArrowDownRight,
+  Wallet, CalendarClock, ArrowUpRight, ArrowDownRight, CreditCard, Building2,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
 import { formatCurrency, getCurrencySymbol } from "@/lib/currency";
-import { useCurrency } from "@/hooks/useCurrency";
+import { useCurrency, useManualMonthlyIncome } from "@/hooks/useCurrency";
 
 function CustomTooltip({ active, payload, label, currencyCode }: { active?: boolean; payload?: { value: number }[]; label?: string; currencyCode?: string }) {
   if (active && payload && payload.length) {
@@ -33,6 +33,15 @@ interface DashboardData {
     count: number;
     upcomingBills: Array<{ merchant: string; amount: number; nextDue: string; category: string }>;
   };
+  accounts: Array<{
+    name: string;
+    type: string;
+    subtype: string | null;
+    mask: string | null;
+    balance: number;
+    isLiability: boolean;
+    iso_currency_code: string;
+  }>;
 }
 
 interface MonthStats {
@@ -76,7 +85,10 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
   for (const tx of transactions) {
     const absAmt = Math.round(Math.abs(tx.amount) * 100) / 100;
     const month = tx.date.slice(0, 7);
-    const isExpense = tx.amount < 0;
+    const cat = (tx.category ?? "").toUpperCase().replace(/\s/g, "_");
+    const isIncomeCategory = ["INCOME", "TRANSFER_IN"].includes(cat);
+    // Plaid: negative = credit (income), positive = debit (expense). Defensive: some banks may report differently.
+    const isExpense = isIncomeCategory ? false : tx.amount < 0;
 
     // Cash flow: track income and expenses separately for current month
     if (month === thisMonthKey) {
@@ -166,11 +178,18 @@ export default function DashboardPage() {
   const { user } = useUser();
   const { transactions, linked, loading } = useTransactions();
   const { currencyCode, format: fc } = useCurrency();
+  const { manualMonthlyIncome } = useManualMonthlyIncome();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
 
   const displayName = user?.firstName || user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "there";
   const recentTransactions = transactions.slice(0, 5);
-  const { spendingData, categoryData, monthlySpend, cashFlow, categoryDeltas, topMerchants } = deriveFromTransactions(transactions);
+  const base = deriveFromTransactions(transactions);
+  const cashFlow = {
+    ...base.cashFlow,
+    income: base.cashFlow.income + manualMonthlyIncome,
+    net: base.cashFlow.net + manualMonthlyIncome,
+  };
+  const { spendingData, categoryData, monthlySpend, categoryDeltas, topMerchants } = base;
 
   useEffect(() => {
     if (!linked) return;
@@ -273,6 +292,58 @@ export default function DashboardPage() {
           )}
         </motion.div>
       </div>
+
+      {/* Accounts */}
+      {dashboard?.accounts && dashboard.accounts.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28 }}
+          className="bg-white rounded-2xl border border-gray-100 p-5 mb-6"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Accounts</div>
+              <div className="text-xs text-gray-400 mt-0.5">Live balances from your bank</div>
+            </div>
+            <a href="/app/settings" className="text-xs text-[#3D8E62] font-medium hover:underline">Manage →</a>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {dashboard.accounts.map((acct, i) => {
+              const isCredit = acct.isLiability;
+              const subLabel = acct.subtype
+                ? acct.subtype.replace(/_/g, " ")
+                : acct.type.replace(/_/g, " ");
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 + i * 0.04 }}
+                  className="flex items-start gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/60"
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isCredit ? "bg-red-50" : "bg-[#EEF7F2]"}`}>
+                    {isCredit
+                      ? <CreditCard size={14} className="text-red-400" />
+                      : <Building2 size={14} className="text-[#3D8E62]" />
+                    }
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-gray-800 truncate leading-tight">{acct.name}</div>
+                    <div className="text-xs text-gray-400 capitalize mt-0.5">{subLabel}{acct.mask ? ` ••${acct.mask}` : ""}</div>
+                    <div className={`text-sm font-semibold mt-1 ${isCredit ? "text-red-500" : "text-gray-900"}`}>
+                      {isCredit ? "-" : ""}{formatCurrency(acct.balance, acct.iso_currency_code)}
+                    </div>
+                    {isCredit && (
+                      <div className="text-xs text-gray-400 mt-0.5">balance owed</div>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-5 gap-4 mb-6">

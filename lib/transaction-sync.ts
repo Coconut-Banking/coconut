@@ -229,10 +229,9 @@ async function syncSingleToken(
     }
   }
 
-  const allTxs = [...allAdded, ...allModified];
-  if (allTxs.length === 0 && allRemovedIds.length === 0) return { synced: 0, removedIds: [], skipped: 0 };
+  if (allAdded.length === 0 && allModified.length === 0 && allRemovedIds.length === 0) return { synced: 0, removedIds: [], skipped: 0 };
 
-  const rows = allTxs.map((tx) => {
+  const mapTxToRow = (tx: Record<string, unknown>) => {
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";
     const pfc = tx.personal_finance_category as { primary?: string; detailed?: string } | null;
     const category = tx.category as string[] | null;
@@ -252,12 +251,17 @@ async function syncSingleToken(
       detailed_category: pfc?.detailed ?? category?.[1] ?? null,
       is_pending: (tx.pending as boolean) ?? false,
     };
-  });
+  };
 
-  // Sync-time dedupe: Plaid can return same tx with different IDs when same bank is linked
-  // multiple times (duplicate Items). Skip inserting rows that would duplicate existing
-  // (normalized_merchant, amount, date) for this user.
-  const rowsToInsert = await filterDuplicateTransactions(db, clerkUserId, rows);
+  const addedRows = allAdded.map(mapTxToRow);
+  const modifiedRows = allModified.map(mapTxToRow);
+
+  // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
+  // IDs when same bank is linked multiple times (duplicate Items). Modified transactions
+  // must always be upserted so pending->posted transitions and merchant name refinements
+  // are applied.
+  const filteredAdded = await filterDuplicateTransactions(db, clerkUserId, addedRows);
+  const rowsToInsert = [...filteredAdded, ...modifiedRows];
 
   const BATCH = 100;
   for (let i = 0; i < rowsToInsert.length; i += BATCH) {
@@ -267,7 +271,7 @@ async function syncSingleToken(
     if (error) console.error("[sync] upsert error:", error.message);
   }
 
-  const skipped = rows.length - rowsToInsert.length;
+  const skipped = addedRows.length - filteredAdded.length;
   if (skipped > 0) {
     console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
   }

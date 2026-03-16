@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
         };
         });
         const withInstitution = await enrichAccountsWithInstitution(db, accounts);
-        const deduped = deduplicateAccounts(db, effectiveUserId, withInstitution);
+        const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
         return NextResponse.json(
           { accounts: deduped },
           { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -188,7 +188,7 @@ export async function GET(request: NextRequest) {
         };
       });
       const withInstitution = await enrichAccountsWithInstitution(db, accounts);
-      const deduped = deduplicateAccounts(db, effectiveUserId, withInstitution);
+      const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { searchTransactions } from "@/lib/search";
 import { SEARCH } from "@/lib/config";
 import { getCachedTransactions } from "@/lib/cached-queries";
+import { getEffectiveUserId } from "@/lib/demo";
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getEffectiveUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const q = request.nextUrl.searchParams.get("q") ?? "";
