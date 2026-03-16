@@ -1,0 +1,55 @@
+name: Bug Report (AI Fix)
+description: Report a bug for Claude to fix autonomously. Add the ai-fix label to trigger.
+labels: ["ai-fix"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What's broken? Be specific about what you see vs what you expect.
+      placeholder: "The dashboard shows 'undefined' instead of the subscription name when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How do you trigger this bug?
+      placeholder: |
+        1. Go to /app/dashboard
+        2. Click on a transaction
+        3. See the error
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag and drop screenshots here. The AI agent can analyze images.
+      placeholder: Paste or drag screenshots here
+    validations:
+      required: false
+
+  - type: textarea
+    id: file_hints
+    attributes:
+      label: File Hints (optional)
+      description: If you know which files are involved, list them here to help the agent.
+      placeholder: |
+        - app/app/dashboard/page.tsx
+        - hooks/useCurrency.ts
+    validations:
+      required: false
+
+  - type: dropdown
+    id: repo
+    attributes:
+      label: Which app?
+      options:
+        - Web app (this repo)
+        - Mobile app (coconut-app)
+        - Both
+    validations:
+      required: true
