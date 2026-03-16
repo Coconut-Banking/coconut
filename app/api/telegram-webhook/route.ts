@@ -439,6 +439,32 @@ async function createGitHubIssue(repo: RepoKey, opts: {
     }
   );
 
+  // If labels cause a permission error, retry without them
+  if (!res.ok && opts.labels.length > 0) {
+    const errText = await res.text();
+    if (res.status === 403 || res.status === 422) {
+      console.warn(`Label issue on ${repo}, retrying without labels: ${errText}`);
+      const { labels: _labels, ...withoutLabels } = opts;
+      const retry = await fetch(
+        `https://api.github.com/repos/${REPOS[repo]}/issues`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(withoutLabels),
+        }
+      );
+      if (!retry.ok) {
+        throw new Error(`GitHub issue creation failed: ${retry.status} ${await retry.text()}`);
+      }
+      const data = await retry.json();
+      return data.html_url;
+    }
+    throw new Error(`GitHub issue creation failed: ${res.status} ${errText}`);
+  }
+
   if (!res.ok) {
     throw new Error(`GitHub issue creation failed: ${res.status} ${await res.text()}`);
   }
