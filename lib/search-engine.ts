@@ -271,7 +271,10 @@ function applyFilters(
     }
   }
 
-  if (intent.category) b = b.ilike("primary_category", `%${intent.category.toUpperCase()}%`);
+  if (intent.category) {
+    const sanitizedCategory = sanitizeFilterValue(intent.category.toUpperCase());
+    b = b.ilike("primary_category", `%${sanitizedCategory}%`);
+  }
   if (intent.amount_gt !== null) b = b.lte("amount", -intent.amount_gt);
   if (intent.amount_lt !== null) b = b.gte("amount", -intent.amount_lt);
   return b as unknown as PromiseLike<{ data: unknown; error: unknown; count?: number }>;
