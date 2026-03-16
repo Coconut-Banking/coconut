@@ -1,24 +1,32 @@
 #!/bin/bash
-# Bug Council Runner — Runs the daily bug council audit, polls CI, and notifies when ready.
-# Uses a dedicated git worktree so it never touches your main checkout.
+# Bug Council Runner — Runs the daily bug council audit for BOTH repos (coconut + coconut-app),
+# polls CI, and sends ONE consolidated Telegram notification.
+# Uses dedicated git worktrees so it never touches your main checkouts.
 
 set -euo pipefail
 
 export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:/Users/koushik/.nvm/versions/node/v24.12.0/bin:/usr/bin:/bin:$PATH"
 
 # ── Config ──────────────────────────────────────────────────────────────────
-REPO="Coconut-Banking/coconut"
-MAIN_REPO="/Users/koushik/github/coconut"
-WORK_DIR="/Users/koushik/github/coconut-worktrees/bug-council"
-LOG_DIR="$MAIN_REPO/.bug-council-logs"
 LOCKFILE="/tmp/coconut-bug-council.lock"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 DATE_TAG=$(date +%Y%m%d)
-BRANCH="fix/bug-council-$DATE_TAG"
 TELEGRAM_BOT_TOKEN="8763230267:AAEz3-3Y6nNE7QZRCdYKobUSFVO3JiAwVmk"
 TELEGRAM_CHAT_ID="1728663117"
 GH_USER="KoushikP04"
 CLAUDE="$HOME/.nvm/versions/node/v24.12.0/bin/claude"
+
+# Log to the main coconut repo's log dir
+LOG_DIR="/Users/koushik/github/coconut/.bug-council-logs"
+
+# Repo configs: name|full_repo|main_repo_path|worktree_path|has_ci|claude_command
+REPO_CONFIGS=(
+  "coconut|Coconut-Banking/coconut|/Users/koushik/github/coconut|/Users/koushik/github/coconut-worktrees/bug-council|yes|bug-council.md"
+  "coconut-app|Coconut-Banking/coconut-app|/Users/koushik/github/coconut-app|/Users/koushik/github/coconut-app-worktrees/bug-council|yes|bug-council-mobile.md"
+)
+
+# Results array — populated per repo
+declare -a RESULTS=()
 
 # ── Prevent concurrent runs ─────────────────────────────────────────────────
 if [ -f "$LOCKFILE" ]; then
@@ -34,21 +42,19 @@ echo $$ > "$LOCKFILE"
 # ── Cleanup trap: kill entire process tree + remove lockfile ─────────────────
 cleanup() {
   echo "Cleaning up..."
-  # Kill entire process tree (grandchildren too) — not just direct children
   pkill -TERM -P $$ 2>/dev/null || true
   sleep 1
   pkill -KILL -P $$ 2>/dev/null || true
-  # Kill any claude processes started by this script
   pgrep -f "claude.*bug-council" | xargs kill -9 2>/dev/null || true
   jobs -p 2>/dev/null | xargs kill -9 2>/dev/null || true
   rm -f "$LOCKFILE"
-  # Clean up build artifacts to free disk
-  rm -rf "$WORK_DIR/.next" 2>/dev/null || true
+  # Clean up build artifacts
+  rm -rf "/Users/koushik/github/coconut-worktrees/bug-council/.next" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-# ── Max runtime: 2 hours then self-kill ─────────────────────────────────────
-MAX_RUNTIME=7200
+# ── Max runtime: 3 hours then self-kill (two repos sequentially) ─────────────
+MAX_RUNTIME=10800
 (sleep $MAX_RUNTIME && echo "TIMEOUT: Bug council exceeded ${MAX_RUNTIME}s, killing..." && kill -TERM $$ 2>/dev/null) &
 WATCHDOG_PID=$!
 
@@ -67,63 +73,103 @@ notify_telegram() {
     -d text="$1" > /dev/null 2>&1 || true
 }
 
-# ── Step 1: Ensure worktree exists and is on latest main ────────────────────
-if [ ! -d "$WORK_DIR/.git" ] && [ ! -f "$WORK_DIR/.git" ]; then
-  echo "Creating worktree..."
-  git -C "$MAIN_REPO" worktree add "$WORK_DIR" main 2>/dev/null || \
-    git -C "$MAIN_REPO" worktree add "$WORK_DIR" --detach origin/main
-fi
+# ── Run bug council for a single repo ────────────────────────────────────────
+run_for_repo() {
+  local name="$1"
+  local full_repo="$2"
+  local main_repo="$3"
+  local work_dir="$4"
+  local has_ci="$5"
+  local claude_cmd="$6"
+  local branch="fix/bug-council-$DATE_TAG"
+  local label
+  if [ "$name" = "coconut" ]; then label="web"; else label="mobile"; fi
 
-cd "$WORK_DIR"
-git fetch origin main
-git checkout main 2>/dev/null || git checkout --detach origin/main
-git reset --hard origin/main
-npm install --prefer-offline --no-audit 2>/dev/null || npm ci
+  echo ""
+  echo "================================================================"
+  echo "  Bug Council: $name ($label)"
+  echo "================================================================"
 
-# ── Step 2: Run Bug Council ────────────────────────────────────────────────
-echo "Starting Bug Council audit..."
+  # Ensure worktree parent dir exists
+  mkdir -p "$(dirname "$work_dir")"
 
-CLAUDE_OUTPUT=$("$CLAUDE" -p "$(cat .claude/commands/bug-council.md)
+  # Ensure worktree exists and is on latest main
+  if [ ! -d "$work_dir/.git" ] && [ ! -f "$work_dir/.git" ]; then
+    echo "Creating worktree for $name..."
+    git -C "$main_repo" worktree add "$work_dir" main 2>/dev/null || \
+      git -C "$main_repo" worktree add "$work_dir" --detach origin/main
+  fi
+
+  cd "$work_dir"
+  git fetch origin main
+  git checkout main 2>/dev/null || git checkout --detach origin/main
+  git reset --hard origin/main
+
+  # Install deps (coconut uses npm, coconut-app uses npm too)
+  npm install --prefer-offline --no-audit 2>/dev/null || npm ci
+
+  # Run Claude with the appropriate command file
+  # For coconut-app, the command file is in the coconut repo, so we need to provide it inline
+  local claude_prompt
+  if [ "$name" = "coconut" ]; then
+    claude_prompt=$(cat "$work_dir/.claude/commands/$claude_cmd")
+  else
+    # coconut-app uses the command from the main coconut repo
+    claude_prompt=$(cat "/Users/koushik/github/coconut/.claude/commands/$claude_cmd")
+  fi
+
+  echo "Starting Bug Council audit for $name..."
+  local claude_output
+  claude_output=$("$CLAUDE" -p "$claude_prompt
 
 Execute the Bug Council skill exactly as described above. This is an automated daily run. Do not ask for confirmation — proceed through all phases automatically.
 
 IMPORTANT: After creating the PR, output the PR number on its own line like: PR_NUMBER=<number>" \
-  --dangerously-skip-permissions \
-  --max-turns 200 \
-  --verbose 2>&1) || true
+    --dangerously-skip-permissions \
+    --max-turns 200 \
+    --verbose 2>&1) || true
 
-echo "$CLAUDE_OUTPUT" > "$LOG_DIR/claude-output-$TIMESTAMP.log"
+  echo "$claude_output" > "$LOG_DIR/claude-output-$name-$TIMESTAMP.log"
 
-# ── Step 3: Extract PR number ──────────────────────────────────────────────
-PR_NUMBER=$(echo "$CLAUDE_OUTPUT" | grep -oE 'PR_NUMBER=[0-9]+' | tail -1 | cut -d= -f2)
+  # Extract PR number
+  local pr_number
+  pr_number=$(echo "$claude_output" | grep -oE 'PR_NUMBER=[0-9]+' | tail -1 | cut -d= -f2)
 
-if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(gh pr list --repo "$REPO" --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
-fi
+  if [ -z "$pr_number" ]; then
+    pr_number=$(gh pr list --repo "$full_repo" --head "$branch" --json number --jq '.[0].number' 2>/dev/null || true)
+  fi
 
-if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(gh pr list --repo "$REPO" --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("fix/bug-council")) | .number' 2>/dev/null | head -1 || true)
-fi
+  if [ -z "$pr_number" ]; then
+    pr_number=$(gh pr list --repo "$full_repo" --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("fix/bug-council")) | .number' 2>/dev/null | head -1 || true)
+  fi
 
-if [ -z "$PR_NUMBER" ]; then
-  echo "No PR found. Bug council may have found no bugs or failed."
-  notify_telegram "Bug Council finished but no PR was created. Either no bugs found or an error occurred."
-  exit 0
-fi
+  if [ -z "$pr_number" ]; then
+    echo "No PR found for $name. May have found no bugs or failed."
+    RESULTS+=("$name ($label): no issues found")
+    return
+  fi
 
-echo "PR #$PR_NUMBER created. Polling CI..."
+  echo "PR #$pr_number created for $name. Polling CI..."
 
-# ── Step 4: Poll CI ────────────────────────────────────────────────────────
-MAX_POLLS=60
-POLL_INTERVAL=30
-CI_FIX_ATTEMPTED=0
-for i in $(seq 1 $MAX_POLLS); do
-  sleep $POLL_INTERVAL
+  # Poll CI (skip for repos without CI)
+  if [ "$has_ci" = "no" ]; then
+    echo "$name has no CI — PR ready for review."
+    RESULTS+=("$name ($label): PR #$pr_number — no CI (ready for review)
+https://github.com/$full_repo/pull/$pr_number")
+    return
+  fi
 
-  if gh pr checks "$PR_NUMBER" --repo "$REPO" > /dev/null 2>&1; then
-    echo "CI passed!"
+  local max_polls=60
+  local poll_interval=30
+  local ci_fix_attempted=0
+  local ci_result="timeout"
 
-    gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+  for i in $(seq 1 $max_polls); do
+    sleep $poll_interval
+
+    if gh pr checks "$pr_number" --repo "$full_repo" > /dev/null 2>&1; then
+      echo "CI passed for $name!"
+      gh pr comment "$pr_number" --repo "$full_repo" --body "$(cat <<EOF
 **Bug Council audit complete — all CI checks passed!**
 
 @$GH_USER — This PR is ready for your review.
@@ -131,74 +177,97 @@ for i in $(seq 1 $MAX_POLLS); do
 Please review and merge when ready.
 EOF
 )"
+      ci_result="passed"
+      break
+    fi
 
-    notify_macos "Bug Council PR #$PR_NUMBER — CI passed!"
-    notify_telegram "✅ *Bug Council PR #$PR_NUMBER — CI passed!*
-Ready for your review.
-https://github.com/$REPO/pull/$PR_NUMBER"
-    exit 0
-  fi
+    local ci_status
+    ci_status=$(gh pr checks "$pr_number" --repo "$full_repo" 2>&1 || true)
+    if echo "$ci_status" | grep -q "fail"; then
+      if [ "$ci_fix_attempted" -lt 2 ]; then
+        echo "CI failed for $name. Spawning fix agent (attempt $((ci_fix_attempted + 1)))..."
 
-  CI_STATUS=$(gh pr checks "$PR_NUMBER" --repo "$REPO" 2>&1 || true)
-  if echo "$CI_STATUS" | grep -q "fail"; then
-    if [ "$CI_FIX_ATTEMPTED" -lt 2 ]; then
-      echo "CI failed. Spawning fix agent (attempt $((CI_FIX_ATTEMPTED + 1)))..."
+        local current_branch
+        current_branch=$(gh pr view "$pr_number" --repo "$full_repo" --json headRefName --jq '.headRefName' 2>/dev/null || echo "$branch")
 
-      CURRENT_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName' 2>/dev/null || echo "$BRANCH")
+        "$CLAUDE" -p "You are on branch $current_branch in the $name repo. PR #$pr_number has failing CI checks:
 
-      "$CLAUDE" -p "You are on branch $CURRENT_BRANCH in the Coconut repo. PR #$PR_NUMBER has failing CI checks:
-
-$CI_STATUS
+$ci_status
 
 Fix the CI failures:
-1. Make sure you are on the correct branch: git checkout $CURRENT_BRANCH
+1. Make sure you are on the correct branch: git checkout $current_branch
 2. Run the failing checks locally to reproduce
 3. Fix the issues
 4. Commit with message: fix: resolve CI failures
-5. Push: git push origin $CURRENT_BRANCH
+5. Push: git push origin $current_branch
 
 Do NOT create a new PR. Just fix and push." \
-        --dangerously-skip-permissions \
-        --max-turns 50 \
-        --verbose > "$LOG_DIR/ci-fix-$TIMESTAMP-$CI_FIX_ATTEMPTED.log" 2>&1 || true
+          --dangerously-skip-permissions \
+          --max-turns 50 \
+          --verbose > "$LOG_DIR/ci-fix-$name-$TIMESTAMP-$ci_fix_attempted.log" 2>&1 || true
 
-      CI_FIX_ATTEMPTED=$((CI_FIX_ATTEMPTED + 1))
-      echo "CI fix attempted. Re-polling..."
-      continue
-    else
-      echo "CI still failing after $CI_FIX_ATTEMPTED fix attempts."
-
-      gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+        ci_fix_attempted=$((ci_fix_attempted + 1))
+        continue
+      else
+        echo "CI still failing for $name after $ci_fix_attempted fix attempts."
+        gh pr comment "$pr_number" --repo "$full_repo" --body "$(cat <<EOF
 **Bug Council CI is failing after automated fix attempts.**
 
 @$GH_USER — Please check manually.
 EOF
 )"
-
-      notify_macos "Bug Council PR #$PR_NUMBER — CI failing"
-      notify_telegram "❌ *Bug Council PR #$PR_NUMBER — CI still failing*
-Needs manual intervention.
-https://github.com/$REPO/pull/$PR_NUMBER"
-      exit 1
+        ci_result="failing"
+        break
+      fi
     fi
-  fi
 
-  echo "Poll $i/$MAX_POLLS: CI still running..."
-done
+    echo "Poll $i/$max_polls for $name: CI still running..."
+  done
 
-# Timed out
-echo "CI polling timed out after 30 minutes."
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+  case "$ci_result" in
+    passed)
+      RESULTS+=("$name ($label): PR #$pr_number — CI passing
+https://github.com/$full_repo/pull/$pr_number")
+      ;;
+    failing)
+      RESULTS+=("$name ($label): PR #$pr_number — CI failing (needs review)
+https://github.com/$full_repo/pull/$pr_number")
+      ;;
+    timeout)
+      gh pr comment "$pr_number" --repo "$full_repo" --body "$(cat <<EOF
 **Bug Council CI timed out after 30 minutes.**
 
 @$GH_USER — Please check manually.
 EOF
 )"
+      RESULTS+=("$name ($label): PR #$pr_number — CI timed out
+https://github.com/$full_repo/pull/$pr_number")
+      ;;
+  esac
+}
 
-notify_macos "Bug Council PR #$PR_NUMBER — CI timed out"
-notify_telegram "⏰ *Bug Council PR #$PR_NUMBER — CI timed out*
-Please check manually.
-https://github.com/$REPO/pull/$PR_NUMBER"
+# ── Main: Process repos sequentially ─────────────────────────────────────────
+for config in "${REPO_CONFIGS[@]}"; do
+  IFS='|' read -r name full_repo main_repo work_dir has_ci claude_cmd <<< "$config"
+  run_for_repo "$name" "$full_repo" "$main_repo" "$work_dir" "$has_ci" "$claude_cmd" || true
+done
+
+# ── Send ONE consolidated notification ───────────────────────────────────────
+TELEGRAM_MSG="*Bug Council Complete*"
+for result in "${RESULTS[@]}"; do
+  TELEGRAM_MSG="$TELEGRAM_MSG
+
+$result"
+done
+
+if [ ${#RESULTS[@]} -eq 0 ]; then
+  TELEGRAM_MSG="$TELEGRAM_MSG
+
+No bugs found in either repo."
+fi
+
+notify_macos "Bug Council finished — ${#RESULTS[@]} repo(s) processed"
+notify_telegram "$TELEGRAM_MSG"
 
 # Clean up logs older than 14 days
 find "$LOG_DIR" -name "*.log" -mtime +14 -delete 2>/dev/null
