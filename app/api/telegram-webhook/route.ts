@@ -12,6 +12,8 @@ interface TelegramUpdate {
     text?: string;
     caption?: string;
     photo?: { file_id: string; width: number; height: number }[];
+    video?: { file_id: string; file_name?: string };
+    media_group_id?: string;
   };
 }
 
@@ -21,7 +23,6 @@ export async function GET() {
     status: "ok",
     hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
     hasGithubToken: !!process.env.GITHUB_BOT_TOKEN,
-    hasSecret: !!process.env.TELEGRAM_WEBHOOK_SECRET,
   });
 }
 
@@ -34,13 +35,31 @@ export async function POST(req: NextRequest) {
     }
 
     const text = message.text || message.caption || "";
+    const hasMedia = !!(message.photo || message.video);
+    const isBugCommand = text.startsWith("/bug") || text.includes("#bug");
 
-    // Only process messages that start with /bug or contain #bug
-    if (!text.startsWith("/bug") && !text.includes("#bug")) {
+    // If it's a photo/video without /bug, it might be a follow-up in a media group.
+    // Add it as a comment on the most recent open ai-fix issue.
+    if (hasMedia && !isBugCommand) {
+      try {
+        const imageUrl = await uploadMedia(message);
+        if (imageUrl) {
+          const latestIssue = await getLatestAiFixIssue();
+          if (latestIssue) {
+            await addCommentToIssue(latestIssue.number, `### Additional screenshot\n![screenshot](${imageUrl})`);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to add follow-up media:", err);
+      }
       return NextResponse.json({ ok: true });
     }
 
-    // Strip the /bug command prefix
+    // Only process /bug commands
+    if (!isBugCommand) {
+      return NextResponse.json({ ok: true });
+    }
+
     const description = text.replace(/^\/bug\s*/, "").replace(/#bug\s*/g, "").trim();
     if (!description) {
       await sendTelegram(message.chat.id, "Please include a bug description. Example:\n/bug The dashboard shows wrong currency for INR transactions");
@@ -50,19 +69,16 @@ export async function POST(req: NextRequest) {
     const submitter = message.from?.first_name || "Someone";
     let imageMarkdown = "";
 
-    // Handle photo uploads
-    if (message.photo && message.photo.length > 0) {
+    // Handle photo/video uploads
+    if (hasMedia) {
       try {
-        const photo = message.photo[message.photo.length - 1];
-        const fileInfo = await getTelegramFile(photo.file_id);
-        const imageBuffer = await downloadTelegramFile(fileInfo.file_path);
-        const timestamp = Date.now();
-        const filename = `bug-screenshots/${timestamp}.jpg`;
-        const rawUrl = await uploadToGitHub(filename, imageBuffer);
-        imageMarkdown = `\n\n### Screenshot\n![Bug screenshot](${rawUrl})\n`;
+        const mediaUrl = await uploadMedia(message);
+        if (mediaUrl) {
+          imageMarkdown = `\n\n### Screenshot\n![Bug screenshot](${mediaUrl})\n`;
+        }
       } catch (err) {
-        console.error("Failed to process image:", err);
-        imageMarkdown = "\n\n_Screenshot was attached but failed to upload._\n";
+        console.error("Failed to process media:", err);
+        imageMarkdown = "\n\n_Media was attached but failed to upload._\n";
       }
     }
 
@@ -84,6 +100,55 @@ export async function POST(req: NextRequest) {
     console.error("Webhook error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
+}
+
+async function uploadMedia(message: TelegramUpdate["message"]): Promise<string | null> {
+  if (!message) return null;
+
+  let fileId: string | null = null;
+  let ext = "jpg";
+
+  if (message.photo && message.photo.length > 0) {
+    fileId = message.photo[message.photo.length - 1].file_id;
+    ext = "jpg";
+  } else if (message.video) {
+    fileId = message.video.file_id;
+    ext = "mp4";
+  }
+
+  if (!fileId) return null;
+
+  const fileInfo = await getTelegramFile(fileId);
+  const fileBuffer = await downloadTelegramFile(fileInfo.file_path);
+  const timestamp = Date.now();
+  const filename = `bug-screenshots/${timestamp}.${ext}`;
+  return await uploadToGitHub(filename, fileBuffer);
+}
+
+async function getLatestAiFixIssue(): Promise<{ number: number } | null> {
+  const res = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/issues?labels=ai-fix&state=open&sort=created&direction=desc&per_page=1`,
+    {
+      headers: { Authorization: `Bearer ${GITHUB_TOKEN}` },
+    }
+  );
+  if (!res.ok) return null;
+  const issues = await res.json();
+  return issues.length > 0 ? { number: issues[0].number } : null;
+}
+
+async function addCommentToIssue(issueNumber: number, body: string) {
+  await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/issues/${issueNumber}/comments`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ body }),
+    }
+  );
 }
 
 async function sendTelegram(chatId: number, text: string, replyTo?: number) {
