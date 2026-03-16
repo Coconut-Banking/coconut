@@ -50,6 +50,16 @@ Do **not** introduce new color schemes, generic Bootstrap-style UI, or cluttered
 
 Act like a senior engineer in Cursor: read first, plan, then code. Reuse existing patterns. Keep diffs minimal. Add tests for new logic. If validation fails, fix the code — don't disable checks.
 
+## Workflow modes (optional)
+
+For higher rigor, you can ask the agent to use a specific mode (see `.cursor/rules/gstack-workflow.mdc`):
+
+- **Plan / CEO review** — Pressure-test the idea; find the 10-star product, not just the obvious feature.
+- **Plan-eng / architecture** — Nail boundaries, data flow, failure modes, diagrams before coding.
+- **Review / paranoid review** — Production-safety pass: races, N+1, trust boundaries, missing tests.
+- **Ship** — Final mile only: sync main, run checks, push or open PR; no new scope.
+- **QA** — Run the app or E2E; test critical paths and report what passed or failed.
+
 ## Sensitive areas
 
 - **Auth** (Clerk): Be careful with sign-in/sign-out flows
