@@ -65,7 +65,11 @@ Return ONLY a JSON array of strings, e.g. ["Name1", "Name2"]:`;
     });
     const text = choices[0]?.message?.content?.trim() ?? "";
     const match = text.match(/\[[\s\S]*\]/);
-    const arr = match ? (JSON.parse(match[0]) as string[]) : [];
+    let arr: string[] = [];
+    if (match) {
+      try { arr = JSON.parse(match[0]) as string[]; }
+      catch { /* malformed LLM JSON — fall through with empty arr */ }
+    }
     for (let i = 0; i < toProcess.length && i < arr.length; i++) {
       const { raw, category } = toProcess[i];
       const normalized = String(arr[i] ?? raw).slice(0, 80).trim() || raw;

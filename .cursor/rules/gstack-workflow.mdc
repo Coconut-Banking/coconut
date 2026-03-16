@@ -1,0 +1,32 @@
+---
+description: Workflow modes (plan, review, ship, QA) — use when the user asks for a specific mode or rigor level
+alwaysApply: false
+---
+
+# Workflow Modes (gstack-style)
+
+When the user asks for **plan / CEO review / product thinking**, or to "pressure-test the idea":
+- **Do not** implement the request literally. Ask: *What is the 10-star product hiding inside this request?*
+- Consider: user jobs, edge cases, delight, and whether the stated feature is actually the right feature.
+- Suggest a better scope or UX when the obvious implementation would be mediocre.
+
+When the user asks for **plan-eng / architecture / tech lead**:
+- Lock in: architecture boundaries, data flow, failure modes, edge cases, trust boundaries.
+- Prefer diagrams (mermaid or text) when explaining flows or state.
+- Call out: sync vs async, retries, idempotency, and what to test before coding.
+
+When the user asks for **review / paranoid review / production safety**:
+- Focus on what can break in production, not style nits.
+- Look for: N+1 queries, race conditions, stale reads, bad trust boundaries, missing indexes, escaping bugs, broken invariants, retry/rollback behavior.
+- Assume tests pass; ask what failure modes the tests *don’t* cover.
+
+When the user asks to **ship / release / land**:
+- Execute the final mile: sync with main, run typecheck + lint + test, then push (or open PR).
+- No extra scope or refactors. If the branch is ready, just land it.
+
+When the user asks for **QA / test the app / smoke test**:
+- Prefer running the app and/or E2E tests; use browser automation (e.g. Playwright) when available.
+- For web: consider auth flows, critical paths (e.g. Plaid connect, transactions), and console errors.
+- Report: what was tested, what passed, what failed or looked wrong.
+
+These modes are additive to AGENTS.md (validation, commit format, UI, sensitive areas). Follow AGENTS.md always; apply this rule when the user explicitly requests a mode or when the task clearly fits one (e.g. "review this for production" → paranoid review).

@@ -287,6 +287,49 @@ EOF
 
 ---
 
+## Phase 5: Get CI Green
+
+After the PR is created, ensure CI passes so the PR is merge-ready when the user sees it.
+
+### Step 1: Wait for CI and check status
+
+```
+gh pr checks <PR_NUMBER> --watch
+```
+
+If all checks pass, you're done — skip to the summary.
+
+### Step 2: Diagnose failures
+
+If any check fails:
+
+1. Get the failed run logs:
+   ```
+   gh run view <RUN_ID> --log-failed
+   ```
+2. Identify the root cause. Common failures after bug fixes:
+   - **TypeScript build errors**: A renamed variable still referenced elsewhere, a missing import, a type mismatch introduced by the fix
+   - **Missing files**: Files lost during branch operations (merge, checkout)
+   - **Test failures**: A fix changed behavior that an existing test asserted on
+   - **Lint errors**: Formatting or lint rules violated by the fix
+
+### Step 3: Fix and push
+
+1. Fix the issue locally (edit the file, don't revert the bug fix unless the fix itself was wrong)
+2. Run `npx tsc --noEmit` locally to verify the build passes before pushing
+3. Commit with message: `fix: resolve CI failure ({brief description})`
+4. Push to the PR branch
+
+### Step 4: Repeat
+
+Go back to Step 1. Keep iterating until CI is green. Maximum 5 attempts — if CI still fails after 5 rounds, report the remaining failure to the user with full context.
+
+### Goal
+
+The PR should be **ready to merge** when the user wakes up. No manual intervention needed beyond clicking "Merge".
+
+---
+
 ## Important Constraints
 
 - Do NOT refactor code that isn't buggy

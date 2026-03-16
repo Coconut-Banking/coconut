@@ -52,9 +52,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ reply });
   } catch (e) {
-    console.error(e);
+    console.error("[chat] error:", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Chat failed" },
+      { error: "Chat failed. Please try again." },
       { status: 500 }
     );
   }

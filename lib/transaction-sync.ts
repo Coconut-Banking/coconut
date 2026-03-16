@@ -229,10 +229,9 @@ async function syncSingleToken(
     }
   }
 
-  const allTxs = [...allAdded, ...allModified];
-  if (allTxs.length === 0 && allRemovedIds.length === 0) return { synced: 0, removedIds: [], skipped: 0 };
+  if (allAdded.length === 0 && allModified.length === 0 && allRemovedIds.length === 0) return { synced: 0, removedIds: [], skipped: 0 };
 
-  const rows = allTxs.map((tx) => {
+  const mapTxToRow = (tx: Record<string, unknown>) => {
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";
     const pfc = tx.personal_finance_category as { primary?: string; detailed?: string } | null;
     const category = tx.category as string[] | null;
@@ -252,12 +251,17 @@ async function syncSingleToken(
       detailed_category: pfc?.detailed ?? category?.[1] ?? null,
       is_pending: (tx.pending as boolean) ?? false,
     };
-  });
+  };
 
-  // Sync-time dedupe: Plaid can return same tx with different IDs when same bank is linked
-  // multiple times (duplicate Items). Skip inserting rows that would duplicate existing
-  // (normalized_merchant, amount, date) for this user.
-  const rowsToInsert = await filterDuplicateTransactions(db, clerkUserId, rows);
+  const addedRows = allAdded.map(mapTxToRow);
+  const modifiedRows = allModified.map(mapTxToRow);
+
+  // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
+  // IDs when same bank is linked multiple times (duplicate Items). Modified transactions
+  // must always be upserted so pending->posted transitions and merchant name refinements
+  // are applied.
+  const filteredAdded = await filterDuplicateTransactions(db, clerkUserId, addedRows);
+  const rowsToInsert = [...filteredAdded, ...modifiedRows];
 
   const BATCH = 100;
   for (let i = 0; i < rowsToInsert.length; i += BATCH) {
@@ -267,7 +271,7 @@ async function syncSingleToken(
     if (error) console.error("[sync] upsert error:", error.message);
   }
 
-  const skipped = rows.length - rowsToInsert.length;
+  const skipped = addedRows.length - filteredAdded.length;
   if (skipped > 0) {
     console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
   }
@@ -419,7 +423,18 @@ const AI_CATEGORIES = [
   "OTHER",
 ] as const;
 
-const CATEGORIZE_BATCH = 50;
+const CATEGORIZE_BATCH = 30;
+
+/** Parse LLM JSON; never throws. Returns null on truncated/invalid JSON. */
+function safeParseCategoriesJson(raw: string): { categories?: unknown } | null {
+  const s = raw.trim();
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as { categories?: unknown };
+  } catch {
+    return null;
+  }
+}
 
 interface TxForCategorization {
   id: string;
@@ -476,13 +491,8 @@ Be precise. Do not explain.`;
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return new Map();
 
-    let parsed: { categories?: unknown };
-    try {
-      parsed = JSON.parse(raw) as { categories?: unknown };
-    } catch {
-      // LLM can return truncated JSON (max_tokens, etc.). Skip this batch.
-      return new Map();
-    }
+    const parsed = safeParseCategoriesJson(raw);
+    if (!parsed) return new Map();
     const cats = Array.isArray(parsed.categories) ? parsed.categories : null;
     if (!cats || cats.length !== txs.length) return new Map();
 
