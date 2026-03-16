@@ -10,6 +10,9 @@ const REPOS = {
 
 type RepoKey = keyof typeof REPOS;
 
+// Marker embedded in bot messages so we can parse repo from reply context (stateless)
+const REPO_MARKER_RE = /\[repo:(coconut(?:-app)?)\]/;
+
 interface TelegramUpdate {
   message?: {
     message_id: number;
@@ -20,6 +23,10 @@ interface TelegramUpdate {
     photo?: { file_id: string; width: number; height: number }[];
     video?: { file_id: string; file_name?: string };
     media_group_id?: string;
+    reply_to_message?: {
+      text?: string;
+      from?: { is_bot?: boolean };
+    };
   };
   callback_query?: {
     id: string;
@@ -29,10 +36,7 @@ interface TelegramUpdate {
   };
 }
 
-// In-memory conversation state (resets on cold start — fine for personal bot)
-const pendingState = new Map<number, { action: string; repo?: RepoKey }>();
-
-// Health check to verify deployment
+// Health check
 export async function GET() {
   return NextResponse.json({
     status: "ok",
@@ -45,7 +49,7 @@ export async function POST(req: NextRequest) {
   try {
     const update: TelegramUpdate = await req.json();
 
-    // Handle callback queries (button presses)
+    // ── Handle button presses ──────────────────────────────────────────────
     if (update.callback_query) {
       const cb = update.callback_query;
       const chatId = cb.message.chat.id;
@@ -54,32 +58,28 @@ export async function POST(req: NextRequest) {
       await answerCallbackQuery(cb.id);
 
       if (data === "bug") {
-        pendingState.set(chatId, { action: "bug" });
-        await sendRepoSelector(chatId, "Which repo is the bug in?");
+        await sendRepoSelector(chatId);
         return NextResponse.json({ ok: true });
       }
 
       if (data === "status") {
         const statusMsg = await getMultiRepoStatus();
-        await sendTelegram(chatId, statusMsg);
+        await sendTelegramWithMenu(chatId, statusMsg);
         return NextResponse.json({ ok: true });
       }
 
+      // User picked a repo — ask for description with force_reply (stateless)
       if (data === "repo:coconut" || data === "repo:coconut-app") {
         const repo = data.replace("repo:", "") as RepoKey;
-        const state = pendingState.get(chatId);
-
-        if (state?.action === "bug") {
-          pendingState.set(chatId, { action: "bug", repo });
-          const label = repo === "coconut" ? "Web App" : "Mobile App";
-          await sendTelegram(chatId, `Got it — filing bug for *${label}*.\n\nSend the bug description (text or photo with caption).`, undefined, "Markdown");
-          return NextResponse.json({ ok: true });
-        }
+        const label = repo === "coconut" ? "Web App" : "Mobile App";
+        await sendBugPrompt(chatId, repo, label);
+        return NextResponse.json({ ok: true });
       }
 
       return NextResponse.json({ ok: true });
     }
 
+    // ── Handle messages ────────────────────────────────────────────────────
     const message = update.message;
     if (!message) {
       return NextResponse.json({ ok: true });
@@ -88,31 +88,27 @@ export async function POST(req: NextRequest) {
     const chatId = message.chat.id;
     const text = message.text || message.caption || "";
     const hasMedia = !!(message.photo || message.video);
-    const state = pendingState.get(chatId);
 
-    // /start or /menu — show main menu
+    // /start or /menu
     if (text === "/start" || text === "/menu") {
-      pendingState.delete(chatId);
       await sendMainMenu(chatId);
       return NextResponse.json({ ok: true });
     }
 
-    // Legacy commands still work
+    // Legacy /status
     if (text.startsWith("/status")) {
       const statusMsg = await getMultiRepoStatus();
-      await sendTelegram(chatId, statusMsg, message.message_id);
+      await sendTelegramWithMenu(chatId, statusMsg);
       return NextResponse.json({ ok: true });
     }
 
+    // Legacy /bug with inline description
     if (text.startsWith("/bug")) {
-      // Legacy /bug command — default to coconut repo
       const description = text.replace(/^\/bug\s*/, "").replace(/#bug\s*/g, "").trim();
       if (!description) {
-        pendingState.set(chatId, { action: "bug" });
-        await sendRepoSelector(chatId, "Which repo is the bug in?");
+        await sendRepoSelector(chatId);
         return NextResponse.json({ ok: true });
       }
-
       const submitter = message.from?.first_name || "Someone";
       const imageMarkdown = hasMedia ? await getMediaMarkdown(message, "coconut") : "";
       const issueUrl = await createGitHubIssue("coconut", {
@@ -120,23 +116,27 @@ export async function POST(req: NextRequest) {
         body: `## Bug Report\n\n${description}${imageMarkdown}\n\n---\n_Submitted by ${submitter} via Telegram_`,
         labels: ["ai-fix"],
       });
-      await sendTelegram(chatId, `Bug filed and Claude is on it.\n${issueUrl}`, message.message_id);
-      pendingState.delete(chatId);
+      await sendTelegramWithMenu(chatId, `Bug filed! Claude is on it.\n${issueUrl}`);
       return NextResponse.json({ ok: true });
     }
 
-    // If we have a pending bug state with a repo selected, treat this message as the description
-    if (state?.action === "bug" && state.repo) {
+    // ── STATELESS bug description: user replied to our force_reply prompt ──
+    // Check if this message is a reply to our "Send the bug description" prompt
+    const replyText = message.reply_to_message?.text || "";
+    const repoMatch = replyText.match(REPO_MARKER_RE);
+    if (repoMatch && message.reply_to_message?.from?.is_bot) {
+      const repo = repoMatch[1] as RepoKey;
       const description = text.trim();
+
       if (!description && !hasMedia) {
-        await sendTelegram(chatId, "Please send a bug description (text, or a photo with a caption).");
+        await sendTelegram(chatId, "Please send a bug description (text, or photo with caption).");
         return NextResponse.json({ ok: true });
       }
 
       const submitter = message.from?.first_name || "Someone";
-      const repo = state.repo;
       const imageMarkdown = hasMedia ? await getMediaMarkdown(message, repo) : "";
       const bugText = description || "(screenshot only — see attached image)";
+
       const issueUrl = await createGitHubIssue(repo, {
         title: `Bug: ${bugText.slice(0, 80)}${bugText.length > 80 ? "..." : ""}`,
         body: `## Bug Report\n\n${bugText}${imageMarkdown}\n\n---\n_Submitted by ${submitter} via Telegram_`,
@@ -144,12 +144,11 @@ export async function POST(req: NextRequest) {
       });
 
       const label = repo === "coconut" ? "Web App" : "Mobile App";
-      await sendTelegram(chatId, `Bug filed for *${label}* and Claude is on it.\n${issueUrl}`, message.message_id, "Markdown");
-      pendingState.delete(chatId);
+      await sendTelegramWithMenu(chatId, `Bug filed for ${label}! Claude is on it.\n${issueUrl}`);
       return NextResponse.json({ ok: true });
     }
 
-    // Standalone media with no state — attach to latest ai-fix issue in coconut repo
+    // Standalone media — attach to latest ai-fix issue
     if (hasMedia) {
       try {
         const imageUrl = await uploadMedia(message, "coconut");
@@ -195,13 +194,34 @@ async function sendMainMenu(chatId: number) {
   });
 }
 
-async function sendRepoSelector(chatId: number, text: string) {
+/** Send a message AND include the main menu buttons below it */
+async function sendTelegramWithMenu(chatId: number, text: string) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
       text,
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "File another Bug", callback_data: "bug" },
+            { text: "Check Status", callback_data: "status" },
+          ],
+        ],
+      },
+    }),
+  });
+}
+
+async function sendRepoSelector(chatId: number) {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: "Which repo is the bug in?",
       reply_markup: {
         inline_keyboard: [
           [
@@ -209,6 +229,23 @@ async function sendRepoSelector(chatId: number, text: string) {
             { text: "Mobile App (coconut-app)", callback_data: "repo:coconut-app" },
           ],
         ],
+      },
+    }),
+  });
+}
+
+/** Ask for bug description — uses force_reply so the user's next message is a reply to this.
+ *  Embeds [repo:X] marker so we can extract the repo from reply_to_message (fully stateless). */
+async function sendBugPrompt(chatId: number, repo: RepoKey, label: string) {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: `Filing bug for ${label}.\n\nSend the bug description (text or photo with caption).\n[repo:${repo}]`,
+      reply_markup: {
+        force_reply: true,
+        selective: true,
       },
     }),
   });
@@ -222,7 +259,7 @@ async function answerCallbackQuery(callbackQueryId: string) {
   });
 }
 
-async function sendTelegram(chatId: number, text: string, replyTo?: number, parseMode?: string) {
+async function sendTelegram(chatId: number, text: string, replyTo?: number) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -231,7 +268,6 @@ async function sendTelegram(chatId: number, text: string, replyTo?: number, pars
       text,
       reply_to_message_id: replyTo,
       disable_web_page_preview: true,
-      ...(parseMode && { parse_mode: parseMode }),
     }),
   });
 }
