@@ -1,6 +1,7 @@
 #!/bin/bash
 # AI Fix Runner — Fetches GitHub issues labeled "ai-fix", spawns Claude Code to fix them,
 # creates a single daily PR, verifies CI, and notifies via macOS + Telegram + GitHub.
+# Uses a dedicated git worktree so it never touches your main checkout.
 
 set -euo pipefail
 
@@ -8,14 +9,48 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:/Users/koushik/.local/bin:/Users/k
 
 # ── Config ──────────────────────────────────────────────────────────────────
 REPO="Coconut-Banking/coconut"
-REPO_DIR="/Users/koushik/github/coconut"
-LOG_DIR="$REPO_DIR/.ai-fix-logs"
+MAIN_REPO="/Users/koushik/github/coconut"
+WORK_DIR="/Users/koushik/github/coconut-worktrees/ai-fix"
+LOG_DIR="$MAIN_REPO/.ai-fix-logs"
+LOCKFILE="/tmp/coconut-ai-fix.lock"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 DATE_TAG=$(date +%Y%m%d)
 BRANCH="fix/ai-fix-$DATE_TAG"
 TELEGRAM_BOT_TOKEN="8763230267:AAEz3-3Y6nNE7QZRCdYKobUSFVO3JiAwVmk"
 TELEGRAM_CHAT_ID="1728663117"
 GH_USER="KoushikP04"
+
+# ── Prevent concurrent runs ─────────────────────────────────────────────────
+if [ -f "$LOCKFILE" ]; then
+  LOCK_PID=$(cat "$LOCKFILE" 2>/dev/null)
+  if kill -0 "$LOCK_PID" 2>/dev/null; then
+    echo "Another ai-fix run is still active (PID $LOCK_PID). Skipping."
+    exit 0
+  fi
+  rm -f "$LOCKFILE"
+fi
+echo $$ > "$LOCKFILE"
+
+# ── Cleanup trap: kill entire process tree + remove lockfile ─────────────────
+cleanup() {
+  echo "Cleaning up..."
+  # Kill entire process tree (grandchildren too) — not just direct children
+  pkill -TERM -P $$ 2>/dev/null || true
+  sleep 1
+  pkill -KILL -P $$ 2>/dev/null || true
+  # Kill any claude processes started by this script
+  pgrep -f "claude.*ai-fix" | xargs kill -9 2>/dev/null || true
+  jobs -p 2>/dev/null | xargs kill -9 2>/dev/null || true
+  rm -f "$LOCKFILE"
+  # Clean up build artifacts to free disk
+  rm -rf "$WORK_DIR/.next" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# ── Max runtime: 2 hours then self-kill ─────────────────────────────────────
+MAX_RUNTIME=7200
+(sleep $MAX_RUNTIME && echo "TIMEOUT: AI fix exceeded ${MAX_RUNTIME}s, killing..." && kill -TERM $$ 2>/dev/null) &
+WATCHDOG_PID=$!
 
 mkdir -p "$LOG_DIR"
 exec > >(tee "$LOG_DIR/stdout-$TIMESTAMP.log") 2> >(tee "$LOG_DIR/stderr-$TIMESTAMP.log" >&2)
@@ -37,9 +72,17 @@ notify_all() {
   notify_telegram "$2"
 }
 
-# ── Step 1: Update repo ────────────────────────────────────────────────────
-cd "$REPO_DIR"
-git fetch origin main && git checkout main && git pull origin main
+# ── Step 1: Ensure worktree exists and is on latest main ────────────────────
+if [ ! -d "$WORK_DIR/.git" ] && [ ! -f "$WORK_DIR/.git" ]; then
+  echo "Creating worktree..."
+  git -C "$MAIN_REPO" worktree add "$WORK_DIR" --detach origin/main 2>/dev/null || true
+fi
+
+cd "$WORK_DIR"
+git fetch origin main
+git checkout main 2>/dev/null || git checkout --detach origin/main
+git reset --hard origin/main
+npm install --prefer-offline --no-audit 2>/dev/null || npm ci
 
 # ── Step 2: Fetch ai-fix issues (exclude "test" label) ─────────────────────
 echo "Fetching ai-fix issues..."
@@ -70,14 +113,12 @@ ISSUE_COUNT=$(echo "$ISSUES_JSON" | python3 -c "import sys,json; print(len(json.
 
 if [ "$ISSUE_COUNT" -eq 0 ]; then
   echo "No ai-fix issues found. Exiting."
-  notify_all "No ai-fix issues today." "No ai-fix issues found today. Nothing to do."
   exit 0
 fi
 
 echo "Found $ISSUE_COUNT issue(s) to fix."
 
 # ── Step 3: Build prompt for Claude ────────────────────────────────────────
-# Format issues into a prompt, including comments (which may have additional screenshots)
 ISSUES_PROMPT=$(echo "$ISSUES_JSON" | python3 -c "
 import sys, json
 issues = json.load(sys.stdin)
@@ -102,12 +143,6 @@ FIXES_KEYWORDS=$(echo "$ISSUES_JSON" | python3 -c "
 import sys, json
 issues = json.load(sys.stdin)
 print(', '.join([f'Fixes #{i[\"number\"]}' for i in issues]))
-")
-
-ISSUE_NUMBERS=$(echo "$ISSUES_JSON" | python3 -c "
-import sys, json
-issues = json.load(sys.stdin)
-print(' '.join([str(i['number']) for i in issues]))
 ")
 
 PROMPT_FILE=$(mktemp)
@@ -163,7 +198,6 @@ rm -f "$PROMPT_FILE"
 # ── Step 4: Run Claude Code ────────────────────────────────────────────────
 echo "Spawning Claude Code to fix issues..."
 
-# Build a short issue list for the Telegram notification
 ISSUES_LIST=$(echo "$ISSUES_JSON" | python3 -c "
 import sys, json
 issues = json.load(sys.stdin)
@@ -283,5 +317,5 @@ notify_all "PR #$PR_NUMBER — CI timed out" "⏰ *PR #$PR_NUMBER — CI timed o
 Please check manually.
 https://github.com/$REPO/pull/$PR_NUMBER"
 
-# Clean up old logs
+# Clean up logs older than 14 days
 find "$LOG_DIR" -name "*.log" -mtime +14 -delete 2>/dev/null
