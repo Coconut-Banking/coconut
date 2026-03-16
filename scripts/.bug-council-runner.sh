@@ -149,7 +149,45 @@ IMPORTANT: After creating the PR, output the PR number on its own line like: PR_
     return
   fi
 
-  echo "PR #$pr_number created for $name. Polling CI..."
+  echo "PR #$pr_number created for $name."
+
+  # ── Auto-resolve merge conflicts ──────────────────────────────────────────
+  local mergeable
+  mergeable=$(gh pr view "$pr_number" --repo "$full_repo" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
+
+  if [ "$mergeable" = "CONFLICTING" ]; then
+    echo "PR #$pr_number has merge conflicts. Auto-resolving..."
+
+    local current_branch
+    current_branch=$(gh pr view "$pr_number" --repo "$full_repo" --json headRefName --jq '.headRefName' 2>/dev/null || echo "$branch")
+
+    "$CLAUDE" -p "You are on branch $current_branch in the $name repo ($full_repo). PR #$pr_number has merge conflicts with main.
+
+Resolve the merge conflicts:
+1. git fetch origin main (or upstream main)
+2. git merge origin/main (or upstream/main depending on remote setup)
+3. For each conflict: prefer upstream/main for structural changes (deleted files, refactors). Keep our bug fixes only where they don't conflict with main's direction. When in doubt, take theirs.
+4. Make sure there are NO conflict markers (<<<<<<, ======, >>>>>>) left in any file
+5. git add all resolved files
+6. git commit -m 'merge: resolve conflicts with main'
+7. git push origin $current_branch
+
+Do NOT create a new PR. Just resolve conflicts and push." \
+      --dangerously-skip-permissions \
+      --max-turns 50 \
+      --verbose > "$LOG_DIR/merge-fix-$name-$TIMESTAMP.log" 2>&1 || true
+
+    # Re-check mergeable status
+    sleep 10
+    mergeable=$(gh pr view "$pr_number" --repo "$full_repo" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
+    if [ "$mergeable" = "CONFLICTING" ]; then
+      echo "WARNING: Merge conflicts still present for $name after auto-resolve attempt."
+    else
+      echo "Merge conflicts resolved for $name."
+    fi
+  fi
+
+  echo "Polling CI for PR #$pr_number..."
 
   # Poll CI (skip for repos without CI)
   if [ "$has_ci" = "no" ]; then
