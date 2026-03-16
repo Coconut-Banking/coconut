@@ -254,9 +254,10 @@ export default function SettingsPage() {
                       <input
                         type="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+                        readOnly
+                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 text-gray-500 cursor-not-allowed"
                       />
+                      <p className="text-xs text-gray-400 mt-1">Email is managed by your authentication provider.</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Currency</label>
