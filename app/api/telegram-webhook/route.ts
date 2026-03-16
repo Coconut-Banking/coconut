@@ -10,8 +10,12 @@ const REPOS = {
 
 type RepoKey = keyof typeof REPOS;
 
-// Marker embedded in bot messages so we can parse repo from reply context (stateless)
-const REPO_MARKER_RE = /\[repo:(coconut(?:-app)?)\]/;
+// Match repo from the bug-prompt text in reply_to_message (stateless, no ugly markers)
+const REPO_LABEL_RE = /Filing bug for (Web App|Mobile App)/;
+const LABEL_TO_REPO: Record<string, RepoKey> = {
+  "Web App": "coconut",
+  "Mobile App": "coconut-app",
+};
 
 interface TelegramUpdate {
   message?: {
@@ -121,11 +125,11 @@ export async function POST(req: NextRequest) {
     }
 
     // ── STATELESS bug description: user replied to our force_reply prompt ──
-    // Check if this message is a reply to our "Send the bug description" prompt
+    // Detect repo from the label in the bot's prompt message (no visible markers needed)
     const replyText = message.reply_to_message?.text || "";
-    const repoMatch = replyText.match(REPO_MARKER_RE);
-    if (repoMatch && message.reply_to_message?.from?.is_bot) {
-      const repo = repoMatch[1] as RepoKey;
+    const labelMatch = replyText.match(REPO_LABEL_RE);
+    if (labelMatch && message.reply_to_message) {
+      const repo = LABEL_TO_REPO[labelMatch[1]];
       const description = text.trim();
 
       if (!description && !hasMedia) {
@@ -234,15 +238,15 @@ async function sendRepoSelector(chatId: number) {
   });
 }
 
-/** Ask for bug description — uses force_reply so the user's next message is a reply to this.
- *  Embeds [repo:X] marker so we can extract the repo from reply_to_message (fully stateless). */
+/** Ask for bug description — uses force_reply so the user's next message is a reply.
+ *  Repo is detected from "Filing bug for {label}" in the reply text (fully stateless). */
 async function sendBugPrompt(chatId: number, repo: RepoKey, label: string) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text: `Filing bug for ${label}.\n\nSend the bug description (text or photo with caption).\n[repo:${repo}]`,
+      text: `Filing bug for ${label}.\n\nSend the bug description (text or photo with caption).`,
       reply_markup: {
         force_reply: true,
         selective: true,
