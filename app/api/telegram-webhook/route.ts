@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
-const GITHUB_TOKEN = process.env.GITHUB_BOT_TOKEN!;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
+const GITHUB_TOKEN = process.env.GITHUB_BOT_TOKEN ?? "";
 const GITHUB_REPO = process.env.GITHUB_REPO || "Coconut-Banking/coconut";
 
 interface TelegramUpdate {
@@ -16,13 +16,18 @@ interface TelegramUpdate {
 }
 
 export async function POST(req: NextRequest) {
-  // Verify the request is from Telegram via secret token (skip if not configured)
+  if (!TELEGRAM_BOT_TOKEN || !GITHUB_TOKEN) {
+    return NextResponse.json({ error: "Not configured" }, { status: 503 });
+  }
+
+  // Verify the request is from Telegram via secret token
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (expectedSecret) {
-    const secretToken = req.headers.get("x-telegram-bot-api-secret-token");
-    if (secretToken !== expectedSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!expectedSecret) {
+    return NextResponse.json({ error: "Webhook secret not configured" }, { status: 503 });
+  }
+  const secretToken = req.headers.get("x-telegram-bot-api-secret-token");
+  if (secretToken !== expectedSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const update: TelegramUpdate = await req.json();
