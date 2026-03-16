@@ -454,7 +454,7 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
         .select("id")
         .eq("clerk_user_id", clerkUserId)
         .eq("normalized_merchant", d.normalizedMerchant)
-        .single();
+        .maybeSingle();
 
       if (sub) {
         try {
