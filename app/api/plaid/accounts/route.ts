@@ -204,25 +204,30 @@ export async function GET(request: NextRequest) {
 
     const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
     for (const accessToken of accessTokens) {
-      const item = tokenToItem.get(accessToken);
-      const response = await client.accountsGet({ access_token: accessToken });
-      const rows = response.data.accounts.map((acct) => {
-        const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-        const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
-          clerk_user_id: effectiveUserId,
-          plaid_account_id: acct.account_id,
-          name: acct.name,
-          type: acct.type,
-          subtype: acct.subtype ?? null,
-          mask: acct.mask ?? null,
-          balance_current: bal?.current ?? null,
-          balance_available: bal?.available ?? null,
-          iso_currency_code: bal?.iso_currency_code ?? "USD",
-        };
-        if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
-        return row;
-      });
-      allRows.push(...rows);
+      try {
+        const item = tokenToItem.get(accessToken);
+        const response = await client.accountsGet({ access_token: accessToken });
+        const rows = response.data.accounts.map((acct) => {
+          const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+          const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
+            clerk_user_id: effectiveUserId,
+            plaid_account_id: acct.account_id,
+            name: acct.name,
+            type: acct.type,
+            subtype: acct.subtype ?? null,
+            mask: acct.mask ?? null,
+            balance_current: bal?.current ?? null,
+            balance_available: bal?.available ?? null,
+            iso_currency_code: bal?.iso_currency_code ?? "USD",
+          };
+          if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
+          return row;
+        });
+        allRows.push(...rows);
+      } catch (err) {
+        console.error("[plaid][accounts] accountsGet failed for token, skipping:", err instanceof Error ? err.message : err);
+        continue;
+      }
     }
     if (allRows.length > 0) {
       await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
