@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "crypto";
 import * as jose from "jose";
+import { revalidateTag } from "next/cache";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getSupabase } from "@/lib/supabase";
 import { syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 type PlaidWebhookPayload = {
   webhook_type?: string;
@@ -47,7 +49,8 @@ async function verifyPlaidWebhook(body: string, verificationHeader: string | nul
 export async function POST(request: NextRequest) {
   const client = getPlaidClient();
   if (!client) {
-    return NextResponse.json({ ok: true }); // Plaid not configured; ack to stop retries
+    console.error("[plaid][webhook] Plaid client not configured — returning 503 for retry");
+    return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
   }
 
   let body: string;
@@ -103,6 +106,7 @@ export async function POST(request: NextRequest) {
           user_id: clerkUserId,
           synced: r.synced,
         });
+        revalidateTag(CACHE_TAGS.transactions(clerkUserId));
         embedTransactionsForUser(clerkUserId).catch((e) =>
           console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
         );
@@ -123,6 +127,7 @@ export async function POST(request: NextRequest) {
             user_id: clerkUserId,
             synced: r.synced,
           });
+          revalidateTag(CACHE_TAGS.transactions(clerkUserId));
           embedTransactionsForUser(clerkUserId).catch((e) =>
             console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
           );
@@ -142,9 +147,11 @@ export async function POST(request: NextRequest) {
     } else if (webhook_code === "LOGIN_REPAIRED") {
       console.log("[plaid][webhook] LOGIN_REPAIRED", { item_id, user_id: clerkUserId });
       db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
-      syncTransactionsForUser(clerkUserId).catch((e) =>
-        console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e)
-      );
+      syncTransactionsForUser(clerkUserId)
+        .then(() => { revalidateTag(CACHE_TAGS.transactions(clerkUserId)); })
+        .catch((e) =>
+          console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e)
+        );
     } else if (
       webhook_code === "USER_PERMISSION_REVOKED" ||
       webhook_code === "USER_ACCOUNT_REVOKED"
