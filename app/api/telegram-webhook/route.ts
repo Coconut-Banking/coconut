@@ -296,11 +296,32 @@ async function getMultiRepoStatus(): Promise<string> {
 async function getRepoStatus(repo: string): Promise<string> {
   const headers = { Authorization: `Bearer ${GITHUB_TOKEN}` };
 
-  const issuesRes = await fetch(
+  // Fetch both labeled and unlabeled bug issues (coconut-app may lack ai-fix label)
+  const labeledRes = await fetch(
     `https://api.github.com/repos/${repo}/issues?labels=ai-fix&state=open&sort=created&direction=desc&per_page=20`,
     { headers }
   );
-  const openIssues = issuesRes.ok ? await issuesRes.json() : [];
+  const labeledIssues = labeledRes.ok ? await labeledRes.json() : [];
+
+  // Also fetch recent open issues and include any with "Bug:" title prefix
+  const allRes = await fetch(
+    `https://api.github.com/repos/${repo}/issues?state=open&sort=created&direction=desc&per_page=20`,
+    { headers }
+  );
+  const allIssues = allRes.ok ? await allRes.json() : [];
+  const bugIssues = allIssues.filter(
+    (i: { title: string }) => i.title.startsWith("Bug:")
+  );
+
+  // Merge and deduplicate by issue number
+  const seen = new Set<number>();
+  const openIssues = [...labeledIssues, ...bugIssues].filter(
+    (i: { number: number }) => {
+      if (seen.has(i.number)) return false;
+      seen.add(i.number);
+      return true;
+    }
+  );
 
   const prsRes = await fetch(
     `https://api.github.com/repos/${repo}/pulls?state=open&sort=created&direction=desc&per_page=10`,
