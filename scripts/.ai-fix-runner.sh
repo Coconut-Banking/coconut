@@ -8,9 +8,8 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:/Users/koushik/.local/bin:/Users/k
 
 # ── Config ──────────────────────────────────────────────────────────────────
 REPO="Coconut-Banking/coconut"
-MAIN_REPO="/Users/koushik/github/coconut"
-WORK_DIR="/Users/koushik/github/coconut-worktrees/ai-fix"
-LOG_DIR="$MAIN_REPO/.ai-fix-logs"
+REPO_DIR="/Users/koushik/github/coconut"
+LOG_DIR="$REPO_DIR/.ai-fix-logs"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 DATE_TAG=$(date +%Y%m%d)
 BRANCH="fix/ai-fix-$DATE_TAG"
@@ -38,17 +37,9 @@ notify_all() {
   notify_telegram "$2"
 }
 
-# ── Step 1: Ensure worktree exists and is on latest main ────────────────────
-if [ ! -d "$WORK_DIR/.git" ] && [ ! -f "$WORK_DIR/.git" ]; then
-  echo "Creating worktree..."
-  git -C "$MAIN_REPO" worktree add "$WORK_DIR" --detach origin/main 2>/dev/null || true
-fi
-
-cd "$WORK_DIR"
-git fetch origin main
-git checkout main 2>/dev/null || git checkout --detach origin/main
-git reset --hard origin/main
-npm install --prefer-offline --no-audit 2>/dev/null || npm ci
+# ── Step 1: Update repo ────────────────────────────────────────────────────
+cd "$REPO_DIR"
+git fetch origin main && git checkout main && git pull origin main
 
 # ── Step 2: Fetch ai-fix issues (exclude "test" label) ─────────────────────
 echo "Fetching ai-fix issues..."
