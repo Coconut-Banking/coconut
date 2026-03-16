@@ -419,7 +419,18 @@ const AI_CATEGORIES = [
   "OTHER",
 ] as const;
 
-const CATEGORIZE_BATCH = 50;
+const CATEGORIZE_BATCH = 30;
+
+/** Parse LLM JSON; never throws. Returns null on truncated/invalid JSON. */
+function safeParseCategoriesJson(raw: string): { categories?: unknown } | null {
+  const s = raw.trim();
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as { categories?: unknown };
+  } catch {
+    return null;
+  }
+}
 
 interface TxForCategorization {
   id: string;
@@ -476,13 +487,8 @@ Be precise. Do not explain.`;
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return new Map();
 
-    let parsed: { categories?: unknown };
-    try {
-      parsed = JSON.parse(raw) as { categories?: unknown };
-    } catch {
-      // LLM can return truncated JSON (max_tokens, etc.). Skip this batch.
-      return new Map();
-    }
+    const parsed = safeParseCategoriesJson(raw);
+    if (!parsed) return new Map();
     const cats = Array.isArray(parsed.categories) ? parsed.categories : null;
     if (!cats || cats.length !== txs.length) return new Map();
 
