@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { UITransaction } from "@/lib/transaction-types";
 
 export type Transaction = UITransaction;
@@ -10,6 +10,7 @@ export function useTransactions() {
   const [linked, setLinked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const syncingRef = useRef(false);
 
   const refetch = useCallback(async (opts?: { bypassCache?: boolean }) => {
     try {
@@ -35,19 +36,25 @@ export function useTransactions() {
   }, []);
 
   const syncAndRefetch = useCallback(async () => {
-    const statusRes = await fetch("/api/plaid/status");
-    if (!statusRes.ok) return;
-    const status = await statusRes.json();
-    if (!status.linked) return;
+    if (syncingRef.current) return;
+    syncingRef.current = true;
     try {
-      await fetch("/api/plaid/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      await refetch({ bypassCache: true });
-    } catch {
-      await refetch();
+      const statusRes = await fetch("/api/plaid/status");
+      if (!statusRes.ok) return;
+      const status = await statusRes.json();
+      if (!status.linked) return;
+      try {
+        await fetch("/api/plaid/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        await refetch({ bypassCache: true });
+      } catch {
+        await refetch();
+      }
+    } finally {
+      syncingRef.current = false;
     }
   }, [refetch]);
 
