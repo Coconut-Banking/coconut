@@ -64,7 +64,7 @@ export async function POST() {
   // Delete plaid_items
   await db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId);
 
-  revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+  revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
 
   return NextResponse.json({ ok: true });
   } catch (err) {

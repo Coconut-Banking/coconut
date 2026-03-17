@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
           user_id: clerkUserId,
           synced: r.synced,
         });
-        revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
+        revalidateTag(CACHE_TAGS.transactions(clerkUserId));
         embedTransactionsForUser(clerkUserId).catch((e) =>
           console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
         );
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
             user_id: clerkUserId,
             synced: r.synced,
           });
-          revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
+          revalidateTag(CACHE_TAGS.transactions(clerkUserId));
           embedTransactionsForUser(clerkUserId).catch((e) =>
             console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
           );
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
       console.log("[plaid][webhook] LOGIN_REPAIRED", { item_id, user_id: clerkUserId });
       db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
       syncTransactionsForUser(clerkUserId)
-        .then(() => { revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max"); })
+        .then(() => { revalidateTag(CACHE_TAGS.transactions(clerkUserId)); })
         .catch((e) =>
           console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e)
         );

@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
           const synced = await syncTransactionsForUser(effectiveUserId);
           console.log("[transactions] sync-on-read for", effectiveUserId, ":", synced);
           try {
-            revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+            revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
           } catch (revalErr) {
             console.warn("[transactions] revalidateTag failed:", revalErr);
           }
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
         if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
       }
       try {
-        revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+        revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
       } catch (e) {
         console.warn("[transactions] revalidateTag after dedupe failed:", e);
       }
@@ -194,7 +194,7 @@ export async function POST() {
     const { synced, error } = await syncTransactionsForUser(effectiveUserId);
     if (error) return NextResponse.json({ error }, { status: 500 });
 
-    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
     embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));
     enrichCategoriesForUser(effectiveUserId).catch((e) => console.error("[transactions] categorize:", e));
 
