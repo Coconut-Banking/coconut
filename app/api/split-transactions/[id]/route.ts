@@ -27,7 +27,7 @@ export async function DELETE(
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await db.from("split_transactions").delete().eq("id", id);
-  revalidateTag(CACHE_TAGS.splitTransactions(userId));
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
 
   const { count } = await db
     .from("split_transactions")

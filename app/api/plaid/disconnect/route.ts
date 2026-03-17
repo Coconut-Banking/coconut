@@ -76,7 +76,7 @@ export async function POST() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
 
     return NextResponse.json({ ok: true });
   } catch (err) {

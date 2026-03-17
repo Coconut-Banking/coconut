@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
   if (splitErr || !split) {
     return NextResponse.json({ error: splitErr?.message ?? "Failed to create split" }, { status: 500 });
   }
-  revalidateTag(CACHE_TAGS.splitTransactions(userId));
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
 
   const { data: allSplits } = await db
     .from("split_transactions")

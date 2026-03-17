@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Invalidate cached transactions so the user sees fresh data immediately
-    revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
 
     embedTransactionsForUser(effectiveUserId).catch((e) =>
       console.error("[plaid][exchange-token] background_embed_failed", {
