@@ -14,7 +14,7 @@ import { CACHE } from "./config";
 
 export const CACHE_TAGS = {
   transactions: (userId: string) => `transactions:${userId}` as const,
-  splitTransactions: "split_transactions" as const,
+  splitTransactions: (userId: string) => `split_transactions:${userId}` as const,
 } as const;
 
 export interface TransactionRow {

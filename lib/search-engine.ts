@@ -229,7 +229,10 @@ function applyFilters(
 
   // Sanitize PostgREST filter values to prevent injection via .or() clauses
   const sanitizeFilterValue = (s: string): string =>
-    s.replace(/[,()\.]/g, "").trim();
+    s.replace(/[,()\.]/g, "")
+     .replace(/%/g, '\\%')
+     .replace(/_/g, '\\_')
+     .trim();
 
   // Merchant: search across all merchant columns (hybrid robustness)
   if (intent.merchant) {

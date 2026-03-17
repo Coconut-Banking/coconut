@@ -46,6 +46,7 @@ export default function SettingsPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [wiping, setWiping] = useState(false);
   const retriedAccountsRef = useRef(false);
+  const refreshingRef = useRef(false);
 
   const disconnectBank = async () => {
     if (!confirm("Disconnect your bank? You can reconnect anytime to get real transactions.")) return;
@@ -101,7 +102,8 @@ export default function SettingsPage() {
   };
 
   const refreshAccounts = async () => {
-    if (!linked) return;
+    if (!linked || refreshingRef.current) return;
+    refreshingRef.current = true;
     setAccountsRefreshing(true);
     setAccountsError(null);
     try {
@@ -112,6 +114,7 @@ export default function SettingsPage() {
       setAccountsError("Refresh failed");
     } finally {
       setAccountsRefreshing(false);
+      refreshingRef.current = false;
     }
   };
 

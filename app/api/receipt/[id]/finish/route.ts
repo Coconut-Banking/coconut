@@ -31,7 +31,7 @@ export async function POST(
   const db = getSupabase();
 
   // Get receipt details with items and assignments
-  const { data: receipt } = await db
+  const { data: receipt, error: receiptError } = await db
     .from("receipt_scans")
     .select(`
       *,
@@ -51,7 +51,7 @@ export async function POST(
     .eq("clerk_user_id", userId)
     .single();
 
-  if (!receipt) {
+  if (receiptError || !receipt) {
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
 
@@ -60,13 +60,13 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: group } = await db
+  const { data: group, error: groupError } = await db
     .from("groups")
     .select("id, name")
     .eq("id", groupId)
     .single();
 
-  if (!group) {
+  if (groupError || !group) {
     return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
 
@@ -186,7 +186,7 @@ export async function POST(
     }
   }
 
-  revalidateTag(CACHE_TAGS.splitTransactions, "max");
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");
 
   // Update receipt status to completed

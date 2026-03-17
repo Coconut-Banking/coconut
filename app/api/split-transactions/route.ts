@@ -47,14 +47,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data: tx } = await db
+  const { data: tx, error: txError } = await db
     .from("transactions")
     .select("id, amount, clerk_user_id")
     .eq("id", transactionId)
     .eq("clerk_user_id", userId)
     .single();
 
-  if (!tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+  if (txError || !tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
 
   const { data: existing } = await db
     .from("split_transactions")
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
   if (splitErr || !split) {
     return NextResponse.json({ error: splitErr?.message ?? "Failed to create split" }, { status: 500 });
   }
-  revalidateTag(CACHE_TAGS.splitTransactions, "max");
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
 
   const { data: allSplits } = await db
     .from("split_transactions")

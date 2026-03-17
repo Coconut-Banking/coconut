@@ -16,8 +16,8 @@ export async function GET(
   try {
   const db = getSupabase();
 
-  const { data: group } = await db.from("groups").select("*").eq("id", id).single();
-  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { data: group, error: groupError } = await db.from("groups").select("*").eq("id", id).single();
+  if (groupError || !group) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const allowed = await canAccessGroup(userId, id);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -27,8 +27,8 @@ export async function POST(
 
   const db = getSupabase();
 
-  const { data: group } = await db.from("groups").select("owner_id").eq("id", id).single();
-  if (!group || group.owner_id !== userId) {
+  const { data: group, error: groupError } = await db.from("groups").select("owner_id").eq("id", id).single();
+  if (groupError || !group || group.owner_id !== userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

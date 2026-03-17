@@ -132,8 +132,8 @@ export default function SubscriptionsPage() {
                     : sub.frequency === "yearly" ? sub.amount / 12
                     : sub.frequency === "semiannual" ? sub.amount / 6
                     : sub.frequency === "quarterly" ? sub.amount / 3
-                    : sub.frequency === "weekly" ? sub.amount * 4.33
-                    : sub.frequency === "biweekly" ? sub.amount * 2.17
+                    : sub.frequency === "weekly" ? (sub.amount * 52) / 12
+                    : sub.frequency === "biweekly" ? (sub.amount * 26) / 12
                     : sub.amount;
                   const yearly =
                     sub.frequency === "yearly" ? sub.amount

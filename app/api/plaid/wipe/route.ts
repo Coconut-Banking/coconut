@@ -41,6 +41,14 @@ export async function POST() {
       await db.from("email_receipts").delete().eq("clerk_user_id", effectiveUserId);
     } catch { /* table may not exist */ }
 
+    // Delete subscription_transactions before subscriptions to avoid orphaned rows
+    const { data: userSubs } = await db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId);
+    if (userSubs?.length) {
+      await db.from("subscription_transactions").delete().in("subscription_id", userSubs.map(s => s.id));
+    }
+    // Delete subscriptions
+    await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
+
     // Delete ALL transactions (manual + bank)
     const { error: txErr } = await db
     .from("transactions")
@@ -55,14 +63,6 @@ export async function POST() {
 
   // Delete plaid_items
   await db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId);
-
-  // Delete subscription_transactions before subscriptions to avoid orphaned rows
-  const { data: userSubs } = await db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId);
-  if (userSubs?.length) {
-    await db.from("subscription_transactions").delete().in("subscription_id", userSubs.map(s => s.id));
-  }
-  // Delete subscriptions
-  await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
 
   revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
 
