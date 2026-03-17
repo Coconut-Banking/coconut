@@ -40,9 +40,13 @@ export async function POST() {
       await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
     } catch { /* table may not exist */ }
 
-    // Protect bank transactions that are referenced by split_transactions
+    // Protect bank transactions that are referenced by split_transactions or subscription_transactions
     const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-    const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string).filter(Boolean));
+    const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
+    const protectedIds = new Set([
+      ...(inSplits ?? []).map((r) => r.transaction_id as string),
+      ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
+    ].filter(Boolean));
 
     // Delete only bank transactions (keep manual expenses from Shared)
     const { data: allTx } = await db
@@ -72,7 +76,7 @@ export async function POST() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
