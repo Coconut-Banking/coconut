@@ -13,7 +13,15 @@ test.describe("Authentication — unauthenticated redirects", () => {
   ]) {
     test(`${route} redirects to login when unauthenticated`, async ({ page }) => {
       await page.goto(route);
-      await page.waitForLoadState("networkidle");
+      // Clerk pages can keep long-polling connections open; "networkidle" can hang.
+      await page.waitForURL((url) => {
+        return (
+          url.pathname.includes("/login") ||
+          url.pathname.includes("/sign-in") ||
+          url.hostname.includes("clerk") ||
+          url.hostname.includes("accounts.dev")
+        );
+      });
       const url = page.url();
       expect(
         url.includes("/login") ||

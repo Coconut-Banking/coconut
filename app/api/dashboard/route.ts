@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { auth } from "@clerk/nextjs/server";
+import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 
 export async function GET() {
+  const { userId, getToken } = await auth();
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const db = getSupabase();
+    const token = userId ? await getToken({ template: "supabase" }) : null;
+    const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     const [accountsResult, subsResult] = await Promise.all([
       db

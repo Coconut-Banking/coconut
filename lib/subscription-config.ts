@@ -16,6 +16,7 @@ export const BILL_CATEGORIES = new Set([
   "TRANSFER",
   "TRANSFER_OUT",
   "LOANS_AND_MORTGAGES",
+  "INVESTMENT",
 ]);
 
 /** Merchant/raw_name substrings (case-insensitive) — exclude if any match. */
@@ -36,9 +37,19 @@ export const BILL_MERCHANT_PATTERNS = [
   "utility",
   "power utility",
   "power company",
+  "xcel",
+  "pge",
+  "comed",
+  "duke energy",
   "insurance",
+  "geico",
+  "state farm",
+  "allstate",
+  "premium",
   "hoa",
   "homeowners",
+  "loan",
+  "autopay",
   "thank you", // "AUTOMATIC PAYMENT - THANK"
   "credit card",
   "ach electronic credit", // payroll, income

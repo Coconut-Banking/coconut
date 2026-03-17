@@ -548,7 +548,8 @@ Example output: "Shell gas station | transportation gas and fuel | $48.50 | Wedn
   return query;
 }
 
-// ─── BM25 full-text search ────────────────────────────────────────────────────
+// ─── Text search (optional) ──────────────────────────────────────────────────
+// Prefers bm25_search_transactions if present; falls back to fulltext_search_transactions.
 
 async function runBM25Search(
   clerkUserId: string,
@@ -556,22 +557,47 @@ async function runBM25Search(
   intent: SearchIntent
 ): Promise<DBTransaction[]> {
   const db = getSupabase();
+  const q = query.trim().replace(/\s+/g, " ");
+  if (!q || q.length < 2) return [];
+
+  // 1) Try BM25 RPC if it exists (newer setups)
   try {
     const { data, error } = await db.rpc("bm25_search_transactions", {
       p_user_id: clerkUserId,
-      p_query: query,
+      p_query: q,
       p_date_start: intent.date_start,
       p_date_end: intent.date_end,
       p_limit: SEARCH.VECTOR_LIMIT,
     });
-    if (error) {
+    if (!error) {
+      return (data ?? []).map((r: DBTransaction & { rank?: number }) => {
+        const { rank: _rank, ...tx } = r as DBTransaction & { rank?: number };
+        return tx as DBTransaction;
+      });
+    }
+    // Function missing → fall through to fulltext
+    if (error.code !== "42883" && !/function.*does not exist/i.test(error.message)) {
       console.warn("[bm25] RPC error:", error.message);
+    }
+  } catch {
+    // ignore and fall back
+  }
+
+  // 2) Fallback to fulltext RPC from docs/supabase-migration-search-fulltext.sql
+  try {
+    const { data, error } = await db.rpc("fulltext_search_transactions", {
+      p_user_id: clerkUserId,
+      p_date_start: intent.date_start,
+      p_date_end: intent.date_end,
+      p_query: q,
+      p_limit: SEARCH.VECTOR_LIMIT,
+    });
+    if (error) {
+      if (error.code === "42883" || /function.*does not exist/i.test(error.message)) return [];
+      console.warn("[fulltext] RPC error:", error.message);
       return [];
     }
-    return (data ?? []).map((r: DBTransaction & { rank?: number }) => {
-      const { rank: _rank, ...tx } = r as DBTransaction & { rank?: number };
-      return tx as DBTransaction;
-    });
+    return (data ?? []) as DBTransaction[];
   } catch {
     return [];
   }

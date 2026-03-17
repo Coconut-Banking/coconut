@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
   TrendingDown, TrendingUp, RefreshCw, Users, DollarSign, ArrowRight,
-  Wallet, CalendarClock, ArrowUpRight, ArrowDownRight, CreditCard, Building2,
+  Wallet, CalendarClock, ArrowUpRight, ArrowDownRight, CreditCard, Building2, Sparkles,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useGroupsSummary } from "@/hooks/useGroups";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
 import { formatCurrency, getCurrencySymbol } from "@/lib/currency";
@@ -177,6 +178,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user } = useUser();
   const { transactions, linked, loading } = useTransactions();
+  const { summary: groupsSummary } = useGroupsSummary();
   const { currencyCode, format: fc } = useCurrency();
   const { manualMonthlyIncome } = useManualMonthlyIncome();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -233,7 +235,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         {/* Monthly Spend */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }} className="bg-white rounded-2xl border border-gray-100 p-4">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-50 mb-3">
@@ -241,52 +243,88 @@ export default function DashboardPage() {
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">{fc(monthlySpend)}</div>
           <div className="text-xs text-gray-500 mb-2">Monthly Spend</div>
-          <div className="text-xs text-gray-400">From transactions</div>
+          <div className="text-xs text-gray-400">
+            {linked ? "From transactions" : "Connect a bank to see"}
+          </div>
         </motion.div>
 
         {/* Net Cash Flow */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-white rounded-2xl border border-gray-100 p-4">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#EEF7F2] mb-3">
             <DollarSign size={15} className="text-[#3D8E62]" />
           </div>
           <div className={`text-xl font-bold mb-0.5 ${cashFlow.net >= 0 ? "text-[#3D8E62]" : "text-red-500"}`}>
-            {cashFlow.net >= 0 ? "+" : ""}{fc(cashFlow.net)}
+            {linked ? `${cashFlow.net >= 0 ? "+" : ""}${fc(cashFlow.net)}` : "—"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Net Cash Flow</div>
           <div className="text-xs text-gray-400">
-            {fc(cashFlow.income)} in · {fc(cashFlow.expenses)} out
+            {linked ? `${fc(cashFlow.income)} in · ${fc(cashFlow.expenses)} out` : "Connect a bank to see"}
           </div>
         </motion.div>
 
         {/* Subscriptions */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white rounded-2xl border border-gray-100 p-4">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-50 mb-3">
             <RefreshCw size={15} className="text-purple-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            {subData ? fc(subData.totalMonthly) : "—"}
+            {!linked ? "—" : subData ? fc(subData.totalMonthly) : "…"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Subscriptions/mo</div>
-          {subData ? (
-            <a href="/app/subscriptions" className="text-xs text-[#3D8E62] hover:underline">{subData.count} active →</a>
+          {!linked ? (
+            <div className="text-xs text-gray-400">Connect a bank to see</div>
+          ) : subData ? (
+            <a href="/app/subscriptions" className="text-xs text-[#3D8E62] hover:underline">
+              {subData.count === 0 ? "No subscriptions detected yet" : `${subData.count} active`} →
+            </a>
+          ) : (
+            <div className="text-xs text-gray-400">Loading...</div>
+          )}
+        </motion.div>
+
+        {/* Shared expenses */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-50 mb-3">
+            <Users size={15} className="text-amber-600" />
+          </div>
+          <div className="text-xl font-bold mb-0.5">
+            {groupsSummary
+              ? groupsSummary.totalOwedToMe > 0
+                ? fc(groupsSummary.totalOwedToMe)
+                : groupsSummary.totalIOwe > 0
+                  ? `−${fc(groupsSummary.totalIOwe)}`
+                  : fc(0)
+              : "—"}
+          </div>
+          <div className="text-xs text-gray-500 mb-2">Shared</div>
+          {groupsSummary ? (
+            <a href="/app/shared" className="text-xs text-[#3D8E62] hover:underline">
+              {(groupsSummary.groups?.length ?? 0) === 0
+                ? "Create a group →"
+                : groupsSummary.totalOwedToMe > 0
+                  ? "You're owed →"
+                  : groupsSummary.totalIOwe > 0
+                    ? "You owe →"
+                    : "All settled →"}
+            </a>
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}
         </motion.div>
 
         {/* Net Worth */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white rounded-2xl border border-gray-100 p-4">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 mb-3">
             <Wallet size={15} className="text-blue-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            {netWorth ? fc(netWorth.total) : "—"}
+            {!linked ? "—" : netWorth != null ? fc(netWorth.total) : "…"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Net Worth</div>
-          {netWorth ? (
-            <div className="text-xs text-gray-400">
-              {fc(netWorth.assets)} assets
-            </div>
+          {!linked ? (
+            <div className="text-xs text-gray-400">Connect a bank to see</div>
+          ) : netWorth != null ? (
+            <div className="text-xs text-gray-400">{fc(netWorth.assets)} assets</div>
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}
@@ -430,7 +468,19 @@ export default function DashboardPage() {
               View all <ArrowRight size={11} />
             </button>
           </div>
-          {recentTransactions.map((tx, i) => (
+          {recentTransactions.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm text-gray-500 mb-2">
+                {linked ? "No transactions yet" : "Link a bank to see transactions"}
+              </p>
+              <button
+                onClick={() => router.push(linked ? "/app/transactions" : "/app/settings")}
+                className="text-sm text-[#3D8E62] font-medium hover:underline"
+              >
+                {linked ? "View transactions" : "Connect bank in Settings"}
+              </button>
+            </div>
+          ) : recentTransactions.map((tx, i) => (
             <motion.div
               key={tx.id}
               initial={{ opacity: 0 }}
@@ -471,6 +521,42 @@ export default function DashboardPage() {
 
         {/* Right Column: Insights */}
         <div className="col-span-2 space-y-4">
+          {/* Smart Insights (1–2 real insights or fallback) */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles size={14} className="text-[#3D8E62]" />
+              <div className="text-sm font-semibold text-gray-900">Smart Insights</div>
+            </div>
+            <div className="space-y-2">
+              {linked && categoryDeltas.length > 0 && (
+                <p className="text-sm text-gray-700">
+                  <span className="font-medium">{categoryDeltas[0].name}</span>{" "}
+                  {categoryDeltas[0].delta > 0 ? "up" : "down"}{" "}
+                  <span className={categoryDeltas[0].delta > 0 ? "text-red-500" : "text-[#3D8E62]"}>
+                    {Math.abs(categoryDeltas[0].pct)}%
+                  </span>{" "}
+                  vs last month
+                </p>
+              )}
+              {groupsSummary?.friends?.some((f) => f.balance > 0) && (
+                <p className="text-sm text-gray-700">
+                  <span className="font-medium">{groupsSummary.friends.find((f) => f.balance > 0)?.displayName}</span> owes you{" "}
+                  <span className="text-[#3D8E62] font-medium">
+                    {fc(groupsSummary.friends.find((f) => f.balance > 0)?.balance ?? 0)}
+                  </span>
+                </p>
+              )}
+              {groupsSummary && groupsSummary.totalIOwe > 0 && !groupsSummary.friends?.some((f) => f.balance > 0) && (
+                <p className="text-sm text-gray-700">
+                  You owe <span className="text-red-500 font-medium">{fc(groupsSummary.totalIOwe)}</span> across groups
+                </p>
+              )}
+              {(!linked || (categoryDeltas.length === 0 && !groupsSummary?.friends?.some((f) => f.balance > 0) && (groupsSummary?.totalIOwe ?? 0) <= 0)) && (
+                <p className="text-sm text-gray-500">Connect accounts and sync to see insights.</p>
+              )}
+            </div>
+          </div>
+
           {/* Upcoming Bills */}
           {subData && subData.upcomingBills.length > 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -539,12 +625,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Fallback if no insights */}
-          {!subData?.upcomingBills.length && categoryDeltas.length === 0 && topMerchants.length === 0 && (
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6 text-center">
-              <p className="text-sm text-gray-500">Link your bank account to see insights, upcoming bills, and spending trends.</p>
-            </div>
-          )}
         </div>
       </div>
     </div>

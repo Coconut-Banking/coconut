@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { scanGmailForReceipts } from "@/lib/receipt-parser";
 import { GMAIL } from "@/lib/config";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const rl = rateLimit(`gmail-scan:${userId}`, 20, 60_000);
+  if (!rl.success) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
   try {
     // Parse request body for options
