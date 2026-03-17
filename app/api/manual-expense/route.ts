@@ -198,8 +198,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  revalidateTag(CACHE_TAGS.splitTransactions, "max");
-  revalidateTag(CACHE_TAGS.transactions(userId), "max");
+  revalidateTag(CACHE_TAGS.splitTransactions(userId));
+  revalidateTag(CACHE_TAGS.transactions(userId));
 
   const recurringFrequency = body.recurringFrequency ?? body.recurring_frequency;
   if (recurringFrequency && ["weekly", "biweekly", "monthly"].includes(recurringFrequency)) {

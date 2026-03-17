@@ -186,8 +186,8 @@ export async function POST(
     }
   }
 
-  revalidateTag(CACHE_TAGS.splitTransactions, "max");
-  revalidateTag(CACHE_TAGS.transactions(userId), "max");
+  revalidateTag(CACHE_TAGS.splitTransactions(userId));
+  revalidateTag(CACHE_TAGS.transactions(userId));
 
   // Update receipt status to completed
   await db
