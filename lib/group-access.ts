@@ -25,8 +25,8 @@ export async function canAccessGroup(
   groupId: string
 ): Promise<boolean> {
   const db = getSupabase();
-  const { data: group } = await db.from("groups").select("owner_id").eq("id", groupId).single();
-  if (!group) return false;
+  const { data: group, error } = await db.from("groups").select("owner_id").eq("id", groupId).single();
+  if (error || !group) return false;
   if (group.owner_id === userId) return true;
 
   const { data: member } = await db

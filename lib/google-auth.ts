@@ -61,13 +61,13 @@ export async function saveGmailTokens(
 
 export async function getGmailClient(clerkUserId: string) {
   const db = getSupabase();
-  const { data } = await db
+  const { data, error } = await db
     .from("gmail_connections")
     .select("access_token, refresh_token, token_expiry")
     .eq("clerk_user_id", clerkUserId)
     .single();
 
-  if (!data) return null;
+  if (error || !data) return null;
 
   const client = getOAuth2Client();
   client.setCredentials({

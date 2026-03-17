@@ -31,14 +31,14 @@ export async function POST(
   const db = getSupabase();
 
   // Verify ownership
-  const { data: receipt } = await db
+  const { data: receipt, error: receiptError } = await db
     .from("receipt_scans")
     .select("id")
     .eq("id", id)
     .eq("clerk_user_id", userId)
     .single();
 
-  if (!receipt) {
+  if (receiptError || !receipt) {
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
 

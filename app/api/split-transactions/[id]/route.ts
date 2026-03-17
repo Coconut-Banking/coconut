@@ -15,13 +15,13 @@ export async function DELETE(
   const { id } = await params;
   const db = getSupabase();
 
-  const { data: split } = await db
+  const { data: split, error: splitError } = await db
     .from("split_transactions")
     .select("id, group_id")
     .eq("id", id)
     .single();
 
-  if (!split) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (splitError || !split) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const allowed = await canAccessGroup(userId, split.group_id);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
