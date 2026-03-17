@@ -43,17 +43,17 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
     // Tables may not exist
   }
 
-  // 5. Delete transactions, accounts, plaid_items
-  await db.from("transactions").delete().eq("clerk_user_id", clerkUserId);
-  await db.from("accounts").delete().eq("clerk_user_id", clerkUserId);
-  await db.from("plaid_items").delete().eq("clerk_user_id", clerkUserId);
-
-  // 6. Subscriptions (delete join table first to avoid orphaned rows)
+  // 5. Subscriptions (delete join table first to avoid orphaned rows)
   const { data: userSubs } = await db.from("subscriptions").select("id").eq("clerk_user_id", clerkUserId);
   if (userSubs?.length) {
     await db.from("subscription_transactions").delete().in("subscription_id", userSubs.map(s => s.id));
   }
   await db.from("subscriptions").delete().eq("clerk_user_id", clerkUserId);
+
+  // 6. Delete transactions, accounts, plaid_items
+  await db.from("transactions").delete().eq("clerk_user_id", clerkUserId);
+  await db.from("accounts").delete().eq("clerk_user_id", clerkUserId);
+  await db.from("plaid_items").delete().eq("clerk_user_id", clerkUserId);
 
   console.log("[offboard] completed", { user_id: clerkUserId });
 }
