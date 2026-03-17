@@ -50,7 +50,7 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  const { userId } = auth();
+  const { userId } = await auth();
   if (!userId) {
     // API routes: return 401 so the app can show "Sign in with same account" (Clerk's protect() returns 404)
     if (req.nextUrl.pathname.startsWith("/api/")) {
