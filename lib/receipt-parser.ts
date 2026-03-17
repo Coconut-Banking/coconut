@@ -14,6 +14,16 @@ function isExcludedSender(from: string): boolean {
 function isExcludedSubject(subject: string): boolean {
   return GMAIL.EXCLUDED_SUBJECT_PATTERNS.some((pat) => pat.test(subject));
 }
+
+/** Amazon: only "Ordered: " emails are order confirmations. Shipped/Delivered cause double-counting. */
+function isExcludedAmazonEmail(from: string, subject: string): boolean {
+  const fromLower = from.toLowerCase();
+  const isAmazon = GMAIL.AMAZON_DOMAINS.some((d) => fromLower.includes(d));
+  if (!isAmazon) return false;
+  const prefix = GMAIL.AMAZON_ORDERED_SUBJECT_PREFIX;
+  const subTrim = subject.trim();
+  return !subTrim.toLowerCase().startsWith(prefix.toLowerCase());
+}
 import { withRetry, mapWithConcurrency } from "./retry";
 
 const openai = process.env.OPENAI_API_KEY
@@ -330,6 +340,17 @@ export async function scanGmailForReceipts(
             clerk_user_id: clerkUserId, gmail_message_id: msgId,
             subject, from_address: from, status: "not_receipt",
             error_reason: "Excluded sender or subject pattern",
+          });
+          return;
+        }
+
+        // Amazon: only "Ordered: " = order confirmation. Shipped/Delivered = skip to avoid double-counting.
+        if (isExcludedAmazonEmail(from, subject)) {
+          notReceipt++;
+          scanLogs.push({
+            clerk_user_id: clerkUserId, gmail_message_id: msgId,
+            subject, from_address: from, status: "not_receipt",
+            error_reason: "Amazon email not order confirmation (subject must start with 'Ordered: ')",
           });
           return;
         }
