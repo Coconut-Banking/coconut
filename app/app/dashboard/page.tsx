@@ -197,7 +197,7 @@ export default function DashboardPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setDashboard(data); })
       .catch(() => {});
-  }, [linked]);
+  }, [linked, currencyCode]);
 
   if (loading) {
     return (
