@@ -76,8 +76,8 @@ export async function GET() {
       if (s.frequency === "monthly") return acc + s.amount;
       if (s.frequency === "yearly") return acc + s.amount / 12;
       if (s.frequency === "quarterly") return acc + s.amount / 3;
-      if (s.frequency === "weekly") return acc + s.amount * 4.33;
-      if (s.frequency === "biweekly") return acc + s.amount * 2.17;
+      if (s.frequency === "weekly") return acc + (s.amount * 52) / 12;
+      if (s.frequency === "biweekly") return acc + (s.amount * 26) / 12;
       if (s.frequency === "semiannual") return acc + s.amount / 6;
       return acc + s.amount;
     }, 0);
