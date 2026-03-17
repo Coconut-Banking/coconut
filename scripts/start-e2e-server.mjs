@@ -15,7 +15,21 @@ process.env.NEXT_PUBLIC_SKIP_AUTH = "false";
 
 async function main() {
   // Fetch Clerk testing token so both the test runner and server accept testing cookies.
-  await clerkSetup();
+  const secret = process.env.CLERK_SECRET_KEY || "";
+  const looksPlaceholder = /placeholder/i.test(secret) || secret.trim() === "";
+  if (!looksPlaceholder) {
+    try {
+      await clerkSetup();
+    } catch (err) {
+      // In CI we often run with placeholder keys; don't fail the server start.
+      // Authenticated tests will be skipped by e2e/global-setup.ts when Clerk isn't configured.
+      // eslint-disable-next-line no-console
+      console.warn("[e2e-server] clerkSetup skipped/failed (continuing):", err?.message ?? err);
+    }
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn("[e2e-server] CLERK_SECRET_KEY missing/placeholder; skipping clerkSetup");
+  }
 
   const child = spawn("npm", ["run", "dev"], {
     stdio: "inherit",
