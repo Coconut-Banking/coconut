@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     const removed = await deleteExcludedSubscriptions(userId);
     const detected = await detectSubscriptionsForUser(userId);
     await saveDetectedSubscriptions(userId, detected);
-    revalidateTag(CACHE_TAGS.transactions(userId));
+    revalidateTag(CACHE_TAGS.transactions(userId), "max");
     return NextResponse.json({ detected: detected.length, removed });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
