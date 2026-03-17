@@ -129,7 +129,11 @@ export async function POST(request: NextRequest) {
     // Only clear on first connection (sandbox→prod) so we don't wipe other banks
     if (process.env.NODE_ENV === "production" && isFirstConnection) {
       const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-      const protectedIds = new Set((inSplits ?? []).map((r) => r.transaction_id as string));
+      const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
+      const protectedIds = new Set([
+        ...(inSplits ?? []).map((r) => r.transaction_id as string),
+        ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
+      ].filter(Boolean));
       const { data: toDelete } = await db
         .from("transactions")
         .select("id, plaid_transaction_id")
@@ -175,7 +179,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Invalidate cached transactions so the user sees fresh data immediately
-    revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+    revalidateTag(CACHE_TAGS.transactions(effectiveUserId));
 
     embedTransactionsForUser(effectiveUserId).catch((e) =>
       console.error("[plaid][exchange-token] background_embed_failed", {
