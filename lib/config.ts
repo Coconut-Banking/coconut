@@ -73,6 +73,9 @@ export const GMAIL = {
     "kraken.com",
     "riipen.com",
   ],
+  /** For Amazon: only "Ordered: " emails are order confirmations. Shipped/Delivered cause double-counting. */
+  AMAZON_DOMAINS: ["amazon.com", "amazon.ca", "amazon.co.uk", "amazon.de", "amazon.fr", "amazon.co.jp"],
+  AMAZON_ORDERED_SUBJECT_PREFIX: "Ordered:",
   /** Subject-line patterns that indicate non-receipt emails (case-insensitive). */
   EXCLUDED_SUBJECT_PATTERNS: [
     /trade\s+confirm/i,
