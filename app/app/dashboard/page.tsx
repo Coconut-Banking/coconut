@@ -184,7 +184,7 @@ export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
 
   const displayName = user?.firstName || user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "there";
-  const recentTransactions = transactions.slice(0, 5);
+  const recentTransactions = transactions.slice(0, 15);
   const base = deriveFromTransactions(transactions);
   const cashFlow = {
     ...base.cashFlow,
