@@ -1,0 +1,16 @@
+Error getting API key from apiKeyHelper (in settings or ~/.claude.json): apiKeyHelper did not return a valid value
+Error getting API key from apiKeyHelper (in settings or ~/.claude.json): apiKeyHelper did not return a valid value
+All 6 open issues labeled `ai-fix` are either test issues (#77, #79, #81, #82, #84) or a feature request (#72 — "there is no dark mode").
+
+**Skipping all issues:**
+
+| # | Issue | Reason for Skipping |
+|---|-------|-------------------|
+| #84 | Bug: Test bucket | Test/spam issue — no actionable bug described |
+| #82 | Bug: Test | Test/spam issue — no actionable bug described |
+| #81 | Bug: Test | Test/spam issue — no actionable bug described |
+| #79 | Bug: This is a test for web app | Test/spam issue — no actionable bug described |
+| #77 | Bug: Test | Test/spam issue — no actionable bug described |
+| #72 | Bug: there is no dark mode | Feature request, not a bug — adding dark mode is a significant feature, not a minimal fix |
+
+No actionable bugs found. Nothing to fix today.

@@ -316,8 +316,8 @@ async function syncSingleToken(
     };
   };
 
-  const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null);
-  const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null);
+  const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
+  const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
 
   // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
   // IDs when same bank is linked multiple times (duplicate Items). Modified transactions

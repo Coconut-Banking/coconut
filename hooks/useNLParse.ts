@@ -9,6 +9,7 @@ export function useNLParse(query: string): { filters: QueryFilters; loading: boo
   const [filters, setFilters] = useState<QueryFilters>(() => parseQuery(query));
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const abortRef = useRef<AbortController>();
 
   useEffect(() => {
     const q = query.trim();
@@ -20,25 +21,34 @@ export function useNLParse(query: string): { filters: QueryFilters; loading: boo
 
     setFilters(parseQuery(q));
 
+    clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
-        const res = await fetch(`/api/nl-parse?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`/api/nl-parse?q=${encodeURIComponent(q)}`, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
         const data = await res.json();
-        if (data?.filters) {
+        if (data?.filters && !controller.signal.aborted) {
           console.log("[useNLParse] query:", q, "-> filters:", data.filters);
           setFilters(data.filters);
         }
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         console.warn("[useNLParse] fetch error:", err);
-        // Keep regex filters on error
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, DEBOUNCE_MS);
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
     };
   }, [query]);
 

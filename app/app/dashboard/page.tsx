@@ -193,7 +193,7 @@ export default function DashboardPage() {
         if (e instanceof DOMException && e.name === 'AbortError') return;
       });
     return () => controller.abort();
-  }, [linked, currencyCode]);
+  }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (

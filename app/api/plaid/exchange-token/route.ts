@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
     });
     const response = await client.itemPublicTokenExchange({ public_token });
     const { access_token, item_id, request_id: plaid_request_id } = response.data;
+    if (!access_token || !item_id) {
+      console.error("[plaid][exchange-token] exchange returned null credentials", { trace_id: traceId, response: response.data });
+      return NextResponse.json({ error: "Failed to exchange token. Please try connecting again.", trace_id: traceId }, { status: 500 });
+    }
     console.log("[plaid][exchange-token] exchange_ok", {
       trace_id: traceId,
       user_id: effectiveUserId,

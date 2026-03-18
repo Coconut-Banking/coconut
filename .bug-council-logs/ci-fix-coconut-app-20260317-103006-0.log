@@ -1,0 +1,7 @@
+Done. Pushed commit `e40f328` to `fix/bug-council-20260317`. Here's what was fixed:
+
+**`app/(tabs)/shared/index.tsx`** — 3 errors on lines 94, 126, 168:
+- Changed `refreshControl?: React.ReactElement` to `React.ReactElement<RefreshControlProps>` in `FriendsPage`, `GroupsPage`, and `ActivityPage` props. The `ScrollView` component requires the `refreshControl` prop to have `RefreshControlProps` type, not `unknown`.
+
+**`app/auth-handoff.tsx`** — 10 errors on lines 84–119:
+- Replaced all `className` props with `style` props using a `StyleSheet`. React Native's `View`, `Text`, and `TouchableOpacity` don't support `className` — that's a NativeWind feature that requires proper type augmentation which wasn't configured.

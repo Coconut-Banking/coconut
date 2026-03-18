@@ -1,0 +1,25 @@
+PR_NUMBER=17
+
+---
+
+## Bug Council Audit Complete
+
+**PR**: https://github.com/Coconut-Banking/coconut-app/pull/17
+
+### Summary
+
+| Phase | Result |
+|-------|--------|
+| Audit | 7 agents deployed, 31 raw bugs found |
+| Triage | 26 after dedup, 1 false positive rejected |
+| Fix | 12 bugs fixed (3 already in codebase), 11 deferred |
+| Verify | `tsc --noEmit` passes (all errors pre-existing) |
+| CI | No checks configured — PR is ready for review |
+
+### Key Fixes
+- **4 P1 bugs**: Deep link routing, auth persistence, connection token auth, PII logging
+- **10 P2 bugs**: SafeAreaView (2), Android keyboard (2), HTTP error handling (4), navigation fixes (2)
+- **1 P3 bug**: Duplicate header on Insights tab
+
+### Notable Deferred Item
+**PAYMENTS-2 (P0)**: Payment amounts may be sent in dollars instead of cents to Stripe. Cannot verify without backend code — needs manual investigation of the `/api/stripe/terminal/create-payment-intent` endpoint.

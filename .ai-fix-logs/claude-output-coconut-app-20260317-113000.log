@@ -1,0 +1,10 @@
+There are no open GitHub issues labeled "ai-fix" to fix. The `gh issue list --label "ai-fix" --state open` returned an empty list.
+
+Since there are no issues to resolve, there's nothing to branch, fix, or PR. The instructions say "You have issue(s) labeled 'ai-fix' to resolve" but the actual query returned zero results.
+
+Possible reasons:
+- The issues may have already been closed or resolved
+- The "ai-fix" label may not exist or may be applied to issues in a different repo
+- Issues may not have been created yet
+
+No action taken — no branch created, no PR opened.

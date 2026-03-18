@@ -1,0 +1,31 @@
+---
+
+## Bug Council Audit Complete
+
+PR_NUMBER=16
+
+### Summary
+
+| Metric | Count |
+|--------|-------|
+| Audit agents deployed | 7 |
+| Raw bugs found | 32 |
+| After dedup | 23 |
+| **Bugs fixed** | **20** |
+| Bugs deferred | 3 |
+| Files changed | 11 |
+| Commits | 6 |
+| New TS errors | 0 |
+
+### PR: https://github.com/Coconut-Banking/coconut-app/pull/16
+
+### Key fixes by severity:
+- **P0** (1): Removed hardcoded Clerk test key fallback
+- **P1** (8): Connection token auth guard, FORCE_SIGN_OUT lockout fix, tokenCache restoration, deep link support, PII log sanitization, connected screen timeout escape, linked state reset
+- **P2** (9): Redirect fix, error handling improvements, SafeAreaView consistency, fetch cancellation, receipt total calculation
+- **P3** (2): Keyboard behavior, SafeAreaView bottom edge
+
+### Deferred (needs human review):
+- **PAYMENTS-2 (P0)**: Payment amount units (dollars vs cents) — requires server-side audit before changing client
+- **NAV-1 (P1)**: Conditional Stack navigator — structural refactor, needs planning
+- **NATIVE-4 (P2)**: Location permission prompt — UX decision needed

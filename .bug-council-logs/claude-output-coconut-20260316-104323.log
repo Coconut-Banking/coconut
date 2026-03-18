@@ -1,0 +1,26 @@
+## Bug Council Audit Complete
+
+**PR #85**: https://github.com/Coconut-Banking/coconut/pull/85
+
+### Summary
+
+| Metric | Count |
+|--------|-------|
+| Agents deployed | 12 (10 technical + 2 product flow) |
+| Bugs reported | 37 |
+| False positives caught | 8 |
+| Bugs fixed | 15 |
+| Bugs deferred | 14 (migrations, product decisions, enhancements) |
+| Commits | 13 |
+
+### CI Status
+- Vercel Preview: **pass**
+- Build + E2E Tests: **pass** (3m58s)
+- Vercel Deploy: **pass**
+
+### Key Fixes by Severity
+- **P0** (2): Cross-user data leaks in transaction dedup queries
+- **P1** (5): SQL injection in search, orphaned subscription records, missing dedupe protection, Gmail crash
+- **P2** (8): Split rounding, cache staleness, null safety, error handling, blank screens, API resilience
+
+PR_NUMBER=85

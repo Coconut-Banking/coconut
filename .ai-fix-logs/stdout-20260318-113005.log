@@ -1,0 +1,34 @@
+
+================================================================
+  AI Fix: coconut (web)
+================================================================
+Your branch is behind 'origin/main' by 9 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+HEAD is now at 71dc420 chore: trigger deploy for Vercel [skip ci]
+
+added 232 packages in 3s
+
+193 packages are looking for funding
+  run `npm fund` for details
+Fetching ai-fix issues for coconut...
+Found  issue(s) for coconut.
+Spawning Claude Code to fix coconut issues...
+ERROR: Could not find PR number for coconut.
+
+================================================================
+  AI Fix: coconut-app (mobile)
+================================================================
+M	package-lock.json
+Your branch is behind 'upstream/main' by 11 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+
+up to date in 2s
+
+107 packages are looking for funding
+  run `npm fund` for details
+Fetching ai-fix issues for coconut-app...
+Found  issue(s) for coconut-app.
+Spawning Claude Code to fix coconut-app issues...
+ERROR: Could not find PR number for coconut-app.
+Cleaning up...
