@@ -9,6 +9,11 @@ export function normalizeMerchant(s: string): string {
  * Extract meaningful keywords from a merchant name.
  * Returns up to 3 keywords, filtering out stop words and short tokens.
  */
+/** Escape PostgREST special characters for safe use in ilike patterns. */
+function sanitizeForIlike(s: string): string {
+  return s.replace(/[%_\\]/g, "");
+}
+
 export function extractKeywords(merchant: string): string[] {
   const normalized = normalizeMerchant(merchant);
   return normalized
@@ -16,6 +21,8 @@ export function extractKeywords(merchant: string): string[] {
     .filter(
       (w) => w.length >= RECEIPT_MATCH.MIN_KEYWORD_LENGTH && !RECEIPT_MATCH.STOP_WORDS.has(w)
     )
+    .map(sanitizeForIlike)
+    .filter((w) => w.length > 0)
     .slice(0, 3);
 }
 

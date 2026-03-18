@@ -192,6 +192,10 @@ async function syncSingleToken(
 
   // Upsert accounts for this bank (plaid_item_id links to institution for display)
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
+  if (!acctResp?.accounts || !Array.isArray(acctResp.accounts)) {
+    console.warn("[sync] accountsGet returned no accounts for", plaidItemId);
+    return { synced: 0, removedIds: [], skipped: 0 };
+  }
   for (const acct of acctResp.accounts) {
     const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
     const row: Record<string, unknown> = {
@@ -308,8 +312,12 @@ async function syncSingleToken(
     };
   };
 
-  const addedRows = allAdded.map(mapTxToRow);
-  const modifiedRows = allModified.map(mapTxToRow);
+  const addedRows = allAdded.map(mapTxToRow).filter((r) => r.account_id !== null);
+  const modifiedRows = allModified.map(mapTxToRow).filter((r) => r.account_id !== null);
+  const skippedOrphans = (allAdded.length + allModified.length) - (addedRows.length + modifiedRows.length);
+  if (skippedOrphans > 0) {
+    console.warn("[sync] skipped", skippedOrphans, "transaction(s) with unmapped account_id for user", clerkUserId);
+  }
 
   // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
   // IDs when same bank is linked multiple times (duplicate Items). Modified transactions

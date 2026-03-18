@@ -199,7 +199,7 @@ export default function DashboardPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setDashboard(data); })
       .catch(() => {});
-  }, [linked, currencyCode]);
+  }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (

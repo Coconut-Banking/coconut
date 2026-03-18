@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useGroupListen } from "./useGroupListen";
 
 export interface Group {
@@ -224,11 +224,14 @@ export function usePersonDetail(key: string | null) {
     fetchDetail();
   }, [fetchDetail]);
 
+  const fetchDetailRef = useRef(fetchDetail);
+  fetchDetailRef.current = fetchDetail;
+
   useEffect(() => {
     if (!key) return;
-    const interval = setInterval(() => fetchDetail(true), PERSON_POLL_MS);
+    const interval = setInterval(() => fetchDetailRef.current(true), PERSON_POLL_MS);
     return () => clearInterval(interval);
-  }, [key, fetchDetail]);
+  }, [key]);
 
   return { detail, loading, refetch: fetchDetail };
 }
