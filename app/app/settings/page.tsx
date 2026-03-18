@@ -370,7 +370,7 @@ export default function SettingsPage() {
                     </a>
                   </div>
                   <div className="space-y-3">
-                    {banks.length === 0 && linked && !plaidAccounts ? (
+                    {banks.length === 0 && linked && plaidAccounts === null ? (
                       <div className="py-6 text-center text-sm text-gray-500">Loading accounts...</div>
                     ) : banks.length === 0 && linked ? (
                       <div className="py-6 text-center space-y-3">

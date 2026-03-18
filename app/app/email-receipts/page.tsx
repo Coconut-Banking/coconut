@@ -186,7 +186,12 @@ function EmailReceiptsContent() {
 
   if (gmail.loading) {
     return (
-      <div className="min-h-screen bg-gray-50" />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Checking Gmail connection...</p>
+        </div>
+      </div>
     );
   }
 
