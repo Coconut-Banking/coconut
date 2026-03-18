@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Search,
   Filter,
@@ -692,8 +692,11 @@ function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: st
   });
 }
 
+type SearchMode = "filter" | "ask";
+
 function TransactionsPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { transactions, linked, loading, syncAndRefetch } = useTransactions();
   const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
   const { currencyCode, format: fc, symbol: currSymbol } = useCurrency();
@@ -717,10 +720,12 @@ function TransactionsPageContent() {
     [...investmentUs, ...investmentCad, ...investmentOther].map((a) => a.id!).filter(Boolean)
   );
   const hasInvestmentAccounts = investmentAccountIds.size > 0;
-  // Semantic search: from URL (top bar submit). Triggers NL/LLM search.
+
+  // Unified search: one input, toggle between Filter (instant) and Ask (semantic/LLM)
   const semanticQuery = searchParams.get("q") ? decodeURIComponent(searchParams.get("q")!) : "";
-  // Real-time filter: page search bar. Client-side only, no LLM.
-  const [filterQuery, setFilterQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>(semanticQuery ? "ask" : "filter");
+  const [searchInput, setSearchInput] = useState(semanticQuery || "");
+  const filterQuery = searchMode === "filter" ? searchInput : "";
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [dateFilter, setDateFilter] = useState("Last 3 months");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -728,9 +733,33 @@ function TransactionsPageContent() {
   const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
   const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
 
+  // Sync URL ?q= with search state when landing or external nav
+  useEffect(() => {
+    if (semanticQuery) {
+      setSearchMode("ask");
+      setSearchInput(semanticQuery);
+    } else if (searchMode === "ask" && !searchInput) {
+      setSearchMode("filter");
+    }
+  }, [semanticQuery]);
+
   useEffect(() => {
     if (filterQuery.trim()) setSelectedCategory("All");
   }, [filterQuery]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchInput.trim();
+    if (searchMode === "ask") {
+      if (q) router.push(`/app/transactions?q=${encodeURIComponent(q)}`);
+      else router.push("/app/transactions");
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchInput("");
+    if (searchMode === "ask") router.push("/app/transactions");
+  };
 
   // When a semantic search is active, switch date filter to "All time"
   // so the client-side filter doesn't hide results the backend returned
@@ -981,46 +1010,51 @@ function TransactionsPageContent() {
         </div>
       )}
 
-      {/* Semantic search banner: only when query came from top bar (URL) */}
-      {semanticQuery && (nlLoading || nlAnswer) && (
-        <div className="mb-5 rounded-2xl bg-[#EEF7F2] border border-[#D1EAE0] px-5 py-4">
-          {nlLoading ? (
-            <p className="text-sm text-[#2D5A44]/60">Searching...</p>
-          ) : (
-            <p className="text-sm text-[#2D5A44] leading-relaxed">{nlAnswer}</p>
-          )}
-          <div className="mt-2 text-xs text-[#2D5A44]/80">
-            <Link
-              href="/app/transactions"
-              className="text-[#3D8E62] underline hover:no-underline"
-            >
-              Clear semantic search
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Real-time filter bar: instant client-side filter, no LLM */}
-      <div className="relative mb-5">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2">
-          <Search size={16} className="text-[#3D8E62]" />
-        </div>
-        <input
-          type="text"
-          value={filterQuery}
-          onChange={(e) => setFilterQuery(e.target.value)}
-          placeholder="Filter by name, category, amount..."
-          aria-label="Filter transactions"
-          className="w-full pl-11 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
-        />
-        {filterQuery && (
+      {/* Unified search: Filter (instant) or Ask (semantic) */}
+      <div className="mb-5">
+        <div className="flex gap-2 mb-3">
           <button
-            onClick={() => setFilterQuery("")}
-            aria-label="Clear filter"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            type="button"
+            onClick={() => { setSearchMode("filter"); if (searchMode === "ask") setSearchInput(""); router.push("/app/transactions"); }}
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
+              searchMode === "filter" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
           >
-            <X size={15} />
+            Filter
           </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode("ask")}
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
+              searchMode === "ask" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            Ask
+          </button>
+        </div>
+        <form onSubmit={handleSearchSubmit} className="relative">
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#3D8E62]" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder={searchMode === "filter" ? "Filter by name, category, amount..." : "Ask in plain English. e.g. how much on Uber last month"}
+            aria-label={searchMode === "filter" ? "Filter transactions" : "Search transactions"}
+            className="w-full pl-11 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+          />
+          {(searchInput || semanticQuery) && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              aria-label="Clear"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </form>
+        {searchMode === "ask" && semanticQuery && (nlLoading || nlAnswer) && (
+          <p className="mt-2 text-sm text-[#2D5A44]">{nlLoading ? "Searching..." : nlAnswer}</p>
         )}
       </div>
 
@@ -1064,9 +1098,9 @@ function TransactionsPageContent() {
                     </>
                   ) : (
                     <>
-                      <p>Try a different filter or <button onClick={() => setFilterQuery("")} className="text-[#3D8E62] underline">clear the filter</button>.</p>
+                      <p>Try a different filter or <button onClick={clearSearch} className="text-[#3D8E62] underline">clear the search</button>.</p>
                       <p>Or change the date to <button onClick={() => setDateFilter("Last 3 months")} className="text-[#3D8E62] font-medium underline">Last 3 months</button> or <button onClick={() => setDateFilter("All time")} className="text-[#3D8E62] font-medium underline">All time</button>.</p>
-                      {semanticQuery && <p><Link href="/app/transactions" className="text-[#3D8E62] underline">Clear semantic search</Link></p>}
+                      {semanticQuery && <p><button onClick={clearSearch} className="text-[#3D8E62] underline">Clear search</button></p>}
                     </>
                   )}
                 </div>
@@ -1187,7 +1221,7 @@ function TransactionsPageContent() {
                   setSelectedCategory("All");
                   setDateFilter("This month");
                   setTypeFilter("All");
-                  setFilterQuery("");
+                  setSearchInput("");
                 }}
                 className="w-full text-xs text-gray-500 hover:text-gray-700 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
