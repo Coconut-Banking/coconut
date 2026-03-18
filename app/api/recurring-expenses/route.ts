@@ -26,7 +26,12 @@ export async function POST(request: NextRequest) {
   const rl = rateLimit(`recurring:${userId}`, 20, 60_000);
   if (!rl.success) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const { action, groupId, personKey, amount, description, frequency, startDate } = body as {
     action?: string;
     groupId?: string;
