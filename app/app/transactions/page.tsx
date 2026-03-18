@@ -870,31 +870,60 @@ function TransactionsPageContent() {
     new Set(baseList.map((tx) => tx.category))
   ).sort()];
 
-  return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-8 py-8">
-      {linked && (
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
-            Live from linked account
-          </span>
-          <Link
-            href="/app/settings"
-            className="text-xs text-[#3D8E62] hover:underline"
-          >
-            Seeing old or duplicate transactions? Disconnect & reconnect in Settings.
-          </Link>
-        </div>
-      )}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Transactions</h1>
-        <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions loaded</p>
-      </div>
+  // Stats for header: this month spending from filtered, pending count
+  const thisMonthSpend = filtered
+    .filter((tx) => !tx.isPending && tx.amount < 0)
+    .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const thisMonthCount = filtered.filter((tx) => tx.date.startsWith(thisMonthKey)).length;
 
-      {/* Accounts overview — US / CAD with balances */}
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#F7FAF8] to-white">
+      <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
+        {/* Header */}
+        <div className="mb-6">
+          {linked && (
+            <div className="mb-4 flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
+                Live from linked account
+              </span>
+              <Link
+                href="/app/settings"
+                className="text-xs text-[#3D8E62] hover:underline"
+              >
+                Seeing old or duplicate transactions? Disconnect & reconnect in Settings.
+              </Link>
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Transactions</h1>
+              <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions loaded</p>
+            </div>
+            <div className="flex gap-3 flex-wrap">
+              <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 shadow-sm min-w-[120px]">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">This month</div>
+                <div className="text-lg font-bold text-gray-900 mt-0.5">{formatCurrencyAbs(thisMonthSpend, currencyCode)}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{thisMonthCount} transactions</div>
+              </div>
+              <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 shadow-sm min-w-[100px]">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Pending</div>
+                <div className="text-lg font-bold text-amber-600 mt-0.5">{pendingTx.length}</div>
+              </div>
+              <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 shadow-sm min-w-[100px]">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Showing</div>
+                <div className="text-lg font-bold text-[#3D8E62] mt-0.5">{filtered.length}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      {/* Accounts overview — compact cards */}
       {linked && (visibleUsAccounts.length > 0 || visibleCadAccounts.length > 0 || visibleOtherAccounts.length > 0) && (
-        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Your accounts</h2>
+        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Your accounts</h2>
           <div className="space-y-4">
             {(spendingUs.length > 0 || spendingCad.length > 0 || spendingOther.length > 0) && (
               <div>
@@ -1075,7 +1104,7 @@ function TransactionsPageContent() {
               </button>
             ))}
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {semanticQuery && nlLoading ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3">
                 <div className="w-7 h-7 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
@@ -1150,7 +1179,7 @@ function TransactionsPageContent() {
           </div>
         </div>
         <div className="hidden sm:block w-48 shrink-0">
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 sticky top-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Filter size={13} className="text-gray-500" />
               <span className="text-xs font-semibold text-gray-700">Filters</span>
@@ -1237,6 +1266,7 @@ function TransactionsPageContent() {
           <TransactionDrawer tx={selectedTx} onClose={() => setSelectedTx(null)} currencyCode={currencyCode} />
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

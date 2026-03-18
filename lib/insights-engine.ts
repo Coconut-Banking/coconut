@@ -11,7 +11,7 @@
 import { getSupabase } from "./supabase";
 
 export interface Insight {
-  type: "anomaly" | "trend_up" | "trend_down" | "duplicate" | "price_change";
+  type: "anomaly" | "trend_up" | "trend_down" | "duplicate" | "price_change" | "new_subscription" | "refund";
   severity: "info" | "warning" | "alert";
   title: string;
   description: string;
@@ -185,18 +185,122 @@ async function detectSpendingTrends(userId: string, db: ReturnType<typeof getSup
   }).slice(0, 3);
 }
 
+async function detectSubscriptionPriceChanges(userId: string, db: ReturnType<typeof getSupabase>): Promise<Insight[]> {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const { data } = await db
+    .from("subscriptions")
+    .select("id, merchant_name, amount, previous_amount, price_change_amount, price_change_detected_at")
+    .eq("clerk_user_id", userId)
+    .eq("status", "active")
+    .not("price_change_detected_at", "is", null)
+    .gte("price_change_detected_at", thirtyDaysAgo.toISOString())
+    .limit(5);
+
+  if (!data?.length) return [];
+
+  return data.map((s) => {
+    const prev = Number(s.previous_amount) ?? 0;
+    const curr = Number(s.amount) ?? 0;
+    const change = Number(s.price_change_amount) ?? curr - prev;
+    const merchant = s.merchant_name ?? "Subscription";
+    return {
+      type: "price_change" as const,
+      severity: "warning" as const,
+      title: `${merchant} went up`,
+      description: `Was ${fmt(prev)}, now ${fmt(curr)} (${change > 0 ? "+" : ""}${fmt(change)}).`,
+      metadata: { subscriptionId: s.id, previous: prev, current: curr, change },
+    };
+  });
+}
+
+async function detectNewSubscriptions(userId: string, db: ReturnType<typeof getSupabase>): Promise<Insight[]> {
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+  const { data } = await db
+    .from("subscriptions")
+    .select("id, merchant_name, amount, frequency, created_at")
+    .eq("clerk_user_id", userId)
+    .eq("status", "active")
+    .gte("created_at", fourteenDaysAgo.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (!data?.length) return [];
+
+  return data.map((s) => {
+    const merchant = s.merchant_name ?? "Subscription";
+    const amt = Number(s.amount) ?? 0;
+    const freq = (s.frequency ?? "monthly").replace("ly", "");
+    return {
+      type: "new_subscription" as const,
+      severity: "info" as const,
+      title: `New subscription: ${merchant}`,
+      description: `${fmt(amt)}/${freq} detected.`,
+      metadata: { subscriptionId: s.id },
+    };
+  });
+}
+
+async function detectRefunds(userId: string, db: ReturnType<typeof getSupabase>): Promise<Insight[]> {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const { data } = await db
+    .from("transactions")
+    .select("id, merchant_name, raw_name, amount, date, primary_category")
+    .eq("clerk_user_id", userId)
+    .gt("amount", 0)
+    .gte("date", thirtyDaysAgo.toISOString().split("T")[0])
+    .order("date", { ascending: false })
+    .limit(500);
+
+  if (!data?.length) return [];
+
+  const rows = data as Array<TxRow & { amount: number }>;
+  const excludeCategories = new Set(["TRANSFER_IN", "INCOME", "BANK_FEES"]);
+  const excludeMerchant = /credit\s*card|card\s*payment|payment\s*to|autopay|pay\s*\d|payment\s*[- ]?credit|^payment$/i;
+
+  const insights: Insight[] = [];
+  for (const r of rows) {
+    const cat = (r.primary_category ?? "").toUpperCase();
+    if (excludeCategories.has(cat)) continue;
+    const merchant = (r.merchant_name || r.raw_name || "").toLowerCase();
+    if (excludeMerchant.test(merchant)) continue;
+    if (r.amount < 5) continue;
+
+    insights.push({
+      type: "refund",
+      severity: "info",
+      title: `Refund from ${r.merchant_name || r.raw_name || "merchant"}`,
+      description: `+${fmt(r.amount)} on ${r.date}.`,
+      transactions: [{ id: r.id, merchant: r.merchant_name || r.raw_name || "", amount: r.amount, date: r.date }],
+      metadata: {},
+    });
+  }
+  return insights.slice(0, 5);
+}
+
 export async function generateInsights(userId: string): Promise<Insight[]> {
   const db = getSupabase();
 
-  const [anomalies, duplicates, trends] = await Promise.all([
+  const [anomalies, duplicates, trends, priceChanges, newSubs, refunds] = await Promise.all([
     detectAnomalies(userId, db),
     detectDuplicates(userId, db),
     detectSpendingTrends(userId, db),
+    detectSubscriptionPriceChanges(userId, db),
+    detectNewSubscriptions(userId, db),
+    detectRefunds(userId, db),
   ]);
 
   return [
     ...duplicates,
     ...anomalies,
+    ...priceChanges,
+    ...refunds,
+    ...newSubs,
     ...trends,
   ];
 }
