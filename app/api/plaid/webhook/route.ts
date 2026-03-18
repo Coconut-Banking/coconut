@@ -99,9 +99,29 @@ export async function POST(request: NextRequest) {
   const clerkUserId = item.clerk_user_id as string;
 
   if (webhook_type === "TRANSACTIONS" && webhook_code === "SYNC_UPDATES_AVAILABLE") {
-    syncTransactionsForUser(clerkUserId)
-      .then((r) => {
-        console.log("[plaid][webhook] SYNC_UPDATES_AVAILABLE synced", {
+    try {
+      const r = await syncTransactionsForUser(clerkUserId);
+      console.log("[plaid][webhook] SYNC_UPDATES_AVAILABLE synced", {
+        item_id,
+        user_id: clerkUserId,
+        synced: r.synced,
+      });
+      revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
+      embedTransactionsForUser(clerkUserId).catch((e) =>
+        console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
+      );
+      enrichCategoriesForUser(clerkUserId).catch((e) =>
+        console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
+      );
+    } catch (e) {
+      console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
+    }
+  } else if (webhook_type === "ITEM") {
+    if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
+      await db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id);
+      try {
+        const r = await syncTransactionsForUser(clerkUserId);
+        console.log("[plaid][webhook] NEW_ACCOUNTS_AVAILABLE synced", {
           item_id,
           user_id: clerkUserId,
           synced: r.synced,
@@ -113,45 +133,24 @@ export async function POST(request: NextRequest) {
         enrichCategoriesForUser(clerkUserId).catch((e) =>
           console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
         );
-      })
-      .catch((e) =>
-        console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e)
-      );
-  } else if (webhook_type === "ITEM") {
-    if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
-      db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
-      syncTransactionsForUser(clerkUserId)
-        .then((r) => {
-          console.log("[plaid][webhook] NEW_ACCOUNTS_AVAILABLE synced", {
-            item_id,
-            user_id: clerkUserId,
-            synced: r.synced,
-          });
-          revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
-          embedTransactionsForUser(clerkUserId).catch((e) =>
-            console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
-          );
-          enrichCategoriesForUser(clerkUserId).catch((e) =>
-            console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
-          );
-        })
-        .catch((e) =>
-          console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e)
-        );
+      } catch (e) {
+        console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
+      }
     } else if (webhook_code === "ERROR" && payload.error?.error_code === "ITEM_LOGIN_REQUIRED") {
       console.log("[plaid][webhook] ITEM_LOGIN_REQUIRED", { item_id, user_id: clerkUserId });
-      db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
+      await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
     } else if (webhook_code === "PENDING_EXPIRATION" || webhook_code === "PENDING_DISCONNECT") {
       console.log("[plaid][webhook] expiration/disconnect", { webhook_code, item_id, user_id: clerkUserId });
-      db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
+      await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
     } else if (webhook_code === "LOGIN_REPAIRED") {
       console.log("[plaid][webhook] LOGIN_REPAIRED", { item_id, user_id: clerkUserId });
-      db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id).then(() => {}, (e) => console.warn("[plaid][webhook] DB update failed:", e));
-      syncTransactionsForUser(clerkUserId)
-        .then(() => { revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max"); })
-        .catch((e) =>
-          console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e)
-        );
+      await db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id);
+      try {
+        await syncTransactionsForUser(clerkUserId);
+        revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
+      } catch (e) {
+        console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e);
+      }
     } else if (
       webhook_code === "USER_PERMISSION_REVOKED" ||
       webhook_code === "USER_ACCOUNT_REVOKED"

@@ -15,6 +15,6 @@ export async function GET() {
     return NextResponse.json({ insights });
   } catch (e) {
     console.error("[insights]", e);
-    return NextResponse.json({ insights: [] });
+    return NextResponse.json({ error: "Failed to generate insights" }, { status: 500 });
   }
 }

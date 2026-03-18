@@ -14,12 +14,17 @@ test.describe("Authentication — unauthenticated redirects", () => {
     test(`${route} redirects to login when unauthenticated`, async ({ page }) => {
       await page.goto(route);
       // Clerk pages can keep long-polling connections open; "networkidle" can hang.
+      // With placeholder Clerk keys in CI, Clerk may redirect to login, to
+      // its hosted accounts page, or stay on the same URL with a
+      // __clerk_handshake query param (handshake flow). All indicate that
+      // the route is protected and requires auth.
       await page.waitForURL((url) => {
         return (
           url.pathname.includes("/login") ||
           url.pathname.includes("/sign-in") ||
           url.hostname.includes("clerk") ||
-          url.hostname.includes("accounts.dev")
+          url.hostname.includes("accounts.dev") ||
+          url.searchParams.has("__clerk_handshake")
         );
       });
       const url = page.url();
@@ -27,7 +32,8 @@ test.describe("Authentication — unauthenticated redirects", () => {
         url.includes("/login") ||
           url.includes("/sign-in") ||
           url.includes("clerk") ||
-          url.includes("accounts.dev")
+          url.includes("accounts.dev") ||
+          url.includes("__clerk_handshake")
       ).toBeTruthy();
     });
   }

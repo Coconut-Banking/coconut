@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getMaxSettlementAllowed } from "@/lib/group-balances";
 import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 export async function POST(req: NextRequest) {
   const userId = await getUserId();
@@ -71,5 +73,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   return NextResponse.json(settlement);
 }
