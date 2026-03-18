@@ -370,6 +370,24 @@ export async function syncTransactionsForUser(
 
   // Delete removed transactions across all banks (batch to avoid URL length limit)
   if (allRemovedIds.length > 0) {
+    // Get internal UUIDs for the plaid_transaction_ids being removed
+    const { data: toRemove } = await db
+      .from("transactions")
+      .select("id")
+      .eq("clerk_user_id", clerkUserId)
+      .in("plaid_transaction_id", allRemovedIds);
+
+    const removedUuids = (toRemove ?? []).map(r => r.id as string);
+
+    // Clean up subscription_transactions references first
+    if (removedUuids.length > 0) {
+      await db
+        .from("subscription_transactions")
+        .delete()
+        .in("transaction_id", removedUuids);
+    }
+
+    // Now safe to delete transactions
     const BATCH = 100;
     for (let i = 0; i < allRemovedIds.length; i += BATCH) {
       const batch = allRemovedIds.slice(i, i + BATCH);
