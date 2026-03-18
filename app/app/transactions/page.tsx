@@ -775,16 +775,14 @@ function TransactionsPageContent() {
     (a, b) => (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1)
   );
   const hiddenSet = new Set(hiddenIds);
-  // Account filter: specific account > spending (exclude investments) > all
+  // Account filter: specific account > all. Investment accounts always excluded on transactions page.
   const afterAccount = (() => {
     const excludeHidden = sortedByPending.filter((tx) => !tx.accountId || !hiddenSet.has(tx.accountId));
+    const excludeInvestment = excludeHidden.filter((tx) => !tx.accountId || !investmentAccountIds.has(tx.accountId));
     if (selectedAccountId) {
-      return excludeHidden.filter((tx) => tx.accountId === selectedAccountId);
+      return excludeInvestment.filter((tx) => tx.accountId === selectedAccountId);
     }
-    if (accountFilter === "spending" && hasInvestmentAccounts) {
-      return excludeHidden.filter((tx) => !tx.accountId || !investmentAccountIds.has(tx.accountId));
-    }
-    return excludeHidden;
+    return excludeInvestment;
   })();
   const hasUnlinkedTx = selectedAccountId && sortedByPending.some((tx) => !tx.accountId);
   // Category filter
@@ -952,74 +950,20 @@ function TransactionsPageContent() {
                 </div>
               </div>
             )}
-            {(investmentUs.length > 0 || investmentCad.length > 0 || investmentOther.length > 0) && (
-              <details className="group">
-                <summary className="text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer list-none flex items-center gap-1.5 py-1">
-                  <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
-                  Investment accounts ({investmentUs.length + investmentCad.length + investmentOther.length})
-                </summary>
-                <div className="flex flex-wrap gap-3 mt-2 pl-4 border-l-2 border-gray-100">
-                  {investmentUs.concat(investmentCad).concat(investmentOther).map((acc) => {
-                    const bal = acc.balance_current ?? acc.balance_available ?? 0;
-                    const isSelected = selectedAccountId === acc.id;
-                    const isCad = (acc.iso_currency_code ?? "USD") === "CAD";
-                    return (
-                      <button
-                        key={acc.account_id}
-                        onClick={() => { setSelectedAccountId(isSelected ? null : acc.id); setAccountFilter("all"); }}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
-                          isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-sm ${isCad ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-600"}`}>
-                          {(acc.name?.[0] ?? "?").toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
-                          <div className="text-xs text-gray-500">••••{acc.mask ?? "****"}</div>
-                          <div className="text-sm font-semibold text-gray-900 mt-0.5">
-                            {isCad ? "C$" : "$"}{typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2 }) : "—"}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </details>
-            )}
+            {/* Investment accounts hidden on transactions page — shown on home for balance overview */}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {hasInvestmentAccounts && (
-              <>
-                <button
-                  onClick={() => { setSelectedAccountId(null); setAccountFilter("spending"); }}
-                  className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                    !selectedAccountId && accountFilter === "spending" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  Spending
-                </button>
-                <button
-                  onClick={() => { setSelectedAccountId(null); setAccountFilter("all"); }}
-                  className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                    !selectedAccountId && accountFilter === "all" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  All accounts
-                </button>
-              </>
-            )}
-            {!hasInvestmentAccounts && (
+            {(spendingUs.length > 0 || spendingCad.length > 0 || spendingOther.length > 0) && (
               <button
                 onClick={() => { setSelectedAccountId(null); setAccountFilter("all"); }}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium ${
                   !selectedAccountId ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                All accounts
+                All
               </button>
             )}
-            {[...visibleUsAccounts, ...visibleCadAccounts, ...visibleOtherAccounts].filter((a) => a.id).map((acc) => {
+            {[...spendingUs, ...spendingCad, ...spendingOther].filter((a) => a.id).map((acc) => {
               const isSelected = selectedAccountId === acc.id;
               return (
                 <button
