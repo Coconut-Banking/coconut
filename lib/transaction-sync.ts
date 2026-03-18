@@ -409,14 +409,26 @@ export async function deleteDuplicateTransactionsForUser(
   const seen = new Map<string, string>(); // key -> id to keep
   const idsToDelete: string[] = [];
 
-  const { data: protectedSplits } = await db.from("split_transactions").select("transaction_id");
+  // Get user's transaction IDs to scope protection queries
+  const { data: userTxs } = await db
+    .from("transactions")
+    .select("id")
+    .eq("clerk_user_id", clerkUserId);
+  const userTxIds = (userTxs ?? []).map((r) => r.id as string);
+
+  const { data: protectedSplits } = await db
+    .from("split_transactions")
+    .select("transaction_id")
+    .in("transaction_id", userTxIds);
   const { data: protectedReceipts } = await db
     .from("email_receipts")
     .select("transaction_id")
+    .eq("clerk_user_id", clerkUserId)
     .not("transaction_id", "is", null);
   const { data: protectedSubTxs } = await db
     .from("subscription_transactions")
     .select("transaction_id")
+    .in("transaction_id", userTxIds)
     .not("transaction_id", "is", null);
   const protectedIds = new Set(
     [

@@ -183,16 +183,6 @@ export default function DashboardPage() {
   const { manualMonthlyIncome } = useManualMonthlyIncome();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
 
-  const displayName = user?.firstName || user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "there";
-  const recentTransactions = transactions.slice(0, 15);
-  const base = deriveFromTransactions(transactions);
-  const cashFlow = {
-    ...base.cashFlow,
-    income: base.cashFlow.income + manualMonthlyIncome,
-    net: base.cashFlow.net + manualMonthlyIncome,
-  };
-  const { spendingData, categoryData, monthlySpend, categoryDeltas, topMerchants } = base;
-
   useEffect(() => {
     if (!linked) return;
     fetch("/api/dashboard")
@@ -211,6 +201,16 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const displayName = user?.firstName || user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "there";
+  const recentTransactions = transactions.slice(0, 15);
+  const base = deriveFromTransactions(transactions);
+  const cashFlow = {
+    ...base.cashFlow,
+    income: base.cashFlow.income + manualMonthlyIncome,
+    net: base.cashFlow.net + manualMonthlyIncome,
+  };
+  const { spendingData, categoryData, monthlySpend, categoryDeltas, topMerchants } = base;
 
   const netWorth = dashboard?.netWorth;
   const subData = dashboard?.subscriptions;
