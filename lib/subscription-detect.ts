@@ -418,7 +418,9 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
       const diff = d.amount - oldAmount;
       const absDiff = Math.abs(diff);
       const pctChange = oldAmount > 0 ? absDiff / oldAmount : 0;
-      if (absDiff > 0.50 || pctChange > 0.05) {
+      // Only flag if: (absolute change > $0.50) OR (percentage > 5% AND amount >= $1.00)
+      const isSignificant = absDiff > 0.50 || (pctChange > 0.05 && oldAmount >= 1.00);
+      if (isSignificant) {
         priceChangeFields.previous_amount = oldAmount;
         priceChangeFields.price_change_amount = diff;
         priceChangeFields.price_change_detected_at = new Date().toISOString();
