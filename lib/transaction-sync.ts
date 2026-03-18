@@ -192,6 +192,10 @@ async function syncSingleToken(
 
   // Upsert accounts for this bank (plaid_item_id links to institution for display)
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
+  if (!acctResp?.accounts || !Array.isArray(acctResp.accounts)) {
+    console.error("[sync] accountsGet returned invalid data", { clerkUserId, plaidItemId });
+    return { synced: 0, removedIds: [], skipped: 0 };
+  }
   for (const acct of acctResp.accounts) {
     const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
     const row: Record<string, unknown> = {
