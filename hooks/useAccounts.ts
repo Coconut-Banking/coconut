@@ -41,7 +41,8 @@ export function useAccounts(linked: boolean) {
 
   useEffect(() => {
     fetchAccounts();
-  }, [fetchAccounts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linked]);
 
   const usAccounts = accounts.filter((a) => (a.iso_currency_code ?? "USD") === "USD");
   const cadAccounts = accounts.filter((a) => (a.iso_currency_code ?? "USD") === "CAD");

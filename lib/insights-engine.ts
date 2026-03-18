@@ -188,11 +188,22 @@ async function detectSpendingTrends(userId: string, db: ReturnType<typeof getSup
 export async function generateInsights(userId: string): Promise<Insight[]> {
   const db = getSupabase();
 
-  const [anomalies, duplicates, trends] = await Promise.all([
+  const results = await Promise.allSettled([
     detectAnomalies(userId, db),
     detectDuplicates(userId, db),
     detectSpendingTrends(userId, db),
   ]);
+
+  const anomalies = results[0].status === "fulfilled" ? results[0].value : [];
+  const duplicates = results[1].status === "fulfilled" ? results[1].value : [];
+  const trends = results[2].status === "fulfilled" ? results[2].value : [];
+
+  results.forEach((result, idx) => {
+    if (result.status === "rejected") {
+      const names = ["anomalies", "duplicates", "trends"];
+      console.error(`[insights] ${names[idx]} detector failed:`, result.reason);
+    }
+  });
 
   return [
     ...duplicates,
