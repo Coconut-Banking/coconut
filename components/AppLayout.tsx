@@ -146,19 +146,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu size={20} />
           </button>
-          <form onSubmit={handleSearch} className="flex-1 min-w-0 max-w-xl">
-            <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search your money. Try: dinner with Alex in January"
-                aria-label="Search transactions"
-                className="w-full pl-9 pr-4 py-2 text-sm bg-[#F7FAF8] border border-[#E8EAEC] rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
-              />
-            </div>
-          </form>
+          {!pathname.startsWith("/app/transactions") && (
+            <form onSubmit={handleSearch} className="flex-1 min-w-0 max-w-xl">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search your money. Try: dinner with Alex in January"
+                  aria-label="Search transactions"
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-[#F7FAF8] border border-[#E8EAEC] rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+                />
+              </div>
+            </form>
+          )}
           <div className="flex items-center gap-2">
             <a
               href="/auth/return-to-app"

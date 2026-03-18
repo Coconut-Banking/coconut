@@ -1,5 +1,0 @@
-Done. Here's a summary of the fixes:
-
-1. **`app/(tabs)/shared/index.tsx`** — The `refreshControl` prop on `FriendsPage`, `GroupsPage`, and `ActivityPage` was typed as `React.ReactElement` (which resolves to `ReactElement<unknown>`), but `ScrollView` expects `ReactElement<RefreshControlProps>`. Fixed by adding the proper generic type parameter and importing `RefreshControlProps`.
-
-2. **`app/auth-handoff.tsx`** — Used `className` props (Tailwind/NativeWind syntax) on `View`, `Text`, and `TouchableOpacity`, but the project doesn't use NativeWind. Converted all `className` usage to equivalent `StyleSheet.create` styles.

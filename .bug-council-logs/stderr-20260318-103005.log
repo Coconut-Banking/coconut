@@ -1,6 +1,0 @@
-From https://github.com/Coconut-Banking/coconut
- * branch            main       -> FETCH_HEAD
-HEAD is now at 71dc420 chore: trigger deploy for Vercel [skip ci]
-From https://github.com/KoushikP04/coconut-app
- * branch            main       -> FETCH_HEAD
-HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview

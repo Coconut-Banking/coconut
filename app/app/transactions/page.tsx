@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Search,
   Filter,
@@ -692,8 +692,11 @@ function filterTransactionsByQuery<T extends UITransaction>(list: T[], query: st
   });
 }
 
+type SearchMode = "filter" | "ask";
+
 function TransactionsPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { transactions, linked, loading, syncAndRefetch } = useTransactions();
   const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
   const { currencyCode, format: fc, symbol: currSymbol } = useCurrency();
@@ -717,10 +720,12 @@ function TransactionsPageContent() {
     [...investmentUs, ...investmentCad, ...investmentOther].map((a) => a.id!).filter(Boolean)
   );
   const hasInvestmentAccounts = investmentAccountIds.size > 0;
-  // Semantic search: from URL (top bar submit). Triggers NL/LLM search.
+
+  // Unified search: one input, toggle between Filter (instant) and Ask (semantic/LLM)
   const semanticQuery = searchParams.get("q") ? decodeURIComponent(searchParams.get("q")!) : "";
-  // Real-time filter: page search bar. Client-side only, no LLM.
-  const [filterQuery, setFilterQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>(semanticQuery ? "ask" : "filter");
+  const [searchInput, setSearchInput] = useState(semanticQuery || "");
+  const filterQuery = searchMode === "filter" ? searchInput : "";
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [dateFilter, setDateFilter] = useState("Last 3 months");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -728,9 +733,33 @@ function TransactionsPageContent() {
   const [selectedTx, setSelectedTx] = useState<UITransaction | null>(null);
   const { results: nlFiltered, answer: nlAnswer, loading: nlLoading } = useNLSearch(semanticQuery, transactions);
 
+  // Sync URL ?q= with search state when landing or external nav
+  useEffect(() => {
+    if (semanticQuery) {
+      setSearchMode("ask");
+      setSearchInput(semanticQuery);
+    } else if (searchMode === "ask" && !searchInput) {
+      setSearchMode("filter");
+    }
+  }, [semanticQuery]);
+
   useEffect(() => {
     if (filterQuery.trim()) setSelectedCategory("All");
   }, [filterQuery]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchInput.trim();
+    if (searchMode === "ask") {
+      if (q) router.push(`/app/transactions?q=${encodeURIComponent(q)}`);
+      else router.push("/app/transactions");
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchInput("");
+    if (searchMode === "ask") router.push("/app/transactions");
+  };
 
   // When a semantic search is active, switch date filter to "All time"
   // so the client-side filter doesn't hide results the backend returned
@@ -775,16 +804,14 @@ function TransactionsPageContent() {
     (a, b) => (a.isPending ? 0 : 1) - (b.isPending ? 0 : 1)
   );
   const hiddenSet = new Set(hiddenIds);
-  // Account filter: specific account > spending (exclude investments) > all
+  // Account filter: specific account > all. Investment accounts always excluded on transactions page.
   const afterAccount = (() => {
     const excludeHidden = sortedByPending.filter((tx) => !tx.accountId || !hiddenSet.has(tx.accountId));
+    const excludeInvestment = excludeHidden.filter((tx) => !tx.accountId || !investmentAccountIds.has(tx.accountId));
     if (selectedAccountId) {
-      return excludeHidden.filter((tx) => tx.accountId === selectedAccountId);
+      return excludeInvestment.filter((tx) => tx.accountId === selectedAccountId);
     }
-    if (accountFilter === "spending" && hasInvestmentAccounts) {
-      return excludeHidden.filter((tx) => !tx.accountId || !investmentAccountIds.has(tx.accountId));
-    }
-    return excludeHidden;
+    return excludeInvestment;
   })();
   const hasUnlinkedTx = selectedAccountId && sortedByPending.some((tx) => !tx.accountId);
   // Category filter
@@ -843,31 +870,60 @@ function TransactionsPageContent() {
     new Set(baseList.map((tx) => tx.category))
   ).sort()];
 
-  return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-8 py-8">
-      {linked && (
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
-            Live from linked account
-          </span>
-          <Link
-            href="/app/settings"
-            className="text-xs text-[#3D8E62] hover:underline"
-          >
-            Seeing old or duplicate transactions? Disconnect & reconnect in Settings.
-          </Link>
-        </div>
-      )}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Transactions</h1>
-        <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions loaded</p>
-      </div>
+  // Stats for header: this month spending from filtered, pending count
+  const thisMonthSpend = filtered
+    .filter((tx) => !tx.isPending && tx.amount < 0)
+    .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const thisMonthCount = filtered.filter((tx) => tx.date.startsWith(thisMonthKey)).length;
 
-      {/* Accounts overview — US / CAD with balances */}
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#F7FAF8] to-white">
+      <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
+        {/* Header */}
+        <div className="mb-6">
+          {linked && (
+            <div className="mb-4 flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
+                Live from linked account
+              </span>
+              <Link
+                href="/app/settings"
+                className="text-xs text-[#3D8E62] hover:underline"
+              >
+                Seeing old or duplicate transactions? Disconnect & reconnect in Settings.
+              </Link>
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Transactions</h1>
+              <p className="text-sm text-gray-500 mt-1">{transactions.length} transactions loaded</p>
+            </div>
+            <div className="flex gap-3 flex-wrap">
+              <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 shadow-sm min-w-[120px]">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">This month</div>
+                <div className="text-lg font-bold text-gray-900 mt-0.5">{formatCurrencyAbs(thisMonthSpend, currencyCode)}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{thisMonthCount} transactions</div>
+              </div>
+              <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 shadow-sm min-w-[100px]">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Pending</div>
+                <div className="text-lg font-bold text-amber-600 mt-0.5">{pendingTx.length}</div>
+              </div>
+              <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 shadow-sm min-w-[100px]">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Showing</div>
+                <div className="text-lg font-bold text-[#3D8E62] mt-0.5">{filtered.length}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      {/* Accounts overview — compact cards */}
       {linked && (visibleUsAccounts.length > 0 || visibleCadAccounts.length > 0 || visibleOtherAccounts.length > 0) && (
-        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Your accounts</h2>
+        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Your accounts</h2>
           <div className="space-y-4">
             {(spendingUs.length > 0 || spendingCad.length > 0 || spendingOther.length > 0) && (
               <div>
@@ -952,74 +1008,20 @@ function TransactionsPageContent() {
                 </div>
               </div>
             )}
-            {(investmentUs.length > 0 || investmentCad.length > 0 || investmentOther.length > 0) && (
-              <details className="group">
-                <summary className="text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer list-none flex items-center gap-1.5 py-1">
-                  <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
-                  Investment accounts ({investmentUs.length + investmentCad.length + investmentOther.length})
-                </summary>
-                <div className="flex flex-wrap gap-3 mt-2 pl-4 border-l-2 border-gray-100">
-                  {investmentUs.concat(investmentCad).concat(investmentOther).map((acc) => {
-                    const bal = acc.balance_current ?? acc.balance_available ?? 0;
-                    const isSelected = selectedAccountId === acc.id;
-                    const isCad = (acc.iso_currency_code ?? "USD") === "CAD";
-                    return (
-                      <button
-                        key={acc.account_id}
-                        onClick={() => { setSelectedAccountId(isSelected ? null : acc.id); setAccountFilter("all"); }}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
-                          isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-sm ${isCad ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-600"}`}>
-                          {(acc.name?.[0] ?? "?").toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">{acc.name}</div>
-                          <div className="text-xs text-gray-500">••••{acc.mask ?? "****"}</div>
-                          <div className="text-sm font-semibold text-gray-900 mt-0.5">
-                            {isCad ? "C$" : "$"}{typeof bal === "number" ? bal.toLocaleString("en-US", { minimumFractionDigits: 2 }) : "—"}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </details>
-            )}
+            {/* Investment accounts hidden on transactions page — shown on home for balance overview */}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {hasInvestmentAccounts && (
-              <>
-                <button
-                  onClick={() => { setSelectedAccountId(null); setAccountFilter("spending"); }}
-                  className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                    !selectedAccountId && accountFilter === "spending" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  Spending
-                </button>
-                <button
-                  onClick={() => { setSelectedAccountId(null); setAccountFilter("all"); }}
-                  className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                    !selectedAccountId && accountFilter === "all" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  All accounts
-                </button>
-              </>
-            )}
-            {!hasInvestmentAccounts && (
+            {(spendingUs.length > 0 || spendingCad.length > 0 || spendingOther.length > 0) && (
               <button
                 onClick={() => { setSelectedAccountId(null); setAccountFilter("all"); }}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium ${
                   !selectedAccountId ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                All accounts
+                All
               </button>
             )}
-            {[...visibleUsAccounts, ...visibleCadAccounts, ...visibleOtherAccounts].filter((a) => a.id).map((acc) => {
+            {[...spendingUs, ...spendingCad, ...spendingOther].filter((a) => a.id).map((acc) => {
               const isSelected = selectedAccountId === acc.id;
               return (
                 <button
@@ -1037,46 +1039,51 @@ function TransactionsPageContent() {
         </div>
       )}
 
-      {/* Semantic search banner: only when query came from top bar (URL) */}
-      {semanticQuery && (nlLoading || nlAnswer) && (
-        <div className="mb-5 rounded-2xl bg-[#EEF7F2] border border-[#D1EAE0] px-5 py-4">
-          {nlLoading ? (
-            <p className="text-sm text-[#2D5A44]/60">Searching...</p>
-          ) : (
-            <p className="text-sm text-[#2D5A44] leading-relaxed">{nlAnswer}</p>
-          )}
-          <div className="mt-2 text-xs text-[#2D5A44]/80">
-            <Link
-              href="/app/transactions"
-              className="text-[#3D8E62] underline hover:no-underline"
-            >
-              Clear semantic search
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Real-time filter bar: instant client-side filter, no LLM */}
-      <div className="relative mb-5">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2">
-          <Search size={16} className="text-[#3D8E62]" />
-        </div>
-        <input
-          type="text"
-          value={filterQuery}
-          onChange={(e) => setFilterQuery(e.target.value)}
-          placeholder="Filter by name, category, amount..."
-          aria-label="Filter transactions"
-          className="w-full pl-11 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
-        />
-        {filterQuery && (
+      {/* Unified search: Filter (instant) or Ask (semantic) */}
+      <div className="mb-5">
+        <div className="flex gap-2 mb-3">
           <button
-            onClick={() => setFilterQuery("")}
-            aria-label="Clear filter"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            type="button"
+            onClick={() => { setSearchMode("filter"); if (searchMode === "ask") setSearchInput(""); router.push("/app/transactions"); }}
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
+              searchMode === "filter" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
           >
-            <X size={15} />
+            Filter
           </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode("ask")}
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
+              searchMode === "ask" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            Ask
+          </button>
+        </div>
+        <form onSubmit={handleSearchSubmit} className="relative">
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#3D8E62]" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder={searchMode === "filter" ? "Filter by name, category, amount..." : "Ask in plain English. e.g. how much on Uber last month"}
+            aria-label={searchMode === "filter" ? "Filter transactions" : "Search transactions"}
+            className="w-full pl-11 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+          />
+          {(searchInput || semanticQuery) && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              aria-label="Clear"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </form>
+        {searchMode === "ask" && semanticQuery && (nlLoading || nlAnswer) && (
+          <p className="mt-2 text-sm text-[#2D5A44]">{nlLoading ? "Searching..." : nlAnswer}</p>
         )}
       </div>
 
@@ -1097,7 +1104,7 @@ function TransactionsPageContent() {
               </button>
             ))}
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {semanticQuery && nlLoading ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3">
                 <div className="w-7 h-7 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
@@ -1120,9 +1127,9 @@ function TransactionsPageContent() {
                     </>
                   ) : (
                     <>
-                      <p>Try a different filter or <button onClick={() => setFilterQuery("")} className="text-[#3D8E62] underline">clear the filter</button>.</p>
+                      <p>Try a different filter or <button onClick={clearSearch} className="text-[#3D8E62] underline">clear the search</button>.</p>
                       <p>Or change the date to <button onClick={() => setDateFilter("Last 3 months")} className="text-[#3D8E62] font-medium underline">Last 3 months</button> or <button onClick={() => setDateFilter("All time")} className="text-[#3D8E62] font-medium underline">All time</button>.</p>
-                      {semanticQuery && <p><Link href="/app/transactions" className="text-[#3D8E62] underline">Clear semantic search</Link></p>}
+                      {semanticQuery && <p><button onClick={clearSearch} className="text-[#3D8E62] underline">Clear search</button></p>}
                     </>
                   )}
                 </div>
@@ -1172,7 +1179,7 @@ function TransactionsPageContent() {
           </div>
         </div>
         <div className="hidden sm:block w-48 shrink-0">
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 sticky top-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sticky top-4">
             <div className="flex items-center gap-2 mb-4">
               <Filter size={13} className="text-gray-500" />
               <span className="text-xs font-semibold text-gray-700">Filters</span>
@@ -1243,7 +1250,7 @@ function TransactionsPageContent() {
                   setSelectedCategory("All");
                   setDateFilter("This month");
                   setTypeFilter("All");
-                  setFilterQuery("");
+                  setSearchInput("");
                 }}
                 className="w-full text-xs text-gray-500 hover:text-gray-700 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
@@ -1259,6 +1266,7 @@ function TransactionsPageContent() {
           <TransactionDrawer tx={selectedTx} onClose={() => setSelectedTx(null)} currencyCode={currencyCode} />
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }
