@@ -185,10 +185,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!linked) return;
-    fetch("/api/dashboard")
+    const controller = new AbortController();
+    fetch("/api/dashboard", { signal: controller.signal })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setDashboard(data); })
-      .catch(() => {});
+      .catch((e) => {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+      });
+    return () => controller.abort();
   }, [linked, currencyCode]);
 
   if (loading) {
