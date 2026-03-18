@@ -28,11 +28,17 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    console.log("[nl-search] user:", effectiveUserId, "query:", q);
+    console.log("[pipeline:nl] INPUT", { userId: effectiveUserId, query: q });
     const result = await search(effectiveUserId, q);
+    console.log("[pipeline:nl] OUTPUT", {
+      metric: result.metric,
+      count: result.transactions.length,
+      total: result.total ?? null,
+      answer: (result.answer ?? "").slice(0, 100) + ((result.answer?.length ?? 0) > 100 ? "…" : ""),
+    });
     return NextResponse.json(result);
   } catch (err) {
-    console.error("[nl-search]", err);
+    console.error("[pipeline:nl] ERROR", err);
     return NextResponse.json(
       { transactions: [], answer: "Search failed.", metric: "list" },
       { status: 500 }

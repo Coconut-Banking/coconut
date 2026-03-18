@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
   }
 
   const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
+  console.log("[pipeline:tx] GET start", { userId: effectiveUserId, refresh: bypassCache });
 
   try {
     const token = clerkUserId ? await getToken({ template: "supabase" }) : null;
@@ -195,10 +196,11 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    console.log("[pipeline:tx] GET output", { count: mapped.length });
     return NextResponse.json(mapped);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[transactions] GET error:", err);
+    console.error("[pipeline:tx] GET error:", err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
