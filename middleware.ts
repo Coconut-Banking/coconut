@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher([
   "/login(.*)",
   "/connect(.*)",
   "/auth(.*)",
+  "/_clerk(.*)",
   "/api/stripe/webhook",
   "/api/plaid/webhook",
   "/api/webhooks(.*)",
@@ -49,12 +50,13 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  const { isAuthenticated } = await auth();
-  if (!isAuthenticated) {
+  const { userId } = await auth();
+  if (!userId) {
     // API routes: return 401 so the app can show "Sign in with same account" (Clerk's protect() returns 404)
     if (req.nextUrl.pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    // For pages, let Clerk handle the redirect flow.
     await auth.protect();
   }
 });

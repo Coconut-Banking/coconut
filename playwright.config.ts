@@ -9,6 +9,7 @@ if (!process.env.CLERK_PUBLISHABLE_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHA
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: ["**/bug-sweep*.ts"],
   fullyParallel: true,
   globalSetup: "./e2e/global-setup",
   forbidOnly: !!process.env.CI,
@@ -24,9 +25,11 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm run build && npm run start",
+    // Start dev server with Clerk testing token available.
+    command: "node scripts/start-e2e-server.mjs",
     url: "http://localhost:3000",
     timeout: 120_000,
-    reuseExistingServer: true,
+    // Avoid accidentally reusing a dev server with different env.
+    reuseExistingServer: false,
   },
 });

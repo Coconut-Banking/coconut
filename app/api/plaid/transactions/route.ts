@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { getSupabase } from "@/lib/supabase";
+import { auth } from "@clerk/nextjs/server";
+import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
@@ -9,19 +10,32 @@ import {
   needsLLMNormalization,
   normalizeMerchantsWithLLM,
 } from "@/lib/merchant-normalize-llm";
-import { getCachedTransactions, CACHE_TAGS } from "@/lib/cached-queries";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 export async function GET(request: NextRequest) {
+  const { userId: clerkUserId, getToken } = await auth();
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
+  console.log("[pipeline:tx] GET start", { userId: effectiveUserId, refresh: bypassCache });
 
   try {
-    const db = getSupabase();
-    let { data, error } = await getCachedTransactions(effectiveUserId, { bypassCache });
+    const token = clerkUserId ? await getToken({ template: "supabase" }) : null;
+    const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
+
+    // Use direct RLS-backed query (avoid service-role cached query for security hardening)
+    const { data, error } = await db
+      .from("transactions")
+      .select(
+        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      )
+      .eq("clerk_user_id", effectiveUserId)
+      .order("date", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(2000);
 
     if (error) throw new Error(error.message);
 
@@ -43,10 +57,18 @@ export async function GET(request: NextRequest) {
           } catch (revalErr) {
             console.warn("[transactions] revalidateTag failed:", revalErr);
           }
-          const fresh = await getCachedTransactions(effectiveUserId, { bypassCache: true });
+          const fresh = await db
+            .from("transactions")
+            .select(
+              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+            )
+            .eq("clerk_user_id", effectiveUserId)
+            .order("date", { ascending: false })
+            .order("id", { ascending: false })
+            .limit(2000);
           if (fresh.error) throw new Error(fresh.error.message);
-          data = fresh.data;
-          bankOnly = (data ?? []).filter(
+          const freshData = fresh.data;
+          bankOnly = (freshData ?? []).filter(
             (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
           );
         } catch (e) {
@@ -174,10 +196,11 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    console.log("[pipeline:tx] GET output", { count: mapped.length });
     return NextResponse.json(mapped);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[transactions] GET error:", err);
+    console.error("[pipeline:tx] GET error:", err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

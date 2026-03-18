@@ -4,6 +4,7 @@ import { getPlaidClient } from "@/lib/plaid-client";
 import { savePlaidToken, syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
 import { getEffectiveUserId } from "@/lib/demo";
 import { CACHE_TAGS } from "@/lib/cached-queries";
+import { rateLimit } from "@/lib/rate-limit";
 
 type ExchangeTokenBody = {
   public_token?: string;
@@ -40,6 +41,12 @@ export async function POST(request: NextRequest) {
     console.warn("[plaid][exchange-token] unauthorized", { trace_id: traceId });
     return NextResponse.json({ error: "Sign in to connect your bank", trace_id: traceId }, { status: 401 });
   }
+
+  const rl = rateLimit(`plaid-exchange:${effectiveUserId}`, 10, 60_000);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too many requests", trace_id: traceId }, { status: 429 });
+  }
+
   const { public_token } = body;
   if (!public_token) {
     return NextResponse.json({ error: "public_token required", trace_id: traceId }, { status: 400 });

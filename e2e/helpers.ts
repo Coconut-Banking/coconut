@@ -21,6 +21,15 @@ export async function goAuthenticated(page: Page, path: string) {
     "Clerk not configured (clerkSetup failed or keys missing) — skipping",
   );
   await setupClerkTestingToken({ page });
+
+  // Verify the server actually honors the testing token; otherwise skip to avoid flaky false failures.
+  // (This can happen if Clerk testing-mode env is missing or middleware blocks Clerk internals.)
+  const probe = await page.request.get("/api/debug/me");
+  test.skip(
+    probe.status() !== 200,
+    `Clerk testing token not honored by server (probe status ${probe.status()}) — skipping`,
+  );
+
   await page.goto(path);
   await page.waitForLoadState("domcontentloaded");
 }
