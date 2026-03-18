@@ -277,7 +277,11 @@ async function syncSingleToken(
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";
     const pfc = tx.personal_finance_category as { primary?: string; detailed?: string; confidence_level?: string } | null;
     const category = tx.category as string[] | null;
-    const rawAmount = tx.amount as number;
+    const rawAmount = tx.amount as number | null | undefined;
+    if (rawAmount === null || rawAmount === undefined || isNaN(Number(rawAmount))) {
+      console.warn(`[sync] Skipping transaction ${tx.transaction_id} with invalid amount:`, rawAmount);
+      return null;
+    }
     const amount = rawAmount > 0 ? -Math.abs(rawAmount) : Math.abs(rawAmount);
     const location = tx.location as { city?: string; region?: string; postal_code?: string; country?: string } | null;
     const counterparties = tx.counterparties as Array<{ name?: string; type?: string; website?: string; logo_url?: string; entity_id?: string }> | null;
@@ -312,8 +316,8 @@ async function syncSingleToken(
     };
   };
 
-  const addedRows = allAdded.map(mapTxToRow);
-  const modifiedRows = allModified.map(mapTxToRow);
+  const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null);
+  const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null);
 
   // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
   // IDs when same bank is linked multiple times (duplicate Items). Modified transactions
