@@ -45,7 +45,7 @@ export default async function LoginPage({
           forceRedirectUrl={forceRedirect}
           signUpForceRedirectUrl={forceRedirect}
           fallbackRedirectUrl={fallbackRedirect}
-          signUpFallbackRedirectUrl={fallbackRedirect}
+          signUpFallbackRedirectUrl="/connect"
           appearance={{
             variables: {
               colorPrimary: "#3D8E62",
