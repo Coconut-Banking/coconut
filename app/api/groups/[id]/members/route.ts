@@ -105,11 +105,34 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Build update object with only provided fields
-  const updates: Record<string, string> = {};
-  if (venmo_username !== undefined) updates.venmo_username = venmo_username;
-  if (cashapp_cashtag !== undefined) updates.cashapp_cashtag = cashapp_cashtag;
-  if (paypal_username !== undefined) updates.paypal_username = paypal_username;
+  // Validate and sanitize payment handles
+  const HANDLE_MAX_LENGTH = 100;
+  const HANDLE_PATTERN = /^[a-zA-Z0-9_\-.@]*$/;
+
+  const handleFields = { venmo_username, cashapp_cashtag, paypal_username } as Record<string, unknown>;
+  const updates: Record<string, string | null> = {};
+
+  for (const [key, raw] of Object.entries(handleFields)) {
+    if (raw === undefined) continue;
+    if (raw === null || raw === "") {
+      updates[key] = null;
+      continue;
+    }
+    const trimmed = String(raw).trim();
+    if (trimmed.length > HANDLE_MAX_LENGTH) {
+      return NextResponse.json(
+        { error: `${key} must be ${HANDLE_MAX_LENGTH} characters or fewer` },
+        { status: 400 }
+      );
+    }
+    if (!HANDLE_PATTERN.test(trimmed)) {
+      return NextResponse.json(
+        { error: `${key} contains invalid characters (only letters, numbers, _ - . @ allowed)` },
+        { status: 400 }
+      );
+    }
+    updates[key] = trimmed;
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
