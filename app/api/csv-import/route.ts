@@ -3,7 +3,6 @@ import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import { parseP2PCSV } from "@/lib/csv-import/parsers";
-import { autoLinkTransactions } from "@/lib/csv-import/auto-link";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -31,6 +30,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File too large (max 5MB)" }, { status: 400 });
     }
 
+    // Validate filename extension
+    if (!file.name?.toLowerCase().endsWith(".csv")) {
+      return NextResponse.json({ error: "Only CSV files are accepted" }, { status: 400 });
+    }
+
+    // Validate MIME type (some browsers send empty string for CSV)
+    const allowedTypes = ["text/csv", "application/csv", "text/plain", ""];
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json({ error: "Invalid file type" }, { status: 400 });
+    }
+
     // Read file content
     const text = await file.text();
 
@@ -43,6 +53,10 @@ export async function POST(request: NextRequest) {
     const platform = forcePlatform as "venmo" | "cashapp" | "paypal" | undefined;
     const { platform: detectedPlatform, rows, errors: parseErrors } = parseP2PCSV(text, platform);
 
+    if (rows.length > 10000) {
+      return NextResponse.json({ error: "Too many transactions (max 10,000 per import)" }, { status: 400 });
+    }
+
     if (rows.length === 0) {
       return NextResponse.json({
         error: "No valid transactions found in CSV",
@@ -51,52 +65,70 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Auto-link with bank transactions
-    const linkResults = await autoLinkTransactions(effectiveUserId, rows);
-
-    // Build a map from externalId to link info
-    const linkMap = new Map(linkResults.map((r) => [r.p2pExternalId, r]));
-
-    // Upsert into p2p_transactions
+    // Upsert into transactions table with dedup against Plaid data
     const db = getSupabase();
     let imported = 0;
     let skipped = 0;
-    let linked = 0;
+    let enriched = 0;
 
     for (const row of rows) {
-      const linkInfo = linkMap.get(row.externalId);
+      const absAmount = Math.abs(row.amount);
 
-      const { error } = await db.from("p2p_transactions").upsert(
-        {
-          clerk_user_id: effectiveUserId,
-          platform: row.platform,
-          external_id: row.externalId,
-          date: row.date,
-          amount: row.amount,
-          counterparty_name: row.counterpartyName,
-          note: row.note || null,
-          status: row.status,
-          linked_transaction_id: linkInfo?.linkedTransactionId ?? null,
-          link_confidence: linkInfo?.confidence ?? null,
-        },
-        { onConflict: "clerk_user_id,platform,external_id" }
+      // Check for matching Plaid transaction to enrich
+      const dateObj = new Date(row.date);
+      const dayBefore = new Date(dateObj);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      const dayAfter = new Date(dateObj);
+      dayAfter.setDate(dayAfter.getDate() + 1);
+
+      const { data: matches } = await db
+        .from("transactions")
+        .select("id, amount, date")
+        .eq("clerk_user_id", effectiveUserId)
+        .eq("source", "plaid")
+        .gte("date", dayBefore.toISOString().split("T")[0])
+        .lte("date", dayAfter.toISOString().split("T")[0])
+        .ilike("merchant_name", `%${row.platform}%`);
+
+      const exactMatch = (matches ?? []).filter(
+        (m) => Math.abs(Math.abs(Number(m.amount)) - absAmount) < 0.02
       );
 
-      if (error) {
-        skipped++;
-      } else {
+      if (exactMatch.length === 1) {
+        // Enrich existing Plaid transaction
+        await db.from("transactions").update({
+          p2p_counterparty: row.counterpartyName,
+          p2p_note: row.note || null,
+          p2p_platform: row.platform,
+        }).eq("id", exactMatch[0].id);
+        enriched++;
         imported++;
-        if (linkInfo?.linkedTransactionId) linked++;
+      } else {
+        // Insert as new P2P transaction
+        const { error } = await db.from("transactions").upsert(
+          {
+            clerk_user_id: effectiveUserId,
+            source: row.platform === "cashapp" ? "csv_import" : row.platform,
+            external_id: row.externalId,
+            date: row.date,
+            amount: row.amount,
+            merchant_name: row.counterpartyName,
+            raw_name: row.counterpartyName,
+            p2p_counterparty: row.counterpartyName,
+            p2p_note: row.note || null,
+            p2p_platform: row.platform,
+            primary_category: row.amount > 0 ? "TRANSFER_IN" : "TRANSFER_OUT",
+          },
+          { onConflict: "clerk_user_id,source,external_id" }
+        );
+
+        if (error) {
+          skipped++;
+        } else {
+          imported++;
+        }
       }
     }
-
-    // Build suggestions for user review (medium-confidence links)
-    const suggestions = linkResults
-      .filter((r) => !r.linkedTransactionId && r.candidates.length > 0)
-      .map((r) => ({
-        externalId: r.p2pExternalId,
-        candidates: r.candidates,
-      }));
 
     if (imported > 0) {
       revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
@@ -107,8 +139,7 @@ export async function POST(request: NextRequest) {
       total: rows.length,
       imported,
       skipped,
-      linked,
-      suggestionsCount: suggestions.length,
+      enriched,
       parseErrors,
     });
   } catch (err) {

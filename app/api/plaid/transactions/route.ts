@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await db
       .from("transactions")
       .select(
-        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, source, p2p_counterparty, p2p_note, p2p_platform"
       )
       .eq("clerk_user_id", effectiveUserId)
       .order("date", { ascending: false })
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
           const fresh = await db
             .from("transactions")
             .select(
-              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, source, p2p_counterparty, p2p_note, p2p_platform"
             )
             .eq("clerk_user_id", effectiveUserId)
             .order("date", { ascending: false })
@@ -193,6 +193,10 @@ export async function GET(request: NextRequest) {
         hasSplitSuggestion: false,
         merchantColor: hashColor(merchant),
         isPending: Boolean(tx.is_pending),
+        source: (tx.source as string) || undefined,
+        p2pCounterparty: (tx.p2p_counterparty as string) || undefined,
+        p2pNote: (tx.p2p_note as string) || undefined,
+        p2pPlatform: (tx.p2p_platform as string) || undefined,
       };
     });
 

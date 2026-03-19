@@ -46,3 +46,84 @@ export async function POST(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(member);
 }
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const userId = await getUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  const db = getSupabase();
+
+  // Check the user owns the group or is a member
+  const { data: group } = await db.from("groups").select("owner_id").eq("id", id).single();
+  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (group.owner_id !== userId) {
+    const { data: membership } = await db
+      .from("group_members")
+      .select("id")
+      .eq("group_id", id)
+      .eq("user_id", userId)
+      .single();
+    if (!membership) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const { data: members, error } = await db
+    .from("group_members")
+    .select("id, display_name, email, user_id, venmo_username, cashapp_cashtag, paypal_username")
+    .eq("group_id", id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(members);
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const userId = await getUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const { memberId, venmo_username, cashapp_cashtag, paypal_username } = body;
+  if (!memberId) return NextResponse.json({ error: "memberId required" }, { status: 400 });
+
+  const db = getSupabase();
+
+  const { data: group, error: groupError } = await db.from("groups").select("owner_id").eq("id", id).single();
+  if (groupError || !group || group.owner_id !== userId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Build update object with only provided fields
+  const updates: Record<string, string> = {};
+  if (venmo_username !== undefined) updates.venmo_username = venmo_username;
+  if (cashapp_cashtag !== undefined) updates.cashapp_cashtag = cashapp_cashtag;
+  if (paypal_username !== undefined) updates.paypal_username = paypal_username;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
+
+  const { data: member, error } = await db
+    .from("group_members")
+    .update(updates)
+    .eq("id", memberId)
+    .eq("group_id", id)
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  return NextResponse.json(member);
+}

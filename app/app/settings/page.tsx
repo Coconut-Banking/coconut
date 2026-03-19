@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye, Building2 } from "lucide-react";
+import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye, Building2, Wallet, Upload, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGmail } from "@/hooks/useGmail";
@@ -12,16 +12,21 @@ import { useCurrency, useCompactView, useManualMonthlyIncome } from "@/hooks/use
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { formatCurrency } from "@/lib/currency";
 import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
+import { usePayPal } from "@/hooks/usePayPal";
+import { CSVImportModal } from "@/components/csv-import-modal";
+import { useSearchParams } from "next/navigation";
+import { AnimatePresence } from "motion/react";
 
 const sections = [
   { id: "profile", label: "Profile", icon: User },
   { id: "banks", label: "Connected Banks", icon: CreditCard },
+  { id: "wallets", label: "Digital Wallets", icon: Wallet },
   { id: "email", label: "Email Receipts", icon: Mail },
   { id: "security", label: "Security", icon: Shield },
   { id: "data", label: "Data & Export", icon: Database },
 ];
 
-export default function SettingsPage() {
+function SettingsContent() {
   const { user } = useUser();
   const [activeSection, setActiveSection] = useState("profile");
   const [name, setName] = useState("");
@@ -36,7 +41,11 @@ export default function SettingsPage() {
   const { linked, syncAndRefetch } = useTransactions();
   const gmail = useGmail();
   const { needsReauth, newAccountsAvailable, refetch: refetchAlerts } = usePlaidAlerts();
+  const paypal = usePayPal();
   const { hide, unhide, isHidden } = useHiddenAccounts();
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [paypalBanner, setPaypalBanner] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const searchParams = useSearchParams();
   const [incomeInput, setIncomeInput] = useState("");
   const [plaidAccounts, setPlaidAccounts] = useState<{
     accounts?: Array<{ account_id: string; id?: string; name: string; type?: string; subtype?: string; mask?: string | null; institution_name?: string | null }>;
@@ -45,6 +54,10 @@ export default function SettingsPage() {
   const [accountsRefreshing, setAccountsRefreshing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [wiping, setWiping] = useState(false);
+  const [manualWallets, setManualWallets] = useState<{ id: string; name: string; platform: string; balance: number }[]>([]);
+  const [walletPlatform, setWalletPlatform] = useState<"venmo" | "cashapp">("venmo");
+  const [walletBalance, setWalletBalance] = useState("");
+  const [walletSaving, setWalletSaving] = useState(false);
   const retriedAccountsRef = useRef(false);
   const refreshingRef = useRef(false);
 
@@ -86,6 +99,74 @@ export default function SettingsPage() {
   useEffect(() => {
     setIncomeInput(manualMonthlyIncome > 0 ? String(manualMonthlyIncome) : "");
   }, [manualMonthlyIncome]);
+
+  useEffect(() => {
+    const pp = searchParams.get("paypal");
+    if (pp === "connected") {
+      setPaypalBanner({ type: "success", message: "PayPal connected successfully!" });
+      setActiveSection("wallets");
+    } else if (pp === "error" || pp === "unauthorized") {
+      setPaypalBanner({ type: "error", message: pp === "unauthorized" ? "PayPal authorization was denied. Please try again." : "Failed to connect PayPal. Please try again." });
+      setActiveSection("wallets");
+    }
+  }, [searchParams]);
+
+  // Fetch manual wallet balances
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/manual-accounts", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setManualWallets(data.accounts ?? []);
+        }
+      } catch {
+        // silent – non-critical
+      }
+    })();
+  }, []);
+
+  const saveWalletBalance = async () => {
+    const bal = parseFloat(walletBalance);
+    if (!isFinite(bal)) return;
+    setWalletSaving(true);
+    try {
+      const platformLabel = walletPlatform === "venmo" ? "Venmo" : "Cash App";
+      const res = await fetch("/api/manual-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `${platformLabel} Wallet`, platform: walletPlatform, balance: bal }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setManualWallets((prev) => {
+          const idx = prev.findIndex((w) => w.platform === walletPlatform && w.name === `${platformLabel} Wallet`);
+          if (idx >= 0) {
+            const copy = [...prev];
+            copy[idx] = data.account;
+            return copy;
+          }
+          return [...prev, data.account];
+        });
+        setWalletBalance("");
+      }
+    } catch {
+      // silent
+    } finally {
+      setWalletSaving(false);
+    }
+  };
+
+  const removeWallet = async (id: string) => {
+    try {
+      const res = await fetch(`/api/manual-accounts?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setManualWallets((prev) => prev.filter((w) => w.id !== id));
+      }
+    } catch {
+      // silent
+    }
+  };
 
   const fetchAccounts = async (forceRefresh = false) => {
     setAccountsError(null);
@@ -530,6 +611,238 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {activeSection === "wallets" && (
+              <div className="space-y-4">
+                {paypalBanner && (
+                  <div className={`rounded-2xl px-5 py-4 flex items-start gap-3 ${
+                    paypalBanner.type === "success"
+                      ? "bg-[#EEF7F2] border border-[#C3E0D3]"
+                      : "bg-red-50 border border-red-100"
+                  }`}>
+                    {paypalBanner.type === "success" ? (
+                      <CheckCircle2 size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                    )}
+                    <p className={`text-sm ${paypalBanner.type === "success" ? "text-[#2D5A44]" : "text-red-700"}`}>
+                      {paypalBanner.message}
+                    </p>
+                  </div>
+                )}
+
+                {/* PayPal */}
+                <div className="bg-white rounded-2xl border border-gray-100 p-6">
+                  <h2 className="text-sm font-semibold text-gray-900 mb-1">PayPal</h2>
+                  <p className="text-xs text-gray-400 mb-5">
+                    Connect your PayPal account to sync transactions automatically.
+                  </p>
+
+                  {paypal.loading ? (
+                    <div className="py-6 text-center text-sm text-gray-500">Loading...</div>
+                  ) : !paypal.connected ? (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-3">
+                        <Wallet size={20} className="text-gray-400" />
+                      </div>
+                      <p className="text-sm text-gray-600 mb-1">No PayPal connected</p>
+                      <p className="text-xs text-gray-400 mb-4">
+                        Link your PayPal to import and sync your transactions.
+                      </p>
+                      <button
+                        onClick={paypal.connect}
+                        className="bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                      >
+                        Connect PayPal
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl">
+                        <div className="w-10 h-10 rounded-xl bg-[#EEF7F2] flex items-center justify-center shrink-0">
+                          <Wallet size={16} className="text-[#3D8E62]" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-gray-900">{paypal.email || "PayPal"}</div>
+                          <div className="text-xs text-gray-400">
+                            {paypal.lastSync
+                              ? `Last synced ${new Date(paypal.lastSync).toLocaleString()}`
+                              : "Not yet synced"}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1 text-xs text-[#3D8E62]">
+                            <CheckCircle2 size={12} />
+                            Connected
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (confirm("Disconnect PayPal? You can reconnect anytime.")) {
+                                paypal.disconnect();
+                              }
+                            }}
+                            className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1.5 border border-red-100 rounded-lg hover:border-red-200 transition-colors"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={paypal.sync}
+                        disabled={paypal.syncing}
+                        className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                      >
+                        {paypal.syncing ? (
+                          <>
+                            <Loader2 size={15} className="animate-spin" />
+                            Syncing...
+                          </>
+                        ) : (
+                          "Sync Now"
+                        )}
+                      </button>
+
+                      {paypal.syncResult && (
+                        <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3">
+                          <p className="text-sm text-[#2D5A44]">
+                            Synced <span className="font-semibold">{paypal.syncResult.synced}</span> transaction{paypal.syncResult.synced !== 1 ? "s" : ""}.
+                          </p>
+                          {paypal.syncResult.errors.length > 0 && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              {paypal.syncResult.errors.length} error{paypal.syncResult.errors.length !== 1 ? "s" : ""} during sync.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* CSV Import */}
+                <div className="bg-white rounded-2xl border border-gray-100 p-6">
+                  <h2 className="text-sm font-semibold text-gray-900 mb-1">CSV Import</h2>
+                  <p className="text-xs text-gray-400 mb-5">
+                    Import Venmo, Cash App, or PayPal transaction history from CSV exports.
+                  </p>
+                  <div className="text-center py-4">
+                    <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-3">
+                      <Upload size={20} className="text-gray-400" />
+                    </div>
+                    <button
+                      onClick={() => setCsvModalOpen(true)}
+                      className="bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                    >
+                      Import CSV
+                    </button>
+                  </div>
+                </div>
+
+                {/* Wallet Balances */}
+                <div className="bg-white rounded-2xl border border-gray-100 p-6">
+                  <h2 className="text-sm font-semibold text-gray-900 mb-1">Wallet Balances</h2>
+                  <p className="text-xs text-gray-400 mb-5">
+                    Manually set your Venmo or Cash App wallet balance. PayPal balance is auto-synced.
+                  </p>
+
+                  <div className="flex items-end gap-3 mb-5">
+                    <div className="flex-1">
+                      <label className="text-xs text-gray-500 mb-1.5 block">Platform</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWalletPlatform("venmo");
+                            const existing = manualWallets.find((w) => w.platform === "venmo");
+                            setWalletBalance(existing ? String(existing.balance) : "");
+                          }}
+                          className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                            walletPlatform === "venmo"
+                              ? "bg-[#3D8E62] text-white"
+                              : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                          }`}
+                        >
+                          Venmo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWalletPlatform("cashapp");
+                            const existing = manualWallets.find((w) => w.platform === "cashapp");
+                            setWalletBalance(existing ? String(existing.balance) : "");
+                          }}
+                          className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                            walletPlatform === "cashapp"
+                              ? "bg-[#3D8E62] text-white"
+                              : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                          }`}
+                        >
+                          Cash App
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs text-gray-500 mb-1.5 block">Balance</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={walletBalance}
+                        onChange={(e) => setWalletBalance(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62]"
+                      />
+                    </div>
+                    <button
+                      onClick={saveWalletBalance}
+                      disabled={walletSaving || !walletBalance}
+                      className="bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white px-5 py-2 rounded-xl text-sm font-medium transition-colors"
+                    >
+                      {walletSaving ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+
+                  {manualWallets.length > 0 && (
+                    <div className="space-y-2">
+                      {manualWallets.map((w) => (
+                        <div key={w.id} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl">
+                          <div className="w-8 h-8 rounded-lg bg-[#EEF7F2] flex items-center justify-center shrink-0">
+                            <Wallet size={14} className="text-[#3D8E62]" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{w.name}</div>
+                            <div className="text-xs text-gray-400">{w.platform === "venmo" ? "Venmo" : w.platform === "cashapp" ? "Cash App" : w.platform}</div>
+                          </div>
+                          <div className="text-sm font-semibold text-gray-900">${w.balance.toFixed(2)}</div>
+                          <button
+                            onClick={() => removeWallet(w.id)}
+                            className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                            title="Remove wallet"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-2xl px-5 py-4 flex items-start gap-3">
+                  <Shield size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                  <p className="text-sm text-[#2D5A44]">
+                    Coconut connects via read-only OAuth access. We never store your PayPal password.
+                  </p>
+                </div>
+
+                <AnimatePresence>
+                  {csvModalOpen && (
+                    <CSVImportModal
+                      onClose={() => setCsvModalOpen(false)}
+                      onSuccess={() => setCsvModalOpen(false)}
+                    />
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
             {activeSection === "email" && (
               <div className="space-y-4">
                 <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -758,5 +1071,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }
