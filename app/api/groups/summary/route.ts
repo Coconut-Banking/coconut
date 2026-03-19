@@ -1,19 +1,17 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { computeBalances } from "@/lib/split-balances";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 
 export async function GET() {
-  const { userId: clerkUserId, getToken } = await auth();
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const token = clerkUserId ? await getToken({ template: "supabase" }) : null;
-  const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
+  // Use admin client — access is already validated by getAccessibleGroupIds
+  const db = getSupabaseAdmin();
   const ids = await getAccessibleGroupIds(userId);
 
   if (ids.length === 0) {
@@ -23,6 +21,7 @@ export async function GET() {
       totalOwedToMe: 0,
       totalIOwe: 0,
       netBalance: 0,
+      _debug: { userId, groupIds: ids },
     });
   }
 

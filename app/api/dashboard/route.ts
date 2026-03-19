@@ -14,7 +14,7 @@ export async function GET() {
     const token = userId ? await getToken({ template: "supabase" }) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
-    const [accountsResult, subsResult] = await Promise.all([
+    const [accountsResult, subsResult, walletsResult] = await Promise.all([
       db
         .from("accounts")
         .select("name, type, subtype, mask, balance_current, balance_available, iso_currency_code")
@@ -25,6 +25,11 @@ export async function GET() {
         .eq("clerk_user_id", effectiveUserId)
         .eq("status", "active")
         .order("next_due_date", { ascending: true }),
+      db
+        .from("manual_accounts")
+        .select("id, name, platform, balance, iso_currency_code, updated_at")
+        .eq("clerk_user_id", effectiveUserId)
+        .order("created_at", { ascending: true }),
     ]);
 
     // Deduplicate accounts — same name+mask can appear from sandbox + production items
@@ -64,6 +69,12 @@ export async function GET() {
       } else {
         assets += bal;
       }
+    }
+
+    // Add manual P2P wallet balances to assets
+    const manualAccounts = walletsResult.data ?? [];
+    for (const w of manualAccounts) {
+      assets += Number(w.balance) || 0;
     }
 
     // Upcoming bills: next 5 subscriptions by due date
@@ -107,10 +118,20 @@ export async function GET() {
       };
     });
 
+    const wallets = manualAccounts.map((w) => ({
+      id: w.id as string,
+      name: w.name as string,
+      platform: w.platform as string,
+      balance: Number(w.balance) || 0,
+      iso_currency_code: (w.iso_currency_code ?? "USD") as string,
+      updatedAt: (w.updated_at ?? null) as string | null,
+    }));
+
     return NextResponse.json({
       netWorth: { assets, liabilities, total: assets - liabilities },
       subscriptions: { totalMonthly, count: subs.length, upcomingBills },
       accounts: accountList,
+      wallets,
     });
   } catch (err) {
     console.error("[dashboard] error:", err instanceof Error ? err.message : err);

@@ -18,5 +18,9 @@ export interface UITransaction {
   location?: string;
   merchantColor: string;
   isPending?: boolean;
+  source?: string;
+  p2pCounterparty?: string;
+  p2pNote?: string;
+  p2pPlatform?: string;
   hasReceipt?: boolean;
 }

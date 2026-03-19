@@ -1,4 +1,6 @@
+import { createHmac } from "crypto";
 import { getSupabase } from "./supabase";
+import { encryptToken, decryptToken } from "./encryption";
 
 const PAYPAL_BASE =
   process.env.PAYPAL_ENV === "sandbox"
@@ -11,6 +13,39 @@ const PAYPAL_AUTH_BASE =
     : "https://www.paypal.com";
 
 const SCOPES = ["openid", "email", "https://uri.paypal.com/services/reporting/search/read"];
+
+const STATE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+
+function getHmacKey(): string {
+  const key = process.env.TOKEN_ENCRYPTION_KEY || process.env.CLERK_SECRET_KEY;
+  if (!key) throw new Error("No HMAC key available (TOKEN_ENCRYPTION_KEY or CLERK_SECRET_KEY)");
+  return key;
+}
+
+export function createOAuthState(userId: string): string {
+  const timestamp = Date.now().toString();
+  const hmac = createHmac("sha256", getHmacKey())
+    .update(`${userId}:${timestamp}`)
+    .digest("hex");
+  return `${userId}:${timestamp}:${hmac}`;
+}
+
+export function verifyOAuthState(state: string): { userId: string; valid: boolean } {
+  const parts = state.split(":");
+  if (parts.length !== 3) return { userId: "", valid: false };
+
+  const [userId, timestamp, hmac] = parts;
+  const expected = createHmac("sha256", getHmacKey())
+    .update(`${userId}:${timestamp}`)
+    .digest("hex");
+
+  if (hmac !== expected) return { userId, valid: false };
+
+  const age = Date.now() - parseInt(timestamp, 10);
+  if (age > STATE_MAX_AGE_MS || age < 0) return { userId, valid: false };
+
+  return { userId, valid: true };
+}
 
 function getCredentials() {
   const clientId = process.env.PAYPAL_CLIENT_ID;
@@ -29,7 +64,7 @@ export function getAuthUrl(clerkUserId: string): string {
     response_type: "code",
     scope: SCOPES.join(" "),
     redirect_uri: redirectUri,
-    state: clerkUserId,
+    state: createOAuthState(clerkUserId),
   });
   return `${PAYPAL_AUTH_BASE}/signin/authorize?${params.toString()}`;
 }
@@ -103,8 +138,8 @@ export async function savePayPalTokens(
   const { error } = await db.from("paypal_connections").upsert(
     {
       clerk_user_id: clerkUserId,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token ?? null,
+      access_token: encryptToken(tokens.access_token),
+      refresh_token: tokens.refresh_token ? encryptToken(tokens.refresh_token) : null,
       token_expiry: tokenExpiry,
       email: email ?? null,
       paypal_payer_id: paypalPayerId ?? null,
@@ -125,13 +160,16 @@ export async function getPayPalAccessToken(clerkUserId: string): Promise<string 
 
   if (!data) return null;
 
+  const accessToken = decryptToken(data.access_token);
+  const refreshToken = data.refresh_token ? decryptToken(data.refresh_token) : null;
+
   // Check if token is expired or will expire in the next 5 minutes
   const expiry = data.token_expiry ? new Date(data.token_expiry).getTime() : 0;
   if (Date.now() > expiry - 5 * 60 * 1000) {
-    if (!data.refresh_token) return null;
+    if (!refreshToken) return null;
 
     try {
-      const refreshed = await refreshAccessToken(data.refresh_token);
+      const refreshed = await refreshAccessToken(refreshToken);
       await savePayPalTokens(clerkUserId, refreshed);
       return refreshed.access_token;
     } catch {
@@ -139,7 +177,7 @@ export async function getPayPalAccessToken(clerkUserId: string): Promise<string 
     }
   }
 
-  return data.access_token;
+  return accessToken;
 }
 
 export async function getPayPalStatus(clerkUserId: string) {
@@ -158,7 +196,7 @@ export async function removePayPalConnection(clerkUserId: string) {
   const db = getSupabase();
   await db.from("paypal_connections").delete().eq("clerk_user_id", clerkUserId);
   // Also delete imported PayPal transactions
-  await db.from("p2p_transactions").delete().eq("clerk_user_id", clerkUserId).eq("platform", "paypal");
+  await db.from("transactions").delete().eq("clerk_user_id", clerkUserId).eq("source", "paypal");
 }
 
 export { PAYPAL_BASE };
