@@ -22,4 +22,5 @@ export interface UITransaction {
   p2pCounterparty?: string;
   p2pNote?: string;
   p2pPlatform?: string;
+  hasReceipt?: boolean;
 }

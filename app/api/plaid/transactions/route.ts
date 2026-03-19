@@ -158,6 +158,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Build receipt lookup from the inReceipts query above (already fetched for dedupe protection)
+    const receiptTxIds = new Set(
+      (inReceipts ?? []).map((r) => r.transaction_id as string).filter(Boolean)
+    );
+
     // Load subscription merchants to flag recurring transactions
     const { data: activeSubs } = await db
       .from("subscriptions")
@@ -197,6 +202,7 @@ export async function GET(request: NextRequest) {
         p2pCounterparty: (tx.p2p_counterparty as string) || undefined,
         p2pNote: (tx.p2p_note as string) || undefined,
         p2pPlatform: (tx.p2p_platform as string) || undefined,
+        hasReceipt: receiptTxIds.has(tx.id as string),
       };
     });
 
