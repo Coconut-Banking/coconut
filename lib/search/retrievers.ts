@@ -34,6 +34,21 @@ function escapeLikePattern(s: string): string {
   return s.replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
+/**
+ * Escape characters that have special meaning in PostgREST filter syntax.
+ * Commas separate clauses, dots separate field.operator.value, and
+ * parentheses denote grouping. URL-encoding them prevents user input
+ * from breaking out of a .or() filter string.
+ */
+function escapePostgrestValue(s: string): string {
+  return s
+    .replace(/%/g, "%25")
+    .replace(/,/g, "%2C")
+    .replace(/\./g, "%2E")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29");
+}
+
 // ─── 1. Vector Similarity Search (pgvector on rich_embedding) ─────────────────
 
 export async function vectorSearch(
@@ -121,7 +136,7 @@ export async function fullTextSearch(
   if (amountMax != null) fallback = fallback.lte("amount", amountMax);
 
   const orClauses = keywords.map((kw) => {
-    const escaped = escapeLikePattern(kw);
+    const escaped = escapePostgrestValue(escapeLikePattern(kw));
     return `embed_text.ilike.%${escaped}%`;
   });
   fallback = fallback.or(orClauses.join(","));
@@ -209,7 +224,7 @@ export async function structuredSearch(
   }
 
   if (parsed.merchant_search) {
-    const escaped = escapeLikePattern(parsed.merchant_search);
+    const escaped = escapePostgrestValue(escapeLikePattern(parsed.merchant_search));
     const pattern = `%${escaped}%`;
     query = query.or(
       `merchant_name.ilike.${pattern},raw_name.ilike.${pattern},normalized_merchant.ilike.${pattern}`

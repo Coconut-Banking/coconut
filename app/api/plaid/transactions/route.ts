@@ -209,9 +209,8 @@ export async function GET(request: NextRequest) {
     console.log("[pipeline:tx] GET output", { count: mapped.length });
     return NextResponse.json(mapped);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
     console.error("[pipeline:tx] GET error:", err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load transactions" }, { status: 500 });
   }
 }
 
@@ -246,7 +245,7 @@ export async function POST() {
   } catch (err) {
     console.error("[transactions] sync error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Sync failed" },
+      { error: "Sync failed" },
       { status: 500 }
     );
   }

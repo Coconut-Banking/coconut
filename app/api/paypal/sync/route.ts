@@ -25,7 +25,7 @@ export async function POST() {
   } catch (err) {
     console.error("[paypal/sync] Error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Sync failed" },
+      { error: "Sync failed" },
       { status: 500 }
     );
   }

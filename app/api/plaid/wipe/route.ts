@@ -55,7 +55,8 @@ export async function POST() {
     .delete()
     .eq("clerk_user_id", effectiveUserId);
   if (txErr) {
-    return NextResponse.json({ error: txErr.message }, { status: 500 });
+    console.error("[wipe] transaction delete error:", txErr);
+    return NextResponse.json({ error: "Wipe failed" }, { status: 500 });
   }
 
   // Delete accounts
@@ -69,6 +70,6 @@ export async function POST() {
   return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[wipe]", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Wipe failed" }, { status: 500 });
+    return NextResponse.json({ error: "Wipe failed" }, { status: 500 });
   }
 }

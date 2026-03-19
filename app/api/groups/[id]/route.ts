@@ -178,6 +178,6 @@ export async function GET(
   });
   } catch (err) {
     console.error("[groups/id]", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load group" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load group" }, { status: 500 });
   }
 }

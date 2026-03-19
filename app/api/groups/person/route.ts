@@ -239,6 +239,6 @@ export async function GET(req: NextRequest) {
   });
   } catch (err) {
     console.error("[person]", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load person" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load person" }, { status: 500 });
   }
 }
