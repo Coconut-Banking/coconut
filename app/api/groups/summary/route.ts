@@ -16,6 +16,8 @@ export async function GET() {
   const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
   const ids = await getAccessibleGroupIds(userId);
 
+  console.log("[summary] userId:", userId, "groupIds:", ids.length, ids);
+
   if (ids.length === 0) {
     return NextResponse.json({
       groups: [],

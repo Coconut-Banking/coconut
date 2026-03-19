@@ -48,11 +48,13 @@ export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
 
   const db = getSupabase();
 
-  const { data: owned } = await db.from("groups").select("id").eq("owner_id", userId);
-  const { data: memberRows } = await db
+  const { data: owned, error: ownedErr } = await db.from("groups").select("id").eq("owner_id", userId);
+  const { data: memberRows, error: memberErr } = await db
     .from("group_members")
     .select("group_id")
     .eq("user_id", userId);
+
+  console.log("[group-access] userId:", userId, "owned:", owned?.length ?? 0, "ownedErr:", ownedErr?.message, "memberRows:", memberRows?.length ?? 0, "memberErr:", memberErr?.message);
 
   const ids = new Set<string>();
   for (const g of owned ?? []) ids.add(g.id);
