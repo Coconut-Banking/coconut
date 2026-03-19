@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { enrichCategoriesForUser } from "@/lib/transaction-sync";
 import { getEffectiveUserId } from "@/lib/demo";

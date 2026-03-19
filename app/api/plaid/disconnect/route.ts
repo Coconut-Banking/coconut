@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
