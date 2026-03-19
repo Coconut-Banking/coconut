@@ -414,6 +414,35 @@ export async function syncTransactionsForUser(
     }
   }
 
+  // Post-sync receipt matching: if Gmail is connected, scan for receipts to match new transactions
+  if (totalSynced > 0) {
+    try {
+      const { data: gmailConn } = await db
+        .from("gmail_connections")
+        .select("id")
+        .eq("clerk_user_id", clerkUserId)
+        .maybeSingle();
+      if (gmailConn) {
+        const { matchReceiptsToTransactions } = await import("./receipt-matcher");
+        // Get unmatched receipts from the last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const { data: unmatched } = await db
+          .from("email_receipts")
+          .select("id")
+          .eq("clerk_user_id", clerkUserId)
+          .is("transaction_id", null)
+          .gte("parsed_at", thirtyDaysAgo.toISOString());
+        if (unmatched && unmatched.length > 0) {
+          const matched = await matchReceiptsToTransactions(clerkUserId, unmatched.map((r) => r.id));
+          if (matched > 0) console.log(`[sync] auto-matched ${matched} receipts for user ${clerkUserId}`);
+        }
+      }
+    } catch (err) {
+      console.error("[sync] receipt matching failed (non-blocking):", err);
+    }
+  }
+
   return { synced: totalSynced };
 }
 

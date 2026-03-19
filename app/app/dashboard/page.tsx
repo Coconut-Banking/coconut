@@ -195,6 +195,25 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Background Gmail receipt scan (non-blocking, fire-and-forget)
+  useEffect(() => {
+    if (!linked) return;
+    fetch("/api/gmail/status")
+      .then((r) => r.ok ? r.json() : null)
+      .then((status) => {
+        if (!status?.connected || !status.lastScanAt) return;
+        const hoursSinceSync = (Date.now() - new Date(status.lastScanAt).getTime()) / (1000 * 60 * 60);
+        if (hoursSinceSync > 6) {
+          fetch("/api/gmail/scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ daysBack: 7, detailed: true }),
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [linked]);
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
