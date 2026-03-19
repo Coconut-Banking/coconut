@@ -47,3 +47,6 @@ screenshots/
 # clerk configuration (can include secrets)
 /.clerk/
 .expo
+
+# Local TODO (not committed)
+TODO.md

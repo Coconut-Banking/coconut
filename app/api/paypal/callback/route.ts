@@ -1,19 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exchangeCode, savePayPalTokens } from "@/lib/paypal-auth";
+import { auth } from "@clerk/nextjs/server";
+import { exchangeCode, savePayPalTokens, verifyOAuthState } from "@/lib/paypal-auth";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const code = searchParams.get("code");
-  const state = searchParams.get("state"); // clerk_user_id
+  const state = searchParams.get("state");
 
   if (!code || !state) {
     return NextResponse.redirect(new URL("/app/settings?paypal=error", request.url));
   }
 
+  const { userId } = await auth();
+  const { userId: stateUserId, valid } = verifyOAuthState(state);
+
+  if (!userId || !valid || userId !== stateUserId) {
+    return NextResponse.redirect(new URL("/app/settings?paypal=unauthorized", request.url));
+  }
+
   try {
     const tokens = await exchangeCode(code);
 
-    // Fetch user info to get email
     let email: string | undefined;
     let payerId: string | undefined;
     try {
@@ -30,7 +37,7 @@ export async function GET(request: NextRequest) {
       // Non-critical: continue without email
     }
 
-    await savePayPalTokens(state, tokens, email, payerId);
+    await savePayPalTokens(userId, tokens, email, payerId);
     return NextResponse.redirect(new URL("/app/settings?paypal=connected", request.url));
   } catch (err) {
     console.error("[paypal/callback] Error:", err);

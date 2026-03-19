@@ -16,8 +16,7 @@ interface ImportResult {
   total: number;
   imported: number;
   skipped: number;
-  linked: number;
-  suggestionsCount: number;
+  enriched: number;
   parseErrors: string[];
 }
 
@@ -27,6 +26,13 @@ const PLATFORM_OPTIONS = [
   { id: "cashapp", label: "Cash App" },
   { id: "paypal", label: "PayPal" },
 ];
+
+const PLATFORM_HELP: Record<string, string> = {
+  auto: "Upload a CSV export from Venmo, Cash App, or PayPal",
+  venmo: "Export from Venmo app \u2192 Settings \u2192 Statements \u2192 Download CSV",
+  cashapp: "Export from Cash App \u2192 Activity \u2192 Statements \u2192 Export CSV",
+  paypal: "Export from PayPal \u2192 Activity \u2192 Download \u2192 CSV",
+};
 
 const PLATFORM_LABELS: Record<string, string> = {
   venmo: "Venmo",
@@ -146,6 +152,8 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                     </div>
                   </div>
 
+                  <p className="text-xs text-gray-400">{PLATFORM_HELP[platform]}</p>
+
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
@@ -202,7 +210,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                 >
                   <Loader2 size={32} className="text-[#3D8E62] animate-spin mx-auto mb-4" />
                   <p className="text-sm text-gray-600 font-medium">Importing transactions...</p>
-                  <p className="text-xs text-gray-400 mt-1">Parsing CSV and linking to bank transactions</p>
+                  <p className="text-xs text-gray-400 mt-1">Parsing and matching to bank records</p>
                 </motion.div>
               )}
 
@@ -222,25 +230,23 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-gray-50 text-center">
+                      <div className="text-xl font-bold text-gray-900">{result.total}</div>
+                      <div className="text-xs text-gray-500">Total</div>
+                    </div>
                     <div className="p-3 rounded-xl bg-gray-50 text-center">
                       <div className="text-xl font-bold text-gray-900">{result.imported}</div>
                       <div className="text-xs text-gray-500">Imported</div>
                     </div>
                     <div className="p-3 rounded-xl bg-gray-50 text-center">
-                      <div className="text-xl font-bold text-[#3D8E62]">{result.linked}</div>
-                      <div className="text-xs text-gray-500">Linked to bank</div>
+                      <div className="text-xl font-bold text-[#3D8E62]">{result.enriched}</div>
+                      <div className="text-xs text-gray-500">Enriched</div>
                     </div>
                   </div>
 
                   {result.skipped > 0 && (
                     <p className="text-xs text-gray-400">{result.skipped} rows skipped (duplicates or errors)</p>
-                  )}
-
-                  {result.suggestionsCount > 0 && (
-                    <p className="text-xs text-amber-600">
-                      {result.suggestionsCount} transactions have possible bank matches — review in your transaction list
-                    </p>
                   )}
 
                   {result.parseErrors.length > 0 && (

@@ -278,6 +278,25 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
               </div>
             )}
           </div>
+          {tx.p2pCounterparty && (
+            <div className="px-6 py-4 space-y-3 border-b border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Payment Details</h4>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Platform</span>
+                <span className="text-sm text-gray-700">{tx.p2pPlatform === "venmo" ? "Venmo" : tx.p2pPlatform === "cashapp" ? "Cash App" : "PayPal"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">{tx.amount < 0 ? "Sent to" : "Received from"}</span>
+                <span className="text-sm text-gray-700 font-medium">{tx.p2pCounterparty}</span>
+              </div>
+              {tx.p2pNote && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Note</span>
+                  <span className="text-sm text-gray-700 max-w-44 text-right truncate">{tx.p2pNote}</span>
+                </div>
+              )}
+            </div>
+          )}
           {tx.location && (
             <div className="mx-6 my-4 rounded-xl overflow-hidden border border-gray-100 h-28 bg-gradient-to-br from-[#EEF7F2] to-[#E8F0EC] flex items-center justify-center">
               <div className="text-center">
@@ -593,6 +612,11 @@ function TxRow({
                 <span>Split</span>
               </div>
             )}
+            {tx.p2pCounterparty && (
+              <div className="flex items-center gap-1 bg-blue-50 text-blue-600 text-xs px-2 py-0.5 rounded-full">
+                <span>{tx.p2pPlatform === "venmo" ? "Venmo" : tx.p2pPlatform === "cashapp" ? "Cash App" : "PayPal"} · {tx.p2pCounterparty}</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className={`px-2 py-0.5 rounded-full ${tx.categoryColor} ${compactView ? "text-[10px]" : "text-xs"}`}>{tx.category}</span>
@@ -661,6 +685,14 @@ function TxRow({
                   <div className="text-xs text-gray-400 mb-0.5">Split suggestion</div>
                   <div className="text-xs text-[#3D8E62] font-medium">
                     Split with {tx.splitWith} — {formatCurrencyAbs(Math.round(Math.round(Math.abs(tx.amount) * 100) / 2) / 100, currencyCode)} each
+                  </div>
+                </div>
+              )}
+              {tx.p2pCounterparty && (
+                <div>
+                  <div className="text-xs text-gray-400 mb-0.5">{tx.p2pPlatform === "venmo" ? "Venmo" : tx.p2pPlatform === "cashapp" ? "Cash App" : "PayPal"}</div>
+                  <div className="text-xs text-gray-600">
+                    {tx.amount < 0 ? "To" : "From"} {tx.p2pCounterparty}{tx.p2pNote ? ` · ${tx.p2pNote}` : ""}
                   </div>
                 </div>
               )}

@@ -25,6 +25,7 @@ function isDemoEnabled(): boolean {
  * Requires both NODE_ENV !== "production" and DEMO_ENABLED=true.
  */
 export async function isDemoMode(): Promise<boolean> {
+  if (process.env.NODE_ENV === "production" && process.env.DEMO_ENABLED !== "true") return false;
   if (!isDemoEnabled()) return false;
   const jar = await cookies();
   return jar.get(DEMO_COOKIE)?.value === "true";

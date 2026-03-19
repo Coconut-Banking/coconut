@@ -23,37 +23,22 @@ export function usePayPal() {
 
   const fetchStatus = useCallback(async (isCancelled?: () => boolean) => {
     try {
-      const res = await fetch("/api/paypal/auth");
-      if (isCancelled?.()) return;
-      // The auth endpoint returns authUrl if env vars are set, or error
-      // We need a separate status check — use manual-accounts as proxy
-      // and check paypal_connections via a simple status endpoint
-    } catch {
-      // PayPal not configured
-    }
-
-    // Check connection status via paypal sync endpoint (GET would be better, but we check existence)
-    try {
-      const res = await fetch("/api/manual-accounts");
+      const res = await fetch("/api/paypal/status");
       if (isCancelled?.()) return;
       if (res.ok) {
         const data = await res.json();
-        const paypalWallet = (data.accounts ?? []).find(
-          (a: { platform: string }) => a.platform === "paypal"
-        );
-        // If there's a PayPal wallet with an updatedAt, assume connected
-        // Real status will come from the connect flow
-        if (paypalWallet) {
-          setState((prev) => ({
-            ...prev,
-            connected: true,
-            lastSync: paypalWallet.updatedAt,
-            loading: false,
-          }));
-          return;
-        }
+        setState((prev) => ({
+          ...prev,
+          connected: data.connected,
+          email: data.email ?? null,
+          lastSync: data.lastSyncAt ?? null,
+          loading: false,
+        }));
+        return;
       }
-    } catch { /* ignore */ }
+    } catch {
+      // PayPal not configured or network error
+    }
 
     if (!isCancelled?.()) {
       setState((prev) => ({ ...prev, loading: false }));

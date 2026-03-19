@@ -110,6 +110,16 @@ interface ScanLogEntry {
   error_reason: string | null;
 }
 
+// ─── PII scrubbing ──────────────────────────────────────────────────────────
+
+function scrubPII(text: string): string {
+  return text
+    .replace(/\b(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?)(\d{4})\b/g, '****-****-****-$2')
+    .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[REDACTED]')
+    .replace(/\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g, '[PHONE]')
+    .replace(/\b[A-Za-z0-9._%+-]+@(?!amazon|walmart|target|costco|uber|doordash|instacart|apple|google|bestbuy|chewy|netflix|spotify)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi, '[EMAIL]');
+}
+
 // ─── LLM receipt parsing ─────────────────────────────────────────────────────
 
 export async function parseReceiptEmail(emailBody: string): Promise<{
@@ -123,12 +133,15 @@ export async function parseReceiptEmail(emailBody: string): Promise<{
     return null;
   }
 
-  const body = emailBody.length > GMAIL.EMAIL_MAX_CHARS
-    ? emailBody.slice(0, GMAIL.EMAIL_MAX_CHARS)
-    : emailBody;
+  const body = scrubPII(
+    emailBody.length > GMAIL.EMAIL_MAX_CHARS
+      ? emailBody.slice(0, GMAIL.EMAIL_MAX_CHARS)
+      : emailBody
+  );
 
   const completion = await withRetry(
-    () => openai!.chat.completions.create({
+    () => Promise.race([
+      openai!.chat.completions.create({
       model: AI.MODEL,
       messages: [{
         role: "user",
@@ -179,6 +192,8 @@ ${body}`
       temperature: 0,
       max_tokens: 1000,
     }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('OpenAI request timed out')), 30_000))
+    ]),
     { attempts: 3, baseDelayMs: 1000, label: "parseReceiptEmail" }
   );
 

@@ -22,6 +22,7 @@ import {
 } from "@/hooks/useGroups";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useCurrency } from "@/hooks/useCurrency";
+import { getP2PDeepLinks } from "@/lib/p2p-deeplinks";
 
 const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F"];
 const ACTIVITY_ICONS: Record<string, string> = {
@@ -398,12 +399,20 @@ function SettleModal({
   onSuccess,
   onRequestPayment,
   recordSettlement,
+  p2pHandles,
+  groupName,
 }: {
   person: { key: string; displayName: string; balance: number; initials: string; color: string };
   onClose: () => void;
   onSuccess: () => void;
   onRequestPayment: () => void;
   recordSettlement: () => Promise<void>;
+  p2pHandles?: {
+    venmo_username?: string | null;
+    cashapp_cashtag?: string | null;
+    paypal_username?: string | null;
+  };
+  groupName?: string;
 }) {
   const { format: fc } = useCurrency();
   const [done, setDone] = useState(false);
@@ -478,6 +487,24 @@ function SettleModal({
                     Request payment
                   </button>
                 )}
+                {direction === "you_owe" &&
+                  p2pHandles &&
+                  (p2pHandles.venmo_username || p2pHandles.cashapp_cashtag || p2pHandles.paypal_username) &&
+                  getP2PDeepLinks(
+                    amount,
+                    p2pHandles,
+                    groupName || `Settlement with ${person.displayName}`
+                  ).map((link) => (
+                    <a
+                      key={link.platform}
+                      href={link.webUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3.5 rounded-2xl border-2 border-[#3D8E62] text-[#3D8E62] font-semibold hover:bg-[#EEF7F2] transition-colors text-center block"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
                 <button
                   onClick={handleRecord}
                   disabled={recording}
@@ -535,6 +562,11 @@ function SharedPageContent() {
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
+  const [settleHandles, setSettleHandles] = useState<{
+    venmo_username?: string | null;
+    cashapp_cashtag?: string | null;
+    paypal_username?: string | null;
+  } | undefined>(undefined);
 
   // Known contacts for quick-add when creating a group
   const [knownContacts, setKnownContacts] = useState<{ displayName: string; email: string | null }[]>([]);
@@ -557,6 +589,36 @@ function SharedPageContent() {
       refetchActivity();
     }
   }, [showAdd, settleTarget, refetchActivity]);
+
+  // Fetch P2P handles for settle target
+  useEffect(() => {
+    if (!settleTarget) {
+      setSettleHandles(undefined);
+      return;
+    }
+    // Find which group(s) this person is in, then fetch members to get handles
+    const pd = personDetail;
+    if (!pd?.activity?.length) return;
+    const groupId = pd.activity[0].groupName;
+    const group = summary?.groups?.find((g) => g.name === groupId);
+    if (!group) return;
+    let cancelled = false;
+    fetch(`/api/groups/${group.id}/members`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((members: Array<{ display_name: string; venmo_username?: string; cashapp_cashtag?: string; paypal_username?: string }>) => {
+        if (cancelled) return;
+        const match = members.find((m) => m.display_name === settleTarget.displayName);
+        if (match) {
+          setSettleHandles({
+            venmo_username: match.venmo_username || null,
+            cashapp_cashtag: match.cashapp_cashtag || null,
+            paypal_username: match.paypal_username || null,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [settleTarget, personDetail, summary?.groups]);
 
   useEffect(() => {
     if (searchParams.get("stripe") !== "success" || !showRealUI) return;
@@ -1393,6 +1455,7 @@ function SharedPageContent() {
         {settleTarget && (
           <SettleModal
             person={settleTarget}
+            p2pHandles={settleHandles}
             onClose={() => setSettleTarget(null)}
             onSuccess={() => {
               refetchSummary();
@@ -1550,6 +1613,14 @@ function PersonRow({
                         className="text-xs font-semibold text-[#3D8E62] hover:underline"
                       >
                         Remind →
+                      </button>
+                    )}
+                    {person.direction === "you_owe" && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onSettleUp(); }}
+                        className="text-xs font-semibold text-[#3D8E62] hover:underline"
+                      >
+                        Pay →
                       </button>
                     )}
                     {(person.direction === "owes_you" || person.direction === "you_owe") && (
