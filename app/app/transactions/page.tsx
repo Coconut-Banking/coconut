@@ -15,6 +15,7 @@ import {
   StickyNote,
   Share2,
   Zap,
+  FileText,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -90,6 +91,26 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
   const [newPersonName, setNewPersonName] = useState("");
   const [addingNewPerson, setAddingNewPerson] = useState(false);
   const [markingSubscription, setMarkingSubscription] = useState(false);
+  const [receipt, setReceipt] = useState<{
+    merchant: string;
+    amount: number;
+    line_items: Array<{ name: string; quantity?: number; price?: number; category?: string }>;
+    subtotal?: number;
+    tax?: number;
+    date?: string;
+    gmail_message_id?: string;
+  } | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+
+  useEffect(() => {
+    if (!tx.hasReceipt || !tx.dbId) return;
+    setReceiptLoading(true);
+    fetch(`/api/email-receipts/by-transaction?transactionId=${tx.dbId}`)
+      .then((r) => r.json())
+      .then((data) => setReceipt(data.receipt))
+      .catch(() => {})
+      .finally(() => setReceiptLoading(false));
+  }, [tx.hasReceipt, tx.dbId]);
 
   const handleMarkAsSubscription = async () => {
     if (!tx.dbId) return;
@@ -278,6 +299,56 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
               </div>
             )}
           </div>
+          {tx.hasReceipt && (
+            <div className="px-6 py-4 space-y-3 border-b border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText size={12} className="text-amber-500" />
+                Receipt Items
+              </h4>
+              {receiptLoading ? (
+                <div className="text-xs text-gray-400">Loading receipt...</div>
+              ) : receipt?.line_items?.length ? (
+                <>
+                  <div className="space-y-2">
+                    {receipt.line_items.slice(0, 10).map((item, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-gray-700">{item.name}</span>
+                          {item.quantity && item.quantity > 1 && (
+                            <span className="text-gray-400 ml-1">&times;{item.quantity}</span>
+                          )}
+                        </div>
+                        <span className="text-gray-900 font-medium ml-3 shrink-0">
+                          ${(item.price ?? 0).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                    {receipt.line_items.length > 10 && (
+                      <div className="text-xs text-gray-400">+{receipt.line_items.length - 10} more items</div>
+                    )}
+                  </div>
+                  {(receipt.subtotal || receipt.tax) && (
+                    <div className="pt-2 border-t border-gray-100 space-y-1">
+                      {receipt.subtotal && (
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>Subtotal</span>
+                          <span>${receipt.subtotal.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {receipt.tax && (
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>Tax</span>
+                          <span>${receipt.tax.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : receipt ? (
+                <div className="text-xs text-gray-400">Receipt matched but no line items available</div>
+              ) : null}
+            </div>
+          )}
           {tx.location && (
             <div className="mx-6 my-4 rounded-xl overflow-hidden border border-gray-100 h-28 bg-gradient-to-br from-[#EEF7F2] to-[#E8F0EC] flex items-center justify-center">
               <div className="text-center">
@@ -587,6 +658,7 @@ function TxRow({
           <div className={`flex items-center gap-2 ${compactView ? "mb-0" : "mb-0.5"}`}>
             <span className={`font-medium text-gray-900 ${compactView ? "text-xs" : "text-sm"}`}>{tx.merchant}</span>
             {tx.isRecurring && <RefreshCw size={11} className="text-gray-300" />}
+            {tx.hasReceipt && <FileText size={11} className="text-amber-500" />}
             {tx.hasSplitSuggestion && (
               <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-2 py-0.5 rounded-full">
                 <Users size={9} />

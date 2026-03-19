@@ -158,6 +158,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Build receipt lookup from the inReceipts query above (already fetched for dedupe protection)
+    const receiptTxIds = new Set(
+      (inReceipts ?? []).map((r) => r.transaction_id as string).filter(Boolean)
+    );
+
     // Load subscription merchants to flag recurring transactions
     const { data: activeSubs } = await db
       .from("subscriptions")
@@ -193,6 +198,7 @@ export async function GET(request: NextRequest) {
         hasSplitSuggestion: false,
         merchantColor: hashColor(merchant),
         isPending: Boolean(tx.is_pending),
+        hasReceipt: receiptTxIds.has(tx.id as string),
       };
     });
 

@@ -18,4 +18,5 @@ export interface UITransaction {
   location?: string;
   merchantColor: string;
   isPending?: boolean;
+  hasReceipt?: boolean;
 }
