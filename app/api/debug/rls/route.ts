@@ -10,7 +10,7 @@ import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
  * - If RLS is configured correctly, it should only return rows for the requesting user.
  */
 export async function GET() {
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.ENABLE_DEBUG_ENDPOINTS !== "true") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
  
