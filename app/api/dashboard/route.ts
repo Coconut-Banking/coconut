@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
@@ -132,6 +133,8 @@ export async function GET() {
       subscriptions: { totalMonthly, count: subs.length, upcomingBills },
       accounts: accountList,
       wallets,
+    }, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (err) {
     console.error("[dashboard] error:", err instanceof Error ? err.message : err);

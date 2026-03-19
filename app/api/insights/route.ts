@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getEffectiveUserId } from "@/lib/demo";
 import { generateInsights } from "@/lib/insights-engine";

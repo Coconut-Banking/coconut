@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 /**
  * Backfill endpoint for search v2.
  *

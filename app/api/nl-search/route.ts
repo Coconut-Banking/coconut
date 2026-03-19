@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { search } from "@/lib/search-engine";
 import { getEffectiveUserId } from "@/lib/demo";

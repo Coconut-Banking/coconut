@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
@@ -207,7 +208,9 @@ export async function GET(request: NextRequest) {
     });
 
     console.log("[pipeline:tx] GET output", { count: mapped.length });
-    return NextResponse.json(mapped);
+    return NextResponse.json(mapped, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[pipeline:tx] GET error:", err);
