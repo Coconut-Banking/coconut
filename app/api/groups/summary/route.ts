@@ -192,6 +192,16 @@ export async function GET() {
 
   const netBalance = Math.round((totalOwedToMe - totalIOwe) * 100) / 100;
 
+  // Include ALL non-owner members as friends, even with 0 balance (no splits yet)
+  const allMembers = members ?? [];
+  for (const m of allMembers) {
+    if (m.user_id === userId) continue;
+    const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
+    if (!personBalances.has(key)) {
+      personBalances.set(key, { displayName: m.display_name, balance: 0 });
+    }
+  }
+
   const friends = Array.from(personBalances.entries())
     .map(([key, v]) => ({ key, displayName: v.displayName, balance: v.balance }))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
