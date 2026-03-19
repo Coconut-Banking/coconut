@@ -8,7 +8,7 @@ import { auth } from "@clerk/nextjs/server";
  * Disabled in production builds.
  */
 export async function GET() {
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.ENABLE_DEBUG_ENDPOINTS !== "true") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const { userId } = await auth();

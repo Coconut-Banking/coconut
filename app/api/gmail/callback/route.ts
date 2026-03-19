@@ -17,7 +17,7 @@ function parseOAuthState(raw: string): { userId: string; redirect?: string } {
 const ALLOWED_DEEP_LINKS = ["coconut://connected", "coconut://settings"];
 
 function isAllowedRedirect(url: string): boolean {
-  if (url.startsWith("/")) return true;
+  if (url.startsWith("/") && !url.startsWith("//") && !url.includes("://")) return true;
   return ALLOWED_DEEP_LINKS.some(
     (prefix) => url === prefix || url.startsWith(`${prefix}?`),
   );
@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
 
   console.log("[Gmail Callback] Received:", {
     hasCode: !!code,
-    rawState,
+    hasState: !!rawState,
+    stateLength: rawState?.length,
     codeLength: code?.length
   });
 

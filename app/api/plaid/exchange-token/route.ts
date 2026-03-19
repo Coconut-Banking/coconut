@@ -256,7 +256,7 @@ export async function POST(request: NextRequest) {
       message = displayMessage;
       statusCode = response?.status && response.status >= 400 && response.status < 600 ? response.status : 500;
     } else {
-      message = err instanceof Error ? err.message : "Failed to connect. Please try another bank.";
+      message = "Failed to connect. Please try another bank.";
     }
 
     console.error("[plaid][exchange-token] request_error", {

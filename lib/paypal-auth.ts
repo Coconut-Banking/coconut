@@ -88,7 +88,8 @@ export async function exchangeCode(code: string) {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`PayPal token exchange failed: ${res.status} ${body}`);
+    console.error("[paypal-auth] token exchange failed:", res.status, body);
+    throw new Error(`PayPal token exchange failed: ${res.status}`);
   }
 
   return res.json() as Promise<{

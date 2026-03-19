@@ -1,5 +1,6 @@
 import { getPlaidClient } from "./plaid-client";
 import { getSupabase } from "./supabase";
+import { encryptToken, decryptToken } from "./encryption";
 import OpenAI from "openai";
 
 const openai = process.env.OPENAI_API_KEY
@@ -82,7 +83,7 @@ export async function getPlaidTokenForUser(clerkUserId: string): Promise<string 
     .eq("clerk_user_id", clerkUserId)
     .limit(1)
     .maybeSingle();
-  return data?.access_token ?? null;
+  return data?.access_token ? decryptToken(data.access_token) : null;
 }
 
 export async function getAllPlaidTokensForUser(clerkUserId: string): Promise<string[]> {
@@ -91,7 +92,7 @@ export async function getAllPlaidTokensForUser(clerkUserId: string): Promise<str
     .from("plaid_items")
     .select("access_token")
     .eq("clerk_user_id", clerkUserId);
-  return (data ?? []).map((r: { access_token: string }) => r.access_token).filter(Boolean);
+  return (data ?? []).map((r: { access_token: string }) => decryptToken(r.access_token)).filter(Boolean);
 }
 
 export type PlaidItemInfo = { access_token: string; plaid_item_id: string; institution_name: string | null };
@@ -101,7 +102,10 @@ export async function getPlaidItemsForUser(clerkUserId: string): Promise<PlaidIt
     .from("plaid_items")
     .select("access_token, plaid_item_id, institution_name")
     .eq("clerk_user_id", clerkUserId);
-  return (data ?? []) as PlaidItemInfo[];
+  return (data ?? []).map((item) => ({
+    ...item,
+    access_token: decryptToken((item as PlaidItemInfo).access_token),
+  })) as PlaidItemInfo[];
 }
 
 export async function savePlaidToken(
@@ -114,7 +118,7 @@ export async function savePlaidToken(
   const db = getSupabase();
   const row: Record<string, unknown> = {
     clerk_user_id: clerkUserId,
-    access_token: accessToken,
+    access_token: encryptToken(accessToken),
     plaid_item_id: plaidItemId,
     institution_name: institutionName ?? null,
   };

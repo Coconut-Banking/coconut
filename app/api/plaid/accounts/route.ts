@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to get accounts";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[plaid][accounts] error:", err);
+    return NextResponse.json({ error: "Failed to get accounts" }, { status: 500 });
   }
 }

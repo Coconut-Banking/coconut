@@ -8,6 +8,11 @@ import { CACHE_TAGS } from "@/lib/cached-queries";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
+/** Escape SQL LIKE metacharacters so user input is treated as literal text. */
+function escapeLikePattern(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 /**
  * POST /api/csv-import
  * Accepts FormData with a CSV file. Parses, deduplicates, auto-links, and imports.
@@ -89,7 +94,7 @@ export async function POST(request: NextRequest) {
         .eq("source", "plaid")
         .gte("date", dayBefore.toISOString().split("T")[0])
         .lte("date", dayAfter.toISOString().split("T")[0])
-        .ilike("merchant_name", `%${row.platform}%`);
+        .ilike("merchant_name", `%${escapeLikePattern(row.platform)}%`);
 
       const exactMatch = (matches ?? []).filter(
         (m) => Math.abs(Math.abs(Number(m.amount)) - absAmount) < 0.02
@@ -146,7 +151,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("[csv-import] Error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Import failed" },
+      { error: "Import failed" },
       { status: 500 }
     );
   }

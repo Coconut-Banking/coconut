@@ -84,7 +84,8 @@ export async function POST() {
     await db.from("accounts").delete().eq("clerk_user_id", effectiveUserId);
     const { error } = await db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId);
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[disconnect] plaid_items delete error:", error);
+      return NextResponse.json({ error: "Disconnect failed" }, { status: 500 });
     }
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
@@ -92,6 +93,6 @@ export async function POST() {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[disconnect]", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Disconnect failed" }, { status: 500 });
+    return NextResponse.json({ error: "Disconnect failed" }, { status: 500 });
   }
 }

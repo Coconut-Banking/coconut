@@ -30,7 +30,7 @@ function createPlaidClientForEnv(env: "sandbox" | "production"): PlaidApi | null
  * GET /api/plaid/debug
  */
 export async function GET() {
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.ENABLE_DEBUG_ENDPOINTS !== "true") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const effectiveUserId = await getEffectiveUserId();

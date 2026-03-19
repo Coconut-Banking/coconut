@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("[categorize]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Categorization failed" },
+      { error: "Categorization failed" },
       { status: 500 }
     );
   }
