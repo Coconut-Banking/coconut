@@ -6,7 +6,8 @@ import { hashColor } from "@/lib/plaid-mappers";
 
 const DEBOUNCE_MS = 500;
 
-interface SearchResponse {
+interface SearchV2Response {
+  intent: "search" | "aggregate" | "count";
   transactions: Array<{
     id: string;
     plaid_transaction_id: string;
@@ -18,11 +19,15 @@ interface SearchResponse {
     detailed_category: string | null;
   }>;
   answer: string;
-  metric: string;
   total: number | null;
-  count: number | null;
-  breakdown: Array<{ category: string; total: number; count: number }> | null;
-  usedVectorFallback: boolean;
+  count: number;
+}
+
+// Maps v2 intent to the metric names the UI already understands
+function intentToMetric(intent: string): string {
+  if (intent === "aggregate") return "sum";
+  if (intent === "count") return "count";
+  return "list";
 }
 
 // Import from shared source so NL search results use the same colors
@@ -34,7 +39,7 @@ function fmtDateShort(d: string) {
   return `${months[dt.getMonth()]} ${dt.getDate()}`;
 }
 
-function toUITransaction(t: SearchResponse["transactions"][number]): UITransaction {
+function toUITransaction(t: SearchV2Response["transactions"][number]): UITransaction {
   const primary = t.primary_category ?? "OTHER";
   const merchant = t.merchant_name || t.raw_name || "Unknown";
   return {
@@ -61,7 +66,7 @@ export function useNLSearch<T extends UITransaction>(
   answer: string;
   metric: string;
   total: number | null;
-  breakdown: SearchResponse["breakdown"];
+  breakdown: null;
   loading: boolean;
   usedVectorFallback: boolean;
 } {
@@ -69,9 +74,7 @@ export function useNLSearch<T extends UITransaction>(
   const [answer, setAnswer] = useState("");
   const [metric, setMetric] = useState("list");
   const [total, setTotal] = useState<number | null>(null);
-  const [breakdown, setBreakdown] = useState<SearchResponse["breakdown"]>(null);
   const [loading, setLoading] = useState(false);
-  const [usedVectorFallback, setUsedVectorFallback] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const abortRef = useRef<AbortController>();
 
@@ -82,9 +85,7 @@ export function useNLSearch<T extends UITransaction>(
       setAnswer("");
       setMetric("list");
       setTotal(null);
-      setBreakdown(null);
       setLoading(false);
-      setUsedVectorFallback(false);
       return;
     }
 
@@ -98,23 +99,18 @@ export function useNLSearch<T extends UITransaction>(
       abortRef.current = controller;
 
       try {
-        const res = await fetch("/api/nl-search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ q }),
+        const res = await fetch(`/api/search/v2?q=${encodeURIComponent(q)}`, {
           signal: controller.signal,
         });
-        const data: SearchResponse = await res.json();
+        const data: SearchV2Response = await res.json();
 
         if (controller.signal.aborted) return;
 
         const mapped = (data.transactions ?? []).map(toUITransaction) as T[];
         setResults(mapped);
         setAnswer(data.answer ?? "");
-        setMetric(data.metric ?? "list");
+        setMetric(intentToMetric(data.intent));
         setTotal(data.total ?? null);
-        setBreakdown(data.breakdown ?? null);
-        setUsedVectorFallback(data.usedVectorFallback ?? false);
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         setResults(fallbackTransactions);
@@ -137,8 +133,8 @@ export function useNLSearch<T extends UITransaction>(
     answer: active ? answer : "",
     metric: active ? metric : "list",
     total: active ? total : null,
-    breakdown: active ? breakdown : null,
+    breakdown: null,
     loading: active ? loading : false,
-    usedVectorFallback: active ? usedVectorFallback : false,
+    usedVectorFallback: false,
   };
 }

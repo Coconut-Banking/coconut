@@ -659,6 +659,130 @@ export async function enrichCategoriesForUser(
   return updated;
 }
 
+// ─── Rich Embedding for Search v2 ────────────────────────────────────────────
+// Generates a natural-language document per transaction for the new
+// `rich_embedding` column. The existing `buildEmbedText` / `embedding` column
+// are NOT modified.
+
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function formatDateHuman(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+export function buildRichEmbedText(
+  tx: {
+    merchant_name?: string | null;
+    raw_name?: string | null;
+    normalized_merchant?: string | null;
+    primary_category?: string | null;
+    detailed_category?: string | null;
+    amount: number;
+    date: string;
+    is_pending?: boolean;
+  },
+  account?: {
+    name?: string | null;
+    subtype?: string | null;
+    mask?: string | null;
+  } | null,
+): string {
+  const merchant = tx.merchant_name || tx.raw_name || "Unknown";
+  const absAmount = Math.abs(tx.amount).toFixed(2);
+  const txType = tx.amount < 0 ? "purchase" : tx.amount > 0 ? "refund/credit" : "transaction";
+
+  const parts: (string | null)[] = [
+    `$${absAmount} ${txType} at ${merchant}`,
+  ];
+
+  const nm = tx.normalized_merchant;
+  if (nm && nm !== merchant.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim()) {
+    parts.push(`also known as ${nm}`);
+  }
+
+  parts.push(`on ${formatDateHuman(tx.date)}`);
+
+  const primary = (tx.primary_category || "OTHER").replace(/_/g, " ");
+  const detailed = tx.detailed_category ? tx.detailed_category.replace(/_/g, " ") : null;
+  parts.push(detailed ? `Category: ${primary} > ${detailed}` : `Category: ${primary}`);
+
+  if (account?.name) {
+    const acctDesc = [account.name, account.subtype].filter(Boolean).join(" ");
+    const ending = account.mask ? ` ending in ${account.mask}` : "";
+    parts.push(`from ${acctDesc}${ending}`);
+  }
+
+  if (tx.is_pending) parts.push("(pending)");
+
+  return parts.filter(Boolean).join(". ") + ".";
+}
+
+/**
+ * Embed transactions into the NEW `rich_embedding` column.
+ * Only processes rows where `rich_embedding IS NULL`.
+ * Never touches the existing `embedding` column.
+ */
+export async function embedRichTransactionsForUser(clerkUserId: string): Promise<void> {
+  if (!openai) return;
+  const db = getSupabase();
+
+  const { data: rows } = await db
+    .from("transactions")
+    .select("id, merchant_name, raw_name, normalized_merchant, primary_category, detailed_category, amount, date, is_pending, account_id")
+    .eq("clerk_user_id", clerkUserId)
+    .is("rich_embedding", null)
+    .limit(1000);
+
+  if (!rows || rows.length === 0) return;
+
+  // Fetch accounts for this user to enrich embed text
+  const { data: accounts } = await db
+    .from("accounts")
+    .select("id, name, subtype, mask")
+    .eq("clerk_user_id", clerkUserId);
+  const accountMap = new Map(
+    (accounts ?? []).map((a: { id: string; name: string | null; subtype: string | null; mask: string | null }) => [a.id, a])
+  );
+
+  const EMBED_BATCH = 100;
+  for (let i = 0; i < rows.length; i += EMBED_BATCH) {
+    const batch = rows.slice(i, i + EMBED_BATCH) as Array<{
+      id: string;
+      merchant_name: string | null;
+      raw_name: string | null;
+      normalized_merchant: string | null;
+      primary_category: string | null;
+      detailed_category: string | null;
+      amount: number;
+      date: string;
+      is_pending: boolean;
+      account_id: string | null;
+    }>;
+
+    const texts = batch.map((t) => {
+      const account = t.account_id ? accountMap.get(t.account_id) : null;
+      return buildRichEmbedText(t, account ?? null);
+    });
+
+    const embeddings = await embedBatch(texts);
+    for (let j = 0; j < batch.length; j++) {
+      const emb = embeddings[j];
+      if (emb) {
+        await db
+          .from("transactions")
+          .update({
+            rich_embedding: JSON.stringify(emb),
+            embed_text: texts[j],
+          })
+          .eq("id", batch[j].id);
+      }
+    }
+  }
+  console.log(`[embed-rich] finished embedding ${rows.length} transactions for ${clerkUserId}`);
+}
+
 // Called async after exchange-token — does not block the HTTP response
 export async function embedTransactionsForUser(clerkUserId: string): Promise<void> {
   if (!openai) return;

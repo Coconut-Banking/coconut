@@ -4,7 +4,7 @@ import * as jose from "jose";
 import { revalidateTag } from "next/cache";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getSupabase } from "@/lib/supabase";
-import { syncTransactionsForUser, embedTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
+import { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 
 type PlaidWebhookPayload = {
@@ -110,6 +110,9 @@ export async function POST(request: NextRequest) {
       embedTransactionsForUser(clerkUserId).catch((e) =>
         console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
       );
+      embedRichTransactionsForUser(clerkUserId).catch((e) =>
+        console.warn("[plaid][webhook] rich-embed failed:", e instanceof Error ? e.message : e)
+      );
       enrichCategoriesForUser(clerkUserId).catch((e) =>
         console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
       );
@@ -129,6 +132,9 @@ export async function POST(request: NextRequest) {
         revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
         embedTransactionsForUser(clerkUserId).catch((e) =>
           console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
+        );
+        embedRichTransactionsForUser(clerkUserId).catch((e) =>
+          console.warn("[plaid][webhook] rich-embed failed:", e instanceof Error ? e.message : e)
         );
         enrichCategoriesForUser(clerkUserId).catch((e) =>
           console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
