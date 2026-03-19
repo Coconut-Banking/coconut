@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("[csv-import] Error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Import failed" },
+      { error: "Import failed" },
       { status: 500 }
     );
   }

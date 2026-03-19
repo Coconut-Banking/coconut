@@ -14,7 +14,7 @@ export async function GET() {
   } catch (err) {
     console.error("[paypal/auth] Error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to generate auth URL" },
+      { error: "Failed to generate auth URL" },
       { status: 500 }
     );
   }

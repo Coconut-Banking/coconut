@@ -14,7 +14,7 @@ export async function POST() {
   } catch (err) {
     console.error("[paypal/disconnect] Error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to disconnect" },
+      { error: "Failed to disconnect" },
       { status: 500 }
     );
   }
