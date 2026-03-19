@@ -5,6 +5,7 @@ import {
   Plus,
   ArrowLeft,
   ChevronRight,
+  ChevronDown,
   X,
   CheckCircle2,
   Wallet,
@@ -562,6 +563,10 @@ function SharedPageContent() {
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
+  const [editingHandlesMemberId, setEditingHandlesMemberId] = useState<string | null>(null);
+  const [handlesDraft, setHandlesDraft] = useState<{ venmo: string; cashapp: string; paypal: string }>({ venmo: "", cashapp: "", paypal: "" });
+  const [savingHandles, setSavingHandles] = useState(false);
+  const [handlesSaved, setHandlesSaved] = useState<string | null>(null);
   const [settleHandles, setSettleHandles] = useState<{
     venmo_username?: string | null;
     cashapp_cashtag?: string | null;
@@ -711,6 +716,44 @@ function SharedPageContent() {
       refetchGroupDetail();
     } else {
       setAddMemberError(data.error ?? "Failed to add member");
+    }
+  };
+
+  const toggleEditHandles = (memberId: string, member: { venmo_username?: string | null; cashapp_cashtag?: string | null; paypal_username?: string | null }) => {
+    if (editingHandlesMemberId === memberId) {
+      setEditingHandlesMemberId(null);
+      return;
+    }
+    setEditingHandlesMemberId(memberId);
+    setHandlesDraft({
+      venmo: member.venmo_username ?? "",
+      cashapp: member.cashapp_cashtag ?? "",
+      paypal: member.paypal_username ?? "",
+    });
+  };
+
+  const saveHandles = async (memberId: string) => {
+    if (!selectedId) return;
+    setSavingHandles(true);
+    try {
+      const res = await fetch(`/api/groups/${selectedId}/members`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId,
+          venmo_username: handlesDraft.venmo.trim() || null,
+          cashapp_cashtag: handlesDraft.cashapp.trim() || null,
+          paypal_username: handlesDraft.paypal.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setHandlesSaved(memberId);
+        refetchGroupDetail();
+        setTimeout(() => setHandlesSaved(null), 2000);
+        setEditingHandlesMemberId(null);
+      }
+    } finally {
+      setSavingHandles(false);
     }
   };
 
@@ -902,13 +945,82 @@ function SharedPageContent() {
             </div>
             {addMemberError && <p className="text-sm text-red-600 mb-2">{addMemberError}</p>}
             <div className="space-y-1.5">
-              {groupDetail.members.map((m, i) => (
-                <div key={m.id} className="flex items-center gap-2 text-sm">
-                  <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
-                  <span className="font-medium">{m.display_name}</span>
-                  {m.email && <span className="text-gray-500 text-xs">{m.email}</span>}
-                </div>
-              ))}
+              {groupDetail.members.map((m, i) => {
+                const isEditing = editingHandlesMemberId === m.id;
+                const justSaved = handlesSaved === m.id;
+                const hasHandles = m.venmo_username || m.cashapp_cashtag || m.paypal_username;
+                return (
+                  <div key={m.id} className="rounded-xl border border-gray-100 overflow-hidden">
+                    <div className="flex items-center gap-2 text-sm px-3 py-2.5">
+                      <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium">{m.display_name}</span>
+                        {m.email && <span className="text-gray-500 text-xs ml-1.5">{m.email}</span>}
+                        {hasHandles && !isEditing && (
+                          <div className="flex gap-2 mt-0.5">
+                            {m.venmo_username && <span className="text-[10px] text-gray-400">Venmo: {m.venmo_username}</span>}
+                            {m.cashapp_cashtag && <span className="text-[10px] text-gray-400">Cash: {m.cashapp_cashtag}</span>}
+                            {m.paypal_username && <span className="text-[10px] text-gray-400">PayPal: {m.paypal_username}</span>}
+                          </div>
+                        )}
+                      </div>
+                      {justSaved ? (
+                        <span className="flex items-center gap-1 text-xs text-[#3D8E62] font-medium">
+                          <CheckCircle2 size={14} /> Saved
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => toggleEditHandles(m.id, m)}
+                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors px-1.5 py-1 rounded-md hover:bg-gray-50"
+                        >
+                          {isEditing ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          <span>{isEditing ? "Close" : "Payment handles"}</span>
+                        </button>
+                      )}
+                    </div>
+                    {isEditing && (
+                      <div className="px-3 pb-3 pt-1 border-t border-gray-100 bg-gray-50/50">
+                        <div className="space-y-2">
+                          <div>
+                            <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Venmo</label>
+                            <input
+                              value={handlesDraft.venmo}
+                              onChange={(e) => setHandlesDraft((d) => ({ ...d, venmo: e.target.value }))}
+                              placeholder="@username"
+                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Cash App</label>
+                            <input
+                              value={handlesDraft.cashapp}
+                              onChange={(e) => setHandlesDraft((d) => ({ ...d, cashapp: e.target.value }))}
+                              placeholder="$cashtag"
+                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">PayPal</label>
+                            <input
+                              value={handlesDraft.paypal}
+                              onChange={(e) => setHandlesDraft((d) => ({ ...d, paypal: e.target.value }))}
+                              placeholder="username"
+                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] bg-white"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => saveHandles(m.id)}
+                          disabled={savingHandles}
+                          className="mt-3 w-full py-2 rounded-lg bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-medium transition-colors"
+                        >
+                          {savingHandles ? "Saving\u2026" : "Save handles"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

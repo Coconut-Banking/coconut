@@ -24,7 +24,7 @@ export async function GET(
 
   let { data: members } = await db
     .from("group_members")
-    .select("id, user_id, email, display_name")
+    .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
     .eq("group_id", id);
 
   // Backfill owner email for existing groups where owner has user_id but no email

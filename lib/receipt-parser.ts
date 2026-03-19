@@ -126,6 +126,9 @@ export async function parseReceiptEmail(emailBody: string): Promise<{
   merchant: string;
   order_date: string;
   total_amount: number;
+  subtotal: number | null;
+  tax: number | null;
+  order_number: string | null;
   line_items: Array<{ name: string; quantity: number; unit_price: number; total: number; category: string }>;
 } | null> {
   if (!openai) {
@@ -174,14 +177,21 @@ Rules:
 - Look for the ACTUAL amount paid, not placeholder values
 - Extract merchant name from sender or subject if not in body
 - All numeric values must be numbers, not strings
+- Extract subtotal (pre-tax amount), tax, and order_number if present; use null if not found
+- Assign each line item a category from this list of Plaid-compatible categories:
+  FOOD_AND_DRINK, GROCERIES, ENTERTAINMENT, SHOPPING, TRANSPORTATION,
+  HEALTH_AND_FITNESS, HOUSEHOLD, ELECTRONICS, PERSONAL_CARE, OTHER
 
 Schema:
 {
   "merchant": "store/company/service name",
   "order_date": "YYYY-MM-DD",
   "total_amount": number,
+  "subtotal": number | null,
+  "tax": number | null,
+  "order_number": "string or null",
   "line_items": [
-    {"name": "item/service name", "quantity": 1, "unit_price": 9.99, "total": 9.99, "category": "category"}
+    {"name": "item/service name", "quantity": 1, "unit_price": 9.99, "total": 9.99, "category": "GROCERIES"}
   ]
 }
 
@@ -205,6 +215,9 @@ ${body}`
     merchant?: string;
     total_amount?: number;
     order_date?: string;
+    subtotal?: number | null;
+    tax?: number | null;
+    order_number?: string | null;
     line_items?: Array<Record<string, unknown>>;
   };
   try {
@@ -218,20 +231,29 @@ ${body}`
   if (!parsed.merchant) return null;
   if (!parsed.total_amount || parsed.total_amount <= 0) return null;
 
+  const VALID_CATEGORIES = new Set([
+    "FOOD_AND_DRINK", "GROCERIES", "ENTERTAINMENT", "SHOPPING", "TRANSPORTATION",
+    "HEALTH_AND_FITNESS", "HOUSEHOLD", "ELECTRONICS", "PERSONAL_CARE", "OTHER",
+  ]);
+
   return {
     merchant: parsed.merchant,
     order_date: parsed.order_date || new Date().toISOString().split("T")[0],
     total_amount: Number(parsed.total_amount) || 0,
+    subtotal: parsed.subtotal != null ? Number(parsed.subtotal) || null : null,
+    tax: parsed.tax != null ? Number(parsed.tax) || null : null,
+    order_number: parsed.order_number ? String(parsed.order_number) : null,
     line_items: (parsed.line_items || []).map((item: Record<string, unknown>) => {
       const quantity = Number(item.quantity) || 1;
       const unit_price = Number(item.unit_price) || Number(item.price) || 0;
       const total = Number(item.total) || (unit_price * quantity);
+      const rawCategory = String(item.category || "OTHER").toUpperCase();
       return {
         name: String(item.name || "Item"),
         quantity,
         unit_price,
         total,
-        category: String(item.category || "other"),
+        category: VALID_CATEGORIES.has(rawCategory) ? rawCategory : "OTHER",
       };
     }),
   };
@@ -413,6 +435,9 @@ export async function scanGmailForReceipts(
           line_items: receiptData.line_items,
           raw_subject: subject,
           raw_from: from,
+          ...(receiptData.subtotal != null && { subtotal: receiptData.subtotal }),
+          ...(receiptData.tax != null && { tax: receiptData.tax }),
+          ...(receiptData.order_number != null && { order_number: receiptData.order_number }),
         };
 
         const { data: inserted, error: insertError } = forceRescan
