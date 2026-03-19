@@ -40,19 +40,29 @@ export async function POST() {
       await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
     } catch { /* table may not exist */ }
 
+    // Get all user's transaction IDs first
+    const { data: allTx } = await db
+      .from("transactions")
+      .select("id, plaid_transaction_id")
+      .eq("clerk_user_id", effectiveUserId);
+    const userTxIds = (allTx ?? []).map((r) => r.id as string);
+
     // Protect bank transactions that are referenced by split_transactions or subscription_transactions
-    const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-    const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
+    // (scoped to current user's transactions only)
+    const { data: inSplits } = await db
+      .from("split_transactions")
+      .select("transaction_id")
+      .in("transaction_id", userTxIds);
+    const { data: inSubscriptions } = await db
+      .from("subscription_transactions")
+      .select("transaction_id")
+      .in("transaction_id", userTxIds);
     const protectedIds = new Set([
       ...(inSplits ?? []).map((r) => r.transaction_id as string),
       ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
     ].filter(Boolean));
 
     // Delete only bank transactions (keep manual expenses from Shared)
-    const { data: allTx } = await db
-      .from("transactions")
-      .select("id, plaid_transaction_id")
-      .eq("clerk_user_id", effectiveUserId);
     const bankIds = (allTx ?? [])
       .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
       .filter((r) => !protectedIds.has(r.id as string))

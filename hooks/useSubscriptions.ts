@@ -114,13 +114,14 @@ export function useSubscriptions() {
   }, [subscriptions]);
 
   const totalMonthly = subscriptions.reduce((acc, s) => {
-    if (s.frequency === "monthly") return acc + s.amount;
-    if (s.frequency === "yearly") return acc + s.amount / 12;
-    if (s.frequency === "semiannual") return acc + s.amount / 6;
-    if (s.frequency === "quarterly") return acc + s.amount / 3;
-    if (s.frequency === "weekly") return acc + (s.amount * 52) / 12;
-    if (s.frequency === "biweekly") return acc + (s.amount * 26) / 12;
-    return acc + s.amount;
+    const amount = Number(s.amount) || 0;
+    if (s.frequency === "monthly") return acc + amount;
+    if (s.frequency === "yearly") return acc + amount / 12;
+    if (s.frequency === "semiannual") return acc + amount / 6;
+    if (s.frequency === "quarterly") return acc + amount / 3;
+    if (s.frequency === "weekly") return acc + (amount * 52) / 12;
+    if (s.frequency === "biweekly") return acc + (amount * 26) / 12;
+    return acc + amount;
   }, 0);
 
   return {

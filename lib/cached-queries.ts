@@ -5,7 +5,7 @@
  * Invalidate when:
  *   - Plaid sync completes → revalidateTag(`transactions:${userId}`)
  *   - Subscription detection runs → revalidateTag(`transactions:${userId}`)
- *   - Split created/deleted → revalidateTag("split_transactions")
+ *   - Split created/deleted → revalidateTag(`split_transactions:${userId}`)
  */
 
 import { unstable_cache } from "next/cache";

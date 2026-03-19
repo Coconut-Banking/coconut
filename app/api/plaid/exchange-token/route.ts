@@ -139,16 +139,26 @@ export async function POST(request: NextRequest) {
 
     // Only clear on first connection (sandbox→prod) so we don't wipe other banks
     if (process.env.NODE_ENV === "production" && isFirstConnection) {
-      const { data: inSplits } = await db.from("split_transactions").select("transaction_id");
-      const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
-      const protectedIds = new Set([
-        ...(inSplits ?? []).map((r) => r.transaction_id as string),
-        ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
-      ].filter(Boolean));
       const { data: toDelete } = await db
         .from("transactions")
         .select("id, plaid_transaction_id")
         .eq("clerk_user_id", effectiveUserId);
+      const userTxIds = (toDelete ?? []).map((r) => r.id as string);
+
+      // Protect bank transactions that are referenced by split_transactions or subscription_transactions
+      // (scoped to current user's transactions only)
+      const { data: inSplits } = await db
+        .from("split_transactions")
+        .select("transaction_id")
+        .in("transaction_id", userTxIds);
+      const { data: inSubscriptions } = await db
+        .from("subscription_transactions")
+        .select("transaction_id")
+        .in("transaction_id", userTxIds);
+      const protectedIds = new Set([
+        ...(inSplits ?? []).map((r) => r.transaction_id as string),
+        ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
+      ].filter(Boolean));
       const idsToDelete = (toDelete ?? [])
         .filter((r) => !String(r.plaid_transaction_id || "").startsWith("manual_"))
         .map((r) => r.id as string)

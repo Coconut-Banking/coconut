@@ -52,7 +52,7 @@ export default function SubscriptionsPage() {
           <RefreshCw size={32} className="text-gray-300 mx-auto mb-4" />
           <p className="text-sm text-gray-500 mb-4">No subscriptions detected yet.</p>
           <p className="text-xs text-gray-400">
-            Connect your bank, sync transactions, then tap &quot;Detect subscriptions&quot; to find recurring charges from streaming, software, gyms, and similar services.
+            Tap &quot;Detect subscriptions&quot; above to scan your transactions for recurring charges like Netflix, Spotify, gyms, and software.
           </p>
         </div>
       ) : (

@@ -286,7 +286,7 @@ async function detectRefunds(userId: string, db: ReturnType<typeof getSupabase>)
 export async function generateInsights(userId: string): Promise<Insight[]> {
   const db = getSupabase();
 
-  const [anomalies, duplicates, trends, priceChanges, newSubs, refunds] = await Promise.all([
+  const results = await Promise.allSettled([
     detectAnomalies(userId, db),
     detectDuplicates(userId, db),
     detectSpendingTrends(userId, db),
@@ -294,6 +294,21 @@ export async function generateInsights(userId: string): Promise<Insight[]> {
     detectNewSubscriptions(userId, db),
     detectRefunds(userId, db),
   ]);
+
+  const names = ["anomalies", "duplicates", "trends", "priceChanges", "newSubs", "refunds"];
+  results.forEach((result, idx) => {
+    if (result.status === "rejected") {
+      console.error(`[insights] ${names[idx]} detector failed:`, result.reason);
+    }
+  });
+
+  const extract = (i: number): Insight[] => results[i].status === "fulfilled" ? results[i].value : [];
+  const anomalies = extract(0);
+  const duplicates = extract(1);
+  const trends = extract(2);
+  const priceChanges = extract(3);
+  const newSubs = extract(4);
+  const refunds = extract(5);
 
   return [
     ...duplicates,

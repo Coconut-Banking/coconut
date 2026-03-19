@@ -134,14 +134,19 @@ export async function matchReceiptsToTransactions(
 
       if (fallbackCandidates && fallbackCandidates.length > 0) {
         const tight = fallbackCandidates
-          .map((tx) => ({
-            id: tx.id as string,
-            amountDiff: Math.abs(Math.abs(Number(tx.amount)) - receiptAmount),
-            dateDiff: receiptDate
-              ? Math.abs(new Date(tx.date as string).getTime() - new Date(receiptDate).getTime())
-              : 0,
-          }))
-          .filter((s) => s.amountDiff <= 1.0)
+          .filter((tx) => tx.date != null)
+          .map((tx) => {
+            const txDate = new Date(tx.date as string);
+            const dateDiff = receiptDate && !isNaN(txDate.getTime())
+              ? Math.abs(txDate.getTime() - new Date(receiptDate).getTime())
+              : Number.MAX_SAFE_INTEGER;
+            return {
+              id: tx.id as string,
+              amountDiff: Math.abs(Math.abs(Number(tx.amount)) - receiptAmount),
+              dateDiff,
+            };
+          })
+          .filter((s) => s.amountDiff <= 1.0 && isFinite(s.dateDiff))
           .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
 
         if (tight.length > 0) {

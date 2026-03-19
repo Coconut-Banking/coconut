@@ -193,7 +193,7 @@ async function syncSingleToken(
   // Upsert accounts for this bank (plaid_item_id links to institution for display)
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
   if (!acctResp?.accounts || !Array.isArray(acctResp.accounts)) {
-    console.warn("[sync] accountsGet returned no accounts for", plaidItemId);
+    console.error("[sync] accountsGet returned invalid data", { clerkUserId, plaidItemId });
     return { synced: 0, removedIds: [], skipped: 0 };
   }
   for (const acct of acctResp.accounts) {
@@ -277,7 +277,11 @@ async function syncSingleToken(
     const merchant = (tx.merchant_name as string | null) ?? (tx.name as string) ?? "";
     const pfc = tx.personal_finance_category as { primary?: string; detailed?: string; confidence_level?: string } | null;
     const category = tx.category as string[] | null;
-    const rawAmount = tx.amount as number;
+    const rawAmount = tx.amount as number | null | undefined;
+    if (rawAmount === null || rawAmount === undefined || isNaN(Number(rawAmount))) {
+      console.warn(`[sync] Skipping transaction ${tx.transaction_id} with invalid amount:`, rawAmount);
+      return null;
+    }
     const amount = rawAmount > 0 ? -Math.abs(rawAmount) : Math.abs(rawAmount);
     const location = tx.location as { city?: string; region?: string; postal_code?: string; country?: string } | null;
     const counterparties = tx.counterparties as Array<{ name?: string; type?: string; website?: string; logo_url?: string; entity_id?: string }> | null;
@@ -312,12 +316,8 @@ async function syncSingleToken(
     };
   };
 
-  const addedRows = allAdded.map(mapTxToRow).filter((r) => r.account_id !== null);
-  const modifiedRows = allModified.map(mapTxToRow).filter((r) => r.account_id !== null);
-  const skippedOrphans = (allAdded.length + allModified.length) - (addedRows.length + modifiedRows.length);
-  if (skippedOrphans > 0) {
-    console.warn("[sync] skipped", skippedOrphans, "transaction(s) with unmapped account_id for user", clerkUserId);
-  }
+  const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
+  const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
 
   // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
   // IDs when same bank is linked multiple times (duplicate Items). Modified transactions
@@ -374,6 +374,24 @@ export async function syncTransactionsForUser(
 
   // Delete removed transactions across all banks (batch to avoid URL length limit)
   if (allRemovedIds.length > 0) {
+    // Get internal UUIDs for the plaid_transaction_ids being removed
+    const { data: toRemove } = await db
+      .from("transactions")
+      .select("id")
+      .eq("clerk_user_id", clerkUserId)
+      .in("plaid_transaction_id", allRemovedIds);
+
+    const removedUuids = (toRemove ?? []).map(r => r.id as string);
+
+    // Clean up subscription_transactions references first
+    if (removedUuids.length > 0) {
+      await db
+        .from("subscription_transactions")
+        .delete()
+        .in("transaction_id", removedUuids);
+    }
+
+    // Now safe to delete transactions
     const BATCH = 100;
     for (let i = 0; i < allRemovedIds.length; i += BATCH) {
       const batch = allRemovedIds.slice(i, i + BATCH);
@@ -413,14 +431,26 @@ export async function deleteDuplicateTransactionsForUser(
   const seen = new Map<string, string>(); // key -> id to keep
   const idsToDelete: string[] = [];
 
-  const { data: protectedSplits } = await db.from("split_transactions").select("transaction_id");
+  // Get user's transaction IDs to scope protection queries
+  const { data: userTxs } = await db
+    .from("transactions")
+    .select("id")
+    .eq("clerk_user_id", clerkUserId);
+  const userTxIds = (userTxs ?? []).map((r) => r.id as string);
+
+  const { data: protectedSplits } = await db
+    .from("split_transactions")
+    .select("transaction_id")
+    .in("transaction_id", userTxIds);
   const { data: protectedReceipts } = await db
     .from("email_receipts")
     .select("transaction_id")
+    .eq("clerk_user_id", clerkUserId)
     .not("transaction_id", "is", null);
   const { data: protectedSubTxs } = await db
     .from("subscription_transactions")
     .select("transaction_id")
+    .in("transaction_id", userTxIds)
     .not("transaction_id", "is", null);
   const protectedIds = new Set(
     [
