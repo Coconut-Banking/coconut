@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   CreditCard,
   Smartphone,
+  Inbox,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
@@ -26,6 +27,7 @@ import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
 
 const navItems = [
   { href: "/app/dashboard", label: "Overview", icon: LayoutDashboard, end: true },
+  { href: "/app/review", label: "Review", icon: Inbox },
   { href: "/app/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/app/subscriptions", label: "Subscriptions", icon: RefreshCw },
   { href: "/app/shared", label: "Shared", icon: Users },
