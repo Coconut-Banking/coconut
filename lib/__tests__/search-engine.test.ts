@@ -203,5 +203,46 @@ describe("search-engine", () => {
         expect.stringMatching(/normalized_merchant\.ilike.*coffee/)
       );
     });
+
+    it("plural merchant 'ubers' matches multiple Uber transactions (merchantPatterns)", async () => {
+      const fiveUberTxs = [
+        { id: "1", plaid_transaction_id: "tx1", merchant_name: "Uber", raw_name: "UBER TRIP", amount: -16.1, date: "2026-03-01", primary_category: "TRANSPORTATION", detailed_category: null, iso_currency_code: "USD", is_pending: false },
+        { id: "2", plaid_transaction_id: "tx2", merchant_name: "Uber", raw_name: "UBER", amount: -12.5, date: "2026-03-05", primary_category: "TRANSPORTATION", detailed_category: null, iso_currency_code: "USD", is_pending: false },
+        { id: "3", plaid_transaction_id: "tx3", merchant_name: "Uber", raw_name: "Uber", amount: -8, date: "2026-03-10", primary_category: "TRANSPORTATION", detailed_category: null, iso_currency_code: "USD", is_pending: false },
+        { id: "4", plaid_transaction_id: "tx4", merchant_name: "Uber", raw_name: "UBER TRIP", amount: -22, date: "2026-03-12", primary_category: "TRANSPORTATION", detailed_category: null, iso_currency_code: "USD", is_pending: false },
+        { id: "5", plaid_transaction_id: "tx5", merchant_name: "Uber", raw_name: "Uber", amount: -5.5, date: "2026-03-15", primary_category: "TRANSPORTATION", detailed_category: null, iso_currency_code: "USD", is_pending: false },
+      ];
+      mockChain.then.mockImplementation((fn: (v: { data: unknown; error: unknown }) => unknown) =>
+        fn({ data: fiveUberTxs, error: null })
+      );
+      mockCompletionCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                metric: "sum",
+                date_start: "2026-02-18",
+                date_end: "2026-03-18",
+                merchant: "ubers",
+                merchant_keywords: null,
+                category: null,
+                amount_gt: null,
+                amount_lt: null,
+              }),
+            },
+          },
+        ],
+      });
+
+      const { search } = await import("../search-engine");
+      const result = await search("user_123", "How much did I spend on Ubers in the past month?");
+
+      expect(result.transactions).toHaveLength(5);
+      expect(result.total).toBe(16.1 + 12.5 + 8 + 22 + 5.5);
+      expect(result.answer).toMatch(/5 transaction/);
+      expect(mockOr).toHaveBeenCalledWith(
+        expect.stringMatching(/normalized_merchant\.ilike\.%uber%/)
+      );
+    });
   });
 });

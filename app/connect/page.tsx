@@ -16,6 +16,13 @@ function makeTraceId(): string {
   return `plaid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Telegram / Instagram / FB in-app browsers often break auth cookies — Plaid then 401s or OAuth fails. */
+function detectLikelyInAppBrowser(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /Telegram|Instagram|FBAN|FBAV|FB_IAB|Line\/|MicroMessenger|wv\)|; wv\)/i.test(ua);
+}
+
 function ConnectedStep() {
   const router = useRouter();
   const fromApp =
@@ -91,6 +98,7 @@ function ConnectBankContent() {
     (payload: Record<string, unknown>) => {
       fetch("/api/plaid/link-events", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           trace_id: traceId || null,
@@ -166,6 +174,7 @@ function ConnectBankContent() {
     const newAccounts = searchParams.get("new_accounts") === "1";
     fetch("/api/plaid/create-link-token", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ trace_id: traceId || null, update: isUpdateMode, new_accounts: newAccounts }),
     })
@@ -249,7 +258,7 @@ function ConnectBankContent() {
         });
         if (isUpdateMode) {
           // Update mode: access_token unchanged, no exchange needed. Dismiss prompts.
-          fetch("/api/plaid/clear-alerts", { method: "POST" }).catch(() => {});
+          fetch("/api/plaid/clear-alerts", { method: "POST", credentials: "include" }).catch(() => {});
           setStep("connected");
           logPlaidEvent({
             type: "update_mode_ok",
@@ -261,6 +270,7 @@ function ConnectBankContent() {
         } else {
           const res = await fetch("/api/plaid/exchange-token", {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ public_token: publicToken, trace_id: traceId || null }),
           });
@@ -349,6 +359,13 @@ function ConnectBankContent() {
     },
   });
 
+  const [showInAppBrowserHint, setShowInAppBrowserHint] = useState(false);
+  useEffect(() => {
+    setShowInAppBrowserHint(
+      detectLikelyInAppBrowser() || searchParams.get("from_app") === "1"
+    );
+  }, [searchParams]);
+
   const hasAutoOpened = useRef(false);
   useEffect(() => {
     if (receivedRedirectUri && linkToken && ready && !hasAutoOpened.current) {
@@ -408,6 +425,17 @@ function ConnectBankContent() {
                     </p>
                   </div>
                   <div className="px-6 py-6">
+                    {showInAppBrowserHint && (
+                      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                        <p className="font-medium">Having trouble linking?</p>
+                        <p className="mt-1 text-amber-800/90">
+                          If you opened this link from <strong>Telegram</strong>, <strong>Instagram</strong>, or another
+                          in-app browser, sign-in cookies may not work. Tap{" "}
+                          <span className="font-semibold">⋯</span> → <strong>Open in Safari</strong> (or Chrome), sign
+                          in, then try again.
+                        </p>
+                      </div>
+                    )}
                     {error && (
                       <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
                         <p>{error}</p>

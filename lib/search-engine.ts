@@ -219,6 +219,19 @@ export interface SearchResult {
   usedVectorFallback: boolean;
 }
 
+/** Optional debug payload returned when search(,, { debug: true }). */
+export interface SearchDebugInfo {
+  intent: SearchIntent;
+  routing: string;
+  stage3Path: string;
+  stage3CandidateCount?: number;
+  stage4FilterBefore?: number;
+  stage4FilterAfter?: number;
+  stage5TransactionCount: number;
+  stage5Total: number | null;
+  dateRelaxed: boolean;
+}
+
 // ─── SQL builder ──────────────────────────────────────────────────────────────
 
 function normalize(s: string): string {
@@ -1132,7 +1145,21 @@ function intentWithWiderDateRange(intent: SearchIntent): SearchIntent {
   };
 }
 
-export async function search(clerkUserId: string, query: string): Promise<SearchResult> {
+export async function search(
+  clerkUserId: string,
+  query: string,
+  options?: { debug?: boolean }
+): Promise<SearchResult & { _debug?: SearchDebugInfo }> {
+  const debug = options?.debug ?? false;
+  const debugInfo: SearchDebugInfo = {
+    intent: null as unknown as SearchIntent,
+    routing: "",
+    stage3Path: "",
+    stage5TransactionCount: 0,
+    stage5Total: null,
+    dateRelaxed: false,
+  };
+
   // Step 1: Simple intent extraction — just dates, metric, amounts, and routing
   // Pass merchant context if available for better routing decisions
   let merchantContext: Parameters<typeof extractIntent>[1];
@@ -1190,6 +1217,10 @@ export async function search(clerkUserId: string, query: string): Promise<Search
   }
 
   const routeKind = isSpecificMerchant ? "MERCHANT" : isConceptualQuery ? "CONCEPTUAL→VECTOR" : isCategoryQuery ? "CATEGORY" : "GENERAL";
+  if (debug) {
+    debugInfo.intent = { ...intent };
+    debugInfo.routing = routeKind;
+  }
   console.log("[pipeline:nl] STAGE 1 intent", { metric: intent.metric, date_start: intent.date_start, date_end: intent.date_end, merchant: intent.merchant, merchant_keywords: intent.merchant_keywords, category: intent.category });
   console.log("[pipeline:nl] STAGE 2 routing", routeKind);
 
@@ -1209,10 +1240,18 @@ export async function search(clerkUserId: string, query: string): Promise<Search
       const { transactions: hybridTxs, usedVector: hybridUsedVector } =
         await runHybridSearch(clerkUserId, query, intent);
       usedVector = hybridUsedVector;
+      if (debug) {
+        debugInfo.stage3Path = "hybrid";
+        debugInfo.stage3CandidateCount = hybridTxs.length;
+      }
       console.log("[pipeline:nl] STAGE 3 query", { path: "hybrid", candidateCount: hybridTxs.length });
 
       if (hybridTxs.length > 0) {
         const filtered = await filterResultsWithLLM(query, hybridTxs);
+        if (debug) {
+          debugInfo.stage4FilterBefore = hybridTxs.length;
+          debugInfo.stage4FilterAfter = filtered.length;
+        }
         console.log("[pipeline:nl] STAGE 4 filter", { before: hybridTxs.length, after: filtered.length });
 
         const txs = filtered.length > 0 ? filtered : hybridTxs;
@@ -1221,13 +1260,19 @@ export async function search(clerkUserId: string, query: string): Promise<Search
           : null;
         structured = { metric: intent.metric, transactions: txs, total, count: txs.length, breakdown: null, topMerchants: null };
       } else {
+        if (debug) debugInfo.stage3Path = "structured (hybrid=0 fallback)";
         console.log("[pipeline:nl] STAGE 3 query", { path: "structured (hybrid=0 fallback)" });
         structured = await runStructuredQuery(clerkUserId, intent);
       }
     } else {
       // ── Specific merchant / category / general → SQL structured query ──
+      if (debug) debugInfo.stage3Path = "structured";
       console.log("[pipeline:nl] STAGE 3 query", { path: "structured" });
       structured = await runStructuredQuery(clerkUserId, intent);
+    }
+    if (debug) {
+      debugInfo.stage5TransactionCount = structured.transactions.length;
+      debugInfo.stage5Total = structured.total ?? null;
     }
     console.log("[pipeline:nl] STAGE 5 result", { transactionCount: structured.transactions.length, total: structured.total ?? null, count: structured.count ?? null });
 
@@ -1247,12 +1292,22 @@ export async function search(clerkUserId: string, query: string): Promise<Search
             ? txs.filter((t) => t.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
             : null;
           structured = { metric: intent.metric, transactions: txs, total, count: txs.length, breakdown: null, topMerchants: null };
+          if (debug) {
+            debugInfo.stage5TransactionCount = txs.length;
+            debugInfo.stage5Total = total;
+            debugInfo.dateRelaxed = true;
+          }
           console.log("[pipeline:nl] STAGE 5 date-relax", { path: "vector", transactionCount: txs.length });
         }
       } else {
         const relaxed = await runStructuredQuery(clerkUserId, relaxedIntent);
         if (relaxed.transactions.length > 0) {
           structured = relaxed;
+          if (debug) {
+            debugInfo.stage5TransactionCount = relaxed.transactions.length;
+            debugInfo.stage5Total = relaxed.transactions.reduce((s, r) => s + (r.amount < 0 ? Math.abs(r.amount) : 0), 0);
+            debugInfo.dateRelaxed = true;
+          }
           console.log("[pipeline:nl] STAGE 5 date-relax", { path: "structured", transactionCount: relaxed.transactions.length });
         }
       }
@@ -1261,11 +1316,13 @@ export async function search(clerkUserId: string, query: string): Promise<Search
     const rawAnswer = generateAnswer(structured, intent, { dateRelaxed: false, originalQuery: query });
     const answer = await polishAnswer(rawAnswer, query);
     console.log("[pipeline:nl] STAGE 6 answer", { length: answer.length, preview: answer.slice(0, 60) + (answer.length > 60 ? "…" : "") });
-    return {
+    const result: SearchResult & { _debug?: SearchDebugInfo } = {
       ...structured,
       answer,
       usedVectorFallback: usedVector,
     };
+    if (debug) result._debug = debugInfo;
+    return result;
   } catch (e) {
     console.error("[pipeline:nl] ERROR", e);
     return {

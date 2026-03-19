@@ -126,24 +126,61 @@ export async function POST(request: NextRequest) {
       ...(process.env.NODE_ENV !== "production" && { _debug: debug }),
     });
   } catch (err: unknown) {
-    const plaidRequestId =
+    const responseData =
       err &&
       typeof err === "object" &&
-      "response" in err
-        ? (err.response as { data?: { request_id?: string } })?.data?.request_id
+      "response" in err &&
+      err.response &&
+      typeof err.response === "object" &&
+      "data" in err.response
+        ? (err.response as { data?: Record<string, unknown> }).data
         : undefined;
+    const plaidBody = responseData && typeof responseData === "object" ? responseData : undefined;
+    const plaidRequestId =
+      typeof plaidBody?.request_id === "string" ? plaidBody.request_id : undefined;
+    const errorCode = typeof plaidBody?.error_code === "string" ? plaidBody.error_code : "";
+    const displayMessage =
+      typeof plaidBody?.display_message === "string" && plaidBody.display_message.trim()
+        ? plaidBody.display_message
+        : null;
+    const errorMessage =
+      typeof plaidBody?.error_message === "string" && plaidBody.error_message.trim()
+        ? plaidBody.error_message
+        : null;
+
+    let userMessage = "Failed to create link token";
+    if (errorCode === "INVALID_REDIRECT_URI" || /INVALID_REDIRECT_URI/i.test(String(errorMessage))) {
+      userMessage =
+        "Bank login redirect isn’t allowed for this app. In Plaid Dashboard → Team → API → Allowed redirect URIs, add exactly: " +
+        redirectUri;
+    } else if (errorCode === "INVALID_WEBHOOK" || /INVALID_WEBHOOK/i.test(String(errorMessage))) {
+      userMessage =
+        "Webhook URL isn’t registered in Plaid. In Plaid Dashboard → Team → API → Webhooks, allow this URL: " +
+        webhookUrl;
+    } else if (displayMessage) {
+      userMessage = displayMessage;
+    } else if (errorMessage && errorCode) {
+      userMessage = `${errorMessage} (${errorCode})`;
+    } else if (errorMessage) {
+      userMessage = errorMessage;
+    }
+
     console.error("[plaid][create-link-token] request_error", {
       trace_id: traceId,
       error: err instanceof Error ? err.message : String(err),
+      error_code: errorCode || null,
       request_id: plaidRequestId ?? null,
     });
+    const status =
+      errorCode === "INVALID_REDIRECT_URI" || errorCode === "INVALID_WEBHOOK" ? 400 : 500;
     return NextResponse.json(
       {
-        error: "Failed to create link token",
+        error: userMessage,
         trace_id: traceId,
+        ...(errorCode && { error_code: errorCode }),
         ...(process.env.NODE_ENV !== "production" && { _debug: debug }),
       },
-      { status: 500 }
+      { status }
     );
   }
 }

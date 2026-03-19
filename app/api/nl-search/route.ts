@@ -28,9 +28,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ transactions: [], answer: "", metric: "list" });
   }
 
+  const debug = request.headers.get("X-NL-Search-Debug") === "true";
+
   try {
-    console.log("[pipeline:nl] INPUT", { userId: effectiveUserId, query: q });
-    const result = await search(effectiveUserId, q);
+    console.log("[pipeline:nl] INPUT", { userId: effectiveUserId, query: q, debug });
+    const result = await search(effectiveUserId, q, { debug });
     console.log("[pipeline:nl] OUTPUT", {
       metric: result.metric,
       count: result.transactions.length,
