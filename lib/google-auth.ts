@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { getSupabase } from "./supabase";
+import { encryptToken, decryptToken } from "./encryption";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 
@@ -43,8 +44,8 @@ export async function saveGmailTokens(
   const { data, error } = await db.from("gmail_connections").upsert(
     {
       clerk_user_id: clerkUserId,
-      access_token: tokens.access_token ?? "",
-      refresh_token: tokens.refresh_token ?? "",
+      access_token: tokens.access_token ? encryptToken(tokens.access_token) : "",
+      refresh_token: tokens.refresh_token ? encryptToken(tokens.refresh_token) : "",
       token_expiry: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
       email: email ?? null,
     },
@@ -71,16 +72,16 @@ export async function getGmailClient(clerkUserId: string) {
 
   const client = getOAuth2Client();
   client.setCredentials({
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
+    access_token: data.access_token ? decryptToken(data.access_token) : undefined,
+    refresh_token: data.refresh_token ? decryptToken(data.refresh_token) : undefined,
     expiry_date: data.token_expiry ? new Date(data.token_expiry).getTime() : undefined,
   });
 
   // Auto-refresh: when tokens refresh, persist them
   client.on("tokens", async (tokens) => {
     const updates: Record<string, string> = {};
-    if (tokens.access_token) updates.access_token = tokens.access_token;
-    if (tokens.refresh_token) updates.refresh_token = tokens.refresh_token;
+    if (tokens.access_token) updates.access_token = encryptToken(tokens.access_token);
+    if (tokens.refresh_token) updates.refresh_token = encryptToken(tokens.refresh_token);
     if (tokens.expiry_date) updates.token_expiry = new Date(tokens.expiry_date).toISOString();
     if (Object.keys(updates).length > 0) {
       try {

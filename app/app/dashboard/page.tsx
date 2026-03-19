@@ -190,6 +190,7 @@ export default function DashboardPage() {
   const { currencyCode, format: fc } = useCurrency();
   const { manualMonthlyIncome } = useManualMonthlyIncome();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [itemInsights, setItemInsights] = useState<Array<{ type: string; message: string; detail?: string }>>([]);
 
   useEffect(() => {
     if (!linked) return;
@@ -236,6 +237,19 @@ export default function DashboardPage() {
         }
       })
       .catch(() => {});
+  }, [linked]);
+
+  // Item-level insights from receipt line items
+  useEffect(() => {
+    if (!linked) return;
+    const controller = new AbortController();
+    fetch("/api/insights/items", { signal: controller.signal })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.insights) setItemInsights(data.insights); })
+      .catch((e) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+      });
+    return () => controller.abort();
   }, [linked]);
 
   if (loading) {
@@ -641,9 +655,17 @@ export default function DashboardPage() {
                   You owe <span className="text-red-500 font-medium">{fc(groupsSummary.totalIOwe)}</span> across groups
                 </p>
               )}
-              {(!linked || (categoryDeltas.length === 0 && !groupsSummary?.friends?.some((f) => f.balance > 0) && (groupsSummary?.totalIOwe ?? 0) <= 0)) && (
+              {(!linked || (categoryDeltas.length === 0 && !groupsSummary?.friends?.some((f) => f.balance > 0) && (groupsSummary?.totalIOwe ?? 0) <= 0 && itemInsights.length === 0)) && (
                 <p className="text-sm text-gray-500">Connect accounts and sync to see insights.</p>
               )}
+              {itemInsights.map((insight, i) => (
+                <p key={`item-${i}`} className="text-sm text-gray-700">
+                  {insight.message}
+                  {insight.detail && (
+                    <span className="text-gray-400 ml-1 text-xs">({insight.detail})</span>
+                  )}
+                </p>
+              ))}
             </div>
           </div>
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X, ExternalLink } from "lucide-react";
+import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X, ExternalLink, Link2, Unlink, ArrowRight } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
@@ -28,6 +28,16 @@ interface Receipt {
   transaction_id?: string;
 }
 
+interface TransactionCandidate {
+  dbId: string;
+  merchant: string;
+  amount: number;
+  date: string;
+  dateStr: string;
+  isoCurrencyCode: string;
+}
+
+type ReviewTab = "unmatched" | "matched";
 type DatePreset = "30d" | "3m" | "6m" | "1y" | "all" | "custom";
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
@@ -80,6 +90,97 @@ function EmailReceiptsContent() {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [showPresetMenu, setShowPresetMenu] = useState(false);
+  const [reviewTab, setReviewTab] = useState<ReviewTab>("unmatched");
+  const [showReview, setShowReview] = useState(false);
+  const [findingMatchFor, setFindingMatchFor] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<TransactionCandidate[]>([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [matchingReceipt, setMatchingReceipt] = useState<string | null>(null);
+
+  const findCandidates = useCallback(async (receipt: Receipt) => {
+    setFindingMatchFor(receipt.id);
+    setCandidates([]);
+    setLoadingCandidates(true);
+    try {
+      const res = await fetch("/api/plaid/transactions");
+      if (!res.ok) return;
+      const transactions: TransactionCandidate[] = await res.json();
+      const receiptAmount = Math.abs(receipt.amount);
+      const receiptDate = new Date(receipt.date + "T12:00:00").getTime();
+      const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+      const scored = transactions
+        .filter((tx) => {
+          const txAmount = Math.abs(tx.amount);
+          const amountDiff = Math.abs(txAmount - receiptAmount);
+          const withinAmount = receiptAmount > 0
+            ? amountDiff / receiptAmount <= 0.10
+            : amountDiff <= 5;
+          const txDate = new Date(tx.date + "T12:00:00").getTime();
+          const withinDate = Math.abs(txDate - receiptDate) <= sevenDays;
+          return withinAmount && withinDate;
+        })
+        .map((tx) => ({
+          ...tx,
+          _amountDiff: Math.abs(Math.abs(tx.amount) - receiptAmount),
+          _dateDiff: Math.abs(
+            new Date(tx.date + "T12:00:00").getTime() - receiptDate
+          ),
+        }))
+        .sort((a, b) => a._amountDiff - b._amountDiff || a._dateDiff - b._dateDiff)
+        .slice(0, 5);
+
+      setCandidates(scored);
+    } catch (err) {
+      console.error("Failed to find candidates:", err);
+    } finally {
+      setLoadingCandidates(false);
+    }
+  }, []);
+
+  const matchReceipt = useCallback(async (receiptId: string, transactionId: string) => {
+    setMatchingReceipt(receiptId);
+    try {
+      const res = await fetch(`/api/email-receipts/${receiptId}/match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId }),
+      });
+      if (res.ok) {
+        setReceipts((prev) =>
+          prev.map((r) =>
+            r.id === receiptId ? { ...r, transaction_id: transactionId } : r
+          )
+        );
+        setFindingMatchFor(null);
+        setCandidates([]);
+      }
+    } catch (err) {
+      console.error("Failed to match receipt:", err);
+    } finally {
+      setMatchingReceipt(null);
+    }
+  }, []);
+
+  const unmatchReceipt = useCallback(async (receiptId: string) => {
+    setMatchingReceipt(receiptId);
+    try {
+      const res = await fetch(`/api/email-receipts/${receiptId}/match`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setReceipts((prev) =>
+          prev.map((r) =>
+            r.id === receiptId ? { ...r, transaction_id: undefined } : r
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Failed to unmatch receipt:", err);
+    } finally {
+      setMatchingReceipt(null);
+    }
+  }, []);
 
   useEffect(() => {
     const connected = searchParams.get("connected");
@@ -176,6 +277,15 @@ function EmailReceiptsContent() {
       return true;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [receipts, filter, datePreset, customStart, customEnd]);
+
+  const unmatchedReceipts = useMemo(
+    () => filteredReceipts.filter((r) => !r.transaction_id),
+    [filteredReceipts]
+  );
+  const matchedReceipts = useMemo(
+    () => filteredReceipts.filter((r) => !!r.transaction_id),
+    [filteredReceipts]
+  );
 
   const totalAmount = filteredReceipts.reduce((sum, r) => {
     const amt = r.currency && r.currency !== currencyCode ? convertCurrency(r.amount, r.currency, currencyCode) : r.amount;
@@ -432,6 +542,225 @@ function EmailReceiptsContent() {
           </div>
         </div>
 
+        {/* Review Matches Section */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowReview((v) => !v)}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Link2 className="w-4 h-4 text-[#3D8E62]" />
+            Review Matches
+            {unmatchedReceipts.length > 0 && (
+              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">
+                {unmatchedReceipts.length} unmatched
+              </span>
+            )}
+            <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showReview ? "rotate-180" : ""}`} />
+          </button>
+
+          <AnimatePresence>
+            {showReview && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-3 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  {/* Tabs */}
+                  <div className="flex border-b border-gray-100">
+                    <button
+                      onClick={() => setReviewTab("unmatched")}
+                      className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                        reviewTab === "unmatched"
+                          ? "text-[#3D8E62] border-b-2 border-[#3D8E62] bg-[#EEF7F2]/30"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Unmatched ({unmatchedReceipts.length})
+                    </button>
+                    <button
+                      onClick={() => setReviewTab("matched")}
+                      className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                        reviewTab === "matched"
+                          ? "text-[#3D8E62] border-b-2 border-[#3D8E62] bg-[#EEF7F2]/30"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Matched ({matchedReceipts.length})
+                    </button>
+                  </div>
+
+                  {/* Tab Content */}
+                  <div className="divide-y divide-gray-50">
+                    {reviewTab === "unmatched" && (
+                      <>
+                        {unmatchedReceipts.length === 0 ? (
+                          <div className="p-8 text-center">
+                            <CheckCircle2 className="w-8 h-8 text-[#3D8E62] mx-auto mb-2" />
+                            <p className="text-sm text-gray-500">All receipts are matched!</p>
+                          </div>
+                        ) : (
+                          unmatchedReceipts.map((receipt) => (
+                            <div key={receipt.id} className="p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-sm font-semibold text-gray-900 truncate">{receipt.merchant}</h4>
+                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-600 text-xs rounded-full font-medium shrink-0">
+                                      Unmatched
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    {new Date(receipt.date).toLocaleDateString()} &bull;{" "}
+                                    {formatCurrency(
+                                      receipt.currency && receipt.currency !== currencyCode
+                                        ? convertCurrency(receipt.amount, receipt.currency, currencyCode)
+                                        : receipt.amount,
+                                      currencyCode
+                                    )}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (findingMatchFor === receipt.id) {
+                                      setFindingMatchFor(null);
+                                      setCandidates([]);
+                                    } else {
+                                      findCandidates(receipt);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#EEF7F2] text-[#3D8E62] hover:bg-[#D1EAE0] transition-colors flex items-center gap-1.5 shrink-0"
+                                >
+                                  <Search className="w-3 h-3" />
+                                  {findingMatchFor === receipt.id ? "Cancel" : "Find Match"}
+                                </button>
+                              </div>
+
+                              {/* Candidate transactions dropdown */}
+                              <AnimatePresence>
+                                {findingMatchFor === receipt.id && (
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div className="mt-3 bg-gray-50 rounded-lg border border-gray-100 p-3">
+                                      <p className="text-xs font-medium text-gray-500 mb-2">Matching transactions:</p>
+                                      {loadingCandidates ? (
+                                        <div className="flex items-center justify-center py-4">
+                                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                          <span className="text-xs text-gray-400 ml-2">Searching...</span>
+                                        </div>
+                                      ) : candidates.length === 0 ? (
+                                        <p className="text-xs text-gray-400 py-3 text-center">
+                                          No matching transactions found within 10% amount and 7 days.
+                                        </p>
+                                      ) : (
+                                        <div className="space-y-1.5">
+                                          {candidates.map((tx) => (
+                                            <div
+                                              key={tx.dbId}
+                                              className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-gray-100 hover:border-[#3D8E62]/30 transition-colors"
+                                            >
+                                              <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate">{tx.merchant}</p>
+                                                <p className="text-xs text-gray-500">
+                                                  {tx.dateStr} &bull;{" "}
+                                                  {formatCurrency(
+                                                    Math.abs(tx.amount),
+                                                    tx.isoCurrencyCode || currencyCode
+                                                  )}
+                                                </p>
+                                              </div>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  matchReceipt(receipt.id, tx.dbId);
+                                                }}
+                                                disabled={matchingReceipt === receipt.id}
+                                                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#3D8E62] text-white hover:bg-[#2D7A52] disabled:opacity-50 transition-colors flex items-center gap-1 shrink-0"
+                                              >
+                                                {matchingReceipt === receipt.id ? (
+                                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                  <ArrowRight className="w-3 h-3" />
+                                                )}
+                                                Match
+                                              </button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          ))
+                        )}
+                      </>
+                    )}
+
+                    {reviewTab === "matched" && (
+                      <>
+                        {matchedReceipts.length === 0 ? (
+                          <div className="p-8 text-center">
+                            <p className="text-sm text-gray-500">No matched receipts yet.</p>
+                          </div>
+                        ) : (
+                          matchedReceipts.map((receipt) => (
+                            <div key={receipt.id} className="p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-sm font-semibold text-gray-900 truncate">{receipt.merchant}</h4>
+                                    <span className="px-2 py-0.5 bg-[#EEF7F2] text-[#3D8E62] text-xs rounded-full font-medium shrink-0">
+                                      Matched
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    {new Date(receipt.date).toLocaleDateString()} &bull;{" "}
+                                    {formatCurrency(
+                                      receipt.currency && receipt.currency !== currencyCode
+                                        ? convertCurrency(receipt.amount, receipt.currency, currencyCode)
+                                        : receipt.amount,
+                                      currencyCode
+                                    )}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    unmatchReceipt(receipt.id);
+                                  }}
+                                  disabled={matchingReceipt === receipt.id}
+                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0"
+                                >
+                                  {matchingReceipt === receipt.id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Unlink className="w-3 h-3" />
+                                  )}
+                                  Unmatch
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         {/* Receipts List — full width when detail opens in modal */}
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-gray-700">Recent Receipts</h3>
@@ -481,7 +810,7 @@ function EmailReceiptsContent() {
                             currencyCode
                           )}
                         </p>
-                        <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
+                        <ChevronRight className="w-4 h-4 text-gray-400 ml-auto mt-1" />
                       </div>
                     </div>
                   </motion.div>
