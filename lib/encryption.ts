@@ -22,9 +22,17 @@ function getKey(): Buffer {
  * Encrypt a plaintext string. Returns base64-encoded ciphertext with IV and auth tag prepended.
  * If no encryption key is configured, returns the plaintext as-is (for local development).
  */
+let warnedMissingKey = false;
+
 export function encryptToken(plaintext: string): string {
   const key = getKey();
-  if (key.length === 0) return plaintext;
+  if (key.length === 0) {
+    if (process.env.NODE_ENV === "production" && !warnedMissingKey) {
+      console.warn("[encryption] WARNING: TOKEN_ENCRYPTION_KEY is not set — tokens are stored in plaintext. Set this env var to enable AES-256-GCM encryption.");
+      warnedMissingKey = true;
+    }
+    return plaintext;
+  }
 
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
