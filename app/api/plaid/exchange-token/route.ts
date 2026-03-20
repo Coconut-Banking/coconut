@@ -239,9 +239,25 @@ export async function POST(request: NextRequest) {
     const response = "response" in errObj ? (errObj.response as { data?: unknown; status?: number }) : null;
     const data = response?.data;
     const plaidData = data && typeof data === "object" ? (data as { error_code?: string; error_type?: string; display_message?: string | null; error_message?: string }) : null;
-    const errorCode = plaidData?.error_code;
+    let errorCode = plaidData?.error_code;
     const displayMessage = plaidData?.display_message?.trim() || plaidData?.error_message;
-    const plaidRequestId = plaidData && "request_id" in plaidData ? (plaidData as { request_id?: string }).request_id : undefined;
+    let plaidRequestId = plaidData && "request_id" in plaidData ? (plaidData as { request_id?: string }).request_id : undefined;
+
+    const innerMessage = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+    // Supabase / PostgREST errors (savePlaidToken, etc.) — no Plaid response body
+    const pg =
+      err &&
+      typeof err === "object" &&
+      "message" in err &&
+      typeof (err as { message: unknown }).message === "string"
+        ? (err as { code?: string; message: string; details?: string; hint?: string })
+        : null;
+    const looksLikeDb =
+      pg &&
+      (pg.code === "PGRST116" ||
+        /row-level security|violates foreign key|duplicate key|unique constraint|plaid_items/i.test(
+          `${pg.message} ${pg.details ?? ""}`
+        ));
 
     // Map Plaid/known errors to user-friendly messages
     let message: string;
@@ -252,11 +268,32 @@ export async function POST(request: NextRequest) {
     } else if (errorCode === "INSTITUTION_DOWN" || errorCode === "INSTITUTION_NOT_RESPONDING") {
       message = "The bank is temporarily unavailable. Try again in a few hours, or connect a different bank.";
       statusCode = 503;
+    } else if (
+      errorCode === "INVALID_PUBLIC_TOKEN" ||
+      errorCode === "INVALID_INPUT" ||
+      /invalid.*public.?token|already been used|expired/i.test(displayMessage ?? innerMessage)
+    ) {
+      message =
+        "This bank session expired or was already used. Please close the window and connect your bank again from the start.";
+      statusCode = 400;
     } else if (displayMessage) {
       message = displayMessage;
       statusCode = response?.status && response.status >= 400 && response.status < 600 ? response.status : 500;
+    } else if (looksLikeDb) {
+      message =
+        "We couldn't save your bank connection. Please try again in a moment. If it keeps failing, contact support with your trace ID.";
+      statusCode = 503;
+      errorCode = errorCode ?? "DATABASE_ERROR";
+    } else if (innerMessage && /Network Error|ECONNRESET|ETIMEDOUT|timeout/i.test(innerMessage)) {
+      message = "Connection to our bank partner timed out. Please try again.";
+      statusCode = 503;
+    } else if (innerMessage) {
+      // Don't tell users to "try another bank" for unknown infra errors
+      message = "We couldn't finish linking your bank. Please try again. If the problem continues, try a different browser or contact support.";
+      statusCode = 500;
     } else {
-      message = "Failed to connect. Please try another bank.";
+      message = "We couldn't finish linking your bank. Please try again.";
+      statusCode = 500;
     }
 
     console.error("[plaid][exchange-token] request_error", {
@@ -265,6 +302,10 @@ export async function POST(request: NextRequest) {
       error: message,
       error_code: errorCode ?? null,
       request_id: plaidRequestId ?? null,
+      inner_message: innerMessage || null,
+      http_status: response?.status ?? null,
+      supabase_code: pg?.code ?? null,
+      supabase_message: pg?.message?.slice(0, 500) ?? null,
       elapsed_ms: Date.now() - startedAt,
     });
     return NextResponse.json({ error: message, code: errorCode ?? undefined, trace_id: traceId }, { status: statusCode });
