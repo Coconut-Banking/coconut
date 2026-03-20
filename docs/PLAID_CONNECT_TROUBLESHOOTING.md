@@ -35,6 +35,23 @@ Message: “You already have this bank linked…”
 
 **Fix:** Settings → **Fix connection** (re-auth), don’t add the same institution again.
 
+### 6. `exchange-token` 500 after Link succeeds (encryption key)
+
+Symptoms: Plaid **Link completes** (`link_success` in logs) then **`/api/plaid/exchange-token`** returns **500**.  
+Vercel logs show: `inner_message: 'TOKEN_ENCRYPTION_KEY must be 256 bits (32 bytes)'`.
+
+**Cause:** `TOKEN_ENCRYPTION_KEY` is missing, too short, or not in the expected format. The server must encrypt Plaid access tokens before saving to the database.
+
+**Fix (Vercel / production):**
+
+1. Generate a key (pick one):
+   - `openssl rand -hex 32` → **64 hex characters** (paste as-is)
+   - or `openssl rand -base64 32` → paste the **full** base64 string
+2. In Vercel → Project → **Settings** → **Environment Variables**, set **`TOKEN_ENCRYPTION_KEY`** for **Production** (and Preview if you use it).
+3. **Redeploy** so the new env is applied.
+
+**Note:** Changing this key later will make **existing** encrypted tokens in the DB unreadable — users may need to **re-link** banks. Webhooks may log `item not found` until the item row exists (normal if exchange never saved).
+
 ## What to send when reporting
 
 - `trace_id` from the red error box on `/connect`
