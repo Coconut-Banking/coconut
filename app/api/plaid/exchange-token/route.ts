@@ -279,6 +279,11 @@ export async function POST(request: NextRequest) {
     } else if (displayMessage) {
       message = displayMessage;
       statusCode = response?.status && response.status >= 400 && response.status < 600 ? response.status : 500;
+    } else if (innerMessage.includes("TOKEN_ENCRYPTION_KEY")) {
+      message =
+        "Bank linking isn’t available right now because of a server configuration issue. Please try again later.";
+      statusCode = 503;
+      errorCode = errorCode ?? "TOKEN_ENCRYPTION_KEY_INVALID";
     } else if (looksLikeDb) {
       message =
         "We couldn't save your bank connection. Please try again in a moment. If it keeps failing, contact support with your trace ID.";
@@ -306,6 +311,9 @@ export async function POST(request: NextRequest) {
       http_status: response?.status ?? null,
       supabase_code: pg?.code ?? null,
       supabase_message: pg?.message?.slice(0, 500) ?? null,
+      owner_fix_hint: innerMessage.includes("TOKEN_ENCRYPTION_KEY")
+        ? "Set TOKEN_ENCRYPTION_KEY in Vercel to 64 hex chars from `openssl rand -hex 32` (see .env.example)"
+        : null,
       elapsed_ms: Date.now() - startedAt,
     });
     return NextResponse.json({ error: message, code: errorCode ?? undefined, trace_id: traceId }, { status: statusCode });
