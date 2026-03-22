@@ -128,7 +128,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {userMenuOpen && (
             <div className="absolute bottom-full left-3 right-3 mb-1 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
               <button
-                onClick={() => signOut(() => router.push("/"))}
+                type="button"
+                onClick={async () => {
+                  setUserMenuOpen(false);
+                  try {
+                    await signOut(() => {
+                      router.push("/");
+                      router.refresh();
+                    });
+                  } catch {
+                    router.push("/");
+                    router.refresh();
+                  }
+                }}
                 className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-lg"
               >
                 <LogOut size={14} />
@@ -269,6 +281,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <Smartphone size={18} />
                 Open in Coconut App
               </a>
+              <button
+                type="button"
+                onClick={async () => {
+                  setMobileNavOpen(false);
+                  try {
+                    await signOut(() => {
+                      router.push("/");
+                      router.refresh();
+                    });
+                  } catch {
+                    router.push("/");
+                    router.refresh();
+                  }
+                }}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-600 font-medium hover:bg-red-50 transition-colors mt-2 w-full text-left"
+              >
+                <LogOut size={18} />
+                Sign out
+              </button>
             </nav>
           </aside>
         </>
