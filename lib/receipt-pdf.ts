@@ -85,7 +85,7 @@ export function exportReceiptSplitPdf(
   y += 8;
   doc.setFontSize(9);
   doc.setTextColor(156, 163, 175);
-  doc.text("Split with Coconut — coconut-lemon.vercel.app", margin, y);
+  doc.text("Split with Coconut — coconut-app.dev", margin, y);
 
   doc.save(filename || `receipt-split-${Date.now()}.pdf`);
 }
