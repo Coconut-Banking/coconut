@@ -27,6 +27,8 @@ export interface SearchIntent {
   category: string | null;
   amount_gt: number | null;
   amount_lt: number | null;
+  /** "expense" = negative amounts (spending), "income" = positive (pay, earned, received) */
+  transaction_type: "expense" | "income" | "all";
 }
 
 // ─── Intent extraction ────────────────────────────────────────────────────────
@@ -50,10 +52,23 @@ function isPastMonthQuery(query: string): boolean {
   return /\b(?:past|last)\s+month\b/.test(q) && !/\bprevious\s+calendar\s+month\b/.test(q);
 }
 
-function defaultIntent(): SearchIntent {
+/** Returns true if query clearly asks about income/payments received. */
+function detectIncomeQuery(query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return (
+    /\b(?:how much |how much money )?(?:i |did i |have i )?(?:got |get |gotten )?paid\b/.test(q) ||
+    /\b(?:income|paycheck|salary|wage)s?\s+(?:from|at)\b/.test(q) ||
+    /\b(?:earned?|received?)\s+(?:from|at)\b/.test(q) ||
+    /\bpay(?:check|roll|ment)s?\s+(?:from|at)\b/.test(q) ||
+    /\b(?:direct\s+)?deposits?\s+(?:from|at)\b/.test(q)
+  );
+}
+
+function defaultIntent(query?: string): SearchIntent {
   const end = today();
   const start = new Date();
   start.setDate(start.getDate() - 90);
+  const transactionType = query && detectIncomeQuery(query) ? "income" : "expense";
   return {
     metric: "list",
     date_start: start.toISOString().split("T")[0],
@@ -63,6 +78,7 @@ function defaultIntent(): SearchIntent {
     category: null,
     amount_gt: null,
     amount_lt: null,
+    transaction_type: transactionType,
   };
 }
 
@@ -83,6 +99,7 @@ function validateIntent(raw: unknown): SearchIntent | null {
   const category = typeof r.category === "string" && r.category.toLowerCase() !== "null"
     ? r.category
     : null;
+  const txType = r.transaction_type === "income" ? "income" : r.transaction_type === "all" ? "all" : "expense";
   return {
     metric: r.metric as SearchIntent["metric"],
     date_start: r.date_start as string,
@@ -92,6 +109,7 @@ function validateIntent(raw: unknown): SearchIntent | null {
     category,
     amount_gt: typeof r.amount_gt === "number" ? r.amount_gt : null,
     amount_lt: typeof r.amount_lt === "number" ? r.amount_lt : null,
+    transaction_type: txType,
   };
 }
 
@@ -104,7 +122,7 @@ export async function extractIntent(
   query: string,
   merchantContext?: { merchants: Array<{ name: string; raw: string; category: string; count: number }> }
 ): Promise<SearchIntent> {
-  if (!openai) return defaultIntent();
+  if (!openai) return defaultIntent(query);
 
   const todayStr = today();
   const hasMerchants = merchantContext && merchantContext.merchants.length > 0;
@@ -144,10 +162,16 @@ Schema:
   "merchant_keywords": ["name1", "name2"] or null,
   "category": "PLAID_CATEGORY or null",
   "amount_gt": number or null,
-  "amount_lt": number or null
+  "amount_lt": number or null,
+  "transaction_type": "expense | income | all"
 }
 
-metric: sum (total spent), count (how many), list (show transactions), breakdown (by category), top_merchant (most visited), compare (current vs previous period), trend (monthly totals over time), max (single largest transaction), average (average per week/month), anomaly (unusual spending)
+metric: sum (total spent/received), count (how many), list (show transactions), breakdown (by category), top_merchant (most visited), compare (current vs previous period), trend (monthly totals over time), max (single largest transaction), average (average per week/month), anomaly (unusual spending)
+
+transaction_type:
+- "expense": User asks about spending, "how much I spent", "what did I pay for" → negative amounts
+- "income": User asks about PAYMENTS RECEIVED, "how much I got paid", "income from X", "earned from", "received from", "paycheck from" → positive amounts (INCOME, TRANSFER_IN)
+- "all": User asks about all transactions or unspecified
 
 Choosing merchant vs merchant_keywords vs category:
 
@@ -164,6 +188,7 @@ ${merchantKeywordsInstructions}
 Rules:
 - merchant, merchant_keywords, and category are mutually exclusive. Set only ONE (or none for breakdown).
 - NEVER use category "OTHER", "TRANSFER_OUT", "GENERAL_SERVICES", or "GENERAL_MERCHANDISE".
+- For "how much did I get paid from Databricks", "income from X", "paycheck from" → transaction_type: "income", merchant: "databricks" (or merchant_keywords with the employer name from user's list like "Databricks Inc Pay").
 - "coffee" is specific → merchant_keywords. "food" is broad → category.
 - "gas"/"fuel" is specific → merchant_keywords. "transportation" is broad → category.
 - If no date mentioned → always use last 90 days (date_start = 90 days ago, date_end = today). Do not use 30 days.
@@ -184,12 +209,12 @@ User query: "${query.trim()}"`;
       max_tokens: 1000,
     });
     const raw = completion.choices[0]?.message?.content;
-    if (!raw) return defaultIntent();
+    if (!raw) return defaultIntent(query);
     const parsed = validateIntent(JSON.parse(raw));
-    return parsed ?? defaultIntent();
+    return parsed ?? defaultIntent(query);
   } catch (e) {
     console.warn("[intent] extraction failed:", e);
-    return defaultIntent();
+    return defaultIntent(query);
   }
 }
 
@@ -325,9 +350,28 @@ function applyFilters(
     const sanitizedCategory = sanitizeFilterValue(intent.category.toUpperCase());
     b = b.ilike("primary_category", `%${sanitizedCategory}%`);
   }
-  if (intent.amount_gt !== null) b = b.lte("amount", -intent.amount_gt);
-  if (intent.amount_lt !== null) b = b.gte("amount", -intent.amount_lt);
+  // amount filters: expense = negative, income = positive
+  if (intent.amount_gt !== null) {
+    b = intent.transaction_type === "income"
+      ? b.gte("amount", intent.amount_gt)
+      : b.lte("amount", -intent.amount_gt);
+  }
+  if (intent.amount_lt !== null) {
+    b = intent.transaction_type === "income"
+      ? b.lte("amount", intent.amount_lt)
+      : b.gte("amount", -intent.amount_lt);
+  }
   return b as unknown as PromiseLike<{ data: unknown; error: unknown; count?: number }>;
+}
+
+/** Add amount sign filter: expense = negative, income = positive. */
+function addAmountSignFilter<T extends { lt: (...a: unknown[]) => T; gt: (...a: unknown[]) => T }>(
+  q: T,
+  intent: SearchIntent
+): T {
+  if (intent.transaction_type === "income") return q.gt("amount", 0) as T;
+  if (intent.transaction_type === "expense") return q.lt("amount", 0) as T;
+  return q;
 }
 
 async function runStructuredQuery(
@@ -342,11 +386,14 @@ async function runStructuredQuery(
       merchant: null as string | null,
       merchant_keywords: null as string[] | null,
       category: intent.category ?? "FOOD_AND_DRINK",
+      transaction_type: "expense" as const, // top_merchant is spending-focused
     };
+    let base = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+    );
+    base = addAmountSignFilter(base, intentForQuery) as typeof base;
     const { data, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }).order("id", { ascending: false }),
+      base.order("date", { ascending: false }).order("id", { ascending: false }),
       intentForQuery,
       clerkUserId
     );
@@ -374,11 +421,13 @@ async function runStructuredQuery(
   }
 
   if (intent.metric === "count") {
+    let countBase = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending",
+      { count: "exact" }
+    );
+    countBase = addAmountSignFilter(countBase, intent) as typeof countBase;
     const { data, count, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending",
-        { count: "exact" }
-      ).order("date", { ascending: false }).order("id", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
+      countBase.order("date", { ascending: false }).order("id", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
       intent,
       clerkUserId
     );
@@ -387,10 +436,12 @@ async function runStructuredQuery(
   }
 
   if (intent.metric === "sum") {
+    let sumBase = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+    );
+    sumBase = addAmountSignFilter(sumBase, intent) as typeof sumBase;
     const { data, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }).order("id", { ascending: false }),
+      sumBase.order("date", { ascending: false }).order("id", { ascending: false }),
       intent,
       clerkUserId
     );
@@ -401,10 +452,12 @@ async function runStructuredQuery(
   }
 
   if (intent.metric === "breakdown") {
+    let breakdownBase = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+    );
+    breakdownBase = addAmountSignFilter(breakdownBase, intent) as typeof breakdownBase;
     const { data, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }).order("id", { ascending: false }),
+      breakdownBase.order("date", { ascending: false }).order("id", { ascending: false }),
       intent,
       clerkUserId
     );
@@ -424,10 +477,12 @@ async function runStructuredQuery(
 
   // ── max: single largest transaction ──
   if (intent.metric === "max") {
+    let maxBase = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+    );
+    maxBase = addAmountSignFilter(maxBase, intent) as typeof maxBase;
     const { data, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("amount", { ascending: true }).limit(1),
+      maxBase.order("amount", { ascending: intent.transaction_type !== "income" }).limit(1),
       intent, clerkUserId
     );
     if (error) throw error;
@@ -471,10 +526,12 @@ async function runStructuredQuery(
 
   // ── trend: monthly totals over time ──
   if (intent.metric === "trend") {
+    let trendBase = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+    );
+    trendBase = addAmountSignFilter(trendBase, intent) as typeof trendBase;
     const { data, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: true }),
+      trendBase.order("date", { ascending: true }),
       intent, clerkUserId
     );
     if (error) throw error;
@@ -491,10 +548,12 @@ async function runStructuredQuery(
 
   // ── average: time-averaged spending ──
   if (intent.metric === "average") {
+    let avgBase = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+    );
+    avgBase = addAmountSignFilter(avgBase, intent) as typeof avgBase;
     const { data, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }),
+      avgBase.order("date", { ascending: false }),
       intent, clerkUserId
     );
     if (error) throw error;
@@ -519,10 +578,12 @@ async function runStructuredQuery(
 
   // ── anomaly: unusual spending (z-score > 2) ──
   if (intent.metric === "anomaly") {
+    let anomalyBase = db.from("transactions").select(
+      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+    );
+    anomalyBase = addAmountSignFilter(anomalyBase, intent) as typeof anomalyBase;
     const { data, error } = await applyFilters(
-      db.from("transactions").select(
-        "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-      ).lt("amount", 0).order("date", { ascending: false }).limit(2000),
+      anomalyBase.order("date", { ascending: false }).limit(2000),
       intent, clerkUserId
     );
     if (error) throw error;
@@ -549,10 +610,12 @@ async function runStructuredQuery(
   }
 
   // list (default)
+  let listBase = db.from("transactions").select(
+    "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+  );
+  listBase = addAmountSignFilter(listBase, intent) as typeof listBase;
   const { data, error } = await applyFilters(
-    db.from("transactions").select(
-      "id, plaid_transaction_id, merchant_name, raw_name, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
-    ).order("date", { ascending: false }).order("id", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
+    listBase.order("date", { ascending: false }).order("id", { ascending: false }).limit(SEARCH.RESULT_LIMIT),
     intent,
     clerkUserId
   );
@@ -1029,10 +1092,12 @@ function generateAnswer(
     : "";
 
   if (result.metric === "max") {
-    if (!result.transactions.length) return `No expenses found ${period}.`;
+    const isIncome = intent.transaction_type === "income";
+    if (!result.transactions.length) return `No ${isIncome ? "income" : "expenses"} found ${period}.`;
     const tx = result.transactions[0];
     const name = tx.merchant_name || tx.raw_name || "Unknown";
-    return `Your biggest expense ${period}: ${fmt(Math.abs(tx.amount))} at ${name} on ${tx.date}.`;
+    const label = isIncome ? "largest income" : "biggest expense";
+    return `Your ${label} ${period}: ${fmt(Math.abs(tx.amount))} ${isIncome ? "from" : "at"} ${name} on ${tx.date}.`;
   }
   if (result.metric === "compare") {
     const bd = result.breakdown ?? [];
@@ -1067,14 +1132,18 @@ function generateAnswer(
     return `${names} are tied (${tm[0].count} visit${tm[0].count === 1 ? "" : "s"} each)`;
   }
   if (result.metric === "sum") {
+    const isIncome = intent.transaction_type === "income";
+    const verb = isIncome ? "received" : "spent";
+    const noun = isIncome ? "income" : "expenses";
     if (!result.count) {
-      const friendly = subject ? `No ${subject} expenses ${period}.` : `No expenses found ${period}.`;
+      const friendly = subject ? `No ${subject} ${noun} ${period}.` : `No ${noun} found ${period}.`;
       return opts?.dateRelaxed
         ? `${friendly} Try a broader date range (e.g. "last 3 months").`
         : friendly;
     }
     const relaxedNote = opts?.dateRelaxed ? " (expanded date range)" : "";
-    return `You spent ${fmt(result.total ?? 0)} on ${subject} ${period}${relaxedNote} — ${result.count} transaction${result.count === 1 ? "" : "s"}.`;
+    const subjectPhrase = subject ? (isIncome ? ` from ${subject} ` : ` on ${subject} `) : " ";
+    return `You ${verb} ${fmt(result.total ?? 0)}${subjectPhrase}${period}${relaxedNote} — ${result.count} transaction${result.count === 1 ? "" : "s"}.`;
   }
   if (result.metric === "count") {
     return `You had ${result.count ?? 0} transaction${result.count === 1 ? "" : "s"} ${subject ? `at ${subject} ` : ""}${period}.`;
@@ -1197,6 +1266,12 @@ export async function search(
 
   let intent = await extractIntent(query, merchantContext);
 
+  // Override transaction_type when query clearly asks about income but LLM returned expense
+  if (detectIncomeQuery(query) && intent.transaction_type === "expense") {
+    intent = { ...intent, transaction_type: "income" };
+    console.log("[pipeline:nl] income query override: expense → income");
+  }
+
   // Override dates for "past month" / "last month" — simple: 1 month ago to today
   if (isPastMonthQuery(query)) {
     const range = getPastMonthRange();
@@ -1255,8 +1330,11 @@ export async function search(
         console.log("[pipeline:nl] STAGE 4 filter", { before: hybridTxs.length, after: filtered.length });
 
         const txs = filtered.length > 0 ? filtered : hybridTxs;
+        const isIncome = intent.transaction_type === "income";
         const total = intent.metric === "sum"
-          ? txs.filter((t) => t.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
+          ? txs
+              .filter((t) => (isIncome ? t.amount > 0 : t.amount < 0))
+              .reduce((s, r) => s + Math.abs(r.amount), 0)
           : null;
         structured = { metric: intent.metric, transactions: txs, total, count: txs.length, breakdown: null, topMerchants: null };
       } else {
@@ -1288,8 +1366,11 @@ export async function search(
         if (vectorResults.length > 0) {
           const filtered = await filterResultsWithLLM(query, vectorResults);
           const txs = filtered.length > 0 ? filtered : vectorResults;
+          const isIncome = intent.transaction_type === "income";
           const total = intent.metric === "sum"
-            ? txs.filter((t) => t.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
+            ? txs
+                .filter((t) => (isIncome ? t.amount > 0 : t.amount < 0))
+                .reduce((s, r) => s + Math.abs(r.amount), 0)
             : null;
           structured = { metric: intent.metric, transactions: txs, total, count: txs.length, breakdown: null, topMerchants: null };
           if (debug) {

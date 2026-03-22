@@ -172,11 +172,17 @@ function ConnectBankContent() {
 
     const isUpdateMode = searchParams.get("update") === "1";
     const newAccounts = searchParams.get("new_accounts") === "1";
+    const origin = typeof window !== "undefined" ? window.location.origin : null;
     fetch("/api/plaid/create-link-token", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trace_id: traceId || null, update: isUpdateMode, new_accounts: newAccounts }),
+      body: JSON.stringify({
+        trace_id: traceId || null,
+        update: isUpdateMode,
+        new_accounts: newAccounts,
+        ...(origin && { origin }),
+      }),
     })
       .then((res) => {
         if (res.status === 401) {

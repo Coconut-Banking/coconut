@@ -8,7 +8,14 @@ import { SYNC } from "@/lib/config";
 import { rateLimit } from "@/lib/rate-limit";
 import { NextRequest } from "next/server";
 
-type CreateLinkBody = { trace_id?: string; update?: boolean; new_accounts?: boolean; access_token?: string };
+type CreateLinkBody = {
+  trace_id?: string;
+  update?: boolean;
+  new_accounts?: boolean;
+  access_token?: string;
+  /** Optional client origin (e.g. window.location.origin) for redirect_uri when it differs from APP_URL */
+  origin?: string;
+};
 
 function getTraceId(maybeTraceId: unknown): string {
   if (typeof maybeTraceId === "string" && maybeTraceId.trim()) return maybeTraceId.trim();
@@ -55,6 +62,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Use redirect flow for OAuth banks (Chase, etc.) — fixes mobile "stuck" when popup fails
+  // redirect_uri must EXACTLY match Plaid Dashboard allowed URIs (see dashboard.plaid.com/developers/api)
   let baseUrl =
     process.env.APP_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
@@ -62,6 +70,32 @@ export async function POST(request: NextRequest) {
   if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
     baseUrl = `https://${baseUrl}`;
   }
+
+  // Allow client origin when it's from a known host — fixes Edge/Chrome when APP_URL differs from actual origin
+  const clientOrigin = typeof body.origin === "string" ? body.origin.trim() : null;
+  if (clientOrigin) {
+    try {
+      const url = new URL(clientOrigin);
+      const host = url.host.toLowerCase();
+      const envHosts: string[] = [];
+      if (process.env.APP_URL) {
+        const appUrl = new URL(process.env.APP_URL.startsWith("http") ? process.env.APP_URL : `https://${process.env.APP_URL}`);
+        envHosts.push(appUrl.host.toLowerCase());
+      }
+      if (process.env.VERCEL_URL) {
+        envHosts.push(`${process.env.VERCEL_URL.toLowerCase().replace(/^https?:\/\//, "")}`);
+      }
+      const isLocalhost = host.startsWith("localhost");
+      const isVercelPreview = /\.vercel\.app$/i.test(host);
+      const isAllowed = isLocalhost || envHosts.includes(host) || (isVercelPreview && process.env.VERCEL_URL);
+      if (isAllowed && (url.protocol === "https:" || isLocalhost)) {
+        baseUrl = url.origin;
+      }
+    } catch {
+      // Invalid origin — ignore, use env-based URL
+    }
+  }
+
   const base = baseUrl.replace(/\/$/, "");
   const redirectUri = `${base}/connect`;
   const webhookUrl = `${base}/api/plaid/webhook`;
@@ -173,12 +207,13 @@ export async function POST(request: NextRequest) {
     });
     const status =
       errorCode === "INVALID_REDIRECT_URI" || errorCode === "INVALID_WEBHOOK" ? 400 : 500;
+
     return NextResponse.json(
       {
         error: userMessage,
         trace_id: traceId,
         ...(errorCode && { error_code: errorCode }),
-        ...(process.env.NODE_ENV !== "production" && { _debug: debug }),
+        _debug: { ...debug, ...(plaidRequestId && { plaid_request_id: plaidRequestId }) },
       },
       { status }
     );
