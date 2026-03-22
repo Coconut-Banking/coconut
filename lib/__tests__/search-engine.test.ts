@@ -31,6 +31,7 @@ const mockOr = vi.fn().mockImplementation(() => mockChain);
 const mockChain = {
   select: vi.fn().mockReturnThis(),
   lt: vi.fn().mockReturnThis(),
+  gt: vi.fn().mockReturnThis(),
   order: vi.fn().mockReturnThis(),
   limit: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
@@ -119,6 +120,16 @@ describe("search-engine", () => {
       expect(intent.merchant).toBeNull();
       expect(intent.category).toBe("FOOD_AND_DRINK");
       expect(intent.amount_lt).toBeNull();
+    });
+
+    it("returns income transaction_type for 'how much I got paid' queries when no API key", async () => {
+      const origKey = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = "";
+      vi.resetModules();
+      const { extractIntent } = await import("../search-engine");
+      const intent = await extractIntent("how much I got paid from Databricks");
+      process.env.OPENAI_API_KEY = origKey;
+      expect(intent.transaction_type).toBe("income");
     });
 
     it("validates merchant string for rideshare query", async () => {
