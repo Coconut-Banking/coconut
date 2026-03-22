@@ -21,7 +21,7 @@ Symptoms: “Your session isn’t ready yet” / `create-link-token returned 401
 OAuth banks need an exact redirect URI registered in the **Plaid Dashboard** for your environment:
 
 - Production: `https://<your-production-domain>/connect`  
-  (must match `APP_URL` on Vercel, e.g. `https://coconut-lemon.vercel.app` → `https://coconut-lemon.vercel.app/connect`)
+  (must match `APP_URL` on Vercel, e.g. `https://coconut-app.dev` → `https://coconut-app.dev/connect`)
 
 **Fix:** Plaid Dashboard → Team → **API** → **Allowed redirect URIs** → add the URI above.
 

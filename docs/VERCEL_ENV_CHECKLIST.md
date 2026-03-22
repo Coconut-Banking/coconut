@@ -9,7 +9,7 @@ Add these to your **coconut** project in Vercel → Settings → Environment Var
 | `PLAID_ENV` | `production` | ❌ **ADD THIS** — without it, backend uses sandbox and ignores PLAID_PRODUCTION_SECRET |
 | `PLAID_CLIENT_ID` | (from Plaid Dashboard) | ✓ |
 | `PLAID_PRODUCTION_SECRET` | (starts with `pls_production_`) | ✓ |
-| `APP_URL` | `https://coconut-lemon.vercel.app` | Add if missing — needed for Plaid redirect URI |
+| `APP_URL` | `https://coconut-app.dev` | Add if missing — needed for Plaid redirect URI |
 
 ## Auth + DB (you have these)
 
