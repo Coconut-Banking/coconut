@@ -126,7 +126,7 @@ export async function extractIntent(
   const merchantKeywordsInstructions = hasMerchants
     ? `2. "merchant_keywords" (array of EXACT merchant names from the list below): Use when the query describes an ACTIVITY or CONCEPT. Pick ALL merchant names from the user's data that match the concept.
    ⚠️ Pick EVERY matching merchant, not just one. "gas" should include ALL gas stations (Shell, Esso, Petro-Canada, Macewen, Pioneer, etc), not just one.
-   Examples: "rideshare" → pick ["Uber"] (NOT "Uber Eats"), "gas" → pick ALL gas stations from the list, "coffee" → pick ALL coffee shops
+   Examples: "rideshare" → pick ["Uber", "Lyft"] (NOT "Uber Eats"), "gas" → pick ALL gas stations from the list, "coffee" → pick ALL coffee shops
    IMPORTANT: Return the EXACT merchant name strings from the list. Do NOT return concept keywords — return actual merchant names.`
     : `2. "merchant_keywords" (array of concept terms): Use when the query describes an ACTIVITY or CONCEPT. Set to 1-3 short descriptive terms.
    Examples: "haircuts" → ["barber","haircut","salon"], "gas" → ["gas","fuel","petro"], "coffee" → ["coffee","cafe"]`;
