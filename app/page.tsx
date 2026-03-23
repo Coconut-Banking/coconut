@@ -17,9 +17,6 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
-import { AppStoreBadge } from "@/components/landing/AppStoreBadge";
-
-const IOS_APP_URL = process.env.NEXT_PUBLIC_IOS_APP_URL ?? "";
 
 const gridStyle = {
   backgroundImage: `linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px)`,
@@ -66,16 +63,16 @@ function TypewriterSearchHero() {
       onBlur={() => setFocused(false)}
       className={`flex items-center gap-3 rounded-2xl border px-5 py-4 transition-all duration-300 ${
         focused
-          ? "border-white/[0.14] bg-white/[0.06] shadow-[0_0_0_1px_rgba(61,142,98,0.25)]"
+          ? "border-white/[0.14] bg-white/[0.06] shadow-[0_0_0_1px_rgba(78,116,217,0.35)]"
           : "border-white/[0.08] bg-white/[0.035]"
       }`}
     >
-      <Sparkles size={18} className="shrink-0 text-[#6DD9A4]" strokeWidth={1.75} />
+      <Sparkles size={18} className="shrink-0 text-[#8DAFFF]" strokeWidth={1.75} />
       <span className="min-h-[1.5rem] flex flex-1 items-center text-left text-[15px] leading-snug tracking-tight text-white/88">
         {displayed}
-        <span className="ml-0.5 inline-block h-5 w-px animate-pulse bg-[#6DD9A4]" />
+        <span className="ml-0.5 inline-block h-5 w-px animate-pulse bg-[#8DAFFF]" />
       </span>
-      <span className="shrink-0 rounded-xl bg-[#3D8E62] px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#3D8E62]/30">
+      <span className="shrink-0 rounded-xl bg-[#4E74D9] px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#4E74D9]/30">
         Search
       </span>
     </div>
@@ -132,7 +129,7 @@ function CleanupDemo() {
           </span>
           {revealed && (
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 400 }}>
-              <Check size={14} className="shrink-0 text-[#3D8E62]" strokeWidth={2.5} />
+              <Check size={14} className="shrink-0 text-[#4E74D9]" strokeWidth={2.5} />
             </motion.div>
           )}
         </motion.div>
@@ -155,7 +152,7 @@ function SplitDemo() {
           </div>
         </div>
         <div className="flex -space-x-2">
-          {["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B"].map((c, i) => (
+          {["#5B7FE4", "#4A6CF7", "#E8507A", "#F59E0B"].map((c, i) => (
             <div
               key={i}
               className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold text-white"
@@ -183,7 +180,7 @@ function SplitDemo() {
               <span className="font-medium text-neutral-700">{p.name}</span>
             </div>
             <span
-              className={`text-sm font-semibold tabular-nums ${p.owes > 0 ? "text-[#3D8E62]" : "text-red-500"}`}
+              className={`text-sm font-semibold tabular-nums ${p.owes > 0 ? "text-[#2ECC8A]" : "text-red-500"}`}
             >
               {p.owes > 0 ? `owes $${p.owes.toFixed(2)}` : `you owe $${Math.abs(p.owes).toFixed(2)}`}
             </span>
@@ -196,8 +193,8 @@ function SplitDemo() {
           onClick={() => setSettled(!settled)}
           className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${
             settled
-              ? "flex items-center justify-center gap-2 bg-[#EEF7F2] text-[#3D8E62]"
-              : "bg-[#3D8E62] text-white hover:bg-[#2D7A52]"
+              ? "flex items-center justify-center gap-2 bg-[#EAF0FF] text-[#4E74D9]"
+              : "bg-[#4E74D9] text-white hover:bg-[#3E5DB0]"
           }`}
         >
           {settled ? (
@@ -226,7 +223,7 @@ function SearchAnswerMock() {
     >
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/35">Answer</p>
       <p className="font-display mt-2 text-xl font-semibold tracking-tight text-white">Coffee · past month</p>
-      <p className="font-display mt-3 text-5xl font-bold tracking-tight text-[#8EECC0]">$47.20</p>
+      <p className="font-display mt-3 text-5xl font-bold tracking-tight text-[#9BB6FF]">$47.20</p>
       <p className="mt-4 text-sm leading-relaxed text-white/45">6 transactions · from your linked accounts</p>
     </motion.div>
   );
@@ -240,7 +237,7 @@ function TapToPayShowcase() {
       viewport={{ once: true }}
       className="relative mx-auto w-full max-w-[270px]"
     >
-      <div className="absolute -inset-8 rounded-[2rem] bg-[#3D8E62]/[0.12] blur-3xl" />
+      <div className="absolute -inset-8 rounded-[2rem] bg-[#4E74D9]/[0.16] blur-3xl" />
       <div className="relative rounded-[1.85rem] border-[2.5px] border-neutral-800 bg-neutral-950 p-2 shadow-2xl shadow-black/50">
         <div className="absolute left-1/2 top-0 z-10 h-[18px] w-[88px] -translate-x-1/2 rounded-b-xl bg-black" />
         <div className="flex min-h-[380px] flex-col overflow-hidden rounded-[1.35rem] bg-gradient-to-b from-[#161816] to-[#0a0b0a] px-5 pb-6 pt-8">
@@ -256,7 +253,7 @@ function TapToPayShowcase() {
               {[0, 1, 2].map((i) => (
                 <motion.div
                   key={i}
-                  className="absolute rounded-full border-2 border-[#6DD9A4]/40"
+                  className="absolute rounded-full border-2 border-[#8DAFFF]/40"
                   initial={{ width: 52, height: 52, opacity: 0.5 }}
                   animate={{
                     width: [52, 118],
@@ -271,14 +268,14 @@ function TapToPayShowcase() {
                   }}
                 />
               ))}
-              <div className="relative z-10 flex h-[60px] w-[60px] items-center justify-center rounded-2xl bg-[#3D8E62] shadow-lg shadow-[#3D8E62]/35">
+              <div className="relative z-10 flex h-[60px] w-[60px] items-center justify-center rounded-2xl bg-[#4E74D9] shadow-lg shadow-[#4E74D9]/35">
                 <Nfc className="h-8 w-8 text-white" strokeWidth={1.75} />
               </div>
             </div>
             <p className="mt-5 text-center text-sm text-white/60">Tap to Pay on iPhone</p>
           </div>
           <div className="mt-auto border-t border-white/[0.06] pt-4">
-            <div className="flex h-11 items-center justify-center rounded-xl bg-[#3D8E62] text-sm font-semibold text-white">
+            <div className="flex h-11 items-center justify-center rounded-xl bg-[#4E74D9] text-sm font-semibold text-white">
               Accept payment
             </div>
             <p className="mt-2 text-center text-[10px] text-white/25">Stripe · sellers</p>
@@ -326,7 +323,6 @@ function BrandMark({ className }: { className?: string }) {
 
 export default function LandingPage() {
   const router = useRouter();
-  const appHref = IOS_APP_URL || "/login";
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -345,16 +341,9 @@ export default function LandingPage() {
             >
               Sign in
             </button>
-            <a
-              href={appHref}
-              target={IOS_APP_URL ? "_blank" : undefined}
-              rel={IOS_APP_URL ? "noopener noreferrer" : undefined}
-              className="inline-flex"
-            >
-              <span className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-neutral-900 shadow-md transition hover:bg-neutral-100 sm:px-4 sm:py-2.5 sm:text-sm sm:font-semibold">
-                App Store
-              </span>
-            </a>
+            <span className="inline-flex rounded-xl border border-[#6B7EA8] bg-[#1A2333] px-3 py-2 text-xs font-semibold text-[#C9D5F0] sm:px-4 sm:py-2.5 sm:text-sm">
+              App Store · Coming soon
+            </span>
             <button
               type="button"
               onClick={() => router.push("/connect")}
@@ -369,27 +358,27 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="relative overflow-hidden pt-16">
         <div className="pointer-events-none absolute inset-0" style={gridStyle} />
-        <div className="pointer-events-none absolute left-1/2 top-0 h-[min(520px,70vh)] w-[min(900px,140%)] -translate-x-1/2 rounded-full bg-[#3D8E62]/[0.09] blur-[100px]" />
+        <div className="pointer-events-none absolute left-1/2 top-0 h-[min(520px,70vh)] w-[min(900px,140%)] -translate-x-1/2 rounded-full bg-[#4E74D9]/[0.16] blur-[100px]" />
 
         <div className="relative mx-auto max-w-6xl px-5 pb-20 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:pb-28 lg:pt-24">
           <div className="grid items-start gap-16 lg:grid-cols-2 lg:gap-20">
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }}>
-              <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#3D8E62]/35 bg-[#3D8E62]/10 px-4 py-1.5 text-xs font-medium tracking-wide text-[#8EECC0]">
-                <span className="text-[#6DD9A4]">#</span>
-                Search your money · split with friends · bank in sync
+              <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#4E74D9]/35 bg-[#4E74D9]/12 px-4 py-1.5 text-xs font-medium tracking-wide text-[#BFD0FF]">
+                <span className="text-[#8DAFFF]">#</span>
+                Financial clarity for shared life
               </p>
 
               <h1 className="font-display text-[2.35rem] font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-[3.25rem]">
                 Your money,
                 <br />
-                <span className="bg-gradient-to-r from-[#a8f0c8] to-[#3D8E62] bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-[#C7D5FF] to-[#4E74D9] bg-clip-text text-transparent">
                   cleaned up.
                 </span>
               </h1>
 
-              <p className="mt-6 max-w-lg text-base leading-relaxed text-white/48 sm:text-[17px]">
-                Coconut lives on your iPhone: search spending in plain English, split trips and dinners, and settle
-                without spreadsheets. Link your bank in the app — or use the web link below only to connect accounts.
+              <p className="mt-6 max-w-lg text-base leading-relaxed text-white/62 sm:text-[17px]">
+                Coconut gives you one reliable ledger for personal + shared money: linked bank transactions, receipt-backed
+                splits, and clear balances. Built for trust first, not gimmicks.
               </p>
 
               <div className="mt-10 max-w-xl">
@@ -397,7 +386,9 @@ export default function LandingPage() {
               </div>
 
               <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
-                <AppStoreBadge href={appHref} />
+                <span className="inline-flex items-center justify-center rounded-2xl border border-[#6B7EA8] bg-[#1A2333] px-6 py-3.5 text-sm font-semibold text-[#C9D5F0]">
+                  App Store coming soon
+                </span>
                 <button
                   type="button"
                   onClick={() => router.push("/connect")}
@@ -407,25 +398,19 @@ export default function LandingPage() {
                   Connect bank on web
                 </button>
               </div>
-              {!IOS_APP_URL && (
-                <p className="mt-3 max-w-md text-xs text-white/30">
-                  Set <code className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[10px]">NEXT_PUBLIC_IOS_APP_URL</code>{" "}
-                  to your App Store or TestFlight link for a direct download.
-                </p>
-              )}
 
-              <div className="mt-10 flex flex-wrap gap-x-8 gap-y-2 text-xs font-medium text-white/32">
+              <div className="mt-10 flex flex-wrap gap-x-8 gap-y-2 text-xs font-medium text-white/48">
                 <span className="flex items-center gap-2">
-                  <Shield className="h-3.5 w-3.5 text-[#6DD9A4]" strokeWidth={2} />
-                  256-bit encryption
+                  <Shield className="h-3.5 w-3.5 text-[#8DAFFF]" strokeWidth={2} />
+                  256-bit encryption in transit
                 </span>
                 <span className="flex items-center gap-2">
-                  <Lock className="h-3.5 w-3.5 text-[#6DD9A4]" strokeWidth={2} />
+                  <Lock className="h-3.5 w-3.5 text-[#8DAFFF]" strokeWidth={2} />
                   Read-only bank access
                 </span>
                 <span className="flex items-center gap-2">
-                  <Check className="h-3.5 w-3.5 text-[#6DD9A4]" strokeWidth={2} />
-                  No credential storage
+                  <Check className="h-3.5 w-3.5 text-[#8DAFFF]" strokeWidth={2} />
+                  No credential storage on Coconut
                 </span>
               </div>
             </motion.div>
@@ -436,7 +421,7 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.06 }}
               className="lg:pt-6"
             >
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6DD9A4]/90">Settle without the chaos</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#9BB6FF]">Settle without the chaos</p>
               <h2 className="font-display mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
                 Shared trips &amp; dinners, one honest ledger
               </h2>
@@ -450,7 +435,7 @@ export default function LandingPage() {
                 {settleBenefits.map(({ icon: Icon, title, body }) => (
                   <li key={title} className="flex gap-4 text-sm text-white/50">
                     <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/[0.06]">
-                      <Icon className="h-[18px] w-[18px] text-[#6DD9A4]" strokeWidth={2} />
+                      <Icon className="h-[18px] w-[18px] text-[#8DAFFF]" strokeWidth={2} />
                     </span>
                     <span>
                       <span className="font-semibold text-white/90">{title}</span>
@@ -511,8 +496,8 @@ export default function LandingPage() {
               className="rounded-2xl border border-neutral-200/80 bg-white p-8 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.12)]"
             >
               <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EEF7F2]">
-                  <Building2 className="h-5 w-5 text-[#3D8E62]" strokeWidth={2} />
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EAF0FF]">
+                  <Building2 className="h-5 w-5 text-[#4E74D9]" strokeWidth={2} />
                 </div>
                 <span className="text-xs font-bold uppercase tracking-[0.15em] text-neutral-400">In the app</span>
               </div>
@@ -537,7 +522,7 @@ export default function LandingPage() {
               <TapToPayShowcase />
             </div>
             <div className="order-1 lg:order-2">
-              <p className="inline-flex items-center gap-2 rounded-full border border-[#3D8E62]/30 bg-[#3D8E62]/10 px-3 py-1 text-xs font-semibold text-[#8EECC0]">
+              <p className="inline-flex items-center gap-2 rounded-full border border-[#4E74D9]/30 bg-[#4E74D9]/12 px-3 py-1 text-xs font-semibold text-[#BFD0FF]">
                 <Nfc className="h-3.5 w-3.5" />
                 Sellers &amp; side hustles
               </p>
@@ -549,11 +534,11 @@ export default function LandingPage() {
               </p>
               <ul className="mt-8 space-y-4 text-sm text-white/55">
                 <li className="flex gap-3">
-                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#6DD9A4]" strokeWidth={2.5} />
+                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#8DAFFF]" strokeWidth={2.5} />
                   Cards and Apple Pay — customer taps to your phone
                 </li>
                 <li className="flex gap-3">
-                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#6DD9A4]" strokeWidth={2.5} />
+                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#8DAFFF]" strokeWidth={2.5} />
                   Optional alongside linked banks and group settling
                 </li>
               </ul>
@@ -572,7 +557,9 @@ export default function LandingPage() {
             The product is the app — download to search, split, link banks, and use Tap to Pay when you need it.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <AppStoreBadge href={appHref} />
+            <span className="inline-flex items-center justify-center rounded-2xl border border-[#6B7EA8] bg-[#1A2333] px-6 py-3.5 text-sm font-semibold text-[#C9D5F0]">
+              App Store coming soon
+            </span>
             <button
               type="button"
               onClick={() => router.push("/connect")}
@@ -597,15 +584,10 @@ export default function LandingPage() {
               </button>
             ))}
           </div>
-          <a
-            href={appHref}
-            target={IOS_APP_URL ? "_blank" : undefined}
-            rel={IOS_APP_URL ? "noopener noreferrer" : undefined}
-            className="flex items-center gap-2 text-sm font-medium text-white/45 transition hover:text-white/70"
-          >
+          <span className="flex items-center gap-2 text-sm font-medium text-white/45">
             <Smartphone className="h-4 w-4" />
-            App Store
-          </a>
+            App Store · Coming soon
+          </span>
         </div>
       </footer>
     </div>
