@@ -21,6 +21,22 @@ describe("detectMerchantType", () => {
     expect(detectMerchantType("no-reply@doordash.com", "Your DoorDash order")).toBe("food_delivery");
   });
 
+  it("detects grocery delivery services", () => {
+    expect(detectMerchantType("no-reply@instacart.com", "Your Instacart order")).toBe("food_delivery");
+    expect(detectMerchantType("noreply@gopuff.com", "Your Gopuff receipt")).toBe("food_delivery");
+    expect(detectMerchantType("no-reply@shipt.com", "Your Shipt delivery")).toBe("food_delivery");
+    expect(detectMerchantType("noreply@cornershopapp.com", "Order summary")).toBe("food_delivery");
+  });
+
+  it("detects other food delivery platforms", () => {
+    expect(detectMerchantType("no-reply@grubhub.com", "Order confirmation")).toBe("food_delivery");
+    expect(detectMerchantType("noreply@seamless.com", "Your Seamless order")).toBe("food_delivery");
+    expect(detectMerchantType("orders@trycaviar.com", "Receipt")).toBe("food_delivery");
+    expect(detectMerchantType("noreply@fantuan.com", "Your order")).toBe("food_delivery");
+    expect(detectMerchantType("no-reply@chowbus.com", "Order receipt")).toBe("food_delivery");
+    expect(detectMerchantType("no-reply@skipthedishes.com", "Your SkipTheDishes order")).toBe("food_delivery");
+  });
+
   it("detects Amazon as ecommerce", () => {
     expect(detectMerchantType("ship-confirm@amazon.com", "Ordered: AirPods Pro")).toBe("ecommerce");
     expect(detectMerchantType("auto-confirm@amazon.ca", "Ordered: USB Cable")).toBe("ecommerce");

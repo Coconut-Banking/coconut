@@ -38,7 +38,7 @@ export interface RideshareDetails {
 }
 
 export interface FoodDeliveryDetails {
-  provider: "uber_eats" | "doordash" | "grubhub" | "instacart" | "skip";
+  provider: "uber_eats" | "doordash" | "grubhub" | "instacart" | "skip" | "gopuff" | "shipt" | "cornershop" | "seamless" | "caviar" | "fantuan" | "chowbus" | "other";
   restaurant_name: string;
   delivery_address?: string;
   delivery_fee?: number;
@@ -119,6 +119,34 @@ const MERCHANT_PATTERNS: MerchantPattern[] = [
   {
     type: "food_delivery",
     domains: ["skipthedishes.com"],
+  },
+  {
+    type: "food_delivery",
+    domains: ["gopuff.com"],
+  },
+  {
+    type: "food_delivery",
+    domains: ["shipt.com"],
+  },
+  {
+    type: "food_delivery",
+    domains: ["cornershopapp.com"],
+  },
+  {
+    type: "food_delivery",
+    domains: ["seamless.com"],
+  },
+  {
+    type: "food_delivery",
+    domains: ["trycaviar.com"],
+  },
+  {
+    type: "food_delivery",
+    domains: ["fantuan.com", "fantuanorder.com"],
+  },
+  {
+    type: "food_delivery",
+    domains: ["chowbus.com"],
   },
   // E-commerce
   {
@@ -253,16 +281,21 @@ Schema:
   "line_items": []
 }`;
 
-const FOOD_DELIVERY_PROMPT = `Extract food delivery receipt details from this email. Return ONLY valid JSON.
+const FOOD_DELIVERY_PROMPT = `Extract food or grocery delivery receipt details from this email. Return ONLY valid JSON.
 
-If this is NOT a food order receipt, return {"not_receipt": true}.
+If this is NOT a food/grocery order receipt, return {"not_receipt": true}.
+
+This covers ALL food and grocery delivery platforms:
+- Restaurant delivery: Uber Eats, DoorDash, Grubhub, Seamless, Caviar, SkipTheDishes, Fantuan, Chowbus
+- Grocery delivery: Instacart, Shipt, Cornershop, Gopuff
+- Any similar food/grocery delivery service
 
 Extract:
-- merchant: the delivery platform (e.g. "Uber Eats", "DoorDash", "Grubhub", "Instacart", "SkipTheDishes")
-- restaurant_name: the restaurant or store name the food was ordered from
+- merchant: the delivery platform (e.g. "Uber Eats", "DoorDash", "Instacart", "Gopuff", "Shipt")
+- restaurant_name: the restaurant OR grocery store name the order was from (e.g. "Costco" for Instacart, "McDonald's" for Uber Eats)
 - order_date: YYYY-MM-DD
 - total_amount: total charged (number)
-- subtotal: food subtotal before fees/tax (number or null)
+- subtotal: item subtotal before fees/tax (number or null)
 - tax: tax amount (number or null)
 - delivery_fee: delivery fee (number or null)
 - service_fee: service/platform fee (number or null)
@@ -270,8 +303,16 @@ Extract:
 - discount: any discount or promo applied (number or null)
 - delivery_address: delivery address if shown, or null
 - order_number: order/confirmation number or null
-- line_items: array of food items ordered:
-  [{"name": "Big Mac Combo", "quantity": 1, "unit_price": 12.99, "total": 12.99, "category": "FOOD_AND_DRINK"}]
+- line_items: array of EVERY item ordered — for groceries include exact product names and quantities:
+  [{"name": "Organic Bananas (bunch)", "quantity": 1, "unit_price": 1.99, "total": 1.99, "category": "GROCERIES"}]
+
+Category guide for line items:
+- Restaurant food / prepared meals = FOOD_AND_DRINK
+- Grocery items (produce, dairy, meat, pantry, frozen) = GROCERIES
+- Alcohol / beer / wine = FOOD_AND_DRINK
+- Household supplies, cleaning products = HOUSEHOLD
+- Personal care, toiletries = PERSONAL_CARE
+- Pet food / supplies = OTHER
 
 Schema:
 {
@@ -451,10 +492,18 @@ export function extractMerchantDetails(
     case "food_delivery": {
       const name = String(parsed.merchant ?? "").toLowerCase();
       const provider = name.includes("doordash") ? "doordash"
+        : name.includes("caviar") ? "caviar"
         : name.includes("grubhub") ? "grubhub"
+        : name.includes("seamless") ? "seamless"
         : name.includes("instacart") ? "instacart"
         : name.includes("skip") ? "skip"
-        : "uber_eats";
+        : name.includes("gopuff") ? "gopuff"
+        : name.includes("shipt") ? "shipt"
+        : name.includes("cornershop") ? "cornershop"
+        : name.includes("fantuan") ? "fantuan"
+        : name.includes("chowbus") ? "chowbus"
+        : name.includes("uber") ? "uber_eats"
+        : "other";
       return {
         provider,
         restaurant_name: String(parsed.restaurant_name ?? parsed.merchant ?? ""),
