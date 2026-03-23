@@ -16,6 +16,10 @@ import {
   Share2,
   Zap,
   FileText,
+  Car,
+  UtensilsCrossed,
+  ShoppingBag,
+  CreditCard,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -99,6 +103,8 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
     tax?: number;
     date?: string;
     gmail_message_id?: string;
+    merchant_type?: string;
+    merchant_details?: Record<string, unknown>;
   } | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
 
@@ -321,32 +327,171 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
           {tx.hasReceipt && (
             <div className="px-6 py-4 space-y-3 border-b border-gray-100">
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText size={12} className="text-amber-500" />
-                Receipt Items
+                {receipt?.merchant_type === "rideshare" ? (
+                  <><Car size={12} className="text-blue-500" /> Ride Details</>
+                ) : receipt?.merchant_type === "food_delivery" ? (
+                  <><UtensilsCrossed size={12} className="text-orange-500" /> Order Details</>
+                ) : receipt?.merchant_type === "ecommerce" ? (
+                  <><ShoppingBag size={12} className="text-purple-500" /> Order Items</>
+                ) : receipt?.merchant_type === "saas" ? (
+                  <><CreditCard size={12} className="text-indigo-500" /> Subscription</>
+                ) : (
+                  <><FileText size={12} className="text-amber-500" /> Receipt Items</>
+                )}
               </h4>
               {receiptLoading ? (
                 <div className="text-xs text-gray-400">Loading receipt...</div>
-              ) : receipt?.line_items?.length ? (
+              ) : receipt ? (
                 <>
-                  <div className="space-y-2">
-                    {receipt.line_items.slice(0, 10).map((item, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm">
-                        <div className="flex-1 min-w-0">
-                          <span className="text-gray-700">{item.name}</span>
-                          {item.quantity && item.quantity > 1 && (
-                            <span className="text-gray-400 ml-1">&times;{item.quantity}</span>
-                          )}
+                  {/* Rideshare: map + pickup → dropoff route */}
+                  {receipt.merchant_type === "rideshare" && receipt.merchant_details && (
+                    <div className="space-y-3">
+                      {/* Map image from the email (Uber/Lyft embed a static map) */}
+                      {receipt.merchant_details.map_url ? (
+                        <div className="rounded-xl overflow-hidden border border-gray-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={String(receipt.merchant_details.map_url)}
+                            alt="Trip route map"
+                            className="w-full h-36 object-cover"
+                          />
                         </div>
-                        <span className="text-gray-900 font-medium ml-3 shrink-0">
-                          ${(item.price ?? 0).toFixed(2)}
-                        </span>
+                      ) : null}
+                      <div className="flex items-start gap-3">
+                        <div className="flex flex-col items-center mt-1">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                          <div className="w-px h-8 bg-gray-200" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                        </div>
+                        <div className="flex-1 space-y-3">
+                          <div>
+                            <div className="text-xs text-gray-400">Pickup</div>
+                            <div className="text-sm text-gray-800">{String(receipt.merchant_details.pickup || "—")}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-400">Dropoff</div>
+                            <div className="text-sm text-gray-800">{String(receipt.merchant_details.dropoff || "—")}</div>
+                          </div>
+                        </div>
                       </div>
-                    ))}
-                    {receipt.line_items.length > 10 && (
-                      <div className="text-xs text-gray-400">+{receipt.line_items.length - 10} more items</div>
-                    )}
-                  </div>
-                  {(receipt.subtotal || receipt.tax) && (
+                      <div className="flex gap-4 text-xs text-gray-500">
+                        {receipt.merchant_details.distance ? <span>{String(receipt.merchant_details.distance)}</span> : null}
+                        {receipt.merchant_details.duration ? <span>{String(receipt.merchant_details.duration)}</span> : null}
+                        {receipt.merchant_details.driver_name ? <span>{String(receipt.merchant_details.driver_name)}</span> : null}
+                        {receipt.merchant_details.vehicle ? <span>{String(receipt.merchant_details.vehicle)}</span> : null}
+                      </div>
+                      {receipt.merchant_details.fare_breakdown && typeof receipt.merchant_details.fare_breakdown === "object" ? (
+                        <div className="pt-2 border-t border-gray-100 space-y-1">
+                          {Object.entries(receipt.merchant_details.fare_breakdown as Record<string, number>).map(([key, val]) => (
+                            <div key={key} className="flex items-center justify-between text-xs text-gray-500">
+                              <span>{key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</span>
+                              <span>${Number(val).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* Food delivery: restaurant name + items */}
+                  {receipt.merchant_type === "food_delivery" && receipt.merchant_details && (
+                    <div className="mb-2">
+                      <div className="text-sm font-medium text-gray-800">
+                        {String(receipt.merchant_details.restaurant_name || receipt.merchant)}
+                      </div>
+                      {receipt.merchant_details.delivery_address ? (
+                        <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                          <MapPin size={10} /> {String(receipt.merchant_details.delivery_address)}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* SaaS: plan details */}
+                  {receipt.merchant_type === "saas" && receipt.merchant_details ? (
+                    <div className="space-y-1.5 mb-2">
+                      {receipt.merchant_details.plan_name ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Plan</span>
+                          <span className="text-gray-800 font-medium">{String(receipt.merchant_details.plan_name)}</span>
+                        </div>
+                      ) : null}
+                      {receipt.merchant_details.billing_period ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Billing</span>
+                          <span className="text-gray-700">{String(receipt.merchant_details.billing_period)}</span>
+                        </div>
+                      ) : null}
+                      {receipt.merchant_details.next_billing_date ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Next charge</span>
+                          <span className="text-gray-700">{String(receipt.merchant_details.next_billing_date)}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* Line items (for all types except rideshare) */}
+                  {receipt.merchant_type !== "rideshare" && receipt.line_items?.length ? (
+                    <>
+                      <div className="space-y-2">
+                        {receipt.line_items.slice(0, 10).map((item, i) => (
+                          <div key={i} className="flex items-center justify-between text-sm">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-gray-700">{item.name}</span>
+                              {item.quantity && item.quantity > 1 && (
+                                <span className="text-gray-400 ml-1">&times;{item.quantity}</span>
+                              )}
+                            </div>
+                            <span className="text-gray-900 font-medium ml-3 shrink-0">
+                              ${(item.price ?? 0).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                        {receipt.line_items.length > 10 && (
+                          <div className="text-xs text-gray-400">+{receipt.line_items.length - 10} more items</div>
+                        )}
+                      </div>
+                    </>
+                  ) : receipt.merchant_type !== "rideshare" && receipt.merchant_type !== "saas" ? (
+                    <div className="text-xs text-gray-400">Receipt matched but no line items available</div>
+                  ) : null}
+
+                  {/* Fee breakdown for food delivery */}
+                  {receipt.merchant_type === "food_delivery" && receipt.merchant_details ? (() => {
+                    const d = receipt.merchant_details;
+                    return (
+                      <div className="pt-2 border-t border-gray-100 space-y-1">
+                        {d.delivery_fee != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Delivery fee</span>
+                            <span>${Number(d.delivery_fee).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.service_fee != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Service fee</span>
+                            <span>${Number(d.service_fee).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.tip != null && Number(d.tip) > 0 ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Tip</span>
+                            <span>${Number(d.tip).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.discount != null && Number(d.discount) !== 0 ? (
+                          <div className="flex items-center justify-between text-xs text-green-600">
+                            <span>Discount</span>
+                            <span>-${Math.abs(Number(d.discount)).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })() : null}
+
+                  {/* Subtotal/tax for non-food-delivery (food delivery shows fees above) */}
+                  {receipt.merchant_type !== "food_delivery" && (receipt.subtotal || receipt.tax) && (
                     <div className="pt-2 border-t border-gray-100 space-y-1">
                       {receipt.subtotal && (
                         <div className="flex items-center justify-between text-xs text-gray-500">
@@ -362,9 +507,51 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                       )}
                     </div>
                   )}
+
+                  {/* E-commerce extras */}
+                  {receipt.merchant_type === "ecommerce" && receipt.merchant_details ? (() => {
+                    const d = receipt.merchant_details;
+                    return (
+                      <div className="pt-2 border-t border-gray-100 space-y-1">
+                        {receipt.subtotal != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Subtotal</span>
+                            <span>${Number(receipt.subtotal).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.shipping_cost != null && Number(d.shipping_cost) > 0 ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Shipping</span>
+                            <span>${Number(d.shipping_cost).toFixed(2)}</span>
+                          </div>
+                        ) : d.shipping_cost === 0 ? (
+                          <div className="flex items-center justify-between text-xs text-green-600">
+                            <span>Shipping</span>
+                            <span>FREE</span>
+                          </div>
+                        ) : null}
+                        {receipt.tax != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Tax</span>
+                            <span>${Number(receipt.tax).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.discount != null && Number(d.discount) !== 0 ? (
+                          <div className="flex items-center justify-between text-xs text-green-600">
+                            <span>Discount</span>
+                            <span>-${Math.abs(Number(d.discount)).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.estimated_delivery ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Est. delivery</span>
+                            <span>{String(d.estimated_delivery)}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })() : null}
                 </>
-              ) : receipt ? (
-                <div className="text-xs text-gray-400">Receipt matched but no line items available</div>
               ) : null}
             </div>
           )}
