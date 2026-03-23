@@ -83,12 +83,15 @@ function decodeBody(payload: EmailPart): string {
   return raw;
 }
 
-/** Strip HTML tags, decode common entities, collapse whitespace. */
+/** Strip HTML tags, decode common entities, collapse whitespace.
+ *  Preserves map/image URLs from <img> tags so the LLM can extract them. */
 function stripHtml(html: string): string {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
+    // Preserve map image URLs from <img> tags (Uber/Lyft embed static maps)
+    .replace(/<img\s[^>]*src=["']([^"']+(?:maps|map|staticmap|route)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, "")

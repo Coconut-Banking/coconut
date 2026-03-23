@@ -232,7 +232,7 @@ Extract:
 - fare_breakdown: object with any of: base_fare, distance_charge, time_charge, surge, tolls, tip, discount (all numbers, null if not found)
 - driver_name: driver's first name or null
 - vehicle: vehicle description (e.g. "Toyota Camry") or null
-- map_url: any map image URL found in the email, or null
+- map_url: look for [MAP_IMAGE: url] markers in the email text — these are static map images embedded by Uber/Lyft. Extract the full URL, or null if not found
 - line_items: [] (empty array for rides)
 
 Schema:

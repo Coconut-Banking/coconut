@@ -343,9 +343,20 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                 <div className="text-xs text-gray-400">Loading receipt...</div>
               ) : receipt ? (
                 <>
-                  {/* Rideshare: pickup → dropoff route */}
+                  {/* Rideshare: map + pickup → dropoff route */}
                   {receipt.merchant_type === "rideshare" && receipt.merchant_details && (
                     <div className="space-y-3">
+                      {/* Map image from the email (Uber/Lyft embed a static map) */}
+                      {receipt.merchant_details.map_url ? (
+                        <div className="rounded-xl overflow-hidden border border-gray-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={String(receipt.merchant_details.map_url)}
+                            alt="Trip route map"
+                            className="w-full h-36 object-cover"
+                          />
+                        </div>
+                      ) : null}
                       <div className="flex items-start gap-3">
                         <div className="flex flex-col items-center mt-1">
                           <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
