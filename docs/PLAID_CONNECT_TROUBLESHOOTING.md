@@ -21,7 +21,7 @@ Symptoms: “Your session isn’t ready yet” / `create-link-token returned 401
 OAuth banks need an exact redirect URI registered in the **Plaid Dashboard** for your environment:
 
 - Production: `https://<your-production-domain>/connect`  
-  (must match `APP_URL` on Vercel, e.g. `https://coconut-lemon.vercel.app` → `https://coconut-lemon.vercel.app/connect`)
+  (must match `APP_URL` on Vercel, e.g. `https://coconut-app.dev` → `https://coconut-app.dev/connect`)
 
 **Fix:** Plaid Dashboard → Team → **API** → **Allowed redirect URIs** → add the URI above.
 
@@ -51,6 +51,10 @@ Vercel logs show: `inner_message: 'TOKEN_ENCRYPTION_KEY must be 256 bits (32 byt
 3. **Redeploy** so the new env is applied.
 
 **Note:** Changing this key later will make **existing** encrypted tokens in the DB unreadable — users may need to **re-link** banks. Webhooks may log `item not found` until the item row exists (normal if exchange never saved).
+
+## 7. Stale or missing transactions
+
+See **`docs/PLAID_SYNC_TESTING.md`** — diagnostics URL, webhooks (`INITIAL_UPDATE` / `HISTORICAL_UPDATE` / `SYNC_UPDATES_AVAILABLE`), and pull-to-refresh behavior.
 
 ## What to send when reporting
 

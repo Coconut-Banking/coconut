@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 
   if (personMembers.length === 0) {
     return NextResponse.json(
-      { displayName: null, balance: 0, activity: [], email: null, settlements: [] },
+      { displayName: null, balance: 0, activity: [], email: null, settlements: [], sharedGroupIds: [], sharedGroups: [] },
       { status: 404 }
     );
   }
@@ -58,6 +58,19 @@ export async function GET(req: NextRequest) {
   const email = personMembers[0].email ?? null;
   const sharedGroupIds = [...new Set(personMembers.map((m) => m.group_id))];
   const personMemberIds = new Set(personMembers.map((m) => m.id));
+
+  const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.name as string]));
+  const memberCountByGroup = new Map<string, number>();
+  for (const m of members ?? []) {
+    memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
+  }
+  const sharedGroups = sharedGroupIds
+    .map((id) => ({
+      id,
+      name: groupNameById.get(id) ?? "Group",
+      memberCount: memberCountByGroup.get(id) ?? 0,
+    }))
+    .sort((a, b) => a.memberCount - b.memberCount);
 
   const { data: splitsRaw } = await db
     .from("split_transactions")
@@ -86,6 +99,8 @@ export async function GET(req: NextRequest) {
       email,
       key,
       settlements: [],
+      sharedGroupIds,
+      sharedGroups,
     });
   }
 
@@ -108,7 +123,6 @@ export async function GET(req: NextRequest) {
   }
 
   const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
-  const groupNames = new Map((groups ?? []).map((g) => [g.id, g.name]));
 
   let totalBalanceWithPerson = 0;
   const personSettlements: Array<{ groupId: string; fromMemberId: string; toMemberId: string; amount: number }> = [];
@@ -217,7 +231,7 @@ export async function GET(req: NextRequest) {
         id: s.id,
         merchant: tx?.merchant_name ?? tx?.raw_name ?? "Unknown",
         amount: txAmount,
-        groupName: groupNames.get(groupId) ?? "",
+        groupName: groupNameById.get(groupId) ?? "",
         paidByMe,
         paidByThem,
         myShare,
@@ -237,6 +251,8 @@ export async function GET(req: NextRequest) {
     email,
     key,
     settlements: personSettlements,
+    sharedGroupIds,
+    sharedGroups,
   });
   } catch (err) {
     console.error("[person]", err);

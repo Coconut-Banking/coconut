@@ -12,7 +12,7 @@ New Items get the webhook URL automatically when created via Link. For Items cre
 ## Plaid Dashboard
 
 1. Go to [Plaid Dashboard](https://dashboard.plaid.com) → **Team Settings** → **Webhooks**
-2. Add your webhook URL (e.g. `https://coconut-lemon.vercel.app/api/plaid/webhook`)
+2. Add your webhook URL (e.g. `https://coconut-app.dev/api/plaid/webhook`)
 3. Save
 
 ## Test in Sandbox

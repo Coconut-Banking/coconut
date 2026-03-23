@@ -45,7 +45,9 @@ describe("POST /api/nl-search", () => {
     expect(data.transactions).toHaveLength(1);
     expect(data.answer).toContain("coffee/cafes");
     expect(data.total).toBe(7.5);
-    expect(search).toHaveBeenCalledWith("user_test_123", "how much did I spend on coffee");
+    expect(search).toHaveBeenCalledWith("user_test_123", "how much did I spend on coffee", {
+      debug: false,
+    });
   });
 
   it("returns empty when q is empty", async () => {

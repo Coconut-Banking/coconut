@@ -98,10 +98,19 @@ export async function POST(request: NextRequest) {
 
   const clerkUserId = item.clerk_user_id as string;
 
-  if (webhook_type === "TRANSACTIONS" && webhook_code === "SYNC_UPDATES_AVAILABLE") {
+  // Sync API: Plaid sends SYNC_UPDATES_AVAILABLE. Legacy / first-load flows may send
+  // INITIAL_UPDATE or HISTORICAL_UPDATE — we must sync on those too or data stays stale until manual refresh.
+  const transactionWebhookSyncCodes = new Set([
+    "SYNC_UPDATES_AVAILABLE",
+    "INITIAL_UPDATE",
+    "HISTORICAL_UPDATE",
+  ]);
+
+  if (webhook_type === "TRANSACTIONS" && webhook_code && transactionWebhookSyncCodes.has(webhook_code)) {
     try {
       const r = await syncTransactionsForUser(clerkUserId);
-      console.log("[plaid][webhook] SYNC_UPDATES_AVAILABLE synced", {
+      console.log("[plaid][webhook] TRANSACTIONS sync", {
+        webhook_code,
         item_id,
         user_id: clerkUserId,
         synced: r.synced,

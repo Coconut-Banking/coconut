@@ -23,4 +23,8 @@ export interface UITransaction {
   p2pNote?: string;
   p2pPlatform?: string;
   hasReceipt?: boolean;
+  /** One-line context from a linked Gmail receipt (mobile home strip). */
+  receiptMatchLine?: string;
+  /** True if this bank tx is already attached to a shared group split. */
+  alreadySplit?: boolean;
 }

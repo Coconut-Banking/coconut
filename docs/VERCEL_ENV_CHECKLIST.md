@@ -9,7 +9,15 @@ Add these to your **coconut** project in Vercel → Settings → Environment Var
 | `PLAID_ENV` | `production` | ❌ **ADD THIS** — without it, backend uses sandbox and ignores PLAID_PRODUCTION_SECRET |
 | `PLAID_CLIENT_ID` | (from Plaid Dashboard) | ✓ |
 | `PLAID_PRODUCTION_SECRET` | (starts with `pls_production_`) | ✓ |
-| `APP_URL` | `https://coconut-lemon.vercel.app` | Add if missing — needed for Plaid redirect URI |
+| `APP_URL` | `https://coconut-app.dev` | Add if missing — needed for Plaid redirect URI |
+
+## Gmail receipts (if you use Google OAuth)
+
+| Variable | Value |
+|----------|--------|
+| `GOOGLE_REDIRECT_URI` | `https://coconut-app.dev/api/gmail/callback` |
+
+Also add that **exact** URL under Google Cloud Console → **Credentials** → your OAuth 2.0 Client → **Authorized redirect URIs**.
 
 ## Auth + DB (you have these)
 
