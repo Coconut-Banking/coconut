@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { getUserId } from "@/lib/auth";
 import { getAuthorizationUrl, getSplitwiseConfig } from "@/lib/splitwise";
+import { createOAuthState } from "@/lib/paypal-auth";
 
 export async function GET() {
   const userId = await getUserId();
@@ -16,9 +16,8 @@ export async function GET() {
     );
   }
 
-  const state = randomUUID();
+  const state = createOAuthState(userId);
   const url = getAuthorizationUrl(state);
 
-  // Redirect user to Splitwise OAuth
   return NextResponse.redirect(url);
 }

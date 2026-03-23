@@ -29,3 +29,8 @@ create table if not exists splitwise_tokens (
 );
 create index if not exists splitwise_tokens_user_idx on splitwise_tokens(clerk_user_id);
 alter table splitwise_tokens enable row level security;
+
+-- RLS: users can only access their own tokens
+create policy splitwise_tokens_user_policy on splitwise_tokens
+  using (clerk_user_id = current_setting('app.user_id', true))
+  with check (clerk_user_id = current_setting('app.user_id', true));

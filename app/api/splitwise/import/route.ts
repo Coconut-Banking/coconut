@@ -4,6 +4,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
 import { getUserId } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import { decryptToken } from "@/lib/encryption";
 import {
   getGroups,
   getExpenses,
@@ -40,7 +41,7 @@ export async function POST() {
     );
   }
 
-  const token = tokenRow.access_token;
+  const token = decryptToken(tokenRow.access_token);
   const stats: ImportStats = { groups: 0, members: 0, expenses: 0, settlements: 0, skipped: 0 };
 
   try {
@@ -187,6 +188,12 @@ async function importGroup(
   }
 }
 
+/** Parse a numeric string, returning null if the result is not finite. */
+function safeParseFloat(value: string): number | null {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 // ── Import one expense ──────────────────────────────────────────────────────
 
 async function importExpense(
@@ -214,7 +221,7 @@ async function importExpense(
 
   // Find who paid the most (the payer)
   const payer = expense.users.reduce((best, u) =>
-    parseFloat(u.paid_share) > parseFloat(best.paid_share) ? u : best
+    (safeParseFloat(u.paid_share) ?? 0) > (safeParseFloat(best.paid_share) ?? 0) ? u : best
   );
   const payerMemberId = memberMap.get(payer.user_id) ?? null;
 
@@ -228,7 +235,7 @@ async function importExpense(
       source: "splitwise",
       external_id: extId,
       description: expense.description,
-      amount: parseFloat(expense.cost),
+      amount: safeParseFloat(expense.cost),
       date: expense.date.split("T")[0],
     })
     .select("id")
@@ -242,13 +249,16 @@ async function importExpense(
 
   // Insert shares for each member who owes something
   const shares = expense.users
-    .filter((u) => parseFloat(u.owed_share) > 0)
+    .filter((u) => {
+      const amt = safeParseFloat(u.owed_share);
+      return amt !== null && amt > 0;
+    })
     .map((u) => ({
       split_transaction_id: splitTx.id,
       member_id: memberMap.get(u.user_id),
-      amount: parseFloat(u.owed_share),
+      amount: safeParseFloat(u.owed_share)!,
     }))
-    .filter((s) => s.member_id); // Skip members we couldn't map
+    .filter((s) => s.member_id);
 
   if (shares.length > 0) {
     await db.from("split_shares").insert(shares);
@@ -272,24 +282,18 @@ async function importSettlement(
     const receiverId = memberMap.get(repayment.to);
     if (!payerId || !receiverId) continue;
 
-    const amount = parseFloat(repayment.amount);
-    if (amount <= 0) continue;
+    const amount = safeParseFloat(repayment.amount);
+    if (amount === null || amount <= 0) continue;
 
-    // Check for duplicate by looking for same group + same members + similar amount + same date
-    const expenseDate = expense.date.split("T")[0];
-    const { data: existingSettlements } = await db
+    // Check for duplicate by external_reference
+    const extRef = `splitwise:${expense.id}`;
+    const { data: existing } = await db
       .from("settlements")
-      .select("id, amount, created_at")
-      .eq("group_id", groupId)
-      .eq("payer_member_id", payerId)
-      .eq("receiver_member_id", receiverId);
+      .select("id")
+      .eq("external_reference", extRef)
+      .maybeSingle();
 
-    const isDuplicate = (existingSettlements ?? []).some((s) => {
-      const sDate = new Date(s.created_at).toISOString().split("T")[0];
-      return Math.abs(parseFloat(String(s.amount)) - amount) < 0.01 && sDate === expenseDate;
-    });
-
-    if (isDuplicate) {
+    if (existing) {
       stats.skipped++;
       continue;
     }
@@ -301,7 +305,7 @@ async function importSettlement(
       amount,
       method: "splitwise",
       status: "completed",
-      external_reference: `splitwise:${expense.id}`,
+      external_reference: extRef,
       created_at: expense.date,
     });
 

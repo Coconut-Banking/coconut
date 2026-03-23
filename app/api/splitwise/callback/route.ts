@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { exchangeCode } from "@/lib/splitwise";
 import { getSupabase } from "@/lib/supabase";
+import { encryptToken } from "@/lib/encryption";
+import { verifyOAuthState } from "@/lib/paypal-auth";
 
 export async function GET(req: NextRequest) {
   const userId = await getUserId();
@@ -16,13 +18,22 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Validate OAuth state to prevent CSRF
+  const state = req.nextUrl.searchParams.get("state") ?? "";
+  const { userId: stateUserId, valid } = verifyOAuthState(state);
+  if (!valid || stateUserId !== userId) {
+    return NextResponse.redirect(
+      new URL("/app/settings?splitwise_error=invalid_state", req.url)
+    );
+  }
+
   try {
     const accessToken = await exchangeCode(code);
 
-    // Store token in DB
+    // Store encrypted token in DB
     const db = getSupabase();
     await db.from("splitwise_tokens").upsert(
-      { clerk_user_id: userId, access_token: accessToken },
+      { clerk_user_id: userId, access_token: encryptToken(accessToken) },
       { onConflict: "clerk_user_id" }
     );
 
