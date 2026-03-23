@@ -91,7 +91,7 @@ function stripHtml(html: string): string {
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     // Preserve map image URLs from <img> tags (Uber/Lyft embed static maps)
-    .replace(/<img\s[^>]*src=["']([^"']+(?:maps|map|staticmap|route)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
+    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|mapbox\.com|staticmap|\/route[-_]map)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, "")
@@ -466,8 +466,8 @@ export async function scanGmailForReceipts(
           ...(receiptData.subtotal != null && { subtotal: receiptData.subtotal }),
           ...(receiptData.tax != null && { tax: receiptData.tax }),
           ...(receiptData.order_number != null && { order_number: receiptData.order_number }),
-          ...(receiptData.merchant_type !== "generic" && { merchant_type: receiptData.merchant_type }),
-          ...(receiptData.merchant_details != null && { merchant_details: receiptData.merchant_details }),
+          merchant_type: receiptData.merchant_type !== "generic" ? receiptData.merchant_type : null,
+          merchant_details: receiptData.merchant_details ?? null,
         };
 
         const { data: inserted, error: insertError } = forceRescan

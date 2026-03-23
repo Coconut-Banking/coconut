@@ -17,7 +17,7 @@ function stripHtml(html: string): string {
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<img\s[^>]*src=["']([^"']+(?:maps|map|staticmap|route)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
+    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|mapbox\.com|staticmap|\/route[-_]map)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, "")
@@ -76,16 +76,22 @@ describe("stripHtml — MAP_IMAGE preservation", () => {
     expect(result).toContain("Your receipt");
   });
 
-  it("handles img tag with 'route' keyword in src", () => {
+  it("handles img tag with '/route-map' path in src", () => {
     const html = `<img src="https://example.com/route-map/image.png?trip=abc" alt="route">`;
     const result = stripHtml(html);
     expect(result).toContain("[MAP_IMAGE: https://example.com/route-map/image.png?trip=abc]");
   });
 
-  it("handles img tag with 'map' keyword in src", () => {
-    const html = `<img src="https://lyft.com/ride-map-image?id=xyz123" alt="">`;
+  it("handles Uber maps domain", () => {
+    const html = `<img src="https://maps.uber.com/ride-image?id=xyz123" alt="">`;
     const result = stripHtml(html);
-    expect(result).toContain("[MAP_IMAGE: https://lyft.com/ride-map-image?id=xyz123]");
+    expect(result).toContain("[MAP_IMAGE: https://maps.uber.com/ride-image?id=xyz123]");
+  });
+
+  it("handles Mapbox domain", () => {
+    const html = `<img src="https://api.mapbox.com/styles/v1/mapbox/streets-v11/static/pin-s+3bb2d0(-122.4194,37.7749)/-122.4,37.77,13/600x300" alt="">`;
+    const result = stripHtml(html);
+    expect(result).toContain("[MAP_IMAGE:");
   });
 
   it("preserves multiple map images in one email", () => {
@@ -109,13 +115,11 @@ describe("stripHtml — MAP_IMAGE preservation", () => {
   });
 
   it("does NOT match img src that merely contains 'map' in a domain unrelated to maps", () => {
-    // "map" appears in the URL, so the regex WILL match it — this tests the current behavior
-    // which is permissive (any URL with "map" in it survives)
     const html = `<img src="https://bitmap-assets.example.com/header.png" alt="header">`;
     const result = stripHtml(html);
-    // "bitmap" contains "map" so the regex will preserve it as a MAP_IMAGE
-    // This is a known false positive in the current regex
-    expect(result).toContain("[MAP_IMAGE:");
+    // "bitmap" contains "map" but the tightened regex only matches specific map domains
+    expect(result).not.toContain("[MAP_IMAGE:");
+    expect(result).not.toContain("bitmap-assets");
   });
 });
 
