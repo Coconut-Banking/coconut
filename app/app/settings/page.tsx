@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye, Building2, Wallet, Upload, Trash2 } from "lucide-react";
+import { ChevronRight, Shield, Database, CreditCard, User, Download, CheckCircle2, AlertTriangle, Mail, Loader2, EyeOff, Eye, Building2, Wallet, Upload, Trash2, ArrowDownToLine } from "lucide-react";
 import { motion } from "motion/react";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGmail } from "@/hooks/useGmail";
@@ -60,6 +60,43 @@ function SettingsContent() {
   const [walletSaving, setWalletSaving] = useState(false);
   const retriedAccountsRef = useRef(false);
   const refreshingRef = useRef(false);
+
+  // Splitwise import state
+  const [splitwiseStatus, setSplitwiseStatus] = useState<{ configured: boolean; connected: boolean } | null>(null);
+  const [splitwiseImporting, setSplitwiseImporting] = useState(false);
+  const [splitwiseResult, setSplitwiseResult] = useState<{ ok: boolean; stats?: { groups: number; members: number; expenses: number; settlements: number; skipped: number }; error?: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/splitwise/status").then((r) => r.json()).then(setSplitwiseStatus).catch(() => {});
+  }, []);
+
+  // Check for splitwise callback params
+  useEffect(() => {
+    const sw = searchParams.get("splitwise");
+    const swErr = searchParams.get("splitwise_error");
+    if (sw === "connected") {
+      setSplitwiseStatus((prev) => prev ? { ...prev, connected: true } : { configured: true, connected: true });
+      setActiveSection("data");
+    }
+    if (swErr) {
+      setSplitwiseResult({ ok: false, error: swErr === "token_exchange_failed" ? "Failed to connect to Splitwise. Please try again." : swErr });
+      setActiveSection("data");
+    }
+  }, [searchParams]);
+
+  const startSplitwiseImport = async () => {
+    setSplitwiseImporting(true);
+    setSplitwiseResult(null);
+    try {
+      const res = await fetch("/api/splitwise/import", { method: "POST" });
+      const data = await res.json();
+      setSplitwiseResult(data);
+    } catch {
+      setSplitwiseResult({ ok: false, error: "Import failed. Please try again." });
+    } finally {
+      setSplitwiseImporting(false);
+    }
+  };
 
   const disconnectBank = async () => {
     if (!confirm("Disconnect your bank? You can reconnect anytime to get real transactions.")) return;
@@ -1008,6 +1045,77 @@ function SettingsContent() {
 
             {activeSection === "data" && (
               <div className="space-y-4">
+                {/* Splitwise Import */}
+                <div className="bg-white rounded-2xl border border-gray-100 p-6">
+                  <h2 className="text-sm font-semibold text-gray-900 mb-1">Import from Splitwise</h2>
+                  <p className="text-xs text-gray-400 mb-5">
+                    Migrate your Splitwise groups, expenses, and settlements into Coconut.
+                  </p>
+
+                  {splitwiseResult && (
+                    <div className={`rounded-xl px-4 py-3 mb-4 text-sm ${
+                      splitwiseResult.ok
+                        ? "bg-[#EEF7F2] border border-[#C3E0D3] text-[#2D5A44]"
+                        : "bg-red-50 border border-red-100 text-red-700"
+                    }`}>
+                      {splitwiseResult.ok && splitwiseResult.stats ? (
+                        <div>
+                          <div className="font-medium mb-1">Import complete!</div>
+                          <div className="text-xs space-y-0.5">
+                            <div>{splitwiseResult.stats.groups} groups, {splitwiseResult.stats.members} members</div>
+                            <div>{splitwiseResult.stats.expenses} expenses, {splitwiseResult.stats.settlements} settlements</div>
+                            {splitwiseResult.stats.skipped > 0 && <div>{splitwiseResult.stats.skipped} skipped (already imported)</div>}
+                          </div>
+                        </div>
+                      ) : (
+                        <span>{splitwiseResult.error ?? "Import failed"}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {!splitwiseStatus?.configured ? (
+                    <p className="text-xs text-gray-400">Splitwise integration not configured.</p>
+                  ) : !splitwiseStatus?.connected ? (
+                    <a
+                      href="/api/splitwise/auth"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-white bg-[#3D8E62] hover:bg-[#2D7A52] px-4 py-2.5 rounded-xl transition-colors"
+                    >
+                      <ArrowDownToLine size={15} />
+                      Connect Splitwise
+                    </a>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-[#3D8E62]">
+                        <CheckCircle2 size={14} />
+                        <span className="font-medium">Splitwise connected</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={startSplitwiseImport}
+                          disabled={splitwiseImporting}
+                          className="inline-flex items-center gap-2 text-sm font-medium text-white bg-[#3D8E62] hover:bg-[#2D7A52] px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                        >
+                          {splitwiseImporting ? (
+                            <><Loader2 size={14} className="animate-spin" /> Importing…</>
+                          ) : (
+                            <><ArrowDownToLine size={15} /> Import all groups</>
+                          )}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await fetch("/api/splitwise/status", { method: "DELETE" });
+                            setSplitwiseStatus((prev) => prev ? { ...prev, connected: false } : null);
+                            setSplitwiseResult(null);
+                          }}
+                          className="text-sm text-gray-400 hover:text-red-500 px-3 py-2 transition-colors"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="bg-white rounded-2xl border border-gray-100 p-6">
                   <h2 className="text-sm font-semibold text-gray-900 mb-1">Data & Export</h2>
                   <p className="text-xs text-gray-400 mb-5">Download your data anytime. Your data, your rules.</p>
