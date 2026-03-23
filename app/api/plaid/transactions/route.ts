@@ -96,14 +96,39 @@ export async function GET(request: NextRequest) {
 
     // Actually delete duplicate rows from Supabase (first occurrence stays)
     // Don't delete tx that are in splits, email_receipts, or subscriptions — they're referenced by FK
-    const { data: inSplits } = await db.from("split_transactions").select("transaction_id").in("transaction_id", bankOnly.map(tx => tx.id));
-    const { data: inReceipts } = await db.from("email_receipts").select("transaction_id").not("transaction_id", "is", null).eq("clerk_user_id", effectiveUserId);
+    const { data: inSplits } = await db
+      .from("split_transactions")
+      .select("transaction_id")
+      .in("transaction_id", bankOnly.map((tx) => tx.id));
+    const { data: receiptRows } = await db
+      .from("email_receipts")
+      .select("transaction_id, merchant, raw_subject")
+      .not("transaction_id", "is", null)
+      .eq("clerk_user_id", effectiveUserId);
     const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
-    const protectedIds = new Set([
-      ...(inSplits ?? []).map((r) => r.transaction_id as string),
-      ...(inReceipts ?? []).map((r) => r.transaction_id as string),
-      ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
-    ].filter(Boolean));
+
+    const receiptMatchLineByTxId = new Map<string, string>();
+    for (const r of receiptRows ?? []) {
+      const tid = r.transaction_id as string | null;
+      if (!tid) continue;
+      const merchant = (r.merchant as string | null | undefined)?.trim();
+      const subj = (r.raw_subject as string | null | undefined)?.trim();
+      const line =
+        merchant || (subj ? subj.slice(0, 72) : "") || "Email receipt";
+      receiptMatchLineByTxId.set(tid, line);
+    }
+    const receiptTxIds = new Set(receiptMatchLineByTxId.keys());
+    const splitTxIds = new Set(
+      (inSplits ?? []).map((r) => r.transaction_id as string).filter(Boolean)
+    );
+
+    const protectedIds = new Set(
+      [
+        ...(inSplits ?? []).map((r) => r.transaction_id as string),
+        ...(receiptRows ?? []).map((r) => r.transaction_id as string),
+        ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
+      ].filter(Boolean)
+    );
     const idsToDelete = bankOnly
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
@@ -159,11 +184,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build receipt lookup from the inReceipts query above (already fetched for dedupe protection)
-    const receiptTxIds = new Set(
-      (inReceipts ?? []).map((r) => r.transaction_id as string).filter(Boolean)
-    );
-
     // Load subscription merchants to flag recurring transactions
     const { data: activeSubs } = await db
       .from("subscriptions")
@@ -204,6 +224,8 @@ export async function GET(request: NextRequest) {
         p2pNote: (tx.p2p_note as string) || undefined,
         p2pPlatform: (tx.p2p_platform as string) || undefined,
         hasReceipt: receiptTxIds.has(tx.id as string),
+        receiptMatchLine: receiptMatchLineByTxId.get(tx.id as string) ?? undefined,
+        alreadySplit: splitTxIds.has(tx.id as string),
       };
     });
 

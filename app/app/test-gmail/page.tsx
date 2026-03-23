@@ -233,7 +233,7 @@ export default function TestGmailPage() {
           <div className="space-y-1 text-xs text-yellow-700">
             <p>1. Set GOOGLE_CLIENT_ID in .env.local</p>
             <p>2. Set GOOGLE_CLIENT_SECRET in .env.local</p>
-            <p>3. Set GOOGLE_REDIRECT_URI to: http://localhost:3000/api/gmail/callback</p>
+            <p>3. Set GOOGLE_REDIRECT_URI to: https://coconut-app.dev/api/gmail/callback (prod) or http://localhost:3000/api/gmail/callback (local)</p>
             <p>4. Add redirect URI to Google Cloud Console OAuth settings</p>
             <p>5. Run database migration: docs/supabase-migration-gmail-receipts.sql</p>
           </div>

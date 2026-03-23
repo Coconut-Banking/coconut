@@ -52,6 +52,10 @@ Vercel logs show: `inner_message: 'TOKEN_ENCRYPTION_KEY must be 256 bits (32 byt
 
 **Note:** Changing this key later will make **existing** encrypted tokens in the DB unreadable — users may need to **re-link** banks. Webhooks may log `item not found` until the item row exists (normal if exchange never saved).
 
+## 7. Stale or missing transactions
+
+See **`docs/PLAID_SYNC_TESTING.md`** — diagnostics URL, webhooks (`INITIAL_UPDATE` / `HISTORICAL_UPDATE` / `SYNC_UPDATES_AVAILABLE`), and pull-to-refresh behavior.
+
 ## What to send when reporting
 
 - `trace_id` from the red error box on `/connect`

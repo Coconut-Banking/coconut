@@ -41,6 +41,12 @@ function makeClient() {
   };
 }
 
+/** Supabase-style list query result used by mock `.then` chains */
+type MockListResult = { data: Record<string, unknown>[]; error: null };
+/** Single-row or null data */
+type MockMaybeRowResult = { data: Record<string, unknown> | null; error: null };
+type MockNullResult = { data: null; error: null };
+
 function makeTable(table: string) {
   const rows = db[table as keyof typeof db] as Record<string, unknown>[];
 
@@ -61,10 +67,12 @@ function makeTable(table: string) {
             resolve: () => Promise.resolve({ data: rows.filter(r => r[col] === val && (vals as unknown[]).includes(r[c2])), error: null }),
           }),
           resolve: () => Promise.resolve({ data: rows.filter(r => r[col] === val && (vals as unknown[]).includes(r[c2])), error: null }),
-          then: (fn: Function) => Promise.resolve({ data: rows.filter(r => r[col] === val && (vals as unknown[]).includes(r[c2])), error: null }).then(fn),
+          then: (fn: (value: MockListResult) => unknown) =>
+            Promise.resolve({ data: rows.filter(r => r[col] === val && (vals as unknown[]).includes(r[c2])), error: null }).then(fn),
         }),
         is: (c2: string, val2: unknown) => ({
-          then: (fn: Function) => Promise.resolve({ data: rows.filter(r => r[col] === val && r[c2] === val2), error: null }).then(fn),
+          then: (fn: (value: MockListResult) => unknown) =>
+            Promise.resolve({ data: rows.filter(r => r[col] === val && r[c2] === val2), error: null }).then(fn),
         }),
         lt: (c2: string, val2: unknown) => ({
           order: () => ({ limit: () => Promise.resolve({ data: rows.filter(r => r[col] === val && (r[c2] as number) < (val2 as number)), error: null }) }),
@@ -82,21 +90,25 @@ function makeTable(table: string) {
           return { data: row ?? null, error: row ? null : { message: "not found" } };
         },
         maybeSingle: async () => ({ data: rows.find(r => r[col] === val) ?? null, error: null }),
-        then: (fn: Function) => Promise.resolve({ data: rows.filter(r => r[col] === val), error: null }).then(fn),
+        then: (fn: (value: MockListResult) => unknown) =>
+          Promise.resolve({ data: rows.filter(r => r[col] === val), error: null }).then(fn),
       }),
       in: (col: string, vals: unknown[]) => {
         const filtered = () => rows.filter(r => (vals as unknown[]).includes(r[col]));
         return {
           eq: (c2: string, v2: unknown) => ({
             order: () => ({ limit: () => Promise.resolve({ data: filtered().filter(r => r[c2] === v2), error: null }) }),
-            then: (fn: Function) => Promise.resolve({ data: filtered().filter(r => r[c2] === v2), error: null }).then(fn),
+            then: (fn: (value: MockListResult) => unknown) =>
+              Promise.resolve({ data: filtered().filter(r => r[c2] === v2), error: null }).then(fn),
           }),
           order: (_: unknown, opts?: { ascending?: boolean }) => ({
             order: () => ({ limit: () => Promise.resolve({ data: filtered(), error: null }) }),
             limit: () => Promise.resolve({ data: filtered(), error: null }),
-            then: (fn: Function) => Promise.resolve({ data: filtered(), error: null }).then(fn),
+            then: (fn: (value: MockListResult) => unknown) =>
+              Promise.resolve({ data: filtered(), error: null }).then(fn),
           }),
-          then: (fn: Function) => Promise.resolve({ data: filtered(), error: null }).then(fn),
+          then: (fn: (value: MockListResult) => unknown) =>
+            Promise.resolve({ data: filtered(), error: null }).then(fn),
           limit: () => Promise.resolve({ data: filtered(), error: null }),
         };
       },
@@ -106,7 +118,8 @@ function makeTable(table: string) {
         order: () => ({ limit: () => Promise.resolve({ data: rows.filter(r => (r[col] as number) < (val as number)), error: null }) }),
         gte: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
       }),
-      then: (fn: Function) => Promise.resolve({ data: rows, error: null }).then(fn),
+      then: (fn: (value: MockListResult) => unknown) =>
+        Promise.resolve({ data: rows, error: null }).then(fn),
     }),
     insert: (row: Record<string, unknown> | Record<string, unknown>[]) => {
       const toInsert = Array.isArray(row) ? row : [row];
@@ -115,15 +128,17 @@ function makeTable(table: string) {
       return {
         select: (_?: string) => ({
           single: async () => ({ data: newRows[0], error: null }),
-          then: (fn: Function) => Promise.resolve({ data: newRows, error: null }).then(fn),
+          then: (fn: (value: MockListResult) => unknown) =>
+            Promise.resolve({ data: newRows, error: null }).then(fn),
         }),
-        then: (fn: Function) => Promise.resolve({ data: newRows[0], error: null }).then(fn),
+        then: (fn: (value: MockMaybeRowResult) => unknown) =>
+          Promise.resolve({ data: newRows[0] ?? null, error: null }).then(fn),
       };
     },
     update: (patch: Record<string, unknown>) => ({
       eq: (col: string, val: unknown) => ({
         is: () => Promise.resolve({ data: null, error: null }),
-        then: (fn: Function) => {
+        then: (fn: (value: MockNullResult) => unknown) => {
           rows.forEach(r => { if (r[col] === val) Object.assign(r, patch); });
           return Promise.resolve({ data: null, error: null }).then(fn);
         },

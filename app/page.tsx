@@ -1,10 +1,30 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Shield, RefreshCw, Users, Sparkles, Lock, Star, Check } from "lucide-react";
+import {
+  ArrowRight,
+  Shield,
+  Lock,
+  Check,
+  Sparkles,
+  Smartphone,
+  Nfc,
+  Building2,
+  Receipt,
+  Wallet,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
+import { AppStoreBadge } from "@/components/landing/AppStoreBadge";
+
+const IOS_APP_URL = process.env.NEXT_PUBLIC_IOS_APP_URL ?? "";
+
+const gridStyle = {
+  backgroundImage: `linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px)`,
+  backgroundSize: "64px 64px",
+} as const;
 
 const searchExamples = [
   "Find that Uber from last month",
@@ -15,7 +35,7 @@ const searchExamples = [
   "Flights I need to split with Sam",
 ];
 
-function TypewriterSearch() {
+function TypewriterSearchHero() {
   const [idx, setIdx] = useState(0);
   const [displayed, setDisplayed] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -26,11 +46,11 @@ function TypewriterSearch() {
     let timeout: ReturnType<typeof setTimeout>;
 
     if (!isDeleting && displayed.length < target.length) {
-      timeout = setTimeout(() => setDisplayed(target.slice(0, displayed.length + 1)), 52);
+      timeout = setTimeout(() => setDisplayed(target.slice(0, displayed.length + 1)), 48);
     } else if (!isDeleting && displayed.length === target.length) {
-      timeout = setTimeout(() => setIsDeleting(true), 1800);
+      timeout = setTimeout(() => setIsDeleting(true), 1900);
     } else if (isDeleting && displayed.length > 0) {
-      timeout = setTimeout(() => setDisplayed(displayed.slice(0, -1)), 28);
+      timeout = setTimeout(() => setDisplayed(displayed.slice(0, -1)), 26);
     } else if (isDeleting && displayed.length === 0) {
       setIsDeleting(false);
       setIdx((i) => (i + 1) % searchExamples.length);
@@ -41,28 +61,30 @@ function TypewriterSearch() {
 
   return (
     <div
+      role="presentation"
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      className={`relative flex items-center gap-3 bg-white/10 backdrop-blur-sm border rounded-2xl px-5 py-4 cursor-text transition-all duration-200 ${
-        focused ? "border-white/40 bg-white/15" : "border-white/20"
+      className={`flex items-center gap-3 rounded-2xl border px-5 py-4 transition-all duration-300 ${
+        focused
+          ? "border-white/[0.14] bg-white/[0.06] shadow-[0_0_0_1px_rgba(61,142,98,0.25)]"
+          : "border-white/[0.08] bg-white/[0.035]"
       }`}
     >
-      <Sparkles size={18} className="text-[#6DD9A4] shrink-0" />
-      <span className="text-white/90 text-base flex-1 min-h-[1.5rem] leading-none flex items-center">
+      <Sparkles size={18} className="shrink-0 text-[#6DD9A4]" strokeWidth={1.75} />
+      <span className="min-h-[1.5rem] flex flex-1 items-center text-left text-[15px] leading-snug tracking-tight text-white/88">
         {displayed}
-        <span className="ml-0.5 inline-block w-0.5 h-5 bg-[#6DD9A4] animate-pulse" />
+        <span className="ml-0.5 inline-block h-5 w-px animate-pulse bg-[#6DD9A4]" />
       </span>
-      <div className="shrink-0 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm px-4 py-2 rounded-xl font-medium transition-colors cursor-pointer">
+      <span className="shrink-0 rounded-xl bg-[#3D8E62] px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#3D8E62]/30">
         Search
-      </div>
+      </span>
     </div>
   );
 }
 
 const cleanupExamples = [
   { raw: "AMZN MKTP US*1X4Y7Z9A2", clean: "Amazon", category: "Shopping", color: "#FF9900" },
-  { raw: "UBER* TRIP HELP.UBER.COM CA", clean: "Uber", category: "Transport", color: "#000000" },
-  { raw: "NETFLIX.COM 866-716-0414 CA", clean: "Netflix", category: "Entertainment", color: "#E50914" },
+  { raw: "UBER* TRIP HELP.UBER.COM CA", clean: "Uber", category: "Transport", color: "#111" },
   { raw: "SQ *SWEETGREEN SAN FRANCISCO", clean: "Sweetgreen", category: "Dining", color: "#006B3F" },
 ];
 
@@ -70,41 +92,47 @@ function CleanupDemo() {
   const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setRevealed(true), 800);
+    const t = setTimeout(() => setRevealed(true), 500);
     return () => clearTimeout(t);
   }, []);
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {cleanupExamples.map((ex, i) => (
         <motion.div
           key={ex.raw}
-          initial={{ opacity: 0, x: -12 }}
+          initial={{ opacity: 0, x: -6 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
-          transition={{ delay: i * 0.1 + 0.2, duration: 0.4 }}
-          className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 px-4 py-3"
+          transition={{ delay: i * 0.07 + 0.1, duration: 0.35 }}
+          className="flex items-center gap-3 rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 shadow-sm"
         >
           <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
             style={{ backgroundColor: ex.color }}
           >
             {ex.clean[0]}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <motion.div
               key={revealed ? "clean" : "raw"}
-              initial={{ opacity: 0, y: revealed ? 4 : -4 }}
+              initial={{ opacity: 0, y: revealed ? 2 : -2 }}
               animate={{ opacity: 1, y: 0 }}
-              className={revealed ? "text-sm font-semibold text-gray-900" : "text-xs text-gray-400 font-mono truncate"}
+              className={
+                revealed
+                  ? "text-sm font-semibold tracking-tight text-neutral-900"
+                  : "truncate font-mono text-[11px] text-neutral-400"
+              }
             >
               {revealed ? ex.clean : ex.raw}
             </motion.div>
           </div>
-          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">{ex.category}</span>
+          <span className="shrink-0 rounded-full border border-neutral-100 bg-neutral-50 px-2.5 py-0.5 text-[11px] font-medium text-neutral-500">
+            {ex.category}
+          </span>
           {revealed && (
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300 }}>
-              <Check size={14} className="text-[#3D8E62] shrink-0" />
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 400 }}>
+              <Check size={14} className="shrink-0 text-[#3D8E62]" strokeWidth={2.5} />
             </motion.div>
           )}
         </motion.div>
@@ -117,385 +145,467 @@ function SplitDemo() {
   const [settled, setSettled] = useState(false);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">🏔️</span>
+    <div className="overflow-hidden rounded-2xl bg-white text-neutral-900 shadow-[0_32px_80px_-28px_rgba(0,0,0,0.85)] ring-1 ring-black/[0.04]">
+      <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="text-lg leading-none">🏔️</span>
           <div>
-            <div className="text-sm font-semibold text-gray-900">Weekend Trip</div>
-            <div className="text-xs text-gray-400">4 people · $1,087.50</div>
+            <div className="text-sm font-semibold tracking-tight">Weekend trip</div>
+            <div className="text-xs text-neutral-400">4 people · $1,087.50</div>
           </div>
         </div>
         <div className="flex -space-x-2">
-          {["#3D8E62","#4A6CF7","#E8507A","#F59E0B"].map((c, i) => (
-            <div key={i} className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: c }}>
-              {["J","A","S","M"][i]}
+          {["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B"].map((c, i) => (
+            <div
+              key={i}
+              className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold text-white"
+              style={{ backgroundColor: c }}
+            >
+              {["J", "A", "S", "M"][i]}
             </div>
           ))}
         </div>
       </div>
-      <div className="px-5 py-3 space-y-2">
+      <div className="space-y-0.5 px-5 py-4">
         {[
-          { name: "Alex", owes: 86.00, color: "#4A6CF7" },
+          { name: "Alex", owes: 86.0, color: "#4A6CF7" },
           { name: "Sam", owes: -53.33, color: "#E8507A" },
-          { name: "Maya", owes: 20.00, color: "#F59E0B" },
+          { name: "Maya", owes: 20.0, color: "#F59E0B" },
         ].map((p) => (
-          <div key={p.name} className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: p.color }}>{p.name[0]}</div>
-              <span className="text-gray-700">{p.name}</span>
+          <div key={p.name} className="flex items-center justify-between py-2 text-sm">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                style={{ backgroundColor: p.color }}
+              >
+                {p.name[0]}
+              </div>
+              <span className="font-medium text-neutral-700">{p.name}</span>
             </div>
-            <span className={p.owes > 0 ? "text-[#3D8E62] font-semibold" : "text-red-500 font-semibold"}>
+            <span
+              className={`text-sm font-semibold tabular-nums ${p.owes > 0 ? "text-[#3D8E62]" : "text-red-500"}`}
+            >
               {p.owes > 0 ? `owes $${p.owes.toFixed(2)}` : `you owe $${Math.abs(p.owes).toFixed(2)}`}
             </span>
           </div>
         ))}
       </div>
-      <div className="px-5 py-4 border-t border-gray-100">
+      <div className="border-t border-neutral-100 px-5 py-4">
         <button
+          type="button"
           onClick={() => setSettled(!settled)}
-          className={`w-full py-2.5 rounded-xl text-sm font-medium transition-all ${
+          className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${
             settled
-              ? "bg-[#EEF7F2] text-[#3D8E62] flex items-center justify-center gap-2"
+              ? "flex items-center justify-center gap-2 bg-[#EEF7F2] text-[#3D8E62]"
               : "bg-[#3D8E62] text-white hover:bg-[#2D7A52]"
           }`}
         >
-          {settled ? <><Check size={14} /> All settled!</> : "Settle up →"}
+          {settled ? (
+            <>
+              <Check size={16} strokeWidth={2.5} /> All settled
+            </>
+          ) : (
+            <>
+              Settle up <ArrowRight className="ml-1 inline h-4 w-4" strokeWidth={2.5} />
+            </>
+          )}
         </button>
       </div>
     </div>
   );
 }
 
-const subs = [
-  { name: "Netflix", amount: 15.99, prev: 13.32, alert: true, color: "#E50914" },
-  { name: "Spotify", amount: 9.99, prev: 9.99, alert: false, color: "#1DB954" },
-  { name: "Adobe CC", amount: 54.99, prev: 54.99, alert: true, dup: true, color: "#FF0000" },
-  { name: "Apple iCloud", amount: 2.99, prev: 2.99, alert: false, color: "#555" },
+function SearchAnswerMock() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.5 }}
+      className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-8 text-left backdrop-blur-sm"
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/35">Answer</p>
+      <p className="font-display mt-2 text-xl font-semibold tracking-tight text-white">Coffee · past month</p>
+      <p className="font-display mt-3 text-5xl font-bold tracking-tight text-[#8EECC0]">$47.20</p>
+      <p className="mt-4 text-sm leading-relaxed text-white/45">6 transactions · from your linked accounts</p>
+    </motion.div>
+  );
+}
+
+function TapToPayShowcase() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className="relative mx-auto w-full max-w-[270px]"
+    >
+      <div className="absolute -inset-8 rounded-[2rem] bg-[#3D8E62]/[0.12] blur-3xl" />
+      <div className="relative rounded-[1.85rem] border-[2.5px] border-neutral-800 bg-neutral-950 p-2 shadow-2xl shadow-black/50">
+        <div className="absolute left-1/2 top-0 z-10 h-[18px] w-[88px] -translate-x-1/2 rounded-b-xl bg-black" />
+        <div className="flex min-h-[380px] flex-col overflow-hidden rounded-[1.35rem] bg-gradient-to-b from-[#161816] to-[#0a0b0a] px-5 pb-6 pt-8">
+          <div className="mb-5 flex items-center justify-between text-[10px] font-medium text-white/30">
+            <span>Coconut</span>
+            <span>9:41</span>
+          </div>
+          <p className="text-center text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">Charge</p>
+          <p className="font-display text-center text-4xl font-bold tracking-tight text-white">$42.00</p>
+          <p className="mb-8 text-center text-xs text-white/35">In person</p>
+          <div className="flex flex-1 flex-col items-center justify-center">
+            <div className="relative flex h-[120px] w-[120px] items-center justify-center">
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  className="absolute rounded-full border-2 border-[#6DD9A4]/40"
+                  initial={{ width: 52, height: 52, opacity: 0.5 }}
+                  animate={{
+                    width: [52, 118],
+                    height: [52, 118],
+                    opacity: [0.45, 0],
+                  }}
+                  transition={{
+                    duration: 2.2,
+                    repeat: Infinity,
+                    delay: i * 0.55,
+                    ease: "easeOut",
+                  }}
+                />
+              ))}
+              <div className="relative z-10 flex h-[60px] w-[60px] items-center justify-center rounded-2xl bg-[#3D8E62] shadow-lg shadow-[#3D8E62]/35">
+                <Nfc className="h-8 w-8 text-white" strokeWidth={1.75} />
+              </div>
+            </div>
+            <p className="mt-5 text-center text-sm text-white/60">Tap to Pay on iPhone</p>
+          </div>
+          <div className="mt-auto border-t border-white/[0.06] pt-4">
+            <div className="flex h-11 items-center justify-center rounded-xl bg-[#3D8E62] text-sm font-semibold text-white">
+              Accept payment
+            </div>
+            <p className="mt-2 text-center text-[10px] text-white/25">Stripe · sellers</p>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+const settleBenefits = [
+  {
+    icon: Wallet,
+    title: "Balances that match reality",
+    body: "Who owes what stays tied to real expenses — not a group-chat guess.",
+  },
+  {
+    icon: Receipt,
+    title: "Tag spend to a shared space",
+    body: "Linked accounts keep splits honest when everyone pays from their own card.",
+  },
+  {
+    icon: Check,
+    title: "One place to settle",
+    body: "Mark it settled and move on. No duplicate spreadsheet per trip.",
+  },
 ];
+
+function BrandMark({ className }: { className?: string }) {
+  return (
+    <div
+      className={`relative shrink-0 overflow-hidden rounded-2xl bg-white ring-1 ring-white/10 ${className ?? ""}`}
+    >
+      <Image
+        src="/brand/coconut-mark.jpg"
+        alt=""
+        fill
+        sizes="40px"
+        className="object-cover"
+        priority
+      />
+    </div>
+  );
+}
 
 export default function LandingPage() {
   const router = useRouter();
+  const appHref = IOS_APP_URL || "/login";
 
   return (
-    <div className="min-h-screen bg-white">
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/10">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#3D8E62] flex items-center justify-center">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
-                <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <span className="text-[15px] font-semibold text-white tracking-tight">Coconut</span>
+    <div className="min-h-screen bg-[#0a0a0a] text-white">
+      {/* Nav */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-white/[0.06] bg-[#0a0a0a]/75 backdrop-blur-2xl">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-6">
+          <Link href="/" className="flex items-center gap-3">
+            <BrandMark className="h-9 w-9 sm:h-10 sm:w-10" />
+            <span className="font-display text-lg font-semibold tracking-tight">Coconut</span>
           </Link>
-          <div className="flex items-center gap-1">
-            <button onClick={() => router.push("/login")} className="text-sm text-white/60 hover:text-white px-4 py-2 rounded-lg transition-colors">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => router.push("/login")}
+              className="hidden rounded-xl px-3 py-2 text-sm font-medium text-white/55 transition hover:text-white sm:inline"
+            >
               Sign in
             </button>
-            <button
-              onClick={() => router.push("/connect")}
-              className="text-sm bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-4 py-2 rounded-xl font-medium transition-colors ml-1"
+            <a
+              href={appHref}
+              target={IOS_APP_URL ? "_blank" : undefined}
+              rel={IOS_APP_URL ? "noopener noreferrer" : undefined}
+              className="inline-flex"
             >
-              Get started
+              <span className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-neutral-900 shadow-md transition hover:bg-neutral-100 sm:px-4 sm:py-2.5 sm:text-sm sm:font-semibold">
+                App Store
+              </span>
+            </a>
+            <button
+              type="button"
+              onClick={() => router.push("/connect")}
+              className="rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-white/80 transition hover:border-white/25 hover:bg-white/[0.04] sm:px-4"
+            >
+              Link bank
             </button>
           </div>
         </div>
-      </nav>
+      </header>
 
-      <section className="relative bg-gray-950 pt-14 overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[#3D8E62]/15 rounded-full blur-[120px]" />
-          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/8 rounded-full blur-[80px]" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/8 rounded-full blur-[80px]" />
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
-        </div>
+      {/* Hero */}
+      <section className="relative overflow-hidden pt-16">
+        <div className="pointer-events-none absolute inset-0" style={gridStyle} />
+        <div className="pointer-events-none absolute left-1/2 top-0 h-[min(520px,70vh)] w-[min(900px,140%)] -translate-x-1/2 rounded-full bg-[#3D8E62]/[0.09] blur-[100px]" />
 
-        <div className="relative max-w-3xl mx-auto px-6 pt-24 pb-16 text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-          >
-            <div className="inline-flex items-center gap-2 bg-[#3D8E62]/15 border border-[#3D8E62]/30 text-[#6DD9A4] text-xs font-medium px-3.5 py-1.5 rounded-full mb-8">
-              <Star size={10} fill="currentColor" />
-              Smarter than Copilot. Calmer than Monarch.
-            </div>
+        <div className="relative mx-auto max-w-6xl px-5 pb-20 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:pb-28 lg:pt-24">
+          <div className="grid items-start gap-16 lg:grid-cols-2 lg:gap-20">
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }}>
+              <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#3D8E62]/35 bg-[#3D8E62]/10 px-4 py-1.5 text-xs font-medium tracking-wide text-[#8EECC0]">
+                <span className="text-[#6DD9A4]">#</span>
+                Search your money · split with friends · bank in sync
+              </p>
 
-            <h1 className="text-6xl font-bold text-white leading-[1.1] tracking-tight mb-6">
-              Your money,<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#6DD9A4] to-[#3D8E62]">
-                cleaned up.
-              </span>
-            </h1>
+              <h1 className="font-display text-[2.35rem] font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-[3.25rem]">
+                Your money,
+                <br />
+                <span className="bg-gradient-to-r from-[#a8f0c8] to-[#3D8E62] bg-clip-text text-transparent">
+                  cleaned up.
+                </span>
+              </h1>
 
-            <p className="text-lg text-white/50 leading-relaxed mb-10 max-w-xl mx-auto">
-              Search in plain English. Split without spreadsheets. Understand subscriptions before they bleed you dry.
-            </p>
+              <p className="mt-6 max-w-lg text-base leading-relaxed text-white/48 sm:text-[17px]">
+                Coconut lives on your iPhone: search spending in plain English, split trips and dinners, and settle
+                without spreadsheets. Link your bank in the app — or use the web link below only to connect accounts.
+              </p>
 
-            <div className="max-w-xl mx-auto mb-8">
-              <TypewriterSearch />
-            </div>
+              <div className="mt-10 max-w-xl">
+                <TypewriterSearchHero />
+              </div>
 
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={() => router.push("/connect")}
-                className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 shadow-lg shadow-[#3D8E62]/25"
-              >
-                Connect your bank
-                <ArrowRight size={15} />
-              </button>
-            </div>
-          </motion.div>
-        </div>
+              <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
+                <AppStoreBadge href={appHref} />
+                <button
+                  type="button"
+                  onClick={() => router.push("/connect")}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/12 bg-transparent px-6 py-3.5 text-sm font-semibold text-white/85 transition hover:border-white/20 hover:bg-white/[0.04]"
+                >
+                  <Building2 className="h-4 w-4 opacity-70" strokeWidth={2} />
+                  Connect bank on web
+                </button>
+              </div>
+              {!IOS_APP_URL && (
+                <p className="mt-3 max-w-md text-xs text-white/30">
+                  Set <code className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[10px]">NEXT_PUBLIC_IOS_APP_URL</code>{" "}
+                  to your App Store or TestFlight link for a direct download.
+                </p>
+              )}
 
-        <div className="relative border-t border-white/5 py-4">
-          <div className="max-w-2xl mx-auto flex items-center justify-center gap-8 text-xs text-white/30">
-            <div className="flex items-center gap-1.5"><Shield size={11} className="text-[#6DD9A4]" /> 256-bit encryption</div>
-            <div className="flex items-center gap-1.5"><Lock size={11} className="text-[#6DD9A4]" /> Read-only access</div>
-            <div className="flex items-center gap-1.5"><Check size={11} className="text-[#6DD9A4]" /> SOC 2 compliant</div>
-            <div className="flex items-center gap-1.5"><Check size={11} className="text-[#6DD9A4]" /> No credential storage</div>
+              <div className="mt-10 flex flex-wrap gap-x-8 gap-y-2 text-xs font-medium text-white/32">
+                <span className="flex items-center gap-2">
+                  <Shield className="h-3.5 w-3.5 text-[#6DD9A4]" strokeWidth={2} />
+                  256-bit encryption
+                </span>
+                <span className="flex items-center gap-2">
+                  <Lock className="h-3.5 w-3.5 text-[#6DD9A4]" strokeWidth={2} />
+                  Read-only bank access
+                </span>
+                <span className="flex items-center gap-2">
+                  <Check className="h-3.5 w-3.5 text-[#6DD9A4]" strokeWidth={2} />
+                  No credential storage
+                </span>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.06 }}
+              className="lg:pt-6"
+            >
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6DD9A4]/90">Settle without the chaos</p>
+              <h2 className="font-display mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                Shared trips &amp; dinners, one honest ledger
+              </h2>
+              <p className="mt-3 max-w-md text-sm leading-relaxed text-white/42">
+                Groups don’t lose track — balances follow real spend, and settling is one tap.
+              </p>
+              <div className="mt-8">
+                <SplitDemo />
+              </div>
+              <ul className="mt-8 space-y-5">
+                {settleBenefits.map(({ icon: Icon, title, body }) => (
+                  <li key={title} className="flex gap-4 text-sm text-white/50">
+                    <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/[0.06]">
+                      <Icon className="h-[18px] w-[18px] text-[#6DD9A4]" strokeWidth={2} />
+                    </span>
+                    <span>
+                      <span className="font-semibold text-white/90">{title}</span>
+                      <span className="mt-1 block leading-relaxed text-white/45">{body}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
           </div>
         </div>
       </section>
 
-      <section className="bg-[#F7FAF8] py-20 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-3">
-              Three things your bank app can&apos;t do
-            </h2>
-            <p className="text-gray-500">Coconut does the hard work so you can just understand.</p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-5">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-xl bg-[#EEF7F2] flex items-center justify-center">
-                  <Sparkles size={15} className="text-[#3D8E62]" />
-                </div>
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Auto Cleanup</span>
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-1">Raw garbage → clean names</h3>
-              <p className="text-sm text-gray-400 mb-5">No more AMZN MKTP US*1A2. Coconut normalizes every merchant automatically.</p>
-              <CleanupDemo />
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-              className="bg-gray-950 rounded-3xl border border-white/10 p-6 shadow-sm"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-xl bg-[#3D8E62]/20 flex items-center justify-center">
-                  <Sparkles size={15} className="text-[#6DD9A4]" />
-                </div>
-                <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">Natural Language</span>
-              </div>
-              <h3 className="text-lg font-bold text-white mb-1">Ask anything, get answers</h3>
-              <p className="text-sm text-white/40 mb-5">Type how you think. Coconut understands context, not just keywords.</p>
-              <div className="space-y-2.5">
-                {searchExamples.slice(0, 4).map((q, i) => (
-                  <motion.div
+      {/* Search */}
+      <section className="relative border-t border-white/[0.06] bg-[#080808] py-20 sm:py-24">
+        <div className="pointer-events-none absolute inset-0 opacity-40" style={gridStyle} />
+        <div className="relative mx-auto max-w-6xl px-5 sm:px-6">
+          <div className="grid items-center gap-14 md:grid-cols-2 md:gap-16">
+            <div>
+              <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                Type the way you think — get numbers back
+              </h2>
+              <p className="mt-5 text-base leading-relaxed text-white/42">
+                Time ranges, people, merchants, categories — asked in normal language, answered from the transactions
+                you’ve linked. No maze of filters.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-2">
+                {searchExamples.slice(0, 5).map((q) => (
+                  <span
                     key={q}
-                    initial={{ opacity: 0, x: -8 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.08 + 0.3 }}
-                    className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5"
+                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-2 text-xs font-medium text-white/55"
                   >
-                    <Sparkles size={12} className="text-[#6DD9A4] shrink-0" />
-                    <span className="text-sm text-white/70">{q}</span>
-                  </motion.div>
+                    {q}
+                  </span>
                 ))}
               </div>
-            </motion.div>
+            </div>
+            <SearchAnswerMock />
+          </div>
+        </div>
+      </section>
 
+      {/* Bank — light band */}
+      <section className="border-t border-neutral-200 bg-[#f4f4f5] py-20 text-neutral-900 sm:py-24">
+        <div className="mx-auto max-w-6xl px-5 sm:px-6">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">Your bank feed, readable</h2>
+            <p className="mt-4 text-base leading-relaxed text-neutral-500">
+              Link with Plaid (read-only). Messy descriptors become real merchant names — the same data powers search
+              and shared spaces inside the app.
+            </p>
+          </div>
+          <div className="mt-14 grid items-center gap-12 md:grid-cols-2">
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 12 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm"
+              className="rounded-2xl border border-neutral-200/80 bg-white p-8 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.12)]"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <Users size={15} className="text-blue-600" />
+              <div className="mb-5 flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EEF7F2]">
+                  <Building2 className="h-5 w-5 text-[#3D8E62]" strokeWidth={2} />
                 </div>
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Shared Spaces</span>
+                <span className="text-xs font-bold uppercase tracking-[0.15em] text-neutral-400">In the app</span>
               </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-1">Settle trips, dinners, anything</h3>
-              <p className="text-sm text-gray-400 mb-5">Tag transactions to shared spaces. One tap to see who owes what.</p>
-              <SplitDemo />
+              <h3 className="font-display text-xl font-bold tracking-tight">One sync, many uses</h3>
+              <p className="mt-3 text-sm leading-relaxed text-neutral-500">
+                Search, cleanup, and splits all read from the same live transaction list — not CSVs and side docs.
+              </p>
             </motion.div>
+            <div>
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.15em] text-neutral-400">Before → after</p>
+              <CleanupDemo />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="py-20 px-6">
-        <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-12 items-center">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-100 text-amber-700 text-xs font-medium px-3.5 py-1.5 rounded-full mb-5">
-              <RefreshCw size={10} />
-              Subscription Intelligence
+      {/* Tap to Pay */}
+      <section className="border-t border-white/[0.06] bg-[#0a0a0a] py-20 sm:py-24">
+        <div className="mx-auto max-w-6xl px-5 sm:px-6">
+          <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-20">
+            <div className="order-2 flex justify-center lg:order-1">
+              <TapToPayShowcase />
             </div>
-            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-4">
-              Stop paying for things you forgot about
-            </h2>
-            <p className="text-gray-500 mb-6 leading-relaxed">
-              Coconut detects price increases, duplicate subscriptions, and free trials that silently became paid — before your bank statement does.
-            </p>
-            <div className="space-y-3">
-              {[
-                { icon: "↑", text: "Netflix price increased 20% last month", color: "text-red-500", bg: "bg-red-50" },
-                { icon: "⚠", text: "Duplicate Adobe subscription detected", color: "text-amber-600", bg: "bg-amber-50" },
-                { icon: "✓", text: "Notion dropped 50% — you saved $10", color: "text-[#3D8E62]", bg: "bg-[#EEF7F2]" },
-              ].map((item) => (
-                <div key={item.text} className={`flex items-center gap-3 ${item.bg} rounded-xl px-4 py-3`}>
-                  <span className={`text-sm font-bold ${item.color}`}>{item.icon}</span>
-                  <span className="text-sm text-gray-700">{item.text}</span>
-                </div>
-              ))}
+            <div className="order-1 lg:order-2">
+              <p className="inline-flex items-center gap-2 rounded-full border border-[#3D8E62]/30 bg-[#3D8E62]/10 px-3 py-1 text-xs font-semibold text-[#8EECC0]">
+                <Nfc className="h-3.5 w-3.5" />
+                Sellers &amp; side hustles
+              </p>
+              <h2 className="font-display mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+                Accept contactless payments on iPhone
+              </h2>
+              <p className="mt-4 text-base leading-relaxed text-white/45">
+                Tap to Pay when you sell in person — Stripe-backed, no extra reader. Same account as search and splits.
+              </p>
+              <ul className="mt-8 space-y-4 text-sm text-white/55">
+                <li className="flex gap-3">
+                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#6DD9A4]" strokeWidth={2.5} />
+                  Cards and Apple Pay — customer taps to your phone
+                </li>
+                <li className="flex gap-3">
+                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#6DD9A4]" strokeWidth={2.5} />
+                  Optional alongside linked banks and group settling
+                </li>
+              </ul>
             </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden"
-          >
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-              <span className="text-sm font-semibold text-gray-900">Active subscriptions</span>
-              <span className="text-sm font-bold text-gray-900">$113.96<span className="text-xs text-gray-400 font-normal">/mo</span></span>
-            </div>
-            {subs.map((s) => (
-              <div key={s.name} className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-50 last:border-b-0">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ backgroundColor: s.color }}>
-                  {s.name[0]}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900">{s.name}</span>
-                    {s.alert && !("dup" in s && s.dup) && (
-                      <span className="text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">↑ 20%</span>
-                    )}
-                    {"dup" in s && s.dup && (
-                      <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-full">Duplicate?</span>
-                    )}
-                  </div>
-                </div>
-                <span className="text-sm font-semibold text-gray-900">${s.amount.toFixed(2)}</span>
-              </div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="bg-gray-950 py-20 px-6">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-white tracking-tight mb-3">
-            Not another dashboard
-          </h2>
-          <p className="text-white/40 mb-10">Coconut is built around understanding, not data overload.</p>
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              {
-                name: "Monarch",
-                color: "border-white/10",
-                features: ["Net worth tracking", "Budget categories", "Investment sync", "Heavy charts", "Steep learning curve"],
-                highlight: false,
-              },
-              {
-                name: "Coconut",
-                color: "border-[#3D8E62] bg-[#3D8E62]/5",
-                highlight: true,
-                features: ["Natural language search", "Auto merchant cleanup", "Shared expense spaces", "Subscription alerts", "One-tap settle up"],
-              },
-              {
-                name: "Copilot",
-                color: "border-white/10",
-                features: ["iOS-only", "Beautiful design", "AI categorization", "Net worth view", "No web app"],
-                highlight: false,
-              },
-            ].map((app) => (
-              <div
-                key={app.name}
-                className={`rounded-2xl border p-5 text-left ${app.color} ${app.highlight ? "ring-1 ring-[#3D8E62]/30" : ""}`}
-              >
-                {app.highlight && (
-                  <div className="text-xs bg-[#3D8E62] text-white px-2 py-0.5 rounded-full inline-block mb-3 font-medium">You are here</div>
-                )}
-                <div className={`text-base font-bold mb-4 ${app.highlight ? "text-white" : "text-white/40"}`}>{app.name}</div>
-                <ul className="space-y-2.5">
-                  {app.features.map((f) => (
-                    <li key={f} className={`flex items-start gap-2 text-xs ${app.highlight ? "text-white/70" : "text-white/25"}`}>
-                      <Check size={12} className={`mt-0.5 shrink-0 ${app.highlight ? "text-[#6DD9A4]" : "text-white/20"}`} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
           </div>
         </div>
       </section>
 
-      <section className="py-20 px-6 text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
-          <h2 className="text-4xl font-bold text-gray-900 tracking-tight mb-3">
-            Ready to clean up?
+      {/* Final CTA */}
+      <section className="border-t border-white/[0.06] bg-[#080808] py-20 sm:py-24">
+        <div className="mx-auto max-w-3xl px-5 text-center sm:px-6">
+          <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl md:text-[2.75rem]">
+            Get Coconut on iPhone
           </h2>
-          <p className="text-gray-500 mb-8 max-w-sm mx-auto">
-            Connect your bank in 2 minutes. Read-only. No credentials stored. Cancel anytime.
+          <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-white/42">
+            The product is the app — download to search, split, link banks, and use Tap to Pay when you need it.
           </p>
-          <div className="flex items-center justify-center gap-3">
+          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <AppStoreBadge href={appHref} />
             <button
+              type="button"
               onClick={() => router.push("/connect")}
-              className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-8 py-3.5 rounded-xl text-sm font-medium transition-all duration-200 shadow-md shadow-[#3D8E62]/20"
+              className="text-sm font-semibold text-white/40 underline-offset-4 transition hover:text-white/60 hover:underline"
             >
-              Connect your bank
-              <ArrowRight size={15} />
+              Or connect bank on the web →
             </button>
           </div>
-        </motion.div>
+        </div>
       </section>
 
-      <footer className="border-t border-gray-100 py-8">
-        <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-[#3D8E62] flex items-center justify-center">
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white"/>
-              </svg>
-            </div>
-            <span className="text-sm font-semibold text-gray-700">Coconut</span>
+      <footer className="border-t border-white/[0.06] bg-[#0a0a0a] py-10">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-5 sm:flex-row sm:px-6">
+          <div className="flex items-center gap-3">
+            <BrandMark className="h-8 w-8" />
+            <span className="font-display text-sm font-semibold text-white/80">Coconut</span>
           </div>
-          <div className="flex items-center gap-6 text-sm text-gray-400">
-            {["Privacy", "Security", "Terms", "Support"].map((link) => (
-              <button key={link} className="hover:text-gray-600 transition-colors">{link}</button>
+          <div className="flex flex-wrap justify-center gap-8 text-sm font-medium text-white/35">
+            {["Privacy", "Security", "Terms", "Support"].map((label) => (
+              <button key={label} type="button" className="transition hover:text-white/55">
+                {label}
+              </button>
             ))}
           </div>
+          <a
+            href={appHref}
+            target={IOS_APP_URL ? "_blank" : undefined}
+            rel={IOS_APP_URL ? "noopener noreferrer" : undefined}
+            className="flex items-center gap-2 text-sm font-medium text-white/45 transition hover:text-white/70"
+          >
+            <Smartphone className="h-4 w-4" />
+            App Store
+          </a>
         </div>
       </footer>
     </div>
