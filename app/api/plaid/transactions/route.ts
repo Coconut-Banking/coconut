@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
       .in("transaction_id", bankOnly.map((tx) => tx.id));
     const { data: receiptRows } = await db
       .from("email_receipts")
-      .select("transaction_id, merchant, raw_subject")
+      .select("transaction_id, merchant, raw_subject, merchant_type, merchant_details")
       .not("transaction_id", "is", null)
       .eq("clerk_user_id", effectiveUserId);
     const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
@@ -113,8 +113,19 @@ export async function GET(request: NextRequest) {
       if (!tid) continue;
       const merchant = (r.merchant as string | null | undefined)?.trim();
       const subj = (r.raw_subject as string | null | undefined)?.trim();
-      const line =
-        merchant || (subj ? subj.slice(0, 72) : "") || "Email receipt";
+      const details = r.merchant_details as Record<string, unknown> | null;
+      const mType = r.merchant_type as string | null;
+
+      // Build a richer one-liner for merchant-specific receipts
+      let line = merchant || (subj ? subj.slice(0, 72) : "") || "Email receipt";
+      if (mType === "rideshare" && details?.pickup && details?.dropoff) {
+        line = `${merchant}: ${details.pickup} → ${details.dropoff}`;
+      } else if (mType === "food_delivery" && details?.restaurant_name) {
+        line = `${merchant} — ${details.restaurant_name}`;
+      } else if (mType === "saas" && details?.plan_name) {
+        line = `${merchant} ${details.plan_name}`;
+      }
+      if (line.length > 80) line = line.slice(0, 78) + "…";
       receiptMatchLineByTxId.set(tid, line);
     }
     const receiptTxIds = new Set(receiptMatchLineByTxId.keys());

@@ -3,6 +3,13 @@ import { getGmailClient } from "./google-auth";
 import { getSupabase } from "./supabase";
 import { matchReceiptsToTransactions } from "./receipt-matcher";
 import { GMAIL, AI } from "./config";
+import {
+  type MerchantType,
+  type MerchantDetails,
+  detectMerchantType,
+  getMerchantPrompt,
+  extractMerchantDetails,
+} from "./receipt-merchants";
 
 // ─── Pre-filter: skip emails that are clearly not expense receipts ───────────
 
@@ -122,7 +129,7 @@ function scrubPII(text: string): string {
 
 // ─── LLM receipt parsing ─────────────────────────────────────────────────────
 
-export async function parseReceiptEmail(emailBody: string): Promise<{
+export async function parseReceiptEmail(emailBody: string, merchantType: MerchantType = "generic"): Promise<{
   merchant: string;
   order_date: string;
   total_amount: number;
@@ -130,6 +137,8 @@ export async function parseReceiptEmail(emailBody: string): Promise<{
   tax: number | null;
   order_number: string | null;
   line_items: Array<{ name: string; quantity: number; unit_price: number; total: number; category: string }>;
+  merchant_type: MerchantType;
+  merchant_details: MerchantDetails | null;
 } | null> {
   if (!openai) {
     console.error("[receipt-parser] OpenAI API key not configured");
@@ -142,13 +151,11 @@ export async function parseReceiptEmail(emailBody: string): Promise<{
       : emailBody
   );
 
-  const completion = await withRetry(
-    () => Promise.race([
-      openai!.chat.completions.create({
-      model: AI.MODEL,
-      messages: [{
-        role: "user",
-        content: `Extract purchase details from this email. Return ONLY valid JSON.
+  // Use merchant-specific prompt if available, otherwise generic
+  const specializedPrompt = getMerchantPrompt(merchantType);
+  const promptContent = specializedPrompt
+    ? `${specializedPrompt}\n\nEmail body:\n${body}`
+    : `Extract purchase details from this email. Return ONLY valid JSON.
 
 IMPORTANT: Only parse as a receipt if this is an ACTUAL PURCHASE where money LEFT the user's account to pay for goods or services.
 
@@ -196,11 +203,19 @@ Schema:
 }
 
 Email body:
-${body}`
-      }],
+${body}`;
+
+  // Specialized prompts need more tokens for richer output
+  const maxTokens = merchantType === "generic" ? 1000 : 1500;
+
+  const completion = await withRetry(
+    () => Promise.race([
+      openai!.chat.completions.create({
+      model: AI.MODEL,
+      messages: [{ role: "user", content: promptContent }],
       response_format: { type: "json_object" },
       temperature: 0,
-      max_tokens: 1000,
+      max_tokens: maxTokens,
     }),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('OpenAI request timed out')), 30_000))
     ]),
@@ -236,6 +251,11 @@ ${body}`
     "HEALTH_AND_FITNESS", "HOUSEHOLD", "ELECTRONICS", "PERSONAL_CARE", "OTHER",
   ]);
 
+  // Extract merchant-specific details from the LLM response
+  const merchantDetails = merchantType !== "generic"
+    ? extractMerchantDetails(merchantType, parsed as Record<string, unknown>)
+    : null;
+
   return {
     merchant: parsed.merchant,
     order_date: parsed.order_date || new Date().toISOString().split("T")[0],
@@ -256,6 +276,8 @@ ${body}`
         category: VALID_CATEGORIES.has(rawCategory) ? rawCategory : "OTHER",
       };
     }),
+    merchant_type: merchantType,
+    merchant_details: merchantDetails,
   };
 }
 
@@ -402,9 +424,12 @@ export async function scanGmailForReceipts(
           return;
         }
 
+        // Detect merchant type for specialized parsing
+        const merchantType = detectMerchantType(from, subject);
+
         let receiptData;
         try {
-          receiptData = await parseReceiptEmail(body);
+          receiptData = await parseReceiptEmail(body, merchantType);
         } catch (e) {
           parseErrors++;
           scanLogs.push({
@@ -438,6 +463,8 @@ export async function scanGmailForReceipts(
           ...(receiptData.subtotal != null && { subtotal: receiptData.subtotal }),
           ...(receiptData.tax != null && { tax: receiptData.tax }),
           ...(receiptData.order_number != null && { order_number: receiptData.order_number }),
+          ...(receiptData.merchant_type !== "generic" && { merchant_type: receiptData.merchant_type }),
+          ...(receiptData.merchant_details != null && { merchant_details: receiptData.merchant_details }),
         };
 
         const { data: inserted, error: insertError } = forceRescan
