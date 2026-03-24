@@ -2474,6 +2474,83 @@ function FriendsScreen({ onFriend, onAddGroup }: { onFriend: (f: FriendBalance) 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ACCOUNT SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+function AccountScreen() {
+  const C = React.useContext(ThemeCtx);
+  const you = getContact("you");
+  const rows: Array<{ id: string; title: string; sub: string; Icon: LucideIcon }> = [
+    { id: "identity", title: "Profile", sub: "Name, email, phone", Icon: User },
+    { id: "banks", title: "Linked banks", sub: "Plaid connection status", Icon: Landmark },
+    { id: "privacy", title: "Privacy & security", sub: "Read-only access and data controls", Icon: ShieldCheck },
+    { id: "notifications", title: "Notifications", sub: "Payment reminders and split updates", Icon: Mail },
+  ];
+
+  return (
+    <div style={{ height:"100%", overflowY:"auto", background:C.bg, scrollbarWidth:"none" }}>
+      <div style={{ padding:"16px 20px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <p style={{ fontSize:22, fontWeight:900, color:C.label, letterSpacing:"-0.8px" }}>Account</p>
+        <button style={{ border:"none", background:"none", cursor:"pointer", color:C.accent, padding:0, marginBottom:2 }}>
+          <Sliders size={18} strokeWidth={2.3} />
+        </button>
+      </div>
+
+      <div style={{ padding:"0 16px 14px" }}>
+        <Card style={{ padding:"16px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <Avatar id="you" size={52} />
+            <div style={{ minWidth:0 }}>
+              <p style={{ fontSize:17, fontWeight:800, color:C.label }}>{you.full.replace(" (paid)", "")}</p>
+              <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>{you.email}</p>
+            </div>
+          </div>
+          <div style={{ marginTop:14, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            <div style={{ border:`${C.borderW} solid ${C.stroke}`, borderRadius:C.radius, background:C.card2, padding:"9px 10px" }}>
+              <p style={{ fontSize:10, fontWeight:700, color:C.label3, textTransform:"uppercase", letterSpacing:"0.08em" }}>Plan</p>
+              <p style={{ fontSize:13, fontWeight:700, color:C.label, marginTop:2 }}>Free</p>
+            </div>
+            <div style={{ border:`${C.borderW} solid ${C.stroke}`, borderRadius:C.radius, background:C.card2, padding:"9px 10px" }}>
+              <p style={{ fontSize:10, fontWeight:700, color:C.label3, textTransform:"uppercase", letterSpacing:"0.08em" }}>Region</p>
+              <p style={{ fontSize:13, fontWeight:700, color:C.label, marginTop:2 }}>US</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ padding:"0 16px 36px" }}>
+        <SectionLabel>Preferences</SectionLabel>
+        <Card>
+          {rows.map((r, i) => {
+            const RowIcon = r.Icon;
+            return (
+              <div key={r.id}>
+                <button style={{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"13px 16px", border:"none", background:"transparent", textAlign:"left", cursor:"pointer" }}>
+                  <div style={{ width:36, height:36, borderRadius:11, background:C.card2, border:`${C.borderW} solid ${C.stroke}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <RowIcon size={16} color={C.label2} />
+                  </div>
+                  <div style={{ minWidth:0, flex:1 }}>
+                    <p style={{ fontSize:14, fontWeight:700, color:C.label }}>{r.title}</p>
+                    <p style={{ fontSize:11, color:C.label3, marginTop:2 }}>{r.sub}</p>
+                  </div>
+                  <ChevronRight size={15} color={C.label3} style={{ opacity:0.6, flexShrink:0 }} />
+                </button>
+                {i < rows.length - 1 && <Sep ml={64} />}
+              </div>
+            );
+          })}
+        </Card>
+
+        <div style={{ marginTop:14 }}>
+          <button style={{ width:"100%", border:`${C.borderW} solid ${C.stroke}`, background:C.card, borderRadius:C.radius + 2, padding:"12px 0", fontSize:14, color:C.label3, fontWeight:700, cursor:"pointer" }}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PHONE FRAME
 // ─────────────────────────────────────────────────────────────────────────────
 function PhoneFrame({ children }: { children: React.ReactNode }) {
@@ -2578,7 +2655,7 @@ export function CoconutMobileMarketingPage() {
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  const [screen, setScreen] = useState<"home"|"friends"|"activity">("home");
+  const [screen, setScreen] = useState<"home"|"friends"|"activity"|"account">("home");
   const [friendDetail, setFriendDetail] = useState<FriendBalance|null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -2589,6 +2666,14 @@ export function CoconutMobileMarketingPage() {
   const [settleTarget, setSettleTarget] = useState<{ personId: PersonId; amount: number }|null>(null);
   const [selectedTx, setSelectedTx] = useState<BankTx|null>(null);
   const [activeFeature, setActiveFeature] = useState<number | null>(0);
+  const [tapToPayDemoState, setTapToPayDemoState] = useState<"idle" | "processing" | "accepted">("idle");
+  const tapToPayDemoTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (tapToPayDemoTimerRef.current !== null) window.clearTimeout(tapToPayDemoTimerRef.current);
+    };
+  }, []);
 
   const handleSettle = (personId: PersonId, amount: number) => {
     setShowAdd(false);
@@ -2653,6 +2738,19 @@ export function CoconutMobileMarketingPage() {
       fn();
     }, DEMO_OPEN_MS);
   }, []);
+
+  const triggerTapToPayDemo = () => {
+    if (tapToPayDemoState === "processing") return;
+    if (tapToPayDemoState === "accepted") {
+      setTapToPayDemoState("idle");
+      return;
+    }
+    setTapToPayDemoState("processing");
+    tapToPayDemoTimerRef.current = window.setTimeout(() => {
+      setTapToPayDemoState("accepted");
+      tapToPayDemoTimerRef.current = null;
+    }, 900);
+  };
 
   const features: Array<{
     Icon: LucideIcon;
@@ -2905,7 +3003,6 @@ export function CoconutMobileMarketingPage() {
               style={{ display:"flex", flexDirection:"column", gap:isMobile ? 10 : 12, marginBottom:isMobile ? 18 : 34 }}>
               {features.map((f, i) => {
                 const active = activeFeature === i;
-                const A = f.accent;
                 return (
                   <motion.button
                     key={f.label}
@@ -2925,10 +3022,12 @@ export function CoconutMobileMarketingPage() {
                       padding: isMobile ? "13px 14px" : "16px 18px",
                       borderRadius: 16,
                       cursor: "pointer",
-                      background: active ? A.cardBgActive : A.cardBg,
-                      border: `2px solid ${active ? A.borderActive : A.border}`,
+                      background: active
+                        ? "linear-gradient(135deg, rgba(58, 125, 68, 0.11) 0%, rgba(248, 245, 242, 0.98) 55%, #f7f3ee 100%)"
+                        : "linear-gradient(135deg, rgba(58, 125, 68, 0.05) 0%, rgba(248, 245, 242, 0.96) 55%, #faf8f5 100%)",
+                      border: `2px solid ${active ? "rgba(58, 125, 68, 0.42)" : "rgba(58, 125, 68, 0.24)"}`,
                       boxShadow: active
-                        ? `0 0 0 1px rgba(255,255,255,0.65) inset, 0 0 0 3px ${A.ring}, 0 18px 44px rgba(43, 42, 41, 0.1), 0 10px 28px -6px rgba(43, 42, 41, 0.12)`
+                        ? "0 0 0 1px rgba(255,255,255,0.65) inset, 0 0 0 3px rgba(58, 125, 68, 0.14), 0 18px 44px rgba(43, 42, 41, 0.1), 0 10px 28px -6px rgba(43, 42, 41, 0.12)"
                         : "0 1px 0 rgba(255,255,255,0.88) inset, 0 12px 36px rgba(43, 42, 41, 0.08), 0 4px 14px rgba(43, 42, 41, 0.05)",
                       textAlign: "left",
                       transition: "all 0.22s ease",
@@ -2940,68 +3039,24 @@ export function CoconutMobileMarketingPage() {
                         height: 40,
                         borderRadius: 11,
                         flexShrink: 0,
-                        background: A.iconWellBg,
-                        border: `1.5px solid ${A.iconWellBorder}`,
+                        background: active ? "rgba(58, 125, 68, 0.14)" : "rgba(58, 125, 68, 0.08)",
+                        border: `1.5px solid ${active ? "rgba(58, 125, 68, 0.35)" : "rgba(58, 125, 68, 0.22)"}`,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         boxShadow: active
-                          ? `0 6px 20px ${A.ring}, inset 0 1px 0 rgba(255,255,255,0.9)`
+                          ? "0 6px 20px rgba(58, 125, 68, 0.16), inset 0 1px 0 rgba(255,255,255,0.9)"
                           : "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 12px rgba(43, 42, 41, 0.06)",
                         transition: "all 0.22s ease",
                       }}
                     >
-                      <f.Icon size={isMobile ? 16 : 18} color={A.icon} strokeWidth={2.1} />
+                      <f.Icon size={isMobile ? 16 : 18} color="#3a7d44" strokeWidth={2.1} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: active ? A.icon : LP.textMuted,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.1em",
-                            transition: "color 0.2s",
-                          }}
-                        >
-                          {f.tag}
-                        </span>
-                        {active && (
-                          <motion.span
-                            initial={{ opacity: 0, scale: 0.88 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: A.icon,
-                              background: A.iconWellBg,
-                              border: `1px solid ${A.iconWellBorder}`,
-                              padding: "2px 8px",
-                              borderRadius: 10,
-                            }}
-                          >
-                            ↗ Live demo
-                          </motion.span>
-                        )}
-                      </div>
                       <p style={{ fontSize: isMobile ? 13 : 14, fontWeight: 700, color: LP.text, margin: "0 0 2px", lineHeight: 1.3 }}>{f.label}</p>
                       <p style={{ fontSize: isMobile ? 11 : 12, color: LP.textSoft, margin: 0, lineHeight: 1.5 }}>{f.desc}</p>
                     </div>
-                    {!active && !isMobile && (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: A.icon,
-                          fontWeight: 700,
-                          flexShrink: 0,
-                          marginTop: 2,
-                          opacity: 0.85,
-                        }}
-                      >
-                        Explore →
-                      </span>
-                    )}
+                    {!isMobile && <ChevronRight size={16} color={active ? "#3a7d44" : LP.textMuted} style={{ opacity: active ? 0.95 : 0.7, flexShrink: 0, marginTop: 2 }} />}
                   </motion.button>
                 );
               })}
@@ -3066,6 +3121,7 @@ export function CoconutMobileMarketingPage() {
                         {screen === "home" && <HomeScreen onSettle={handleSettle} onAdd={handleAdd} onFriend={f => setFriendDetail(f)} onSeeAllTx={() => setShowAllTx(true)} onSelectTx={setSelectedTx} onSeeActivity={() => setScreen("activity")} />}
                         {screen === "friends" && <FriendsScreen onFriend={f => setFriendDetail(f)} onAddGroup={() => setShowAddFriend(true)} />}
                         {screen === "activity" && <ActivityScreen onAdd={() => handleAdd()} />}
+                        {screen === "account" && <AccountScreen />}
                       </motion.div>
                     </AnimatePresence>
 
@@ -3116,9 +3172,9 @@ export function CoconutMobileMarketingPage() {
                       <Clock size={22} color={screen==="activity" ? C.accent : C.label3} strokeWidth={screen==="activity" ? 2 : 1.5} />
                       <span style={{ fontSize:10, fontWeight:screen==="activity"?700:500, color:screen==="activity"?C.accent:C.label3 }}>Activity</span>
                     </button>
-                    <button onClick={() => {}} style={{ border:"none", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, minWidth:56 }}>
-                      <User size={22} color={C.label3} strokeWidth={1.5} />
-                      <span style={{ fontSize:10, fontWeight:500, color:C.label3 }}>Account</span>
+                    <button onClick={() => { setScreen("account"); setFriendDetail(null); }} style={{ border:"none", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, minWidth:56 }}>
+                      <User size={22} color={screen==="account" ? C.accent : C.label3} strokeWidth={screen==="account" ? 2 : 1.5} />
+                      <span style={{ fontSize:10, fontWeight:screen==="account"?700:500, color:screen==="account"?C.accent:C.label3 }}>Account</span>
                     </button>
                   </div>
                 </PhoneFrame>
@@ -3248,22 +3304,30 @@ export function CoconutMobileMarketingPage() {
                     </div>
                     <button
                       type="button"
+                      onClick={triggerTapToPayDemo}
+                      disabled={tapToPayDemoState === "processing"}
                       style={{
                         marginTop: 8,
                         width: "100%",
                         border: "none",
                         borderRadius: 14,
                         padding: "14px 0",
-                        background: "#3D8E62",
+                        background: tapToPayDemoState === "accepted" ? "#2f6f38" : "#3D8E62",
                         color: "#fff",
                         fontSize: 15,
                         fontWeight: 800,
-                        cursor: "default",
+                        cursor: tapToPayDemoState === "processing" ? "wait" : "pointer",
+                        transition: "background-color 0.18s ease",
+                        opacity: tapToPayDemoState === "processing" ? 0.92 : 1,
                       }}
                     >
-                      Accept payment
+                      {tapToPayDemoState === "idle" && "Accept payment"}
+                      {tapToPayDemoState === "processing" && "Processing…"}
+                      {tapToPayDemoState === "accepted" && "Payment accepted ✓"}
                     </button>
-                    <p style={{ textAlign: "center", fontSize: 10, color: LP.textMuted, marginTop: 10 }}>Stripe. Built for sellers.</p>
+                    <p style={{ textAlign: "center", fontSize: 10, color: tapToPayDemoState === "accepted" ? "#2f6f38" : LP.textMuted, marginTop: 10, fontWeight: tapToPayDemoState === "accepted" ? 700 : 500 }}>
+                      {tapToPayDemoState === "accepted" ? "Tap again to run another demo payment." : "Interactive Tap to Pay demo."}
+                    </p>
                   </div>
                 </div>
               </div>
