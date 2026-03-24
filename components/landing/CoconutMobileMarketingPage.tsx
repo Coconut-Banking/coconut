@@ -314,7 +314,7 @@ function Card({ children, style, onClick }: { children: React.ReactNode; style?:
       background: C.card,
       borderRadius: C.radius + 4,
       border: `${C.borderW} solid ${C.stroke}`,
-      boxShadow: C.sh,
+      boxShadow: `${C.sh}, 0 0 0 1px rgba(0,0,0,0.10)`,
       overflow: "hidden",
       ...style,
     }}>

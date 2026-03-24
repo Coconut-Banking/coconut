@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
 import { getUserId } from "@/lib/auth";
@@ -9,6 +9,7 @@ import {
   getGroups,
   getExpenses,
   getCurrentUser,
+  type GetExpensesOptions,
   type SplitwiseGroup,
   type SplitwiseExpense,
 } from "@/lib/splitwise";
@@ -21,9 +22,48 @@ interface ImportStats {
   skipped: number;
 }
 
-export async function POST() {
+interface ImportRequestBody {
+  dryRun?: boolean;
+  groupIds?: number[];
+  datedAfter?: string;
+  updatedAfter?: string;
+  limitPerPage?: number;
+  maxPages?: number;
+}
+
+function parseImportOptions(body: ImportRequestBody | null) {
+  const dryRun = Boolean(body?.dryRun);
+  const groupIds =
+    Array.isArray(body?.groupIds) && body?.groupIds.length > 0
+      ? body.groupIds.filter((id) => Number.isFinite(id)).map((id) => Number(id))
+      : null;
+
+  const datedAfter = typeof body?.datedAfter === "string" ? body.datedAfter : undefined;
+  const updatedAfter = typeof body?.updatedAfter === "string" ? body.updatedAfter : undefined;
+  const limitPerPage = Number.isFinite(body?.limitPerPage) ? Number(body?.limitPerPage) : undefined;
+  const maxPages = Number.isFinite(body?.maxPages) ? Number(body?.maxPages) : undefined;
+
+  const expenseOptions: GetExpensesOptions = {
+    limitPerPage,
+    maxPages,
+    ...(datedAfter ? { datedAfter } : {}),
+    ...(updatedAfter ? { updatedAfter } : {}),
+  };
+
+  return { dryRun, groupIds, expenseOptions };
+}
+
+export async function POST(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let body: ImportRequestBody | null = null;
+  try {
+    body = await req.json();
+  } catch {
+    // Body is optional for this endpoint.
+  }
+  const { dryRun, groupIds, expenseOptions } = parseImportOptions(body);
 
   const db = getSupabase();
 
@@ -52,18 +92,29 @@ export async function POST() {
 
     // 3. Fetch all Splitwise groups
     const swGroups = await getGroups(token);
+    const filteredGroups = groupIds
+      ? swGroups.filter((g) => groupIds.includes(g.id))
+      : swGroups;
     console.log(`[splitwise-import] found ${swGroups.length} groups for user ${swUser.id}`);
 
-    for (const swGroup of swGroups) {
+    for (const swGroup of filteredGroups) {
       try {
-        await importGroup(db, userId, token, swGroup, swUser.id, myEmail, stats);
+        await importGroup(db, userId, token, swGroup, swUser.id, myEmail, stats, {
+          dryRun,
+          expenseOptions,
+        });
       } catch (err) {
         console.error(`[splitwise-import] failed to import group "${swGroup.name}":`, err);
       }
     }
 
     console.log("[splitwise-import] done", stats);
-    return NextResponse.json({ ok: true, stats });
+    return NextResponse.json({
+      ok: true,
+      dryRun,
+      importedGroupCount: filteredGroups.length,
+      stats,
+    });
   } catch (err) {
     console.error("[splitwise-import] fatal error:", err);
     return NextResponse.json(
@@ -84,7 +135,8 @@ async function importGroup(
   swGroup: SplitwiseGroup,
   swUserId: number,
   myEmail: string | null,
-  stats: ImportStats
+  stats: ImportStats,
+  opts: { dryRun: boolean; expenseOptions: GetExpensesOptions }
 ) {
   // Map Splitwise group_type → Coconut group_type
   const typeMap: Record<string, string> = {
@@ -94,6 +146,21 @@ async function importGroup(
     couple: "couple",
   };
   const groupType = typeMap[swGroup.group_type] ?? "other";
+
+  // Dry run: estimate counts only and skip writes.
+  if (opts.dryRun) {
+    const expenses = await getExpenses(token, swGroup.id, opts.expenseOptions);
+    stats.groups++;
+    stats.members += swGroup.members.length;
+    for (const expense of expenses) {
+      if (expense.payment) {
+        stats.settlements += expense.repayments.filter((r) => safeParseFloat(r.amount) && safeParseFloat(r.amount)! > 0).length;
+      } else {
+        stats.expenses++;
+      }
+    }
+    return;
+  }
 
   // Check if already imported
   const { data: existing } = await db
@@ -172,7 +239,7 @@ async function importGroup(
   }
 
   // 5. Fetch and import expenses
-  const expenses = await getExpenses(token, swGroup.id);
+  const expenses = await getExpenses(token, swGroup.id, opts.expenseOptions);
 
   for (const expense of expenses) {
     try {

@@ -19,7 +19,14 @@ export const metadata: Metadata = {
   title: "Coconut — Personal finance with AI",
   description:
     "Search your spending in plain English, split and settle with friends, and manage money from the Coconut iPhone app.",
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icon.png", type: "image/png", sizes: "32x32" },
+      { url: "/icon.png", type: "image/png", sizes: "192x192" },
+    ],
+    shortcut: [{ url: "/icon.png", type: "image/png" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
+  },
 };
 
 export default function RootLayout({
