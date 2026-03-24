@@ -8,6 +8,7 @@ export interface ParsedQuery {
     amount_range?: { min?: number; max?: number };
     is_pending?: boolean;
     transaction_type?: "expense" | "income" | "refund";
+    location?: string;
   };
   semantic_terms: string;
   merchant_search?: string;
@@ -28,6 +29,9 @@ export interface SearchTransaction {
   iso_currency_code: string | null;
   is_pending: boolean;
   embed_text: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
 }
 
 export interface RankedTransaction extends SearchTransaction {
@@ -40,4 +44,11 @@ export interface SearchV2Result {
   total: number | null;
   count: number;
   answer: string;
+  date_range: { earliest: string; latest: string } | null;
+  applied_filters: {
+    date_start: string | null;
+    date_end: string | null;
+    account_id: string | null;
+    location: string | null;
+  };
 }

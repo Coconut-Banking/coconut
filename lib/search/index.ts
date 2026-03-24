@@ -4,4 +4,4 @@ export type { ParsedQuery, SearchTransaction, RankedTransaction, SearchV2Result 
 export { parseQuery } from "./query-parser";
 export { fuseResults, reciprocalRankFusion } from "./fusion";
 export { rerankWithLLM } from "./reranker";
-export { vectorSearch, fullTextSearch, fuzzyMerchantSearch, structuredSearch } from "./retrievers";
+export { vectorSearch, fullTextSearch, fuzzyMerchantSearch, structuredSearch, expandByMerchants } from "./retrievers";

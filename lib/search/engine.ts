@@ -11,10 +11,11 @@
  * This file does NOT modify the existing lib/search-engine.ts.
  */
 import { parseQuery } from "./query-parser";
-import { vectorSearch, fullTextSearch, fuzzyMerchantSearch, structuredSearch } from "./retrievers";
+import { vectorSearch, fullTextSearch, fuzzyMerchantSearch, structuredSearch, expandByMerchants } from "./retrievers";
 import { fuseResults } from "./fusion";
 import { rerankWithLLM } from "./reranker";
-import type { ParsedQuery, SearchTransaction, SearchV2Result } from "./types";
+import { getSupabaseAdmin } from "../supabase";
+import type { ParsedQuery, SearchTransaction, RankedTransaction, SearchV2Result } from "./types";
 
 function fmt(amount: number): string {
   return Math.abs(amount).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -74,6 +75,9 @@ function generateAnswer(
 
 export interface SearchV2Options {
   maxCandidates?: number;
+  dateOverride?: { start: string; end: string };
+  accountId?: string;
+  location?: string;
 }
 
 /**
@@ -90,59 +94,142 @@ export async function searchV2(
 ): Promise<SearchV2Result> {
   // ── Step 1: Query Understanding ────────────────────────────────────────
   const parsed = await parseQuery(query);
+
+  // Apply mobile app overrides (calendar/location pickers take precedence over LLM)
+  if (opts?.dateOverride) {
+    parsed.structured_filters.date_range = opts.dateOverride;
+  }
+  if (opts?.location) {
+    parsed.structured_filters.location = opts.location;
+  }
+
   console.log("[search-v2] parsed query:", JSON.stringify(parsed));
 
-  // For aggregate/count queries, we need ALL matching transactions, not a top-K sample
-  const needsAllResults = parsed.intent === "aggregate" || parsed.intent === "count";
-  const vectorLimit = needsAllResults ? 100 : (opts?.maxCandidates ?? 50);
-  const fusionLimit = needsAllResults ? 500 : (opts?.maxCandidates ?? 50);
+  let reranked: SearchTransaction[];
 
-  // ── Step 2: Parallel Multi-Strategy Retrieval ──────────────────────────
-  const [vectorResults, fullTextResults, fuzzyResults, structuredResults] =
-    await Promise.all([
-      vectorSearch(clerkUserId, parsed, vectorLimit).catch((e) => {
-        console.warn("[search-v2] vector search failed:", e);
-        return [] as SearchTransaction[];
-      }),
-      fullTextSearch(clerkUserId, parsed, vectorLimit).catch((e) => {
-        console.warn("[search-v2] full-text search failed:", e);
-        return [] as SearchTransaction[];
-      }),
-      fuzzyMerchantSearch(clerkUserId, parsed).catch((e) => {
-        console.warn("[search-v2] fuzzy search failed:", e);
-        return [] as SearchTransaction[];
-      }),
-      structuredSearch(clerkUserId, parsed, needsAllResults ? 1000 : 200).catch((e) => {
-        console.warn("[search-v2] structured search failed:", e);
-        return [] as SearchTransaction[];
-      }),
-    ]);
+  // ── Location-only queries skip merchant reranking ────────────────────
+  // "transactions in California last week" → just filter by location + date
+  const isLocationOnlyQuery = !!parsed.structured_filters.location &&
+    !parsed.merchant_search &&
+    (!parsed.semantic_terms || parsed.semantic_terms === query.trim());
 
-  console.log(
-    `[search-v2] retrieval results — vector: ${vectorResults.length}, ` +
-    `fulltext: ${fullTextResults.length}, fuzzy: ${fuzzyResults.length}, ` +
-    `structured: ${structuredResults.length}`
-  );
+  if (isLocationOnlyQuery) {
+    reranked = await expandByMerchants(clerkUserId, [], parsed, opts?.accountId);
+    reranked.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
+    console.log(`[search-v2] location query — ${reranked.length} transactions`);
+    const { answer, total, count } = generateAnswer(query, parsed, reranked);
+    const dates = reranked.map((t) => t.date).filter(Boolean).sort();
+    return {
+      intent: parsed.intent,
+      transactions: reranked,
+      total,
+      count,
+      answer,
+      date_range: dates.length > 0 ? { earliest: dates[0], latest: dates[dates.length - 1] } : null,
+      applied_filters: {
+        date_start: parsed.structured_filters.date_range?.start ?? null,
+        date_end: parsed.structured_filters.date_range?.end ?? null,
+        account_id: opts?.accountId ?? null,
+        location: parsed.structured_filters.location ?? null,
+      },
+    };
+  }
 
-  // ── Step 3: Candidate Fusion (RRF) ────────────────────────────────────
-  const fused = fuseResults(
-    vectorResults,
-    fullTextResults,
-    fuzzyResults,
-    structuredResults,
-    parsed,
-    fusionLimit,
-  );
+  // ── Step 2: Fetch the user's distinct merchant list ──────────────────
+  const db = getSupabaseAdmin();
 
-  console.log(`[search-v2] fused candidates: ${fused.length}`);
+  let merchantQuery = db
+    .from("transactions")
+    .select("merchant_name, raw_name, normalized_merchant, primary_category, detailed_category")
+    .eq("clerk_user_id", clerkUserId);
 
-  // ── Step 4: LLM Re-Ranking ────────────────────────────────────────────
-  const { transactions: reranked } = await rerankWithLLM(query, fused);
+  if (opts?.accountId) {
+    merchantQuery = merchantQuery.eq("account_id", opts.accountId);
+  }
 
-  console.log(`[search-v2] after reranking: ${reranked.length}`);
+  const { date_range, amount_range, transaction_type, location } = parsed.structured_filters;
+  if (date_range) {
+    merchantQuery = merchantQuery.gte("date", date_range.start).lte("date", date_range.end);
+  }
+  if (amount_range) {
+    if (amount_range.min != null) merchantQuery = merchantQuery.gte("amount", amount_range.min);
+    if (amount_range.max != null) merchantQuery = merchantQuery.lte("amount", amount_range.max);
+  }
+  if (transaction_type === "expense") {
+    merchantQuery = merchantQuery.lt("amount", 0);
+  } else if (transaction_type === "income" || transaction_type === "refund") {
+    merchantQuery = merchantQuery.gt("amount", 0);
+  }
+  if (location) {
+    merchantQuery = merchantQuery.or(
+      `city.ilike.%${location}%,region.ilike.%${location}%,country.ilike.%${location}%`
+    );
+  }
 
-  // ── Step 5: Result Formatting ─────────────────────────────────────────
+  const { data: allTxRows } = await merchantQuery.limit(5000);
+
+  // Deduplicate to one sample per merchant
+  const merchantMap = new Map<string, SearchTransaction>();
+  for (const row of (allTxRows ?? []) as SearchTransaction[]) {
+    const key = (row.normalized_merchant || row.merchant_name || row.raw_name || "").toLowerCase().trim();
+    if (key && !merchantMap.has(key)) {
+      merchantMap.set(key, row);
+    }
+  }
+
+  const uniqueMerchantSamples = [...merchantMap.values()];
+  console.log(`[search-v2] unique merchants: ${uniqueMerchantSamples.length}`);
+
+  // ── Step 3: Also run vector search for semantic discovery ────────────
+  // Vector search helps surface merchants that are semantically relevant
+  // but might not be obvious from name alone (e.g. "Starbird Chicken"
+  // for "eating out"). Merge its merchants into the set.
+  const vectorResults = await vectorSearch(clerkUserId, parsed, 80).catch((e) => {
+    console.warn("[search-v2] vector search failed:", e);
+    return [] as SearchTransaction[];
+  });
+
+  for (const tx of vectorResults) {
+    const key = (tx.normalized_merchant || tx.merchant_name || tx.raw_name || "").toLowerCase().trim();
+    if (key && !merchantMap.has(key)) {
+      merchantMap.set(key, tx);
+      uniqueMerchantSamples.push(tx);
+    }
+  }
+
+  // If merchant_search is set, also add fuzzy matches
+  if (parsed.merchant_search) {
+    const fuzzyResults = await fuzzyMerchantSearch(clerkUserId, parsed).catch(() => [] as SearchTransaction[]);
+    for (const tx of fuzzyResults) {
+      const key = (tx.normalized_merchant || tx.merchant_name || tx.raw_name || "").toLowerCase().trim();
+      if (key && !merchantMap.has(key)) {
+        merchantMap.set(key, tx);
+        uniqueMerchantSamples.push(tx);
+      }
+    }
+  }
+
+  console.log(`[search-v2] total unique merchants (with vector/fuzzy): ${uniqueMerchantSamples.length}`);
+
+  // ── Step 4: Reranker decides which merchants are relevant ────────────
+  const asRanked: RankedTransaction[] = uniqueMerchantSamples.map((tx) => ({ ...tx, score: 1 }));
+  const { relevantMerchantNames } = await rerankWithLLM(query, asRanked);
+
+  // ── Step 5: Expand — fetch ALL transactions from relevant merchants ──
+  reranked = await expandByMerchants(clerkUserId, relevantMerchantNames, parsed, opts?.accountId);
+
+  console.log(`[search-v2] after expansion: ${reranked.length} transactions from ${relevantMerchantNames.length} merchants`);
+
+  // Sort results reverse-chronologically (most recent first)
+  reranked.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
+
+  // ── Step 6: Result Formatting ─────────────────────────────────────────
   const { answer, total, count } = generateAnswer(query, parsed, reranked);
+
+  const dates = reranked.map((t) => t.date).filter(Boolean).sort();
+  const dateRange = dates.length > 0
+    ? { earliest: dates[0], latest: dates[dates.length - 1] }
+    : null;
 
   return {
     intent: parsed.intent,
@@ -150,5 +237,12 @@ export async function searchV2(
     total,
     count,
     answer,
+    date_range: dateRange,
+    applied_filters: {
+      date_start: parsed.structured_filters.date_range?.start ?? null,
+      date_end: parsed.structured_filters.date_range?.end ?? null,
+      account_id: opts?.accountId ?? null,
+      location: parsed.structured_filters.location ?? null,
+    },
   };
 }

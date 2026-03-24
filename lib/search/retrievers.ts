@@ -238,3 +238,71 @@ export async function structuredSearch(
   }
   return castRows(data);
 }
+
+// ─── 5. Merchant Expansion ───────────────────────────────────────────────────
+// Given a set of merchant names identified as relevant by the reranker,
+// fetch ALL transactions from those merchants for the user.
+
+const TX_SELECT_FIELDS =
+  "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, " +
+  "amount, date, primary_category, detailed_category, iso_currency_code, is_pending, embed_text, " +
+  "city, region, country";
+
+export async function expandByMerchants(
+  clerkUserId: string,
+  merchantNames: string[],
+  parsed: ParsedQuery,
+  accountId?: string,
+): Promise<SearchTransaction[]> {
+  if (merchantNames.length === 0) return [];
+
+  const db = getSupabaseAdmin();
+
+  const { location } = parsed.structured_filters;
+
+  // When searching by location, don't filter by merchant — return ALL
+  // transactions in the location within the date/amount range.
+  // The user said "transactions in California", not "these specific merchants in California".
+  const isLocationQuery = !!location && merchantNames.length === 0;
+
+  let query = db
+    .from("transactions")
+    .select(TX_SELECT_FIELDS)
+    .eq("clerk_user_id", clerkUserId)
+    .order("date", { ascending: false })
+    .limit(5000);
+
+  if (!isLocationQuery) {
+    query = query.in("normalized_merchant", merchantNames);
+  }
+
+  if (accountId) {
+    query = query.eq("account_id", accountId);
+  }
+
+  const { date_range, amount_range, transaction_type } = parsed.structured_filters;
+  if (date_range) {
+    query = query.gte("date", date_range.start).lte("date", date_range.end);
+  }
+  if (amount_range) {
+    if (amount_range.min != null) query = query.gte("amount", amount_range.min);
+    if (amount_range.max != null) query = query.lte("amount", amount_range.max);
+  }
+  if (transaction_type === "expense") {
+    query = query.lt("amount", 0);
+  } else if (transaction_type === "income" || transaction_type === "refund") {
+    query = query.gt("amount", 0);
+  }
+  if (location) {
+    query = query.or(
+      `city.ilike.%${location}%,region.ilike.%${location}%,country.ilike.%${location}%`
+    );
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn("[search-v2/expand] query error:", error.message);
+    return [];
+  }
+  return castRows(data);
+}

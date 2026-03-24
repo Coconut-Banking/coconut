@@ -20,23 +20,35 @@ async function ensureRichEmbeddings(userId: string): Promise<void> {
 
   if (count && count > 0) {
     console.log(`[search-v2] auto-backfilling ${count} transactions for ${userId}`);
-    // Run in background — don't block the search response
+    const MAX_PASSES = Math.ceil(count / 1000) + 1;
     (async () => {
-      let remaining = count;
-      while (remaining > 0) {
+      for (let pass = 0; pass < MAX_PASSES; pass++) {
         await embedRichTransactionsForUser(userId);
         const { count: left } = await db
           .from("transactions")
           .select("id", { count: "exact", head: true })
           .eq("clerk_user_id", userId)
           .is("rich_embedding", null);
-        remaining = left ?? 0;
+        if (!left || left === 0) break;
       }
       console.log(`[search-v2] auto-backfill complete for ${userId}`);
     })().catch((e) => console.warn("[search-v2] auto-backfill error:", e));
   }
 }
 
+/**
+ * GET /api/search/v2
+ *
+ * Query params:
+ *   q           — natural language search query (required)
+ *   date_start  — explicit start date YYYY-MM-DD (optional, from calendar picker)
+ *   date_end    — explicit end date YYYY-MM-DD (optional, from calendar picker)
+ *   account_id  — filter to a specific bank account UUID (optional)
+ *
+ * When date_start/date_end are provided by the mobile app, they override
+ * any date range the LLM extracts from the query text. This gives the
+ * calendar UI full control over the date window.
+ */
 export async function GET(request: NextRequest) {
   const { userId } = await auth();
   if (!userId) {
@@ -48,11 +60,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing query parameter 'q'" }, { status: 400 });
   }
 
-  // Auto-backfill rich embeddings on first search (fire-and-forget)
+  const dateStart = request.nextUrl.searchParams.get("date_start") || undefined;
+  const dateEnd = request.nextUrl.searchParams.get("date_end") || undefined;
+  const accountId = request.nextUrl.searchParams.get("account_id") || undefined;
+  const location = request.nextUrl.searchParams.get("location") || undefined;
+
   ensureRichEmbeddings(userId).catch(() => {});
 
   try {
-    const result = await searchV2(userId, q);
+    const result = await searchV2(userId, q, {
+      dateOverride: dateStart && dateEnd ? { start: dateStart, end: dateEnd } : undefined,
+      accountId,
+      location,
+    });
     return NextResponse.json(result);
   } catch (err) {
     console.error("[search-v2]", err);

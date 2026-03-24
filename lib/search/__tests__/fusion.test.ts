@@ -16,6 +16,9 @@ function makeTx(overrides: Partial<SearchTransaction> & { id: string }): SearchT
     iso_currency_code: "USD",
     is_pending: false,
     embed_text: null,
+    city: null,
+    region: null,
+    country: null,
     ...overrides,
   };
 }

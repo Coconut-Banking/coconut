@@ -66,6 +66,10 @@ function validateParsedQuery(raw: unknown, originalQuery: string): ParsedQuery |
     filters.transaction_type = r.transaction_type as ParsedQuery["structured_filters"]["transaction_type"];
   }
 
+  if (typeof r.location === "string" && r.location.trim()) {
+    filters.location = r.location.trim();
+  }
+
   const semanticTerms = typeof r.semantic_terms === "string" && r.semantic_terms.trim()
     ? r.semantic_terms.trim()
     : originalQuery.trim();
@@ -99,6 +103,7 @@ Output JSON schema:
   "amount_max": number or null,
   "is_pending": boolean or null,
   "transaction_type": "expense" | "income" | "refund" | null,
+  "location": "string or null — city, state/province, or country if the user mentions a location",
   "semantic_terms": "string — the core concept to search for semantically",
   "merchant_search": "string or null — explicit merchant name if one is mentioned",
   "intent": "search" | "aggregate" | "count"
@@ -120,6 +125,12 @@ Rules:
   - "under $20" / "less than $20" → amount_max: -20
   - "around $47" / "about $47" → amount_min: -49, amount_max: -45
   - Amounts are stored negative for expenses. For expense queries, negate the amount thresholds.
+- Location resolution:
+  - "in California" → location: "California"
+  - "in New York" → location: "New York"
+  - "in France" / "in Paris" → location: "France" or "Paris"
+  - "on my trip to..." → extract the destination as location
+  - No location mentioned → null
 - "intent":
   - "search" → user wants to find/list matching transactions
   - "aggregate" → user wants a total/sum (e.g. "how much did I spend on...")
