@@ -2945,7 +2945,7 @@ export function CoconutMobileMarketingPage() {
                 <span style={{ color:LP.gold }}>friends, resolved.</span>
               </h1>
               <p style={{ fontSize:isMobile ? 15 : 16, color:LP.textSoft, margin:"0 0 24px", lineHeight:1.65, maxWidth:isMobile ? "100%" : 420 }}>
-                One app for bank charges, receipt lines, shared balances, and Tap to Pay when you want the tab closed now.
+                Splitting dinner shouldn&apos;t take longer than dinner.
               </p>
             </motion.div>
 
