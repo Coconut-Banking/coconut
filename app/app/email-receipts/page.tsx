@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X, ExternalLink, Link2, Unlink, ArrowRight } from "lucide-react";
+import { Loader2, Mail, Package, Calendar, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Search, ChevronDown, X, ExternalLink, Link2, Unlink, ArrowRight, Car, UtensilsCrossed, ShoppingBag, CreditCard, MapPin } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { motion } from "motion/react";
 import { useGmail } from "@/hooks/useGmail";
@@ -21,11 +21,17 @@ interface Receipt {
     price: number;
     unit_price?: number;
     total?: number;
+    category?: string;
   }>;
   raw_subject: string;
   raw_from: string;
   gmail_message_id: string;
   transaction_id?: string;
+  merchant_type?: string;
+  merchant_details?: Record<string, unknown>;
+  subtotal?: number;
+  tax?: number;
+  order_number?: string;
 }
 
 interface TransactionCandidate {
@@ -73,6 +79,28 @@ interface ScanResult {
   inserted: number;
   matched: number;
   error?: string;
+}
+
+function merchantTypeIcon(type?: string) {
+  switch (type) {
+    case "rideshare": return <Car className="w-4 h-4" />;
+    case "food_delivery": return <UtensilsCrossed className="w-4 h-4" />;
+    case "ecommerce": return <ShoppingBag className="w-4 h-4" />;
+    case "saas": return <CreditCard className="w-4 h-4" />;
+    case "retail": return <ShoppingBag className="w-4 h-4" />;
+    default: return <Package className="w-4 h-4" />;
+  }
+}
+
+function merchantTypeLabel(type?: string) {
+  switch (type) {
+    case "rideshare": return "Ride";
+    case "food_delivery": return "Delivery";
+    case "ecommerce": return "Online Order";
+    case "saas": return "Subscription";
+    case "retail": return "Retail";
+    default: return null;
+  }
 }
 
 function EmailReceiptsContent() {
@@ -790,6 +818,12 @@ function EmailReceiptsContent() {
                       <div className="flex-1">
                         <div className={`flex items-center gap-2 ${compactView ? "mb-0.5" : "mb-1"}`}>
                           <h4 className={`font-semibold text-gray-900 ${compactView ? "text-sm" : ""}`}>{receipt.merchant}</h4>
+                          {merchantTypeLabel(receipt.merchant_type) ? (
+                            <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium flex items-center gap-1">
+                              {merchantTypeIcon(receipt.merchant_type)}
+                              {merchantTypeLabel(receipt.merchant_type)}
+                            </span>
+                          ) : null}
                           {receipt.transaction_id && (
                             <span className="px-2 py-0.5 bg-[#EEF7F2] text-[#3D8E62] text-xs rounded-full font-medium">
                               Matched
@@ -848,88 +882,281 @@ function EmailReceiptsContent() {
                   </button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6">
+                  {/* Header */}
                   <div className="mb-6">
-                  <h4 className="text-xl font-bold text-gray-900">{selectedReceipt.merchant}</h4>
-                  <p className="text-sm text-gray-500 mt-1">{selectedReceipt.raw_subject}</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    From: {selectedReceipt.raw_from}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    Date: {new Date(selectedReceipt.date).toLocaleString()}
-                  </p>
-                  {selectedReceipt.gmail_message_id && (
-                    <a
-                      href={`https://mail.google.com/mail/u/0/#inbox/${selectedReceipt.gmail_message_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[#EEF7F2] text-[#3D8E62] text-xs font-medium rounded-lg hover:bg-[#D1EAE0] transition-colors"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      View in Gmail
-                    </a>
-                  )}
-                </div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="text-xl font-bold text-gray-900">{selectedReceipt.merchant}</h4>
+                      {merchantTypeLabel(selectedReceipt.merchant_type) ? (
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium flex items-center gap-1">
+                          {merchantTypeIcon(selectedReceipt.merchant_type)}
+                          {merchantTypeLabel(selectedReceipt.merchant_type)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">{selectedReceipt.raw_subject}</p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      From: {selectedReceipt.raw_from}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Date: {new Date(selectedReceipt.date).toLocaleString()}
+                    </p>
+                    {selectedReceipt.order_number ? (
+                      <p className="text-xs text-gray-400">
+                        Order: {selectedReceipt.order_number}
+                      </p>
+                    ) : null}
+                    {selectedReceipt.gmail_message_id && (
+                      <a
+                        href={`https://mail.google.com/mail/u/0/#all/${selectedReceipt.gmail_message_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[#EEF7F2] text-[#3D8E62] text-xs font-medium rounded-lg hover:bg-[#D1EAE0] transition-colors"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        View in Gmail
+                      </a>
+                    )}
+                  </div>
 
-                {selectedReceipt.line_items && selectedReceipt.line_items.length > 0 ? (
-                  <div>
-                    <h5 className="text-sm font-semibold text-gray-700 mb-3">Items</h5>
-                    <div className="space-y-2">
-                      {selectedReceipt.line_items.map((item, idx) => {
-                        const price = item.unit_price || item.price || item.total || 0;
-                        const quantity = item.quantity || 1;
-                        const total = item.total || price * quantity || 0;
-
-                        return (
-                          <div key={idx} className="flex justify-between py-2 border-b border-gray-100 last:border-0">
-                            <div className="flex-1">
-                              <p className="text-sm text-gray-900">{item.name}</p>
-                              <p className="text-xs text-gray-500">Qty: {quantity}</p>
-                            </div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {formatCurrency(
-                                selectedReceipt.currency && selectedReceipt.currency !== currencyCode
-                                  ? convertCurrency(total, selectedReceipt.currency, currencyCode)
-                                  : total,
-                                currencyCode
-                              )}
-                            </p>
+                  {/* Rideshare: map + pickup/dropoff route */}
+                  {selectedReceipt.merchant_type === "rideshare" && selectedReceipt.merchant_details ? (
+                    <div className="space-y-3 mb-4">
+                      {selectedReceipt.merchant_details.map_url ? (
+                        <div className="rounded-xl overflow-hidden border border-gray-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={String(selectedReceipt.merchant_details.map_url)}
+                            alt="Trip route map"
+                            className="w-full h-44 object-cover"
+                          />
+                        </div>
+                      ) : null}
+                      <div className="flex items-start gap-3">
+                        <div className="flex flex-col items-center mt-1">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                          <div className="w-px h-8 bg-gray-200" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                        </div>
+                        <div className="flex-1 space-y-3">
+                          <div>
+                            <div className="text-xs text-gray-400">Pickup</div>
+                            <div className="text-sm text-gray-800">{String(selectedReceipt.merchant_details.pickup || "\u2014")}</div>
                           </div>
-                        );
-                      })}
+                          <div>
+                            <div className="text-xs text-gray-400">Dropoff</div>
+                            <div className="text-sm text-gray-800">{String(selectedReceipt.merchant_details.dropoff || "\u2014")}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-4 text-xs text-gray-500">
+                        {selectedReceipt.merchant_details.distance ? <span>{String(selectedReceipt.merchant_details.distance)}</span> : null}
+                        {selectedReceipt.merchant_details.duration ? <span>{String(selectedReceipt.merchant_details.duration)}</span> : null}
+                        {selectedReceipt.merchant_details.driver_name ? <span>Driver: {String(selectedReceipt.merchant_details.driver_name)}</span> : null}
+                        {selectedReceipt.merchant_details.vehicle ? <span>{String(selectedReceipt.merchant_details.vehicle)}</span> : null}
+                      </div>
+                      {selectedReceipt.merchant_details.fare_breakdown && typeof selectedReceipt.merchant_details.fare_breakdown === "object" ? (
+                        <div className="pt-2 border-t border-gray-100 space-y-1">
+                          {Object.entries(selectedReceipt.merchant_details.fare_breakdown as Record<string, number>).map(([key, val]) => (
+                            <div key={key} className="flex items-center justify-between text-xs text-gray-500">
+                              <span>{key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</span>
+                              <span>${Number(val).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <div className="flex justify-between">
-                        <p className="text-lg font-semibold text-gray-900">Total</p>
-                        <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(
-                            selectedReceipt.currency && selectedReceipt.currency !== currencyCode
-                              ? convertCurrency(selectedReceipt.amount, selectedReceipt.currency, currencyCode)
-                              : selectedReceipt.amount,
-                            currencyCode
-                          )}
-                        </p>
+                  ) : null}
+
+                  {/* Food delivery: restaurant + delivery address */}
+                  {selectedReceipt.merchant_type === "food_delivery" && selectedReceipt.merchant_details ? (
+                    <div className="mb-4">
+                      <div className="text-sm font-medium text-gray-800">
+                        {String(selectedReceipt.merchant_details.restaurant_name || selectedReceipt.merchant)}
+                      </div>
+                      {selectedReceipt.merchant_details.delivery_address ? (
+                        <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                          <MapPin className="w-2.5 h-2.5" /> {String(selectedReceipt.merchant_details.delivery_address)}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* SaaS: plan details */}
+                  {selectedReceipt.merchant_type === "saas" && selectedReceipt.merchant_details ? (
+                    <div className="space-y-1.5 mb-4">
+                      {selectedReceipt.merchant_details.plan_name ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Plan</span>
+                          <span className="text-gray-800 font-medium">{String(selectedReceipt.merchant_details.plan_name)}</span>
+                        </div>
+                      ) : null}
+                      {selectedReceipt.merchant_details.billing_period ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Billing</span>
+                          <span className="text-gray-700">{String(selectedReceipt.merchant_details.billing_period)}</span>
+                        </div>
+                      ) : null}
+                      {selectedReceipt.merchant_details.next_billing_date ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Next charge</span>
+                          <span className="text-gray-700">{String(selectedReceipt.merchant_details.next_billing_date)}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* Line items (for all types except rideshare) */}
+                  {selectedReceipt.merchant_type !== "rideshare" && selectedReceipt.line_items && selectedReceipt.line_items.length > 0 ? (
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 mb-3">Items</h5>
+                      <div className="space-y-2">
+                        {selectedReceipt.line_items.map((item, idx) => {
+                          const price = item.unit_price || item.price || item.total || 0;
+                          const quantity = item.quantity || 1;
+                          const total = item.total || price * quantity || 0;
+
+                          return (
+                            <div key={idx} className="flex justify-between py-2 border-b border-gray-100 last:border-0">
+                              <div className="flex-1">
+                                <p className="text-sm text-gray-900">{item.name}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs text-gray-500">Qty: {quantity}</p>
+                                  {item.category ? (
+                                    <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+                                      {item.category.replace(/_/g, " ")}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {formatCurrency(
+                                  selectedReceipt.currency && selectedReceipt.currency !== currencyCode
+                                    ? convertCurrency(total, selectedReceipt.currency, currencyCode)
+                                    : total,
+                                  currencyCode
+                                )}
+                              </p>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-sm text-gray-500">No itemized details available</p>
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <div className="flex justify-between">
-                        <p className="text-lg font-semibold text-gray-900">Total</p>
-                        <p className="text-lg font-bold text-gray-900">
-                          {formatCurrency(
-                            selectedReceipt.currency && selectedReceipt.currency !== currencyCode
-                              ? convertCurrency(selectedReceipt.amount, selectedReceipt.currency, currencyCode)
-                              : selectedReceipt.amount,
-                            currencyCode
-                          )}
-                        </p>
+                  ) : selectedReceipt.merchant_type !== "rideshare" && selectedReceipt.merchant_type !== "saas" && (!selectedReceipt.line_items || selectedReceipt.line_items.length === 0) ? (
+                    <div className="text-center py-6">
+                      <Package className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">No itemized details available</p>
+                    </div>
+                  ) : null}
+
+                  {/* Fee breakdown for food delivery */}
+                  {selectedReceipt.merchant_type === "food_delivery" && selectedReceipt.merchant_details ? (() => {
+                    const d = selectedReceipt.merchant_details!;
+                    return (
+                      <div className="pt-3 mt-3 border-t border-gray-100 space-y-1">
+                        {d.delivery_fee != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Delivery fee</span>
+                            <span>${Number(d.delivery_fee).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.service_fee != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Service fee</span>
+                            <span>${Number(d.service_fee).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.tip != null && Number(d.tip) > 0 ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Tip</span>
+                            <span>${Number(d.tip).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.discount != null && Number(d.discount) !== 0 ? (
+                          <div className="flex items-center justify-between text-xs text-green-600">
+                            <span>Discount</span>
+                            <span>-${Math.abs(Number(d.discount)).toFixed(2)}</span>
+                          </div>
+                        ) : null}
                       </div>
+                    );
+                  })() : null}
+
+                  {/* E-commerce extras */}
+                  {selectedReceipt.merchant_type === "ecommerce" && selectedReceipt.merchant_details ? (() => {
+                    const d = selectedReceipt.merchant_details!;
+                    return (
+                      <div className="pt-3 mt-3 border-t border-gray-100 space-y-1">
+                        {selectedReceipt.subtotal != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Subtotal</span>
+                            <span>${Number(selectedReceipt.subtotal).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.shipping_cost != null && Number(d.shipping_cost) > 0 ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Shipping</span>
+                            <span>${Number(d.shipping_cost).toFixed(2)}</span>
+                          </div>
+                        ) : Number(d.shipping_cost) === 0 ? (
+                          <div className="flex items-center justify-between text-xs text-green-600">
+                            <span>Shipping</span>
+                            <span>FREE</span>
+                          </div>
+                        ) : null}
+                        {selectedReceipt.tax != null ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Tax</span>
+                            <span>${Number(selectedReceipt.tax).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.discount != null && Number(d.discount) !== 0 ? (
+                          <div className="flex items-center justify-between text-xs text-green-600">
+                            <span>Discount</span>
+                            <span>-${Math.abs(Number(d.discount)).toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {d.estimated_delivery ? (
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>Est. delivery</span>
+                            <span>{String(d.estimated_delivery)}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })() : null}
+
+                  {/* Subtotal/tax for non-food-delivery, non-ecommerce */}
+                  {selectedReceipt.merchant_type !== "food_delivery" && selectedReceipt.merchant_type !== "ecommerce" && (selectedReceipt.subtotal || selectedReceipt.tax) ? (
+                    <div className="pt-3 mt-3 border-t border-gray-100 space-y-1">
+                      {selectedReceipt.subtotal ? (
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>Subtotal</span>
+                          <span>${selectedReceipt.subtotal.toFixed(2)}</span>
+                        </div>
+                      ) : null}
+                      {selectedReceipt.tax ? (
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>Tax</span>
+                          <span>${selectedReceipt.tax.toFixed(2)}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* Total */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="flex justify-between">
+                      <p className="text-lg font-semibold text-gray-900">Total</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {formatCurrency(
+                          selectedReceipt.currency && selectedReceipt.currency !== currencyCode
+                            ? convertCurrency(selectedReceipt.amount, selectedReceipt.currency, currencyCode)
+                            : selectedReceipt.amount,
+                          currencyCode
+                        )}
+                      </p>
                     </div>
                   </div>
-                )}
                 </div>
               </motion.div>
             </>

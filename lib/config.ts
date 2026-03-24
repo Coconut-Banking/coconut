@@ -50,6 +50,7 @@ export const GMAIL = {
     "grubhub.com",
     "seamless.com",
     "lyft.com",
+    "lyftmail.com",
     "shopify.com",
     "squareup.com",
     "paypal.com",
