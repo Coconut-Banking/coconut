@@ -113,15 +113,42 @@ export async function getGroups(token: string): Promise<SplitwiseGroup[]> {
   return data.groups.filter((g) => g.id !== 0);
 }
 
+export interface GetExpensesOptions {
+  limitPerPage?: number;
+  datedAfter?: string;
+  updatedAfter?: string;
+  maxPages?: number;
+}
+
 export async function getExpenses(
   token: string,
   groupId: number,
-  limit = 500
+  options: GetExpensesOptions = {}
 ): Promise<SplitwiseExpense[]> {
-  const data = await swFetch<{ expenses: SplitwiseExpense[] }>(
-    token,
-    `/get_expenses?group_id=${groupId}&limit=${limit}`
-  );
-  // Exclude deleted expenses
-  return data.expenses.filter((e) => !e.deleted_at);
+  const limitPerPage = Math.min(Math.max(options.limitPerPage ?? 200, 1), 500);
+  const maxPages = Math.min(Math.max(options.maxPages ?? 50, 1), 500);
+  const all: SplitwiseExpense[] = [];
+
+  for (let page = 0; page < maxPages; page++) {
+    const params = new URLSearchParams({
+      group_id: String(groupId),
+      limit: String(limitPerPage),
+      offset: String(page * limitPerPage),
+    });
+    if (options.datedAfter) params.set("dated_after", options.datedAfter);
+    if (options.updatedAfter) params.set("updated_after", options.updatedAfter);
+
+    const data = await swFetch<{ expenses: SplitwiseExpense[] }>(
+      token,
+      `/get_expenses?${params.toString()}`
+    );
+    const pageItems = (data.expenses ?? []).filter((e) => !e.deleted_at);
+    all.push(...pageItems);
+
+    if ((data.expenses ?? []).length < limitPerPage) {
+      break;
+    }
+  }
+
+  return all;
 }

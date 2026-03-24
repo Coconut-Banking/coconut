@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "name": "coconut",
+      "path": "."
+    },
+    {
+      "name": "coconut-app",
+      "path": "../coconut-app"
+    }
+  ],
+  "settings": {}
+}
