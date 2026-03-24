@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error("Stripe error:", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Stripe request failed" },
+      { error: "Payment request failed" },
       { status: 500 }
     );
   }

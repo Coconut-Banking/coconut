@@ -17,7 +17,7 @@ function stripHtml(html: string): string {
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|maps\.lyft\.com|static-maps\.lyft\.com|mapbox\.com|staticmap|\/route[-_]map)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
+    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|maps\.lyft\.com|static-maps\.lyft\.com|mapbox\.com|openstreetmap|carto\.com|basemaps|staticmap|\/route[-_]map|\/map[_-]image)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, "")
@@ -112,6 +112,24 @@ describe("stripHtml — MAP_IMAGE preservation", () => {
     expect(result).toContain("Trip from A & B to C");
     expect(result).toContain("[MAP_IMAGE:");
     expect(result).toContain("Total: $15.00");
+  });
+
+  it("handles OpenStreetMap-based map images (Lyft uses OSM)", () => {
+    const html = `<img src="https://tiles.openstreetmap.org/static/37.7749,-122.4194,13/600x300.png" alt="trip map">`;
+    const result = stripHtml(html);
+    expect(result).toContain("[MAP_IMAGE:");
+  });
+
+  it("handles Carto basemap tiles", () => {
+    const html = `<img src="https://basemaps.carto.com/light_all/13/1309/3166.png" alt="">`;
+    const result = stripHtml(html);
+    expect(result).toContain("[MAP_IMAGE:");
+  });
+
+  it("handles /map-image or /map_image paths", () => {
+    const html = `<img src="https://ride-assets.lyft.com/map-image/abc123.png" alt="route">`;
+    const result = stripHtml(html);
+    expect(result).toContain("[MAP_IMAGE: https://ride-assets.lyft.com/map-image/abc123.png]");
   });
 
   it("does NOT match img src that merely contains 'map' in a domain unrelated to maps", () => {

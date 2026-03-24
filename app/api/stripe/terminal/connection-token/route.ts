@@ -25,7 +25,7 @@ export async function POST() {
   } catch (e) {
     console.error("[terminal] connection token error:", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to create connection token" },
+      { error: "Failed to create connection token" },
       { status: 500 }
     );
   }

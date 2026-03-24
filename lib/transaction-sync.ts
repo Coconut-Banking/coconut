@@ -269,6 +269,9 @@ async function syncSingleToken(
       const err = e as { response?: { data?: { error_code?: string } } };
       if (err?.response?.data?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") {
         cursor = lastGoodCursor;
+        allAdded.length = 0;
+        allModified.length = 0;
+        allRemovedIds.length = 0;
         continue;
       }
       throw e;
@@ -362,6 +365,7 @@ export async function syncTransactionsForUser(
   let totalSynced = 0;
   let totalSkipped = 0;
   const allRemovedIds: string[] = [];
+  const errors: string[] = [];
 
   for (const token of accessTokens) {
     const item = tokenToItem.get(token);
@@ -372,7 +376,9 @@ export async function syncTransactionsForUser(
       totalSkipped += skipped;
       allRemovedIds.push(...removedIds);
     } catch (e) {
-      console.error("[sync] error syncing token:", e instanceof Error ? e.message : e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[sync] error syncing token:", msg);
+      errors.push(msg);
     }
   }
 
@@ -447,7 +453,7 @@ export async function syncTransactionsForUser(
     }
   }
 
-  return { synced: totalSynced };
+  return { synced: totalSynced, ...(totalSynced === 0 && errors.length > 0 ? { error: `Sync failed for ${errors.length} bank(s)` } : {}) };
 }
 
 /**

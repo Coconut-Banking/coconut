@@ -227,8 +227,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!linked) return;
     fetch("/api/paypal/status")
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : null)
       .then((status) => {
+        if (!status) return;
         if (status.connected && status.lastSyncAt) {
           const hoursSinceSync = (Date.now() - new Date(status.lastSyncAt).getTime()) / (1000 * 60 * 60);
           if (hoursSinceSync > 6) {
@@ -291,7 +292,7 @@ export default function DashboardPage() {
           {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {displayName}
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#3D8E62] font-medium">{transactions.length} transactions</span>
+          {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#3D8E62] font-medium">{(() => { const now = new Date(); const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`; return transactions.filter(tx => tx.date?.startsWith(thisMonthKey)).length; })()} transactions</span>
         </p>
       </div>
 

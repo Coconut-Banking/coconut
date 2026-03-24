@@ -42,7 +42,7 @@ export async function GET() {
   } catch (e) {
     console.error("[terminal] location error:", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to get Terminal location" },
+      { error: "Failed to get location" },
       { status: 500 }
     );
   }

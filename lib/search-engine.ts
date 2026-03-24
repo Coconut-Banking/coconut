@@ -736,11 +736,18 @@ async function runVectorSearch(
     if (intent.merchant) searchText = `${query} ${intent.merchant}`;
   }
 
-  const { data: embData } = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: searchText,
-    dimensions: 256,
-  });
+  let embData;
+  try {
+    const resp = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: searchText,
+      dimensions: 256,
+    });
+    embData = resp.data;
+  } catch (e) {
+    console.warn("[vector] OpenAI embeddings failed:", e instanceof Error ? e.message : e);
+    return [];
+  }
   if (!embData?.length || !embData[0]?.embedding) return [];
   const queryEmbedding = embData[0].embedding;
 

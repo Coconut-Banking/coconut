@@ -12,7 +12,6 @@ type CreateLinkBody = {
   trace_id?: string;
   update?: boolean;
   new_accounts?: boolean;
-  access_token?: string;
   /** Optional client origin (e.g. window.location.origin) for redirect_uri when it differs from APP_URL */
   origin?: string;
 };
@@ -105,13 +104,13 @@ export async function POST(request: NextRequest) {
     vercel_url: process.env.VERCEL_URL || null,
   };
 
-  const isUpdateMode = body.update === true || Boolean(body.access_token);
+  const isUpdateMode = body.update === true;
   const accountSelectionEnabled = body.new_accounts === true;
 
   try {
     const startedAt = Date.now();
-    let accessTokenForUpdate: string | undefined = body.access_token;
-    if (isUpdateMode && !accessTokenForUpdate) {
+    let accessTokenForUpdate: string | undefined;
+    if (isUpdateMode) {
       const { getAllPlaidTokensForUser } = await import("@/lib/transaction-sync");
       const tokens = await getAllPlaidTokensForUser(effectiveUserId);
       accessTokenForUpdate = tokens[0] ?? undefined;

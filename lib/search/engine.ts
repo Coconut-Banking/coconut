@@ -11,7 +11,7 @@
  * This file does NOT modify the existing lib/search-engine.ts.
  */
 import { parseQuery } from "./query-parser";
-import { vectorSearch, fullTextSearch, fuzzyMerchantSearch, structuredSearch, expandByMerchants } from "./retrievers";
+import { vectorSearch, fullTextSearch, fuzzyMerchantSearch, structuredSearch, expandByMerchants, escapePostgrestValue, escapeLikePattern } from "./retrievers";
 import { fuseResults } from "./fusion";
 import { rerankWithLLM } from "./reranker";
 import { getSupabaseAdmin } from "../supabase";
@@ -161,8 +161,9 @@ export async function searchV2(
     merchantQuery = merchantQuery.gt("amount", 0);
   }
   if (location) {
+    const escaped = escapePostgrestValue(escapeLikePattern(location));
     merchantQuery = merchantQuery.or(
-      `city.ilike.%${location}%,region.ilike.%${location}%,country.ilike.%${location}%`
+      `city.ilike.%${escaped}%,region.ilike.%${escaped}%,country.ilike.%${escaped}%`
     );
   }
 

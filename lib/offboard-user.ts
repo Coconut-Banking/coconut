@@ -4,6 +4,7 @@
  */
 import { getSupabase } from "./supabase";
 import { getPlaidClient } from "./plaid-client";
+import { decryptToken } from "./encryption";
 
 export async function offboardUser(clerkUserId: string, options?: { plaidItemRemove?: boolean }) {
   const db = getSupabase();
@@ -15,8 +16,9 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
       for (const item of items) {
-        const token = item.access_token as string;
-        if (!token) continue;
+        const raw = item.access_token as string;
+        if (!raw) continue;
+        const token = decryptToken(raw);
         try {
           await plaid.itemRemove({ access_token: token });
           console.log("[offboard] itemRemove ok", { user_id: clerkUserId });

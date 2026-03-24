@@ -50,6 +50,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (WEBHOOK_SECRET && req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
     const update: TelegramUpdate = await req.json();
 

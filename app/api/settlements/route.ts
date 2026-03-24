@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const amount = Number(body.amount);
   const method = (body.method as string) ?? "manual";
 
-  if (!groupId || !payerMemberId || !receiverMemberId || amount <= 0) {
+  if (!groupId || !payerMemberId || !receiverMemberId || !Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json(
       { error: "groupId, payerMemberId, receiverMemberId, amount required" },
       { status: 400 }
@@ -63,7 +63,10 @@ export async function POST(req: NextRequest) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[settlements] insert:", error.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
 
   const postCheck = await getMaxSettlementAllowed(groupId, payerMemberId, receiverMemberId);
   if (postCheck.maxAmount < 0) {
