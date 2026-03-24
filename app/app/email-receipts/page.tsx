@@ -923,14 +923,19 @@ function EmailReceiptsContent() {
                   {selectedReceipt.merchant_type === "rideshare" && selectedReceipt.merchant_details ? (
                     <div className="space-y-3 mb-4">
                       {selectedReceipt.merchant_details.map_url ? (
-                        <div className="rounded-xl overflow-hidden border border-gray-100">
+                        <a
+                          href={String(selectedReceipt.merchant_details.map_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block rounded-xl overflow-hidden border border-gray-100 hover:border-gray-300 transition-colors cursor-zoom-in"
+                        >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={String(selectedReceipt.merchant_details.map_url)}
                             alt="Trip route map"
-                            className="w-full h-44 object-cover"
+                            className="w-full object-contain max-h-[300px] bg-gray-50"
                           />
-                        </div>
+                        </a>
                       ) : null}
                       <div className="flex items-start gap-3">
                         <div className="flex flex-col items-center mt-1">
