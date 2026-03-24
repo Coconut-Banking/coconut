@@ -24,6 +24,9 @@ export async function DELETE(
 
   const { error } = await db.from("settlements").delete().eq("group_id", id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[settlements] delete:", error.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

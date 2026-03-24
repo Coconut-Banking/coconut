@@ -44,7 +44,10 @@ export async function POST(
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[members] insert:", error.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
   return NextResponse.json(member);
 }
 
@@ -77,7 +80,10 @@ export async function GET(
     .select("id, display_name, email, user_id, venmo_username, cashapp_cashtag, paypal_username")
     .eq("group_id", id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[members] list:", error.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
   return NextResponse.json(members);
 }
 
@@ -147,7 +153,10 @@ export async function PATCH(
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[members] update:", error.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
   if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
   return NextResponse.json(member);
 }

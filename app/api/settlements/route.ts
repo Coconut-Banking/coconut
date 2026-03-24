@@ -63,7 +63,10 @@ export async function POST(req: NextRequest) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[settlements] insert:", error.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
 
   const postCheck = await getMaxSettlementAllowed(groupId, payerMemberId, receiverMemberId);
   if (postCheck.maxAmount < 0) {

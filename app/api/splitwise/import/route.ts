@@ -67,7 +67,7 @@ export async function POST() {
   } catch (err) {
     console.error("[splitwise-import] fatal error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Import failed" },
+      { error: "Import failed. Please try again." },
       { status: 500 }
     );
   }

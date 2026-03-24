@@ -16,9 +16,8 @@ export async function GET() {
     return NextResponse.json({ insights });
   } catch (e) {
     console.error("[item-insights]", e);
-    const message = e instanceof Error ? e.message : "Failed to generate item insights";
     return NextResponse.json(
-      { error: message, insights: [] },
+      { error: "Failed to generate insights", insights: [] },
       { status: 500 }
     );
   }
