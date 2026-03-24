@@ -908,7 +908,7 @@ function EmailReceiptsContent() {
                     ) : null}
                     {selectedReceipt.gmail_message_id && (
                       <a
-                        href={`https://mail.google.com/mail/u/0/#all/${selectedReceipt.gmail_message_id}`}
+                        href={`https://mail.google.com/mail/u/${gmail.email ? encodeURIComponent(gmail.email) : "0"}/#all/${selectedReceipt.gmail_message_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[#EEF7F2] text-[#3D8E62] text-xs font-medium rounded-lg hover:bg-[#D1EAE0] transition-colors"
