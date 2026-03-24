@@ -95,7 +95,7 @@ const MERCHANT_PATTERNS: MerchantPattern[] = [
   },
   {
     type: "rideshare",
-    domains: ["lyft.com"],
+    domains: ["lyft.com", "lyftmail.com"],
     subjectHints: [/ride receipt/i, /your ride/i, /lyft ride/i, /ride with/i],
   },
   // Food delivery

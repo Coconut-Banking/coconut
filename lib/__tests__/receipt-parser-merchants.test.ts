@@ -17,7 +17,7 @@ function stripHtml(html: string): string {
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|mapbox\.com|staticmap|\/route[-_]map)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
+    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|maps\.lyft\.com|static-maps\.lyft\.com|mapbox\.com|staticmap|\/route[-_]map)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, "")

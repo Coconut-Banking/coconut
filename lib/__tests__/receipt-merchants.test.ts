@@ -22,6 +22,7 @@ describe("detectMerchantType", () => {
   it("detects Lyft ride", () => {
     expect(detectMerchantType("no-reply@lyft.com", "Your ride receipt")).toBe("rideshare");
     expect(detectMerchantType("no-reply@lyft.com", "Lyft ride receipt")).toBe("rideshare");
+    expect(detectMerchantType("Lyft Receipts <no-reply@lyftmail.com>", "Your ride with Firat on March 1")).toBe("rideshare");
   });
 
   it("detects DoorDash as food delivery", () => {
