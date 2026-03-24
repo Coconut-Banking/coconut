@@ -30,7 +30,7 @@ function castRows(data: unknown): SearchTransaction[] {
   return data as SearchTransaction[];
 }
 
-function escapeLikePattern(s: string): string {
+export function escapeLikePattern(s: string): string {
   return s.replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
@@ -40,7 +40,7 @@ function escapeLikePattern(s: string): string {
  * parentheses denote grouping. URL-encoding them prevents user input
  * from breaking out of a .or() filter string.
  */
-function escapePostgrestValue(s: string): string {
+export function escapePostgrestValue(s: string): string {
   return s
     .replace(/%/g, "%25")
     .replace(/,/g, "%2C")
@@ -294,8 +294,9 @@ export async function expandByMerchants(
     query = query.gt("amount", 0);
   }
   if (location) {
+    const escaped = escapePostgrestValue(escapeLikePattern(location));
     query = query.or(
-      `city.ilike.%${location}%,region.ilike.%${location}%,country.ilike.%${location}%`
+      `city.ilike.%${escaped}%,region.ilike.%${escaped}%,country.ilike.%${escaped}%`
     );
   }
 
