@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
       .select("transaction_id, merchant, raw_subject, merchant_type, merchant_details")
       .not("transaction_id", "is", null)
       .eq("clerk_user_id", effectiveUserId);
-    const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id");
+    const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id").in("transaction_id", bankOnly.map((tx) => tx.id));
 
     const receiptMatchLineByTxId = new Map<string, string>();
     for (const r of receiptRows ?? []) {

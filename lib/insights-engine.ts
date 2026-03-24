@@ -201,9 +201,9 @@ async function detectSubscriptionPriceChanges(userId: string, db: ReturnType<typ
   if (!data?.length) return [];
 
   return data.map((s) => {
-    const prev = Number(s.previous_amount) ?? 0;
-    const curr = Number(s.amount) ?? 0;
-    const change = Number(s.price_change_amount) ?? curr - prev;
+    const prev = Number(s.previous_amount) || 0;
+    const curr = Number(s.amount) || 0;
+    const change = Number(s.price_change_amount) || curr - prev;
     const merchant = s.merchant_name ?? "Subscription";
     return {
       type: "price_change" as const,
@@ -232,7 +232,7 @@ async function detectNewSubscriptions(userId: string, db: ReturnType<typeof getS
 
   return data.map((s) => {
     const merchant = s.merchant_name ?? "Subscription";
-    const amt = Number(s.amount) ?? 0;
+    const amt = Number(s.amount) || 0;
     const freq = (s.frequency ?? "monthly").replace("ly", "");
     return {
       type: "new_subscription" as const,

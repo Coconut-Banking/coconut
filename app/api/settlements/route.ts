@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const amount = Number(body.amount);
   const method = (body.method as string) ?? "manual";
 
-  if (!groupId || !payerMemberId || !receiverMemberId || amount <= 0) {
+  if (!groupId || !payerMemberId || !receiverMemberId || !Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json(
       { error: "groupId, payerMemberId, receiverMemberId, amount required" },
       { status: 400 }

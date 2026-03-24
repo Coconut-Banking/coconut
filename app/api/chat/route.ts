@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
         const { data: receipts } = await db
           .from("email_receipts")
           .select("merchant_name, total_amount, order_date, line_items, matched_transaction_id")
-          .in("matched_transaction_id", txIds);
+          .in("matched_transaction_id", txIds)
+          .eq("clerk_user_id", userId);
         if (receipts && receipts.length > 0) {
           emailLineItems = (receipts as Array<{ merchant_name: string; total_amount: number; order_date: string; line_items: unknown; matched_transaction_id: string }>)
             .map(r => {
