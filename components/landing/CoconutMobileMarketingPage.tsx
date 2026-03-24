@@ -2941,11 +2941,11 @@ export function CoconutMobileMarketingPage() {
             {/* Headline */}
             <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.55, delay:0.05 }}>
               <h1 style={{ fontSize:isMobile ? 44 : isTablet ? 50 : 56, fontWeight:900, color:LP.text, lineHeight:1.04, letterSpacing:isMobile ? "-1.8px" : "-2.8px", margin:"0 0 18px" }}>
-                Money between<br />
-                <span style={{ color:LP.gold }}>friends, resolved.</span>
+                Splitting dinner<br />
+                <span style={{ color:LP.gold }}>shouldn&apos;t take longer than dinner.</span>
               </h1>
               <p style={{ fontSize:isMobile ? 15 : 16, color:LP.textSoft, margin:"0 0 24px", lineHeight:1.65, maxWidth:isMobile ? "100%" : 420 }}>
-                Splitting dinner shouldn&apos;t take longer than dinner.
+                One app for bank charges, receipt lines, shared balances, and Tap to Pay when you want the tab closed now.
               </p>
             </motion.div>
 
