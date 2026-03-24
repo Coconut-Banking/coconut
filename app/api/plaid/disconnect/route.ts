@@ -4,6 +4,7 @@ import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import { getPlaidClient } from "@/lib/plaid-client";
+import { decryptToken } from "@/lib/encryption";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 
 /**
@@ -25,8 +26,9 @@ export async function POST() {
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
       for (const item of items) {
-        const token = item.access_token as string;
-        if (!token) continue;
+        const raw = item.access_token as string;
+        if (!raw) continue;
+        const token = decryptToken(raw);
         try {
           await plaid.itemRemove({ access_token: token });
           console.log("[disconnect] itemRemove ok", { user_id: effectiveUserId });

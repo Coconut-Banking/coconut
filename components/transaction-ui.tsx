@@ -65,7 +65,7 @@ export function AmountDisplay({
     txCode !== displayCode ? convertCurrency(amount, txCode, displayCode) : amount;
   const isInflow =
     treatAsInflow ?? isDisplayAsInflow(amount, { category, merchant, rawDescription });
-  const sign = isInflow ? "+" : "-";
+  const sign = amount === 0 ? "" : isInflow ? "+" : "-";
   return (
     <span
       className={
