@@ -864,12 +864,13 @@ function EmailReceiptsContent() {
                 onClick={() => setSelectedReceipt(null)}
                 className="fixed inset-0 bg-black/30 z-40"
               />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                className="fixed inset-4 sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-lg sm:max-h-[85vh] bg-white rounded-2xl shadow-xl z-50 flex flex-col overflow-hidden"
+                className="w-full max-w-lg max-h-[85vh] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden pointer-events-auto"
               >
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
                   <h3 className="text-sm font-semibold text-gray-900">Receipt Details</h3>
@@ -907,7 +908,7 @@ function EmailReceiptsContent() {
                     ) : null}
                     {selectedReceipt.gmail_message_id && (
                       <a
-                        href={`https://mail.google.com/mail/u/0/#all/${selectedReceipt.gmail_message_id}`}
+                        href={`https://mail.google.com/mail/u/${gmail.email ? encodeURIComponent(gmail.email) : "0"}/#all/${selectedReceipt.gmail_message_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[#EEF7F2] text-[#3D8E62] text-xs font-medium rounded-lg hover:bg-[#D1EAE0] transition-colors"
@@ -922,14 +923,19 @@ function EmailReceiptsContent() {
                   {selectedReceipt.merchant_type === "rideshare" && selectedReceipt.merchant_details ? (
                     <div className="space-y-3 mb-4">
                       {selectedReceipt.merchant_details.map_url ? (
-                        <div className="rounded-xl overflow-hidden border border-gray-100">
+                        <a
+                          href={String(selectedReceipt.merchant_details.map_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block rounded-xl overflow-hidden border border-gray-100 hover:border-gray-300 transition-colors cursor-zoom-in"
+                        >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={String(selectedReceipt.merchant_details.map_url)}
                             alt="Trip route map"
-                            className="w-full h-44 object-cover"
+                            className="w-full object-contain max-h-[300px] bg-gray-50"
                           />
-                        </div>
+                        </a>
                       ) : null}
                       <div className="flex items-start gap-3">
                         <div className="flex flex-col items-center mt-1">
@@ -1159,6 +1165,7 @@ function EmailReceiptsContent() {
                   </div>
                 </div>
               </motion.div>
+              </div>
             </>
           )}
         </AnimatePresence>
