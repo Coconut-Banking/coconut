@@ -33,7 +33,10 @@ export const metadata: Metadata = {
     shortcut: [{ url: "/icon.png", type: "image/png" }],
     apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
   },
-  /** Explicit OG/Twitter image — without this, link previews grab the first hero image (demo avatars). */
+  /**
+   * og:image / twitter:image come from `app/opengraph-image.png` + `app/twitter-image.png`
+   * (same as `app/icon.png` — the coconut mark). File-based metadata is what Slack/Discord reliably use.
+   */
   openGraph: {
     title: "Coconut — Personal finance with AI",
     description:
@@ -42,19 +45,12 @@ export const metadata: Metadata = {
     siteName: "Coconut",
     locale: "en_US",
     type: "website",
-    images: [
-      {
-        url: "/brand/coconut-mark.jpg",
-        alt: "Coconut",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Coconut — Personal finance with AI",
     description:
       "Search your spending in plain English, split and settle with friends, and manage money from the Coconut iPhone app.",
-    images: ["/brand/coconut-mark.jpg"],
   },
 };
 
