@@ -2557,13 +2557,21 @@ const LANDING_THEME = THEMES.coconut_cashmere;
 export function CoconutMobileMarketingPage() {
   const C = LANDING_THEME;
 
-  /** Larger phone on web: higher floor + ceiling so the demo is easy to tap and read */
+  /** Responsive layout controls for landing hero + demo frame */
   const [phoneScale, setPhoneScale] = useState(0.92);
+  const [viewportW, setViewportW] = useState(1440);
+  const isMobile = viewportW < 900;
+  const isNarrowMobile = viewportW < 520;
+  const isTablet = viewportW >= 900 && viewportW < 1180;
   useEffect(() => {
     const update = () => {
-      const targetH = window.innerHeight - 180;
+      const w = window.innerWidth;
+      setViewportW(w);
+      const targetH = window.innerHeight - (w < 900 ? 120 : 180);
       const raw = targetH / 852;
-      setPhoneScale(Math.min(1, Math.max(0.82, raw)));
+      const floor = w < 900 ? 0.54 : 0.82;
+      const ceil = w < 900 ? 0.78 : 1;
+      setPhoneScale(Math.min(ceil, Math.max(floor, raw)));
     };
     update();
     window.addEventListener("resize", update);
@@ -2765,14 +2773,14 @@ export function CoconutMobileMarketingPage() {
           WebkitBackdropFilter:"blur(28px) saturate(1.8)",
           borderBottom:`1px solid ${LP.border}`,
           display:"flex", alignItems:"center",
-          padding:"0 40px", height:66,
+          padding: isMobile ? "0 14px" : "0 40px", height:66,
         }}>
           {/* Brand */}
           <div style={{ display:"flex", alignItems:"center", gap:10, flex:1 }}>
             <div style={{ width:36, height:36, borderRadius:11, background:"#0F0D0B", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, boxShadow:"0 2px 10px rgba(15,13,11,0.30)" }}>
               <img src={COCONUT_LOGO_SRC} alt="Coconut" style={{ width:22, height:22, borderRadius: 4, objectFit: "cover" }} />
             </div>
-            <span style={{ fontSize:18, fontWeight:800, color:LP.text, letterSpacing:"-0.5px" }}>Coconut</span>
+            <span style={{ fontSize:isMobile ? 17 : 18, fontWeight:800, color:LP.text, letterSpacing:"-0.5px" }}>Coconut</span>
           </div>
 
           <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", flexWrap:"wrap", gap:8 }}>
@@ -2791,27 +2799,28 @@ export function CoconutMobileMarketingPage() {
                 boxShadow:"0 8px 24px rgba(43, 42, 41, 0.07), 0 2px 8px rgba(58, 125, 68, 0.06)",
                 letterSpacing:"-0.02em",
                 lineHeight:1.25,
-                maxWidth:"min(100%, 280px)",
+                maxWidth:"min(100%, 220px)",
                 textAlign:"left",
               }}
             >
               <AppleLogo size={18} color={LP.text} />
-              App Store
+              {isMobile ? "Get app" : "App Store"}
             </span>
           </div>
         </nav>
 
         {/* ══ HERO ══ */}
         <div style={{
-          display:"flex", alignItems:"center", justifyContent:"center",
-          gap:80, padding:"32px 56px 64px",
+          display:"flex", alignItems:isMobile ? "stretch" : "center", justifyContent:"center",
+          flexDirection:isMobile ? "column" : "row",
+          gap:isMobile ? 26 : 80, padding:isMobile ? "20px 14px 36px" : "32px 56px 64px",
           maxWidth:1300, margin:"0 auto",
-          minHeight:"calc(100vh - 66px)",
+          minHeight:isMobile ? "auto" : "calc(100vh - 66px)",
           position:"relative", zIndex:1,
         }}>
 
           {/* ── LEFT: Copy ── */}
-          <div style={{ flex:1, minWidth:0, maxWidth:480 }}>
+          <div style={{ flex:1, minWidth:0, maxWidth:isMobile ? "100%" : 480 }}>
 
             {/* Eyebrow: one clear value line (lighter than headline so hierarchy reads: proof → headline → detail) */}
             <motion.p
@@ -2819,12 +2828,12 @@ export function CoconutMobileMarketingPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
               style={{
-                fontSize: 15,
+                fontSize: isMobile ? 14 : 15,
                 fontWeight: 600,
                 color: LP.textSoft,
                 lineHeight: 1.45,
                 margin: "0 0 16px",
-                maxWidth: 400,
+                maxWidth: isMobile ? "100%" : 400,
                 letterSpacing: "-0.02em",
               }}
             >
@@ -2833,11 +2842,11 @@ export function CoconutMobileMarketingPage() {
 
             {/* Headline */}
             <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.55, delay:0.05 }}>
-              <h1 style={{ fontSize:56, fontWeight:900, color:LP.text, lineHeight:1.04, letterSpacing:"-2.8px", margin:"0 0 18px" }}>
+              <h1 style={{ fontSize:isMobile ? 44 : isTablet ? 50 : 56, fontWeight:900, color:LP.text, lineHeight:1.04, letterSpacing:isMobile ? "-1.8px" : "-2.8px", margin:"0 0 18px" }}>
                 Money between<br />
                 <span style={{ color:LP.gold }}>friends, resolved.</span>
               </h1>
-              <p style={{ fontSize:16, color:LP.textSoft, margin:"0 0 28px", lineHeight:1.72, maxWidth:420 }}>
+              <p style={{ fontSize:isMobile ? 15 : 16, color:LP.textSoft, margin:"0 0 24px", lineHeight:1.65, maxWidth:isMobile ? "100%" : 420 }}>
                 One app for bank charges, receipt lines, shared balances, and Tap to Pay when you want the tab closed now.
               </p>
             </motion.div>
@@ -2847,18 +2856,19 @@ export function CoconutMobileMarketingPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45, delay: 0.1 }}
-              style={{ marginBottom: 28 }}
+              style={{ marginBottom: isMobile ? 20 : 28 }}
             >
               <div
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 16,
-                  padding: "16px 22px 16px 18px",
+                  padding: isMobile ? "14px 14px 14px 12px" : "16px 22px 16px 18px",
                   background: LP.bgCard,
                   borderRadius: 16,
                   border: "1px solid rgba(58, 125, 68, 0.28)",
                   boxShadow: "0 4px 0 rgba(58, 125, 68, 0.06), 0 16px 48px rgba(43, 42, 41, 0.1), 0 6px 20px rgba(58, 125, 68, 0.08)",
+                  width: isMobile ? "100%" : "auto",
                   maxWidth: "100%",
                 }}
               >
@@ -2882,7 +2892,7 @@ export function CoconutMobileMarketingPage() {
                   <p style={{ fontSize: 11, fontWeight: 800, color: "#3a7d44", textTransform: "uppercase", letterSpacing: "0.12em", margin: "0 0 6px" }}>
                     Get the app
                   </p>
-                  <p style={{ fontSize: 21, fontWeight: 800, color: LP.text, lineHeight: 1.2, letterSpacing: "-0.4px", margin: 0 }}>
+                  <p style={{ fontSize: isMobile ? 18 : 21, fontWeight: 800, color: LP.text, lineHeight: 1.2, letterSpacing: "-0.4px", margin: 0 }}>
                     Download on the App Store
                   </p>
                   <p style={{ fontSize: 12, color: LP.textSoft, lineHeight: 1.4, margin: "8px 0 0" }}>iPhone · splits, receipts, settle</p>
@@ -2892,7 +2902,7 @@ export function CoconutMobileMarketingPage() {
 
             {/* Feature cards */}
             <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.55, delay:0.16 }}
-              style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:34 }}>
+              style={{ display:"flex", flexDirection:"column", gap:isMobile ? 10 : 12, marginBottom:isMobile ? 18 : 34 }}>
               {features.map((f, i) => {
                 const active = activeFeature === i;
                 const A = f.accent;
@@ -2902,7 +2912,7 @@ export function CoconutMobileMarketingPage() {
                     type="button"
                     aria-current={active ? "true" : undefined}
                     aria-label={`${f.tag}: ${f.label}. Plays this feature in the phone demo.`}
-                    whileHover={{ x: 4, y: -2 }}
+                    whileHover={isMobile ? {} : { x: 4, y: -2 }}
                     whileTap={{ scale: 0.985 }}
                     onClick={() => {
                       setActiveFeature(i);
@@ -2911,8 +2921,8 @@ export function CoconutMobileMarketingPage() {
                     style={{
                       display: "flex",
                       alignItems: "flex-start",
-                      gap: 14,
-                      padding: "16px 18px",
+                      gap: isMobile ? 10 : 14,
+                      padding: isMobile ? "13px 14px" : "16px 18px",
                       borderRadius: 16,
                       cursor: "pointer",
                       background: active ? A.cardBgActive : A.cardBg,
@@ -2941,7 +2951,7 @@ export function CoconutMobileMarketingPage() {
                         transition: "all 0.22s ease",
                       }}
                     >
-                      <f.Icon size={18} color={A.icon} strokeWidth={2.1} />
+                      <f.Icon size={isMobile ? 16 : 18} color={A.icon} strokeWidth={2.1} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
@@ -2975,10 +2985,10 @@ export function CoconutMobileMarketingPage() {
                           </motion.span>
                         )}
                       </div>
-                      <p style={{ fontSize: 14, fontWeight: 700, color: LP.text, margin: "0 0 2px", lineHeight: 1.3 }}>{f.label}</p>
-                      <p style={{ fontSize: 12, color: LP.textSoft, margin: 0, lineHeight: 1.55 }}>{f.desc}</p>
+                      <p style={{ fontSize: isMobile ? 13 : 14, fontWeight: 700, color: LP.text, margin: "0 0 2px", lineHeight: 1.3 }}>{f.label}</p>
+                      <p style={{ fontSize: isMobile ? 11 : 12, color: LP.textSoft, margin: 0, lineHeight: 1.5 }}>{f.desc}</p>
                     </div>
-                    {!active && (
+                    {!active && !isMobile && (
                       <span
                         style={{
                           fontSize: 12,
@@ -3000,7 +3010,7 @@ export function CoconutMobileMarketingPage() {
           </div>
 
           {/* ── RIGHT: Phone demo ── */}
-          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0 }}>
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0, width:isMobile ? "100%" : "auto" }}>
             {/* Live badge */}
             <motion.div initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
               style={{ display:"flex", alignItems:"center", gap:8, marginBottom:18 }}>
@@ -3030,7 +3040,7 @@ export function CoconutMobileMarketingPage() {
             {/* Scaled phone */}
             <motion.div initial={{ opacity:0, y:36, scale:0.93 }} animate={{ opacity:1, y:0, scale:1 }}
               transition={{ duration:0.72, delay:0.12, type:"spring", damping:22 }}
-              style={{ position:"relative", width:393 * phoneScale, height:852 * phoneScale, flexShrink:0 }}>
+              style={{ position:"relative", width:393 * phoneScale, height:852 * phoneScale, flexShrink:0, marginTop:isMobile ? 4 : 0 }}>
               <div style={{ position:"absolute", top:0, left:0, width:393, height:852, transform:`scale(${phoneScale})`, transformOrigin:"0 0" }}>
                 <PhoneFrame>
                   {/* Status bar */}
@@ -3116,11 +3126,11 @@ export function CoconutMobileMarketingPage() {
             </motion.div>
 
             {/* Hints */}
-            <div style={{ display:"flex", gap:18, marginTop:18, flexWrap:"wrap", justifyContent:"center" }}>
+            {!isMobile && <div style={{ display:"flex", gap:18, marginTop:18, flexWrap:"wrap", justifyContent:"center" }}>
               {["Tap a charge, see receipt", "Tap a friend, settle now", "+ to add expense or scan receipt"].map(h => (
                 <span key={h} style={{ fontSize:11, color:LP.textMuted, opacity:0.6 }}>{h}</span>
               ))}
-            </div>
+            </div>}
           </div>
         </div>
 
@@ -3131,7 +3141,7 @@ export function CoconutMobileMarketingPage() {
           style={{
             borderTop: `1px solid ${LP.border}`,
             background: LP.bgCard,
-            padding: "56px 32px 64px",
+            padding: isMobile ? "40px 16px 46px" : "56px 32px 64px",
             position: "relative",
             zIndex: 1,
             scrollMarginTop: 88,
@@ -3145,7 +3155,7 @@ export function CoconutMobileMarketingPage() {
               flexWrap: "wrap",
               alignItems: "center",
               justifyContent: "center",
-              gap: 48,
+              gap: isMobile ? 30 : 48,
             }}
           >
             <motion.div
@@ -3320,7 +3330,7 @@ export function CoconutMobileMarketingPage() {
           style={{
             borderTop: `1px solid ${LP.border}`,
             background: `linear-gradient(180deg, ${LP.bg} 0%, #f3efe8 52%, ${LP.bg} 100%)`,
-            padding: "56px 28px 72px",
+            padding: isMobile ? "40px 14px 48px" : "56px 28px 72px",
             position: "relative",
             zIndex: 1,
             scrollMarginTop: 88,
