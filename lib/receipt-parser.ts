@@ -91,7 +91,7 @@ function stripHtml(html: string): string {
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     // Preserve map image URLs from <img> tags (Uber/Lyft embed static maps)
-    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|maps\.lyft\.com|static-maps\.lyft\.com|mapbox\.com|staticmap|\/route[-_]map)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
+    .replace(/<img\s[^>]*src=["']([^"']+(?:maps\.googleapis\.com|maps\.uber\.com|maps\.lyft\.com|static-maps\.lyft\.com|mapbox\.com|openstreetmap|carto\.com|basemaps|staticmap|\/route[-_]map|\/map[_-]image)[^"']*)["'][^>]*>/gi, "\n[MAP_IMAGE: $1]\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, "")
