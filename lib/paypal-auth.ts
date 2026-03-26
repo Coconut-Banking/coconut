@@ -195,8 +195,22 @@ export async function getPayPalStatus(clerkUserId: string) {
 
 export async function removePayPalConnection(clerkUserId: string) {
   const db = getSupabase();
+
+  // Get PayPal transaction IDs first
+  const { data: paypalTxs } = await db
+    .from("transactions")
+    .select("id")
+    .eq("clerk_user_id", clerkUserId)
+    .eq("source", "paypal");
+
+  const txIds = (paypalTxs ?? []).map(t => t.id);
+
+  // Clean up subscription_transactions references before deleting transactions
+  if (txIds.length > 0) {
+    await db.from("subscription_transactions").delete().in("transaction_id", txIds);
+  }
+
   await db.from("paypal_connections").delete().eq("clerk_user_id", clerkUserId);
-  // Also delete imported PayPal transactions
   await db.from("transactions").delete().eq("clerk_user_id", clerkUserId).eq("source", "paypal");
 }
 
