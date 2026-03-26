@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { EMAIL_RECEIPTS, GMAIL } from "@/lib/config";
+import { getEffectiveUserId } from "@/lib/demo";
 
 function isExcludedReceipt(rawFrom: string | null, merchant: string | null): boolean {
   const from = (rawFrom ?? "").toLowerCase();
@@ -14,7 +14,7 @@ function isExcludedReceipt(rawFrom: string | null, merchant: string | null): boo
 }
 
 export async function GET() {
-  const { userId } = await auth();
+  const userId = await getEffectiveUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {

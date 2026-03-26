@@ -1,11 +1,11 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getAuthUrl } from "@/lib/google-auth";
 import { rateLimit } from "@/lib/rate-limit";
+import { getEffectiveUserId } from "@/lib/demo";
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getEffectiveUserId();
   console.log("[Gmail Auth] Starting OAuth flow for user:", userId);
 
   if (!userId) {
