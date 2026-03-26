@@ -186,7 +186,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user } = useUser();
   const { transactions, linked, loading } = useTransactions();
-  const { summary: groupsSummary } = useGroupsSummary();
+  const { summary: groupsSummary, loading: groupsLoading } = useGroupsSummary();
   const { currencyCode, format: fc } = useCurrency();
   const { manualMonthlyIncome } = useManualMonthlyIncome();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -253,7 +253,7 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [linked]);
 
-  if (loading) {
+  if (loading || groupsLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
         <div className="flex flex-col items-center gap-4">
@@ -394,7 +394,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Accounts */}
-      {dashboard?.accounts && dashboard.accounts.length > 0 && (
+      {linked && dashboard?.accounts && dashboard.accounts.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -446,7 +446,7 @@ export default function DashboardPage() {
       )}
 
       {/* Digital Wallets */}
-      {dashboard?.wallets && dashboard.wallets.length > 0 && (
+      {linked && dashboard?.wallets && dashboard.wallets.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

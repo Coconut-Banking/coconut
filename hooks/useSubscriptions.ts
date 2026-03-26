@@ -69,8 +69,11 @@ export function useSubscriptions() {
 
   const dismiss = useCallback(async (id: string) => {
     // Optimistic update with rollback on failure
-    const previousSubscriptions = subscriptions;
-    setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+    let previousSubscriptions: typeof subscriptions;
+    setSubscriptions((prev) => {
+      previousSubscriptions = prev;
+      return prev.filter((s) => s.id !== id);
+    });
 
     try {
       const res = await fetch(`/api/subscriptions/${id}`, {
@@ -80,21 +83,22 @@ export function useSubscriptions() {
       });
       if (!res.ok) {
         // Rollback on API error
-        setSubscriptions(previousSubscriptions);
+        setSubscriptions(previousSubscriptions!);
       }
     } catch (e) {
       console.error("[subscriptions] dismiss:", e);
       // Rollback on network error
-      setSubscriptions(previousSubscriptions);
+      setSubscriptions(previousSubscriptions!);
     }
-  }, [subscriptions]);
+  }, []);
 
   const dismissPriceChange = useCallback(async (id: string) => {
     // Optimistic update with rollback on failure
-    const previousSubscriptions = subscriptions;
-    setSubscriptions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, priceChange: null } : s))
-    );
+    let previousSubscriptions: typeof subscriptions;
+    setSubscriptions((prev) => {
+      previousSubscriptions = prev;
+      return prev.map((s) => (s.id === id ? { ...s, priceChange: null } : s));
+    });
 
     try {
       const res = await fetch(`/api/subscriptions/${id}`, {
@@ -104,14 +108,14 @@ export function useSubscriptions() {
       });
       if (!res.ok) {
         // Rollback on API error
-        setSubscriptions(previousSubscriptions);
+        setSubscriptions(previousSubscriptions!);
       }
     } catch (e) {
       console.error("[subscriptions] dismissPriceChange:", e);
       // Rollback on network error
-      setSubscriptions(previousSubscriptions);
+      setSubscriptions(previousSubscriptions!);
     }
-  }, [subscriptions]);
+  }, []);
 
   const totalMonthly = subscriptions.reduce((acc, s) => {
     const amount = Number(s.amount) || 0;

@@ -92,7 +92,14 @@ export async function GET(request: NextRequest) {
       const filters = parseQuery(q);
       return NextResponse.json({ filters });
     }
-    const parsed = JSON.parse(raw) as unknown;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      console.warn("[nl-parse] LLM returned invalid JSON, falling back to regex:", parseErr);
+      const filters = parseQuery(q);
+      return NextResponse.json({ filters });
+    }
     const filters = validateAndSanitize(parsed);
     console.log("[nl-parse] query:", q, "-> filters:", JSON.stringify(filters));
     return NextResponse.json({ filters });

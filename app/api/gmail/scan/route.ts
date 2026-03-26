@@ -1,12 +1,12 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { scanGmailForReceipts } from "@/lib/receipt-parser";
 import { GMAIL } from "@/lib/config";
 import { rateLimit } from "@/lib/rate-limit";
+import { getEffectiveUserId } from "@/lib/demo";
 
 export async function POST(request: Request) {
-  const { userId } = await auth();
+  const userId = await getEffectiveUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rl = rateLimit(`gmail-scan:${userId}`, 20, 60_000);

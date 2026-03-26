@@ -1100,7 +1100,7 @@ function generateAnswer(
 
   if (result.metric === "max") {
     const isIncome = intent.transaction_type === "income";
-    if (!result.transactions.length) return `No ${isIncome ? "income" : "expenses"} found ${period}.`;
+    if (!result.transactions.length || !result.transactions[0]) return `No ${isIncome ? "income" : "expenses"} found ${period}.`;
     const tx = result.transactions[0];
     const name = tx.merchant_name || tx.raw_name || "Unknown";
     const label = isIncome ? "largest income" : "biggest expense";

@@ -1,10 +1,10 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getGmailStatus } from "@/lib/google-auth";
+import { getEffectiveUserId } from "@/lib/demo";
 
 export async function GET() {
-  const { userId } = await auth();
+  const userId = await getEffectiveUserId();
   console.log("[Gmail Status API] Checking status for user:", userId);
 
   if (!userId) {

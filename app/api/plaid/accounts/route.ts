@@ -207,6 +207,10 @@ export async function GET(request: NextRequest) {
       try {
         const item = tokenToItem.get(accessToken);
         const response = await client.accountsGet({ access_token: accessToken });
+        if (!response.data?.accounts || !Array.isArray(response.data.accounts)) {
+          console.error("[plaid][accounts] accountsGet returned invalid data");
+          continue;
+        }
         const rows = response.data.accounts.map((acct) => {
           const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
           const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
