@@ -109,7 +109,7 @@ export async function getCurrentUser(token: string): Promise<SplitwiseUser> {
 
 export async function getGroups(token: string): Promise<SplitwiseGroup[]> {
   const data = await swFetch<{ groups: SplitwiseGroup[] }>(token, "/get_groups");
-  // Filter out the "non-group expenses" placeholder (id=0)
+  // id=0 is Splitwise "non-group expenses" — not imported yet; balances there won't appear in Coconut.
   return data.groups.filter((g) => g.id !== 0);
 }
 

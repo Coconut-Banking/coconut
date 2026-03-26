@@ -1,18 +1,36 @@
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { computeBalances } from "@/lib/split-balances";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
+import {
+  paidAmountFromSplitRow,
+  splitTransactionDedupeKey,
+} from "@/lib/split-transaction-helpers";
 
-export async function GET() {
+/** Ignore sub–half-cent noise when deciding “settled” vs outstanding (Splitwise-style lists). */
+const BALANCE_EPS = 0.005;
+
+function hasOutstandingBalance(n: number): boolean {
+  return Math.abs(n) >= BALANCE_EPS;
+}
+
+/**
+ * GET /api/groups/summary
+ * Default: friends + groups with **non-zero** net for you (unsettled only), like Splitwise.
+ * ?contacts=1 — include zero-balance friends and all groups (for expense pickers / add flows).
+ */
+export async function GET(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Use admin client — access is already validated by getAccessibleGroupIds
   const db = getSupabaseAdmin();
   const ids = await getAccessibleGroupIds(userId);
+
+  const contactsMode = req.nextUrl.searchParams.get("contacts") === "1";
 
   if (ids.length === 0) {
     return NextResponse.json({
@@ -41,12 +59,12 @@ export async function GET() {
   const { data: splits } = await db
     .from("split_transactions")
     .select(`
-      id, group_id, transaction_id, created_by, created_at, payer_member_id,
+      id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
       transactions(amount)
     `)
     .in("group_id", groupIds)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(25000);
 
   const splitIds = (splits ?? []).map((s) => s.id);
 
@@ -85,17 +103,15 @@ export async function GET() {
   const seenByGroup = new Map<string, Set<string>>();
   for (const s of splits ?? []) {
     const seen = seenByGroup.get(s.group_id) ?? new Set();
-    const tid = s.transaction_id as string;
-    if (seen.has(tid)) continue;
-    seen.add(tid);
+    const dedupeKey = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     seenByGroup.set(s.group_id, seen);
     const list = splitByGroup.get(s.group_id) ?? [];
     list.push(s);
     splitByGroup.set(s.group_id, list);
   }
 
-  let totalOwedToMe = 0;
-  let totalIOwe = 0;
   const personBalances = new Map<string, { displayName: string; balance: number }>();
 
   const groupsWithBalance = (groups ?? []).map((g) => {
@@ -131,9 +147,10 @@ export async function GET() {
               return ownerId ? memberByUserId.get(ownerId) : null;
             })();
       if (memberId) {
-        const tx = (s as { transactions?: { amount?: number } | { amount?: number }[] }).transactions;
-        const amt = Number(Array.isArray(tx) ? tx[0]?.amount : tx?.amount) || 0;
-        paidRows.push({ member_id: memberId, amount: Math.abs(amt) });
+        const amt = paidAmountFromSplitRow(
+          s as { transactions?: unknown; amount?: number | string | null }
+        );
+        if (amt > 0) paidRows.push({ member_id: memberId, amount: amt });
       }
     }
 
@@ -160,8 +177,6 @@ export async function GET() {
     );
 
     const myBalance = myMember ? balances.get(myMember.id)?.total ?? 0 : 0;
-    if (myBalance > 0) totalOwedToMe += myBalance;
-    else if (myBalance < 0) totalIOwe += Math.abs(myBalance);
 
     // Aggregate per-person balances (my net with each other member)
     for (const m of groupMembers) {
@@ -191,27 +206,46 @@ export async function GET() {
     };
   });
 
-  const netBalance = Math.round((totalOwedToMe - totalIOwe) * 100) / 100;
-
-  // Include ALL non-owner members as friends, even with 0 balance (no splits yet)
-  const allMembers = members ?? [];
-  for (const m of allMembers) {
-    if (m.user_id === userId) continue;
-    const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
-    if (!personBalances.has(key)) {
-      personBalances.set(key, { displayName: m.display_name, balance: 0 });
+  // Pickers / add-expense: include everyone in your groups, even with $0 net.
+  if (contactsMode) {
+    const allMembers = members ?? [];
+    for (const m of allMembers) {
+      if (m.user_id === userId) continue;
+      const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
+      if (!personBalances.has(key)) {
+        personBalances.set(key, { displayName: m.display_name, balance: 0 });
+      }
     }
   }
 
-  const friends = Array.from(personBalances.entries())
+  let friends = Array.from(personBalances.entries())
     .map(([key, v]) => ({ key, displayName: v.displayName, balance: v.balance }))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
+  if (!contactsMode) {
+    friends = friends.filter((f) => hasOutstandingBalance(f.balance));
+  }
+
+  let groupsOut = groupsWithBalance;
+  if (!contactsMode) {
+    groupsOut = groupsWithBalance.filter((g) => hasOutstandingBalance(g.myBalance));
+  }
+
+  let totalOwedToMe = 0;
+  let totalIOwe = 0;
+  for (const f of friends) {
+    if (f.balance > BALANCE_EPS) totalOwedToMe += f.balance;
+    else if (f.balance < -BALANCE_EPS) totalIOwe += Math.abs(f.balance);
+  }
+  totalOwedToMe = Math.round(totalOwedToMe * 100) / 100;
+  totalIOwe = Math.round(totalIOwe * 100) / 100;
+  const netBalance = Math.round((totalOwedToMe - totalIOwe) * 100) / 100;
+
   return NextResponse.json({
-    groups: groupsWithBalance,
+    groups: groupsOut,
     friends,
-    totalOwedToMe: Math.round(totalOwedToMe * 100) / 100,
-    totalIOwe: Math.round(totalIOwe * 100) / 100,
+    totalOwedToMe,
+    totalIOwe,
     netBalance,
   });
 }

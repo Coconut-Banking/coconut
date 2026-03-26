@@ -5,6 +5,11 @@ import { getSupabase } from "@/lib/supabase";
 import { computeBalances, getSuggestedSettlements } from "@/lib/split-balances";
 import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
+import {
+  merchantLabelFromSplitRow,
+  paidAmountFromSplitRow,
+  splitTransactionDedupeKey,
+} from "@/lib/split-transaction-helpers";
 
 export async function GET(
   _req: NextRequest,
@@ -53,7 +58,7 @@ export async function GET(
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, transaction_id, created_by, created_at, payer_member_id,
+      id, transaction_id, created_by, created_at, payer_member_id, amount, description,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .eq("group_id", id)
@@ -61,9 +66,9 @@ export async function GET(
 
   const seenTxIds = new Set<string>();
   const splits = (splitsRaw ?? []).filter((s) => {
-    const tid = s.transaction_id as string;
-    if (seenTxIds.has(tid)) return false;
-    seenTxIds.add(tid);
+    const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
+    if (seenTxIds.has(k)) return false;
+    seenTxIds.add(k);
     return true;
   });
 
@@ -104,19 +109,20 @@ export async function GET(
   // Splits deduped by transaction_id; build paidRows (use payer_member_id when set)
   const paidRows: { member_id: string; amount: number }[] = [];
   for (const s of splits) {
-    const tid = s.transaction_id as string;
+    const tid = s.transaction_id as string | null | undefined;
     const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
     const memberId =
       payerMemberId && (members ?? []).some((m) => m.id === payerMemberId)
         ? payerMemberId
         : (() => {
-            const ownerId = txOwnerById.get(tid);
+            const ownerId = tid ? txOwnerById.get(tid) : undefined;
             return ownerId ? memberByUserId.get(ownerId) : null;
           })();
     if (memberId) {
-      const tx = (s as { transactions?: { amount?: number } | { amount?: number }[] }).transactions;
-      const amt = Number(Array.isArray(tx) ? tx[0]?.amount : tx?.amount) || 0;
-      paidRows.push({ member_id: memberId, amount: Math.abs(amt) });
+      const amt = paidAmountFromSplitRow(
+        s as { transactions?: unknown; amount?: number | string | null }
+      );
+      if (amt > 0) paidRows.push({ member_id: memberId, amount: amt });
     }
   }
   // Defensive: aggregate shares by (split_id, member_id) in case of duplicates
@@ -144,18 +150,21 @@ export async function GET(
   const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
 
   const activity = splits.map((s) => {
-    const tx = (s as { transactions?: { merchant_name?: string; raw_name?: string; amount?: number } }).transactions;
     const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
     const totalShares = shareList.length;
     const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
     const payerMember = payerMemberId ? memberMap.get(payerMemberId) : null;
-    const ownerId = txOwnerById.get(s.transaction_id);
+    const ownerId = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
     const ownerMember = ownerId ? Array.from(memberMap.values()).find((m) => m.user_id === ownerId) : null;
     const paidByMember = payerMember ?? ownerMember;
     return {
       id: s.id,
-      merchant: tx?.merchant_name ?? tx?.raw_name ?? "Unknown",
-      amount: Math.abs(tx?.amount ?? 0),
+      merchant: merchantLabelFromSplitRow(
+        s as { transactions?: unknown; description?: string | null }
+      ),
+      amount: paidAmountFromSplitRow(
+        s as { transactions?: unknown; amount?: number | string | null }
+      ),
       paidBy: s.created_by,
       paidByDisplayName: paidByMember?.display_name ?? "Someone",
       splitCount: totalShares,

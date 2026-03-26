@@ -128,6 +128,16 @@ export async function POST(req: NextRequest) {
 
 type DB = ReturnType<typeof getSupabase>;
 
+function splitwiseMemberDisplayName(m: { first_name?: string | null; last_name?: string | null; email?: string | null }): string {
+  const bad = (x: string) => x === "" || x.toLowerCase() === "null";
+  const fn = (m.first_name ?? "").trim();
+  const ln = (m.last_name ?? "").trim();
+  const parts = [fn, ln].filter((x) => !bad(x));
+  const joined = parts.join(" ").trim();
+  const em = (m.email ?? "").trim();
+  return joined || (!bad(em) ? em : "Someone");
+}
+
 async function importGroup(
   db: DB,
   userId: string,
@@ -203,7 +213,7 @@ async function importGroup(
   for (const swMember of swGroup.members) {
     const isMe = swMember.id === swUserId;
     const email = isMe ? (myEmail ?? swMember.email) : swMember.email;
-    const displayName = `${swMember.first_name} ${swMember.last_name}`.trim() || swMember.email;
+    const displayName = splitwiseMemberDisplayName(swMember);
 
     // Check if member already exists in this group (by email)
     const { data: existingMember } = await db

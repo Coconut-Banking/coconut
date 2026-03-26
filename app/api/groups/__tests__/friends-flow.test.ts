@@ -4,7 +4,8 @@
  * Tests the full flow:
  * 1. POST /api/groups → creates a group
  * 2. POST /api/groups/:id/members → adds a friend member
- * 3. GET /api/groups/summary → friend appears in friends list
+ * 3. GET /api/groups/summary?contacts=1 → friend appears (zero-balance contacts mode)
+ *    Default summary lists only outstanding (non-settled) friends/groups.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -255,24 +256,31 @@ describe("add friend → summary flow", () => {
     const memberRes = await addMember(memberReq, { params: Promise.resolve({ id: group.id }) });
     expect(memberRes.status).toBe(200);
 
-    // Step 3: Get summary — friend should appear
+    // Step 3: Default summary — no splits yet → no outstanding friends/groups
     const { GET: getSummary } = await import("../summary/route");
-    const summaryRes = await getSummary();
+    const summaryRes = await getSummary(new NextRequest("http://localhost/api/groups/summary"));
     expect(summaryRes.status).toBe(200);
     const summary = await summaryRes.json();
 
-    expect(summary.groups).toHaveLength(1);
-    expect(summary.groups[0].name).toBe(FRIEND_NAME);
+    expect(summary.groups).toHaveLength(0);
+    expect(summary.friends).toHaveLength(0);
 
-    // Friend should appear in friends list (from our "include all members" fix)
-    const friend = summary.friends.find((f: { displayName: string }) => f.displayName === FRIEND_NAME);
+    // Contacts mode — pickers still see the new friend with $0 balance
+    const contactsRes = await getSummary(
+      new NextRequest("http://localhost/api/groups/summary?contacts=1")
+    );
+    expect(contactsRes.status).toBe(200);
+    const contacts = await contactsRes.json();
+    expect(contacts.groups).toHaveLength(1);
+    expect(contacts.groups[0].name).toBe(FRIEND_NAME);
+    const friend = contacts.friends.find((f: { displayName: string }) => f.displayName === FRIEND_NAME);
     expect(friend).toBeDefined();
     expect(friend?.balance).toBe(0);
   });
 
   it("summary shows 0 groups and friends when user has none", async () => {
     const { GET: getSummary } = await import("../summary/route");
-    const res = await getSummary();
+    const res = await getSummary(new NextRequest("http://localhost/api/groups/summary"));
     const summary = await res.json();
 
     expect(summary.groups).toHaveLength(0);

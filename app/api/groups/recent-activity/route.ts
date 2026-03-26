@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
+import { merchantLabelFromSplitRow, splitTransactionDedupeKey } from "@/lib/split-transaction-helpers";
 
 /**
  * GET /api/groups/recent-activity
@@ -41,7 +42,7 @@ export async function GET() {
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, group_id, transaction_id, created_by, created_at,
+      id, group_id, transaction_id, created_by, created_at, description,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .in("group_id", ids)
@@ -51,9 +52,9 @@ export async function GET() {
   const seenByGroup = new Map<string, Set<string>>();
   const splits = (splitsRaw ?? []).filter((s) => {
     const seen = seenByGroup.get(s.group_id) ?? new Set();
-    const tid = s.transaction_id as string;
-    if (seen.has(tid)) return false;
-    seen.add(tid);
+    const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
+    if (seen.has(k)) return false;
+    seen.add(k);
     seenByGroup.set(s.group_id, seen);
     return true;
   });
@@ -94,31 +95,42 @@ export async function GET() {
   }> = [];
 
   for (const s of splits.slice(0, 15)) {
-    const tx = (s as { transactions?: { merchant_name?: string; raw_name?: string; amount?: number } }).transactions;
-    const merchant = tx?.merchant_name ?? tx?.raw_name ?? "Expense";
-    const _txAmount = Math.abs(Number(tx?.amount ?? 0));
-    const payerUserId = txOwnerById.get(s.transaction_id);
+    const merchant = merchantLabelFromSplitRow(
+      s as { transactions?: unknown; description?: string | null }
+    );
     const groupMembers = membersByGroup.get(s.group_id) ?? [];
     const myMember = groupMembers.find((m) => m.user_id === userId);
-    const payerMember = payerUserId ? groupMembers.find((m) => m.user_id === payerUserId) : null;
+    const explicitPayerId = (s as { payer_member_id?: string | null }).payer_member_id;
+    const payerByMemberRow =
+      explicitPayerId && groupMembers.some((m) => m.id === explicitPayerId)
+        ? groupMembers.find((m) => m.id === explicitPayerId) ?? null
+        : null;
+    const payerUserIdFromTx = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
+    const paidByMember =
+      payerByMemberRow ??
+      (payerUserIdFromTx ? groupMembers.find((m) => m.user_id === payerUserIdFromTx) : null) ??
+      null;
     const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
     const myShareRow = myMember ? shareList.find((sh) => sh.member_id === myMember.id) : null;
     const myShare = myShareRow ? Number(myShareRow.amount) : 0;
 
     let effectOnBalance = 0;
     let direction: "get_back" | "owe" = "owe";
-    if (payerUserId === userId && myMember) {
+    if (paidByMember && myMember && paidByMember.id === myMember.id) {
       const othersShare = shareList
         .filter((sh) => sh.member_id !== myMember.id)
         .reduce((a, sh) => a + Number(sh.amount), 0);
       effectOnBalance = Math.round(othersShare * 100) / 100;
       direction = "get_back";
-    } else if (payerMember && myMember) {
+    } else if (paidByMember && myMember) {
       effectOnBalance = -Math.round(myShare * 100) / 100;
       direction = "owe";
     }
 
-    const who = payerUserId === userId ? "You" : payerMember?.display_name ?? "Someone";
+    const who =
+      paidByMember && myMember && paidByMember.id === myMember.id
+        ? "You"
+        : paidByMember?.display_name ?? "Someone";
     const action = "paid";
     const groupName = groupNames.get(s.group_id) ?? "";
     const createdAt = s.created_at;

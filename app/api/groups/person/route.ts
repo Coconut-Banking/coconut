@@ -4,6 +4,11 @@ import { getSupabase } from "@/lib/supabase";
 import { computeBalances, getSuggestedSettlements } from "@/lib/split-balances";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
+import {
+  merchantLabelFromSplitRow,
+  paidAmountFromSplitRow,
+  splitTransactionDedupeKey,
+} from "@/lib/split-transaction-helpers";
 
 /**
  * GET /api/groups/person?key=xxx
@@ -75,7 +80,7 @@ export async function GET(req: NextRequest) {
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, group_id, transaction_id, created_by, created_at, payer_member_id,
+      id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .in("group_id", sharedGroupIds)
@@ -84,9 +89,9 @@ export async function GET(req: NextRequest) {
   const seenByGroup = new Map<string, Set<string>>();
   const splits = (splitsRaw ?? []).filter((s) => {
     const seen = seenByGroup.get(s.group_id) ?? new Set();
-    const tid = s.transaction_id as string;
-    if (seen.has(tid)) return false;
-    seen.add(tid);
+    const dedupeKey = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
+    if (seen.has(dedupeKey)) return false;
+    seen.add(dedupeKey);
     seenByGroup.set(s.group_id, seen);
     return true;
   });
@@ -161,9 +166,10 @@ export async function GET(req: NextRequest) {
               return ownerId ? memberByUserId.get(ownerId) : null;
             })();
       if (memberId) {
-        const tx = (s as { transactions?: { amount?: number } | { amount?: number }[] }).transactions;
-        const amt = Number(Array.isArray(tx) ? tx[0]?.amount : tx?.amount) || 0;
-        paidRows.push({ member_id: memberId, amount: Math.abs(amt) });
+        const amt = paidAmountFromSplitRow(
+          s as { transactions?: unknown; amount?: number | string | null }
+        );
+        if (amt > 0) paidRows.push({ member_id: memberId, amount: amt });
       }
     }
 
@@ -202,10 +208,10 @@ export async function GET(req: NextRequest) {
     }
 
     for (const s of groupSplits) {
-      const tx = (s as { transactions?: { merchant_name?: string; raw_name?: string; amount?: number } })
-        .transactions;
       const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
-      const txAmount = Math.abs(tx?.amount ?? 0);
+      const txAmount = paidAmountFromSplitRow(
+        s as { transactions?: unknown; amount?: number | string | null }
+      );
       const explicitPayer = (s as { payer_member_id?: string | null }).payer_member_id;
       const payerMemberId =
         explicitPayer && groupMembers.some((m) => m.id === explicitPayer)
@@ -229,7 +235,9 @@ export async function GET(req: NextRequest) {
 
       activity.push({
         id: s.id,
-        merchant: tx?.merchant_name ?? tx?.raw_name ?? "Unknown",
+        merchant: merchantLabelFromSplitRow(
+          s as { transactions?: unknown; description?: string | null }
+        ),
         amount: txAmount,
         groupName: groupNameById.get(groupId) ?? "",
         paidByMe,
