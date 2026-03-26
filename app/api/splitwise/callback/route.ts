@@ -37,6 +37,15 @@ export async function GET(req: NextRequest) {
       { onConflict: "clerk_user_id" }
     );
 
+    const mobileScheme = process.env.MOBILE_APP_SCHEME;
+    if (mobileScheme) {
+      // Redirect back into the mobile app so UX can show "Importing..." immediately.
+      return NextResponse.redirect(
+        `${mobileScheme}://settings?splitwise=connected&import=1`
+      );
+    }
+
+    // Fallback for web-only usage.
     return NextResponse.redirect(new URL("/app/settings?splitwise=connected", req.url));
   } catch (err) {
     console.error("[splitwise] OAuth callback error:", err);
