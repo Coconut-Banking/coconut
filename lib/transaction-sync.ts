@@ -246,6 +246,8 @@ async function syncSingleToken(
   let cursor: string | undefined;
   let lastGoodCursor: string | undefined;
   let hasMore = true;
+  let mutationRetries = 0;
+  const MAX_MUTATION_RETRIES = 3;
   while (hasMore) {
     lastGoodCursor = cursor;
     try {
@@ -268,6 +270,11 @@ async function syncSingleToken(
     } catch (e) {
       const err = e as { response?: { data?: { error_code?: string } } };
       if (err?.response?.data?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") {
+        mutationRetries++;
+        if (mutationRetries > MAX_MUTATION_RETRIES) {
+          console.error("[sync] Exceeded max mutation retries", { plaidItemId });
+          break;
+        }
         cursor = lastGoodCursor;
         allAdded.length = 0;
         allModified.length = 0;
