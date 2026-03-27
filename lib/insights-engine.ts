@@ -149,6 +149,7 @@ async function detectSpendingTrends(userId: string, db: ReturnType<typeof getSup
   const lastCats = sumByCategory(lastMonth as Array<{ primary_category: string | null; amount: number }>);
 
   const dayOfMonth = now.getDate();
+  if (dayOfMonth < 7) return [];
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const projectionFactor = daysInMonth / dayOfMonth;
 
