@@ -107,6 +107,26 @@ export async function getCurrentUser(token: string): Promise<SplitwiseUser> {
   return data.user;
 }
 
+/** Per-currency balance with a friend (Splitwise API shape). */
+export interface SplitwiseFriendBalanceRow {
+  currency_code: string;
+  amount: string;
+}
+
+/** Friend row from GET /get_friends (dev.splitwise.com). */
+export interface SplitwiseFriendRow {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email?: string;
+  balance?: SplitwiseFriendBalanceRow[];
+}
+
+export async function getFriends(token: string): Promise<SplitwiseFriendRow[]> {
+  const data = await swFetch<{ friends: SplitwiseFriendRow[] }>(token, "/get_friends");
+  return data.friends ?? [];
+}
+
 export async function getGroups(token: string): Promise<SplitwiseGroup[]> {
   const data = await swFetch<{ groups: SplitwiseGroup[] }>(token, "/get_groups");
   // id=0 is Splitwise "non-group expenses" — not imported yet; balances there won't appear in Coconut.

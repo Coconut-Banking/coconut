@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
       group_id: groupId,
       transaction_id: transactionId,
       created_by: userId,
+      iso_currency_code: "USD",
     })
     .select("id")
     .single();

@@ -3,7 +3,12 @@
  * Prevents over-settling when "Mark paid" is clicked multiple times.
  */
 import { getSupabase } from "./supabase";
-import { computeBalances, getSuggestedSettlements } from "./split-balances";
+import { getSuggestedSettlements } from "./split-balances";
+import { computeBalancesByCurrency, normalizeSplitCurrency } from "./split-balances-currency";
+import {
+  paidAmountFromSplitRow,
+  splitTransactionDedupeKey,
+} from "./split-transaction-helpers";
 
 export interface MaxSettlementResult {
   maxAmount: number;
@@ -12,29 +17,32 @@ export interface MaxSettlementResult {
 }
 
 /**
- * Returns the maximum settlement amount allowed from payer to receiver.
+ * Returns the maximum settlement amount allowed from payer to receiver in a given currency.
  * Rejects/caps to prevent over-settling (e.g. from duplicate "Mark paid" clicks).
  */
 export async function getMaxSettlementAllowed(
   groupId: string,
   payerMemberId: string,
-  receiverMemberId: string
+  receiverMemberId: string,
+  currency = "USD"
 ): Promise<MaxSettlementResult> {
+  const cur = normalizeSplitCurrency(currency);
   const db = getSupabase();
 
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, transaction_id, created_by, payer_member_id,
+      id, group_id, transaction_id, created_by, payer_member_id, amount,
+      iso_currency_code,
       transactions(amount)
     `)
     .eq("group_id", groupId);
 
-  const seenTxIds = new Set<string>();
+  const seenKeys = new Set<string>();
   const splits = (splitsRaw ?? []).filter((s) => {
-    const tid = s.transaction_id as string;
-    if (seenTxIds.has(tid)) return false;
-    seenTxIds.add(tid);
+    const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
+    if (seenKeys.has(k)) return false;
+    seenKeys.add(k);
     return true;
   });
 
@@ -54,7 +62,7 @@ export async function getMaxSettlementAllowed(
 
   const { data: settlements } = await db
     .from("settlements")
-    .select("payer_member_id, receiver_member_id, amount")
+    .select("payer_member_id, receiver_member_id, amount, iso_currency_code")
     .eq("group_id", groupId)
     .eq("status", "completed");
 
@@ -70,21 +78,35 @@ export async function getMaxSettlementAllowed(
     (members ?? []).filter((m) => m.user_id).map((m) => [m.user_id, m.id])
   );
 
-  const paidRows: { member_id: string; amount: number }[] = [];
+  const splitCurrencyById = new Map(
+    splits.map((s) => [
+      s.id,
+      normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
+    ])
+  );
+
+  const paidRows: { member_id: string; amount: number; currency: string }[] = [];
   for (const s of splits) {
-    const tid = s.transaction_id as string;
-    const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
+    const tid = s.transaction_id as string | null | undefined;
+    const payerM = (s as { payer_member_id?: string | null }).payer_member_id;
     const memberId =
-      payerMemberId && (members ?? []).some((m) => m.id === payerMemberId)
-        ? payerMemberId
+      payerM && (members ?? []).some((m) => m.id === payerM)
+        ? payerM
         : (() => {
-            const ownerId = txOwnerById.get(tid);
+            const ownerId = tid ? txOwnerById.get(tid) : undefined;
             return ownerId ? memberByUserId.get(ownerId) : null;
           })();
     if (memberId) {
-      const tx = (s as { transactions?: { amount?: number } | { amount?: number }[] }).transactions;
-      const amt = Number(Array.isArray(tx) ? tx[0]?.amount : tx?.amount) || 0;
-      paidRows.push({ member_id: memberId, amount: Math.abs(amt) });
+      const amt = paidAmountFromSplitRow(
+        s as { transactions?: unknown; amount?: number | string | null }
+      );
+      if (amt > 0) {
+        paidRows.push({
+          member_id: memberId,
+          amount: amt,
+          currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
+        });
+      }
     }
   }
 
@@ -93,34 +115,52 @@ export async function getMaxSettlementAllowed(
     const key = `${sh.split_transaction_id}:${sh.member_id}`;
     owedBySplitMember.set(key, (owedBySplitMember.get(key) ?? 0) + Number(sh.amount));
   }
-  const owedRows = Array.from(owedBySplitMember.entries()).map(([key, amount]) => ({
-    member_id: key.split(":")[1],
-    amount,
-  }));
+  const owedRows = Array.from(owedBySplitMember.entries()).map(([key, amount]) => {
+    const splitId = key.split(":")[0];
+    return {
+      member_id: key.split(":")[1],
+      amount,
+      currency: splitCurrencyById.get(splitId) ?? "USD",
+    };
+  });
 
   const paidSettlements = (settlements ?? []).map((s) => ({
     payer_member_id: s.payer_member_id,
     amount: Number(s.amount),
+    currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
   }));
   const receivedSettlements = (settlements ?? []).map((s) => ({
     receiver_member_id: s.receiver_member_id,
     amount: Number(s.amount),
+    currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
   }));
 
-  const balances = computeBalances(paidRows, owedRows, paidSettlements, receivedSettlements);
-  const suggestions = getSuggestedSettlements(balances);
+  const balancesByCurrency = computeBalancesByCurrency(
+    paidRows,
+    owedRows,
+    paidSettlements,
+    receivedSettlements
+  );
 
+  const balMap = balancesByCurrency.get(cur);
+  if (!balMap) {
+    return { maxAmount: 0, allowed: false, reason: "No balance in this currency for this group" };
+  }
+
+  const suggestions = getSuggestedSettlements(balMap);
   const suggestion = suggestions.find(
     (s) => s.fromMemberId === payerMemberId && s.toMemberId === receiverMemberId
   );
   if (!suggestion || suggestion.amount <= 0) {
-    return { maxAmount: 0, allowed: false, reason: "Already settled between these members" };
+    return { maxAmount: 0, allowed: false, reason: "Already settled between these members in this currency" };
   }
 
   const existingFromPayerToReceiver = (settlements ?? [])
     .filter(
       (s) =>
-        s.payer_member_id === payerMemberId && s.receiver_member_id === receiverMemberId
+        s.payer_member_id === payerMemberId &&
+        s.receiver_member_id === receiverMemberId &&
+        normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code) === cur
     )
     .reduce((sum, s) => sum + Number(s.amount), 0);
 
