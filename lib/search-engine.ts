@@ -328,8 +328,8 @@ function applyFilters(
       const isExactName = sanitized.includes(" ") || sanitized.length > 8 || /[A-Z]/.test(sanitized);
       if (isExactName) {
         return [
-          `merchant_name.ilike.${sanitized}`,
-          `raw_name.ilike.${sanitized}`,
+          `merchant_name.ilike.%${sanitized}%`,
+          `raw_name.ilike.%${sanitized}%`,
         ];
       }
       // Fuzzy match for short concept keywords (fallback when resolution fails).
