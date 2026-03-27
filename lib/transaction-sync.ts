@@ -468,11 +468,17 @@ async function syncSingleToken(
   const rowsToInsert = [...filteredAdded, ...modifiedRows];
 
   const BATCH = 100;
+  let actualSynced = 0;
   for (let i = 0; i < rowsToInsert.length; i += BATCH) {
+    const batch = rowsToInsert.slice(i, i + BATCH);
     const { error } = await db
       .from("transactions")
-      .upsert(rowsToInsert.slice(i, i + BATCH), { onConflict: "plaid_transaction_id" });
-    if (error) console.error("[sync] upsert error:", error.message);
+      .upsert(batch, { onConflict: "plaid_transaction_id" });
+    if (error) {
+      console.error("[sync] upsert error:", error.message);
+    } else {
+      actualSynced += batch.length;
+    }
   }
 
   const skipped = addedRows.length - filteredAdded.length;
@@ -480,7 +486,7 @@ async function syncSingleToken(
     console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
   }
 
-  return { synced: rowsToInsert.length, removedIds: allRemovedIds, skipped };
+  return { synced: actualSynced, removedIds: allRemovedIds, skipped };
 }
 
 export type SyncTransactionsOptions = {
