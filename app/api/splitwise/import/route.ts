@@ -2,11 +2,13 @@ export const dynamic = "force-dynamic";
 /** Splitwise import paginates many groups/expenses; avoid client + Vercel cutting the run short. */
 export const maxDuration = 300;
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
 import { getUserId } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { decryptToken } from "@/lib/encryption";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 import {
   getGroups,
   getExpenses,
@@ -111,6 +113,9 @@ export async function POST(req: NextRequest) {
     }
 
     console.log("[splitwise-import] done", stats);
+    if (!dryRun && (stats.expenses + stats.settlements) > 0) {
+      revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+    }
     return NextResponse.json({
       ok: true,
       dryRun,
