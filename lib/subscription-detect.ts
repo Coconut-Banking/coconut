@@ -26,6 +26,11 @@ export async function deleteExcludedSubscriptions(clerkUserId: string): Promise<
   const ids = toDelete.map((r) => r.id);
   await db.from("subscription_transactions").delete().in("subscription_id", ids);
   await db.from("subscriptions").delete().in("id", ids);
+  // Re-delete subscription_transactions to catch any concurrent re-inserts
+  await db
+    .from("subscription_transactions")
+    .delete()
+    .in("subscription_id", ids);
   return ids.length;
 }
 
