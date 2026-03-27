@@ -255,13 +255,55 @@ export async function GET(req: NextRequest) {
     const myBalance =
       myBalances.length === 1 ? myBalances[0].amount : myBalances.length === 0 ? 0 : null;
 
-    for (const m of groupMembers) {
-      if (m.user_id === userId) continue;
-      const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
-      for (const [cur, balMap] of balancesByCurrency) {
-        const theirBalance = balMap.get(m.id)?.total ?? 0;
-        const myBalanceWithThem = Math.round(-theirBalance * 100) / 100;
-        addPersonCurrency(personBalances, key, m.display_name, cur, myBalanceWithThem);
+    // Compute correct PAIRWISE balances between me and each other member.
+    // For each expense: if I paid, they owe me their share; if they paid, I owe them my share.
+    // (Using group-level totals would be wrong for 3+ person groups.)
+    if (myMember) {
+      const sharesByTx = new Map<string, Map<string, number>>();
+      for (const sh of shares.filter((s) => groupShareIds.includes(s.split_transaction_id))) {
+        let txMap = sharesByTx.get(sh.split_transaction_id);
+        if (!txMap) { txMap = new Map(); sharesByTx.set(sh.split_transaction_id, txMap); }
+        txMap.set(sh.member_id, Number(sh.amount));
+      }
+
+      const payerBySplit = new Map<string, string>();
+      for (const s of groupSplits) {
+        const sWithPayer = s as { payer_member_id?: string | null };
+        const pid = sWithPayer.payer_member_id && groupMembers.some((m) => m.id === sWithPayer.payer_member_id)
+          ? sWithPayer.payer_member_id
+          : (() => { const tid = s.transaction_id as string | null | undefined; const oid = tid ? txOwnerById.get(tid) : undefined; return oid ? memberByUserId.get(oid) ?? null : null; })();
+        if (pid) payerBySplit.set(s.id, pid);
+      }
+
+      for (const m of groupMembers) {
+        if (m.user_id === userId) continue;
+        const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
+
+        for (const s of groupSplits) {
+          const cur = splitCurrencyById.get(s.id) ?? "USD";
+          const txShares = sharesByTx.get(s.id);
+          if (!txShares) continue;
+          const payerId = payerBySplit.get(s.id);
+          if (!payerId) continue;
+
+          if (payerId === myMember.id) {
+            const theirShare = txShares.get(m.id) ?? 0;
+            if (theirShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, theirShare);
+          } else if (payerId === m.id) {
+            const myShare = txShares.get(myMember.id) ?? 0;
+            if (myShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, -myShare);
+          }
+        }
+
+        for (const st of groupSettlements) {
+          const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
+          const amt = Number(st.amount);
+          if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
+            addPersonCurrency(personBalances, key, m.display_name, cur, -amt);
+          } else if (st.payer_member_id === m.id && st.receiver_member_id === myMember.id) {
+            addPersonCurrency(personBalances, key, m.display_name, cur, amt);
+          }
+        }
       }
     }
 
