@@ -13,6 +13,7 @@ export function useTransactions() {
   const syncingRef = useRef(false);
 
   const refetch = useCallback(async (opts?: { bypassCache?: boolean }) => {
+    setLoading(true);
     try {
       setError(null);
       const statusRes = await fetch("/api/plaid/status");
@@ -32,6 +33,8 @@ export function useTransactions() {
     } catch (e) {
       console.error("[useTransactions] refetch:", e);
       setError("Failed to load transactions");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
