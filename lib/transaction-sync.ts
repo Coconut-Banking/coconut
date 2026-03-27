@@ -464,6 +464,11 @@ async function syncSingleToken(
   const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
   const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
 
+  const droppedCount = allAdded.length + allModified.length - addedRows.length - modifiedRows.length;
+  if (droppedCount > 0) {
+    console.error(`[sync] DROPPED ${droppedCount} transactions with no matching account for user ${clerkUserId}`);
+  }
+
   // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
   // IDs when same bank is linked multiple times (duplicate Items). Modified transactions
   // must always be upserted so pending->posted transitions and merchant name refinements
