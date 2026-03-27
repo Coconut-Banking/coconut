@@ -37,6 +37,10 @@ function escapeHtmlAttr(s: string): string {
  * is more reliable than Location alone.
  */
 function splitwiseMobileReturnPage(deepLink: string, bodyText: string): NextResponse {
+  // 200 + HTML (not 307 → custom scheme): Safari often rejects Location redirects to coconut://
+  console.info("[splitwise/callback] app handoff: 200 HTML page + link", {
+    schemePreview: deepLink.split(":")[0],
+  });
   const href = escapeHtmlAttr(deepLink);
   const jsTarget = JSON.stringify(deepLink);
   const html = `<!DOCTYPE html>
@@ -89,6 +93,7 @@ export async function GET(req: NextRequest) {
     if (verified.valid && verified.returnToApp) {
       return appSettingsDeepLink(req, { splitwise_error: error });
     }
+    // Web flow: redirect within the site (Vercel will log 307 — that is normal, not an error).
     return NextResponse.redirect(
       new URL(`/app/settings?splitwise_error=${encodeURIComponent(error)}`, req.url)
     );
