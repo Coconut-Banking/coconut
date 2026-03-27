@@ -73,7 +73,9 @@ async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
       input: texts,
       dimensions: EMBED_DIMENSIONS,
     });
-    return data.map((d) => d.embedding);
+    const result: (number[] | null)[] = data.map((d: { embedding: number[] }) => d.embedding ?? null);
+    while (result.length < texts.length) result.push(null);
+    return result;
   } catch (e) {
     console.warn("[embed] batch failed:", e);
     return texts.map(() => null);
