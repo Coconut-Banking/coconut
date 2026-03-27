@@ -502,8 +502,8 @@ export default function DashboardPage() {
               Spend
             </div>
           </div>
+          {spendingData.length > 0 ? (
           <ResponsiveContainer width="100%" height={160}>
-            {spendingData.length > 0 ? (
             <AreaChart data={spendingData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
               <defs>
                 <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
@@ -525,10 +525,10 @@ export default function DashboardPage() {
                 activeDot={{ r: 5, fill: "#3D8E62" }}
               />
             </AreaChart>
-            ) : (
-              <div className="h-full flex items-center justify-center text-sm text-gray-400">No spending data yet</div>
-            )}
           </ResponsiveContainer>
+          ) : (
+            <div className="h-40 flex items-center justify-center text-sm text-gray-400">No spending data yet</div>
+          )}
         </div>
 
         <div className="col-span-2 bg-white rounded-2xl border border-gray-100 p-5">
