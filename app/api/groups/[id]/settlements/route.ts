@@ -1,7 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 /**
  * DELETE /api/groups/[id]/settlements
@@ -28,5 +30,7 @@ export async function DELETE(
     console.error("[settlements] delete:", error.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
+
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   return NextResponse.json({ ok: true });
 }

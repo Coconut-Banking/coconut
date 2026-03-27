@@ -100,6 +100,23 @@ export async function getAllPlaidTokensForUser(clerkUserId: string): Promise<str
   return (data ?? []).map((r: { access_token: string }) => decryptToken(r.access_token)).filter(Boolean);
 }
 
+/**
+ * Returns the access token for the plaid_item most in need of re-auth.
+ * Items with needs_reauth=true are ordered first so that update-mode link
+ * tokens target the failing bank rather than always the first connected bank.
+ */
+export async function getReauthPriorityToken(clerkUserId: string): Promise<string | null> {
+  const db = getSupabase();
+  const { data } = await db
+    .from("plaid_items")
+    .select("access_token")
+    .eq("clerk_user_id", clerkUserId)
+    .order("needs_reauth", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.access_token ? decryptToken(data.access_token) : null;
+}
+
 export type PlaidItemInfo = { access_token: string; plaid_item_id: string; institution_name: string | null };
 export async function getPlaidItemsForUser(clerkUserId: string): Promise<PlaidItemInfo[]> {
   const db = getSupabase();
