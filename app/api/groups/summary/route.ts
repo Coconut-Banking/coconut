@@ -43,8 +43,9 @@ function friendRowFromAgg(key: string, v: PersonAgg) {
 
 /**
  * GET /api/groups/summary
- * Default: friends + groups with **non-zero** net for you (unsettled only), like Splitwise.
- * ?contacts=1 — include zero-balance friends and all groups (for expense pickers / add flows).
+ * Returns all friends and groups the user can access, with per-currency balances.
+ * ?unsettled=1 — only include friends/groups with non-zero net (Splitwise-style unsettled lists).
+ * ?contacts=1 — alias for the default (all), kept for backward compat with older app builds.
  *
  * Balances are **per ISO currency** (`balances` / `myBalances`). Do not sum across currencies.
  * When more than one currency is outstanding, `balance` / `myBalance` / headline totals are `null`
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
   const db = getSupabaseAdmin();
   const ids = await getAccessibleGroupIds(userId);
 
-  const contactsMode = req.nextUrl.searchParams.get("contacts") === "1";
+  const unsettledOnly = req.nextUrl.searchParams.get("unsettled") === "1";
 
   if (ids.length === 0) {
     return NextResponse.json({
@@ -264,7 +265,7 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  if (contactsMode) {
+  {
     const allMembers = members ?? [];
     for (const m of allMembers) {
       if (m.user_id === userId) continue;
@@ -279,12 +280,12 @@ export async function GET(req: NextRequest) {
     .map(([key, v]) => friendRowFromAgg(key, v))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-  if (!contactsMode) {
+  if (unsettledOnly) {
     friends = friends.filter((f) => f.balances.length > 0);
   }
 
   let groupsOut = groupsWithBalance;
-  if (!contactsMode) {
+  if (unsettledOnly) {
     groupsOut = groupsWithBalance.filter((g) => (g.myBalances?.length ?? 0) > 0);
   }
 

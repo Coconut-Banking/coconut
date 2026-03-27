@@ -256,27 +256,27 @@ describe("add friend → summary flow", () => {
     const memberRes = await addMember(memberReq, { params: Promise.resolve({ id: group.id }) });
     expect(memberRes.status).toBe(200);
 
-    // Step 3: Default summary — no splits yet → no outstanding friends/groups
+    // Step 3: Default summary now returns all groups/friends (not just unsettled)
     const { GET: getSummary } = await import("../summary/route");
     const summaryRes = await getSummary(new NextRequest("http://localhost/api/groups/summary"));
     expect(summaryRes.status).toBe(200);
     const summary = await summaryRes.json();
 
-    expect(summary.groups).toHaveLength(0);
-    expect(summary.friends).toHaveLength(0);
-
-    // Contacts mode — pickers still see the new friend with $0 balance
-    const contactsRes = await getSummary(
-      new NextRequest("http://localhost/api/groups/summary?contacts=1")
-    );
-    expect(contactsRes.status).toBe(200);
-    const contacts = await contactsRes.json();
-    expect(contacts.groups).toHaveLength(1);
-    expect(contacts.groups[0].name).toBe(FRIEND_NAME);
-    const friend = contacts.friends.find((f: { displayName: string }) => f.displayName === FRIEND_NAME);
+    expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0].name).toBe(FRIEND_NAME);
+    const friend = summary.friends.find((f: { displayName: string }) => f.displayName === FRIEND_NAME);
     expect(friend).toBeDefined();
     expect(friend?.balance).toBe(0);
     expect(friend?.balances ?? []).toEqual([]);
+
+    // ?unsettled=1 — only non-zero balances
+    const unsettledRes = await getSummary(
+      new NextRequest("http://localhost/api/groups/summary?unsettled=1")
+    );
+    expect(unsettledRes.status).toBe(200);
+    const unsettled = await unsettledRes.json();
+    expect(unsettled.groups).toHaveLength(0);
+    expect(unsettled.friends).toHaveLength(0);
   });
 
   it("summary shows 0 groups and friends when user has none", async () => {
