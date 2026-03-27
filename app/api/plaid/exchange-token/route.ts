@@ -131,13 +131,15 @@ export async function POST(request: NextRequest) {
     // wiping other banks when adding a second account). Multi-bank: each item is separate.
     const { getSupabase } = await import("@/lib/supabase");
     const db = getSupabase();
+
+    await savePlaidToken(effectiveUserId, access_token, item_id, institutionName, institutionId);
+
+    // Recount AFTER save — concurrent connections will see count > 1
     const { data: existingItems } = await db
       .from("plaid_items")
       .select("id")
       .eq("clerk_user_id", effectiveUserId);
-    const isFirstConnection = !existingItems || existingItems.length === 0;
-
-    await savePlaidToken(effectiveUserId, access_token, item_id, institutionName, institutionId);
+    const isFirstConnection = !existingItems || existingItems.length <= 1;
     console.log("[plaid][exchange-token] token_saved", {
       trace_id: traceId,
       user_id: effectiveUserId,
