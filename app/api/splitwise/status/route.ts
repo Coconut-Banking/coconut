@@ -14,16 +14,30 @@ export async function GET() {
   }
 
   const db = getSupabase();
-  const { data } = await db
-    .from("splitwise_tokens")
-    .select("created_at")
-    .eq("clerk_user_id", userId)
-    .maybeSingle();
+
+  const [tokenRes, importCountRes] = await Promise.all([
+    db
+      .from("splitwise_tokens")
+      .select("created_at")
+      .eq("clerk_user_id", userId)
+      .maybeSingle(),
+    db
+      .from("groups")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", userId)
+      .eq("source", "splitwise"),
+  ]);
+
+  const data = tokenRes.data;
+  const importCount = importCountRes.count ?? 0;
 
   return NextResponse.json({
     configured: true,
+    /** Stored OAuth token exists (Splitwise authorized Coconut on the server). */
     connected: !!data,
     connectedAt: data?.created_at ?? null,
+    /** Groups created from Splitwise import — 0 if you authorized but never imported or cleared data. */
+    importedSplitwiseGroupCount: importCount,
   });
 }
 
