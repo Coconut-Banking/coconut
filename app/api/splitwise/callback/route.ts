@@ -25,7 +25,8 @@ function appSettingsDeepLink(req: NextRequest, query: Record<string, string>): N
   }
   const scheme = appSchemeFromVerification(verified);
   const q = new URLSearchParams(query).toString();
-  return NextResponse.redirect(`${scheme}:///(tabs)/settings${q ? `?${q}` : ""}`);
+  // Path must not contain "(" / ")" — iOS Safari rejects e.g. coconut-dev:///(tabs)/settings?...
+  return NextResponse.redirect(`${scheme}://splitwise-callback${q ? `?${q}` : ""}`);
 }
 
 export async function GET(req: NextRequest) {
