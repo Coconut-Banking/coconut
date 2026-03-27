@@ -45,13 +45,23 @@ function splitwiseMobileReturnPage(deepLink: string, bodyText: string): NextResp
     schemePreview: deepLink.split(":")[0],
   });
   const href = escapeHtmlAttr(deepLink);
+  // Safe to navigate away via JS: the OAuth code was already consumed on this response.
+  // ASWebAuthenticationSession / Custom Tabs need this so the user isn’t stuck on a dead-end page.
+  const jsUrlLiteral = JSON.stringify(deepLink);
   const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Coconut</title></head>
 <body style="font-family:system-ui,-apple-system,sans-serif;padding:28px 20px;text-align:center;background:#f8fafc;color:#111">
 <p style="font-size:17px;line-height:1.45;margin:0 0 12px">${bodyText}</p>
-<p style="margin:20px 0 0"><a href="${href}" style="display:inline-block;padding:14px 22px;background:#3D8E62;color:#fff;border-radius:12px;text-decoration:none;font-weight:600">Open Coconut</a></p>
-<p style="font-size:14px;color:#64748b;margin-top:24px">Tap the button (auto-open is disabled so Safari does not double-load this page and burn the OAuth code).</p>
+<p style="margin:20px 0 0"><a id="open" href="${href}" style="display:inline-block;padding:14px 22px;background:#3D8E62;color:#fff;border-radius:12px;text-decoration:none;font-weight:600">Open Coconut</a></p>
+<p style="font-size:14px;color:#64748b;margin-top:24px">Opening the app automatically… If nothing happens, tap the button above.</p>
+<script>
+(function(){
+  var u=${jsUrlLiteral};
+  function go(){ try { window.location.replace(u); } catch(e) {} }
+  setTimeout(go, 300);
+})();
+</script>
 </body></html>`;
   return new NextResponse(html, {
     status: 200,
