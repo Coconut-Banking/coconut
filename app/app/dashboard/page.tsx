@@ -102,7 +102,8 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
     // Cash flow: track income and expenses separately for current month
     if (month === thisMonthKey) {
       if (isExpense) thisMonthExpenses += absAmt;
-      else thisMonthIncome += absAmt;
+      else if (isIncomeCategory) thisMonthIncome += absAmt;
+      // Positive non-income amounts (refunds, credits) are excluded from both
     }
 
     // All spending metrics: expenses only
