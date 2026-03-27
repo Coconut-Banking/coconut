@@ -10,12 +10,17 @@ const OAUTH_AUTHORIZE = "https://secure.splitwise.com/oauth/authorize";
 const OAUTH_TOKEN = "https://secure.splitwise.com/oauth/token";
 
 export function getSplitwiseConfig() {
+  const appBase = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const explicit = process.env.SPLITWISE_REDIRECT_URI?.trim();
+  // Must match Splitwise OAuth app settings exactly on both /authorize and /token requests.
+  const redirectUri =
+    explicit && explicit.length > 0
+      ? explicit.replace(/\/$/, "")
+      : `${appBase}/api/splitwise/callback`;
   return {
     clientId: process.env.SPLITWISE_CLIENT_ID ?? "",
     clientSecret: process.env.SPLITWISE_CLIENT_SECRET ?? "",
-    redirectUri:
-      (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "") +
-      "/api/splitwise/callback",
+    redirectUri,
   };
 }
 
