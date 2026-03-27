@@ -442,7 +442,7 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
           primary_category: d.primaryCategory,
           transaction_count: d.transactionCount,
           confidence: d.confidence,
-          status: "active",
+          status: existing ? existing.status : "active",
           updated_at: new Date().toISOString(),
           ...priceChangeFields,
         },
