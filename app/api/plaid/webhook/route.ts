@@ -173,6 +173,10 @@ export async function POST(request: NextRequest) {
       webhook_code === "USER_ACCOUNT_REVOKED"
     ) {
       console.log("[plaid][webhook] user revoked", { webhook_code, item_id, user_id: clerkUserId });
+      await db
+        .from("plaid_items")
+        .update({ needs_reauth: true })
+        .eq("plaid_item_id", item_id);
     }
   }
 
