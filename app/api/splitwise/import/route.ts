@@ -258,16 +258,140 @@ async function importGroup(
   // 5. Fetch and import expenses
   const expenses = await getExpenses(token, swGroup.id, opts.expenseOptions);
 
-  for (const expense of expenses) {
-    try {
-      if (expense.payment) {
-        await importSettlement(db, groupId, expense, swMemberIdToCoconutId, stats);
-      } else {
-        await importExpense(db, groupId, userId, expense, swMemberIdToCoconutId, stats);
+  const regularExpenses = expenses.filter((e) => !e.payment);
+  const settlements = expenses.filter((e) => e.payment);
+
+  // Batch-check which expenses already exist
+  const allExtIds = regularExpenses.map((e) => String(e.id));
+  const existingExpenseIds = new Set<string>();
+  if (allExtIds.length > 0) {
+    for (let i = 0; i < allExtIds.length; i += 500) {
+      const batch = allExtIds.slice(i, i + 500);
+      const { data } = await db
+        .from("split_transactions")
+        .select("external_id")
+        .eq("source", "splitwise")
+        .in("external_id", batch);
+      for (const row of data ?? []) existingExpenseIds.add(row.external_id);
+    }
+  }
+
+  // Batch-check which settlements already exist
+  const allSettlementRefs = settlements.map((e) => `splitwise:${e.id}`);
+  const existingSettlementRefs = new Set<string>();
+  if (allSettlementRefs.length > 0) {
+    for (let i = 0; i < allSettlementRefs.length; i += 500) {
+      const batch = allSettlementRefs.slice(i, i + 500);
+      const { data } = await db
+        .from("settlements")
+        .select("external_reference")
+        .in("external_reference", batch);
+      for (const row of data ?? []) existingSettlementRefs.add(row.external_reference);
+    }
+  }
+
+  // Import expenses in batches
+  const newExpenses = regularExpenses.filter((e) => !existingExpenseIds.has(String(e.id)));
+  stats.skipped += regularExpenses.length - newExpenses.length;
+
+  const BATCH = 50;
+  for (let i = 0; i < newExpenses.length; i += BATCH) {
+    const batch = newExpenses.slice(i, i + BATCH);
+    const txRows = batch.map((expense) => {
+      const payer = expense.users.reduce((best, u) =>
+        (safeParseFloat(u.paid_share) ?? 0) > (safeParseFloat(best.paid_share) ?? 0) ? u : best
+      );
+      return {
+        group_id: groupId,
+        transaction_id: null,
+        created_by: userId,
+        payer_member_id: swMemberIdToCoconutId.get(payer.user_id) ?? null,
+        source: "splitwise" as const,
+        external_id: String(expense.id),
+        description: expense.description,
+        amount: safeParseFloat(expense.cost),
+        date: expense.date.split("T")[0],
+        iso_currency_code: expense.currency_code?.trim() || "USD",
+      };
+    });
+
+    const { data: inserted, error: txErr } = await db
+      .from("split_transactions")
+      .insert(txRows)
+      .select("id, external_id");
+
+    if (txErr || !inserted) {
+      console.error(`[splitwise-import] batch split_tx insert error:`, txErr?.message);
+      stats.skipped += batch.length;
+      continue;
+    }
+
+    const insertedByExtId = new Map(inserted.map((r) => [r.external_id, r.id]));
+
+    const allShares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
+    for (const expense of batch) {
+      const txId = insertedByExtId.get(String(expense.id));
+      if (!txId) continue;
+      for (const u of expense.users) {
+        const amt = safeParseFloat(u.owed_share);
+        if (amt === null || amt <= 0) continue;
+        const memberId = swMemberIdToCoconutId.get(u.user_id);
+        if (!memberId) continue;
+        allShares.push({ split_transaction_id: txId, member_id: memberId, amount: amt });
       }
-    } catch (err) {
-      console.error(`[splitwise-import] expense ${expense.id} error:`, err);
+      stats.expenses++;
+    }
+
+    if (allShares.length > 0) {
+      for (let j = 0; j < allShares.length; j += 500) {
+        await db.from("split_shares").insert(allShares.slice(j, j + 500));
+      }
+    }
+  }
+
+  // Import settlements in batches
+  const settlementRows: {
+    group_id: string;
+    payer_member_id: string;
+    receiver_member_id: string;
+    amount: number;
+    method: string;
+    status: string;
+    external_reference: string;
+    created_at: string;
+    iso_currency_code: string;
+  }[] = [];
+
+  for (const expense of settlements) {
+    const extRef = `splitwise:${expense.id}`;
+    if (existingSettlementRefs.has(extRef)) {
       stats.skipped++;
+      continue;
+    }
+    for (const repayment of expense.repayments) {
+      const payerId = swMemberIdToCoconutId.get(repayment.from);
+      const receiverId = swMemberIdToCoconutId.get(repayment.to);
+      if (!payerId || !receiverId) continue;
+      const amount = safeParseFloat(repayment.amount);
+      if (amount === null || amount <= 0) continue;
+      settlementRows.push({
+        group_id: groupId,
+        payer_member_id: payerId,
+        receiver_member_id: receiverId,
+        amount,
+        method: "splitwise",
+        status: "completed",
+        external_reference: extRef,
+        created_at: expense.date,
+        iso_currency_code: expense.currency_code?.trim() || "USD",
+      });
+      stats.settlements++;
+    }
+  }
+
+  if (settlementRows.length > 0) {
+    for (let i = 0; i < settlementRows.length; i += 500) {
+      await db.from("settlements").insert(settlementRows.slice(i, i + 500));
     }
   }
 }
@@ -278,123 +402,4 @@ function safeParseFloat(value: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-// ── Import one expense ──────────────────────────────────────────────────────
-
-async function importExpense(
-  db: DB,
-  groupId: string,
-  userId: string,
-  expense: SplitwiseExpense,
-  memberMap: Map<number, string>,
-  stats: ImportStats
-) {
-  const extId = String(expense.id);
-
-  // Check if already imported
-  const { data: existing } = await db
-    .from("split_transactions")
-    .select("id")
-    .eq("source", "splitwise")
-    .eq("external_id", extId)
-    .maybeSingle();
-
-  if (existing) {
-    stats.skipped++;
-    return;
-  }
-
-  // Find who paid the most (the payer)
-  const payer = expense.users.reduce((best, u) =>
-    (safeParseFloat(u.paid_share) ?? 0) > (safeParseFloat(best.paid_share) ?? 0) ? u : best
-  );
-  const payerMemberId = memberMap.get(payer.user_id) ?? null;
-
-  const { data: splitTx, error: txErr } = await db
-    .from("split_transactions")
-    .insert({
-      group_id: groupId,
-      transaction_id: null, // No linked bank transaction
-      created_by: userId,
-      payer_member_id: payerMemberId,
-      source: "splitwise",
-      external_id: extId,
-      description: expense.description,
-      amount: safeParseFloat(expense.cost),
-      date: expense.date.split("T")[0],
-      iso_currency_code: expense.currency_code?.trim() || "USD",
-    })
-    .select("id")
-    .single();
-
-  if (txErr || !splitTx) {
-    console.error(`[splitwise-import] split_tx insert error:`, txErr?.message);
-    stats.skipped++;
-    return;
-  }
-
-  // Insert shares for each member who owes something
-  const shares = expense.users
-    .filter((u) => {
-      const amt = safeParseFloat(u.owed_share);
-      return amt !== null && amt > 0;
-    })
-    .map((u) => ({
-      split_transaction_id: splitTx.id,
-      member_id: memberMap.get(u.user_id),
-      amount: safeParseFloat(u.owed_share)!,
-    }))
-    .filter((s) => s.member_id);
-
-  if (shares.length > 0) {
-    await db.from("split_shares").insert(shares);
-  }
-
-  stats.expenses++;
-}
-
-// ── Import one settlement ───────────────────────────────────────────────────
-
-async function importSettlement(
-  db: DB,
-  groupId: string,
-  expense: SplitwiseExpense,
-  memberMap: Map<number, string>,
-  stats: ImportStats
-) {
-  // Splitwise payments have repayments: [{from, to, amount}]
-  for (const repayment of expense.repayments) {
-    const payerId = memberMap.get(repayment.from);
-    const receiverId = memberMap.get(repayment.to);
-    if (!payerId || !receiverId) continue;
-
-    const amount = safeParseFloat(repayment.amount);
-    if (amount === null || amount <= 0) continue;
-
-    // Check for duplicate by external_reference
-    const extRef = `splitwise:${expense.id}`;
-    const { data: existing } = await db
-      .from("settlements")
-      .select("id")
-      .eq("external_reference", extRef)
-      .maybeSingle();
-
-    if (existing) {
-      stats.skipped++;
-      continue;
-    }
-
-    await db.from("settlements").insert({
-      group_id: groupId,
-      payer_member_id: payerId,
-      receiver_member_id: receiverId,
-      amount,
-      method: "splitwise",
-      status: "completed",
-      external_reference: extRef,
-      created_at: expense.date,
-      iso_currency_code: expense.currency_code?.trim() || "USD",
-    });
-
-    stats.settlements++;
-  }
-}
+// Individual importExpense/importSettlement removed — batched inline in importGroup above.

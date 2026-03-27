@@ -325,6 +325,13 @@ export async function GET(req: NextRequest) {
     netBalance = null;
   }
 
+  console.log("[summary] response", {
+    groups: groupsOut.length,
+    friends: friends.length,
+    unsettledOnly,
+    totalsByCurrency: totalsByCurrency.length,
+  });
+
   return NextResponse.json({
     groups: groupsOut,
     friends,
