@@ -12,6 +12,7 @@ type AccountRow = {
   account_id: string;
   id: string;
   name: string;
+  nickname?: string | null;
   type?: string;
   subtype?: string | null;
   mask?: string | null;
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getSupabase();
-    const baseSelect = "id, plaid_account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code";
+    const baseSelect = "id, plaid_account_id, name, nickname, type, subtype, mask, balance_current, balance_available, iso_currency_code";
 
     // When refresh=1, bypass cache to fetch live (fixes newly connected banks not showing)
     if (!forceRefresh) {
@@ -107,6 +108,7 @@ export async function GET(request: NextRequest) {
           id: row.id,
           plaid_item_id: row.plaid_item_id ?? null,
           name: row.name,
+          nickname: (row as Record<string, unknown>).nickname as string | null ?? null,
           type: row.type,
           subtype: row.subtype,
           mask: row.mask,
@@ -179,6 +181,7 @@ export async function GET(request: NextRequest) {
           id: row.id,
           plaid_item_id: row.plaid_item_id ?? null,
           name: row.name,
+          nickname: (row as Record<string, unknown>).nickname as string | null ?? null,
           type: row.type,
           subtype: row.subtype,
           mask: row.mask,
@@ -246,6 +249,7 @@ export async function GET(request: NextRequest) {
       id: String(row.id ?? ""),
       plaid_item_id: (row.plaid_item_id as string | null) ?? null,
       name: String(row.name ?? ""),
+      nickname: (row.nickname as string | null) ?? null,
       type: row.type as string | undefined,
       subtype: row.subtype as string | null | undefined,
       mask: row.mask as string | null | undefined,
