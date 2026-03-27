@@ -31,6 +31,10 @@ export async function GET(
     const { data: group, error: groupError } = await db.from("groups").select("*").eq("id", id).single();
     if (groupError || !group) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    const isOwner = group.owner_id === userId;
+    const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
+    const maskedGroup = { ...groupWithoutToken, invite_token: isOwner ? invite_token : null };
+
     let { data: members } = await db
       .from("group_members")
       .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
@@ -74,7 +78,7 @@ export async function GET(
 
     if (splits.length === 0) {
       return NextResponse.json({
-        group,
+        group: maskedGroup,
         members: members ?? [],
         activity: [],
         balances: (members ?? []).map((m) => ({
@@ -261,9 +265,9 @@ export async function GET(
     const archivedAt = (group as { archived_at?: string | null }).archived_at ?? null;
 
     return NextResponse.json({
-      ...group,
-      group,
-      isOwner: group.owner_id === userId,
+      ...maskedGroup,
+      group: maskedGroup,
+      isOwner,
       archivedAt,
       members: members ?? [],
       activity,
