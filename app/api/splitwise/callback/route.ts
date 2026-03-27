@@ -9,19 +9,25 @@ import { verifyOAuthState } from "@/lib/paypal-auth";
 const ALLOWED_APP_SCHEMES = new Set(["coconut", "coconut-dev"]);
 
 function appSchemeFromVerification(v: { appSchemeKey?: "p" | "d" }): string {
+  // Prefer signed OAuth state from /api/splitwise/auth-url (matches the build that tapped Connect).
+  // If MOBILE_APP_SCHEME overrides this, dev users on production API get coconut:// links while the
+  // app only registers coconut-dev:// — Safari shows "invalid address" and the app never opens.
+  if (v.appSchemeKey === "d") return "coconut-dev";
+  if (v.appSchemeKey === "p") return "coconut";
   const fromEnv = process.env.MOBILE_APP_SCHEME?.trim().toLowerCase().replace(/[^a-z0-9._+-]/g, "") ?? "";
-  if (fromEnv && ALLOWED_APP_SCHEMES.has(fromEnv)) {
-    return fromEnv;
-  }
-  return v.appSchemeKey === "d" ? "coconut-dev" : "coconut";
+  if (fromEnv && ALLOWED_APP_SCHEMES.has(fromEnv)) return fromEnv;
+  return "coconut";
 }
 
-/** Custom-scheme URL Expo expects, e.g. coconut-dev://splitwise-callback?… — no () in path. */
+/**
+ * Path-style custom URI (empty host): coconut-dev:///splitwise-callback?…
+ * Expo-router maps this to route `splitwise-callback`; avoids host-only forms some iOS versions reject from https pages.
+ */
 function buildSplitwiseAppDeepLink(schemeRaw: string, query: Record<string, string>): string {
   const scheme = ALLOWED_APP_SCHEMES.has(schemeRaw.trim().toLowerCase())
     ? schemeRaw.trim().toLowerCase()
     : "coconut";
-  const u = new URL(`${scheme}://splitwise-callback`);
+  const u = new URL(`${scheme}:///splitwise-callback`);
   for (const [k, val] of Object.entries(query)) {
     u.searchParams.set(k, val);
   }
