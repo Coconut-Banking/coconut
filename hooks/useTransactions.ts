@@ -86,12 +86,17 @@ export function useTransactions() {
         }
         return fetch("/api/plaid/transactions");
       })
-      .then((res) => {
-        if (!res || cancelled) return res?.json?.();
-        return res.json();
+      .then(async (res) => {
+        if (!res || cancelled) return null;
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          if (!cancelled) setError((data as { error?: string })?.error ?? "Failed to load transactions");
+          return null;
+        }
+        return data;
       })
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled || !data) return;
         if (Array.isArray(data)) {
           setTransactions(data as UITransaction[]);
         }
