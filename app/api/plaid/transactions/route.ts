@@ -12,6 +12,10 @@ import {
   normalizeMerchantsWithLLM,
 } from "@/lib/merchant-normalize-llm";
 import { CACHE_TAGS } from "@/lib/cached-queries";
+import {
+  fetchAllEmailReceiptsLinkedForUser,
+  remapEmailReceiptsBeforeTxDedupeDelete,
+} from "@/lib/transaction-sync";
 
 export async function GET(request: NextRequest) {
   const { userId: clerkUserId, getToken } = await auth();
@@ -79,37 +83,44 @@ export async function GET(request: NextRequest) {
     }
 
     // Deduplicate: same merchant+amount+date can appear twice (multi-Item or reconnect)
-    const seen = new Set<string>();
     const keptIds = new Set<string>();
-    const deduped = bankOnly.filter((tx) => {
+    const duplicateIdToKeptId = new Map<string, string>();
+    const keyToKeptId = new Map<string, string>();
+    const deduped: typeof bankOnly = [];
+    for (const tx of bankOnly) {
       const raw = (tx.merchant_name || tx.raw_name || "").trim().toLowerCase();
       const norm = tx.normalized_merchant ?? raw.replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       const merchant = norm || raw;
       const amount = Number(tx.amount);
       const date = tx.date as string;
       const key = `${merchant}|${amount}|${date}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      keptIds.add(tx.id as string);
-      return true;
-    });
+      const tid = tx.id as string;
+      const existingKept = keyToKeptId.get(key);
+      if (existingKept !== undefined) {
+        duplicateIdToKeptId.set(tid, existingKept);
+      } else {
+        keyToKeptId.set(key, tid);
+        keptIds.add(tid);
+        deduped.push(tx);
+      }
+    }
 
-    // Actually delete duplicate rows from Supabase (first occurrence stays)
-    // Don't delete tx that are in splits, email_receipts, or subscriptions — they're referenced by FK
+    // Actually delete duplicate rows from Supabase (first occurrence in list order stays).
+    // Remap email_receipts onto the kept row before delete (FK + PostgREST 1k row cap on receipt fetch).
     const { data: inSplits } = await db
       .from("split_transactions")
       .select("transaction_id")
       .in("transaction_id", bankOnly.map((tx) => tx.id));
-    const { data: receiptRows } = await db
-      .from("email_receipts")
-      .select("id, transaction_id, merchant, raw_subject, merchant_type, merchant_details")
-      .not("transaction_id", "is", null)
-      .eq("clerk_user_id", effectiveUserId);
+    const receiptRows = await fetchAllEmailReceiptsLinkedForUser(
+      db,
+      effectiveUserId,
+      "id, transaction_id, merchant, raw_subject, merchant_type, merchant_details"
+    );
     const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id").in("transaction_id", bankOnly.map((tx) => tx.id));
 
     const receiptMatchLineByTxId = new Map<string, string>();
     const receiptIdByTxId = new Map<string, string>();
-    for (const r of receiptRows ?? []) {
+    for (const r of receiptRows) {
       const tid = r.transaction_id as string | null;
       if (!tid) continue;
       receiptIdByTxId.set(tid, r.id as string);
@@ -138,7 +149,6 @@ export async function GET(request: NextRequest) {
     const protectedIds = new Set(
       [
         ...(inSplits ?? []).map((r) => r.transaction_id as string),
-        ...(receiptRows ?? []).map((r) => r.transaction_id as string),
         ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
       ].filter(Boolean)
     );
@@ -149,6 +159,7 @@ export async function GET(request: NextRequest) {
       const DEDUPE_BATCH = 100;
       for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
         const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
+        await remapEmailReceiptsBeforeTxDedupeDelete(db, effectiveUserId, duplicateIdToKeptId, batch);
         const { error: delErr } = await db.from("transactions").delete().in("id", batch);
         if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
       }

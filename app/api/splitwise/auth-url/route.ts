@@ -32,5 +32,8 @@ export async function GET(req: NextRequest) {
   );
   const url = getAuthorizationUrl(state);
 
+  // Helps Vercel/server logs: native app hits this route (not /api/splitwise/auth redirect).
+  console.info("[splitwise/auth-url] ok", { returnToApp, appSchemeKey });
+
   return NextResponse.json({ url });
 }

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlaidClient } from "./plaid-client";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
@@ -149,6 +150,71 @@ export async function savePlaidToken(
 /** Build dedupe key: same (merchant, amount, date) = same real transaction across Items */
 function dedupeKey(normalizedMerchant: string, amount: number, date: string): string {
   return `${normalizedMerchant}|${amount}|${date}`;
+}
+
+/** PostgREST default max rows per request — must paginate or linked receipts are invisible. */
+const EMAIL_RECEIPT_PAGE = 1000;
+
+/**
+ * Load all email_receipts rows for a user with transaction_id set (paginated).
+ */
+export async function fetchAllEmailReceiptsLinkedForUser(
+  db: SupabaseClient,
+  clerkUserId: string,
+  select: string
+): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += EMAIL_RECEIPT_PAGE) {
+    const { data, error } = await db
+      .from("email_receipts")
+      .select(select)
+      .eq("clerk_user_id", clerkUserId)
+      .not("transaction_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + EMAIL_RECEIPT_PAGE - 1);
+    if (error) {
+      console.warn("[email_receipts] paginated fetch failed:", error.message);
+      break;
+    }
+    if (!data?.length) break;
+    out.push(...(data as unknown as Record<string, unknown>[]));
+    if (data.length < EMAIL_RECEIPT_PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * Point receipt matches at the surviving duplicate row before deleting duplicate transactions.
+ * Avoids FK violations on email_receipts_transaction_id_fkey and keeps receipts on the kept tx.
+ */
+export async function remapEmailReceiptsBeforeTxDedupeDelete(
+  db: SupabaseClient,
+  clerkUserId: string,
+  duplicateIdToKeptId: Map<string, string>,
+  duplicateIdsBeingDeleted: string[]
+): Promise<void> {
+  const byKept = new Map<string, string[]>();
+  for (const dupId of duplicateIdsBeingDeleted) {
+    const kept = duplicateIdToKeptId.get(dupId);
+    if (!kept) continue;
+    const arr = byKept.get(kept) ?? [];
+    arr.push(dupId);
+    byKept.set(kept, arr);
+  }
+  const IN_CHUNK = 100;
+  for (const [keptId, dupIds] of byKept) {
+    for (let i = 0; i < dupIds.length; i += IN_CHUNK) {
+      const chunk = dupIds.slice(i, i + IN_CHUNK);
+      const { error } = await db
+        .from("email_receipts")
+        .update({ transaction_id: keptId })
+        .in("transaction_id", chunk)
+        .eq("clerk_user_id", clerkUserId);
+      if (error) {
+        console.warn("[transactions] receipt remap before dedupe delete failed:", error.message);
+      }
+    }
+  }
 }
 
 /**
@@ -501,16 +567,18 @@ export async function syncTransactionsForUser(
 /**
  * Full-scan dedupe: delete duplicate transactions for a user.
  * Keeps the first occurrence (by id) per (normalized_merchant, amount, date).
- * Skips rows referenced by split_transactions or email_receipts.
+ * Skips rows referenced by split_transactions or subscription_transactions.
+ * Receipt matches on duplicate rows are remapped to the kept row before delete.
  */
 export async function deleteDuplicateTransactionsForUser(
-  db: Awaited<ReturnType<typeof getSupabase>>,
+  db: SupabaseClient,
   clerkUserId: string
 ): Promise<number> {
   const PAGE = 2000;
   let offset = 0;
   const seen = new Map<string, string>(); // key -> id to keep
   const idsToDelete: string[] = [];
+  const duplicateIdToKeptId = new Map<string, string>();
 
   // Get user's transaction IDs to scope protection queries
   const { data: userTxs } = await db
@@ -523,11 +591,6 @@ export async function deleteDuplicateTransactionsForUser(
     .from("split_transactions")
     .select("transaction_id")
     .in("transaction_id", userTxIds);
-  const { data: protectedReceipts } = await db
-    .from("email_receipts")
-    .select("transaction_id")
-    .eq("clerk_user_id", clerkUserId)
-    .not("transaction_id", "is", null);
   const { data: protectedSubTxs } = await db
     .from("subscription_transactions")
     .select("transaction_id")
@@ -536,7 +599,6 @@ export async function deleteDuplicateTransactionsForUser(
   const protectedIds = new Set(
     [
       ...(protectedSplits ?? []).map((r) => r.transaction_id as string),
-      ...(protectedReceipts ?? []).map((r) => r.transaction_id as string),
       ...(protectedSubTxs ?? []).map((r) => r.transaction_id as string),
     ].filter(Boolean)
   );
@@ -560,7 +622,9 @@ export async function deleteDuplicateTransactionsForUser(
       if (keptId === undefined) {
         seen.set(key, r.id as string);
       } else {
-        idsToDelete.push(r.id as string);
+        const dupId = r.id as string;
+        idsToDelete.push(dupId);
+        duplicateIdToKeptId.set(dupId, keptId);
       }
     }
 
@@ -573,6 +637,7 @@ export async function deleteDuplicateTransactionsForUser(
   const BATCH = 100;
   for (let i = 0; i < idsToDelete.length; i += BATCH) {
     const batch = idsToDelete.slice(i, i + BATCH);
+    await remapEmailReceiptsBeforeTxDedupeDelete(db, clerkUserId, duplicateIdToKeptId, batch);
     const { error } = await db.from("transactions").delete().in("id", batch);
     if (error) {
       console.warn("[sync] dedupe delete batch failed:", error.message);
