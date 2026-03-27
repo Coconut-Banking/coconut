@@ -16,7 +16,7 @@ export interface Account {
 
 export function useAccounts(linked: boolean) {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(linked);
 
   const fetchAccounts = useCallback(async () => {
     if (!linked) {
