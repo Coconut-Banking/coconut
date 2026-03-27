@@ -156,11 +156,18 @@ export async function GET(request: NextRequest) {
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
     if (idsToDelete.length > 0) {
+      // Remap + delete must bypass RLS: user JWT clients can fail to update email_receipts
+      // (leaving FKs pointing at duplicate tx rows), then delete hits email_receipts_transaction_id_fkey.
+      const adminDb = getSupabaseAdmin();
       const DEDUPE_BATCH = 100;
       for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
         const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
-        await remapEmailReceiptsBeforeTxDedupeDelete(db, effectiveUserId, duplicateIdToKeptId, batch);
-        const { error: delErr } = await db.from("transactions").delete().in("id", batch);
+        await remapEmailReceiptsBeforeTxDedupeDelete(adminDb, effectiveUserId, duplicateIdToKeptId, batch);
+        const { error: delErr } = await adminDb
+          .from("transactions")
+          .delete()
+          .eq("clerk_user_id", effectiveUserId)
+          .in("id", batch);
         if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
       }
       try {
