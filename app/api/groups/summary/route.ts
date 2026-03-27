@@ -72,13 +72,27 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const { data: groupsRaw } = await db
-    .from("groups")
-    .select("id, name, owner_id, created_at, group_type, archived_at")
-    .in("id", ids)
-    .order("created_at", { ascending: false });
+  let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; archived_at?: string | null }[] | null;
+  {
+    const res = await db
+      .from("groups")
+      .select("id, name, owner_id, created_at, group_type, archived_at")
+      .in("id", ids)
+      .order("created_at", { ascending: false });
+    if (res.error?.code === "42703") {
+      // archived_at column doesn't exist yet — retry without it
+      const fallback = await db
+        .from("groups")
+        .select("id, name, owner_id, created_at, group_type")
+        .in("id", ids)
+        .order("created_at", { ascending: false });
+      groupsRaw = fallback.data;
+    } else {
+      groupsRaw = res.data;
+    }
+  }
 
-  const groups = (groupsRaw ?? []).filter((g) => !(g as { archived_at?: string | null }).archived_at);
+  const groups = (groupsRaw ?? []).filter((g) => !g.archived_at);
 
   const groupIds = (groups ?? []).map((g) => g.id);
 

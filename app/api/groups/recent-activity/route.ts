@@ -42,21 +42,28 @@ export async function GET() {
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, group_id, transaction_id, created_by, created_at, description,
+      id, group_id, transaction_id, created_by, created_at, date, description,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .in("group_id", ids)
     .order("created_at", { ascending: false })
-    .limit(30);
+    .limit(100);
 
   const seenByGroup = new Map<string, Set<string>>();
-  const splits = (splitsRaw ?? []).filter((s) => {
+  const deduped = (splitsRaw ?? []).filter((s) => {
     const seen = seenByGroup.get(s.group_id) ?? new Set();
     const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
     if (seen.has(k)) return false;
     seen.add(k);
     seenByGroup.set(s.group_id, seen);
     return true;
+  });
+
+  // Sort by actual expense date (not insertion time) so imported data shows chronologically
+  const splits = deduped.sort((a, b) => {
+    const da = (a as { date?: string }).date ?? a.created_at;
+    const db_ = (b as { date?: string }).date ?? b.created_at;
+    return db_.localeCompare(da);
   });
 
   if (splits.length === 0) {
@@ -94,7 +101,7 @@ export async function GET() {
     time: string;
   }> = [];
 
-  for (const s of splits.slice(0, 15)) {
+  for (const s of splits.slice(0, 30)) {
     const merchant = merchantLabelFromSplitRow(
       s as { transactions?: unknown; description?: string | null }
     );
@@ -133,8 +140,8 @@ export async function GET() {
         : paidByMember?.display_name ?? "Someone";
     const action = "paid";
     const groupName = groupNames.get(s.group_id) ?? "";
-    const createdAt = s.created_at;
-    const timeAgo = formatTimeAgo(createdAt);
+    const expenseDate = (s as { date?: string }).date ?? s.created_at;
+    const timeAgo = formatTimeAgo(expenseDate);
 
     activity.push({
       id: s.id,
