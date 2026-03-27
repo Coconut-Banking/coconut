@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
       );
     } catch (e) {
       console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
+      return NextResponse.json({ error: "sync failed" }, { status: 500 });
     }
   } else if (webhook_type === "ITEM") {
     if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
         );
       } catch (e) {
         console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
+        return NextResponse.json({ error: "sync failed" }, { status: 500 });
       }
     } else if (webhook_code === "ERROR" && payload.error?.error_code === "ITEM_LOGIN_REQUIRED") {
       console.log("[plaid][webhook] ITEM_LOGIN_REQUIRED", { item_id, user_id: clerkUserId });
