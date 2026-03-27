@@ -2,6 +2,7 @@ import { clerkSetup } from "@clerk/testing/playwright";
 import { loadEnvConfig } from "@next/env";
 import { writeFileSync, unlinkSync, mkdirSync } from "fs";
 import { join } from "path";
+import { isPlaceholderClerkSecret } from "./clerk-ci-env";
 
 export const CLERK_READY_MARKER = join(
   process.cwd(), "node_modules", ".cache", ".clerk-e2e-ready",
@@ -18,6 +19,14 @@ export default async function globalSetup() {
 
   if (!process.env.CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) {
     console.warn("[e2e] Clerk keys missing — authenticated tests will be skipped.");
+    return;
+  }
+
+  if (isPlaceholderClerkSecret()) {
+    console.warn(
+      "[e2e] CLERK_SECRET_KEY is missing or a placeholder — skipping clerkSetup and Clerk-dependent redirect tests. " +
+        "Add matching Clerk test keys as GitHub Actions secrets to run the full suite.",
+    );
     return;
   }
 

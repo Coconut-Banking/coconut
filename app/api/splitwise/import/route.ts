@@ -1,4 +1,6 @@
 export const dynamic = "force-dynamic";
+/** Splitwise import paginates many groups/expenses; avoid client + Vercel cutting the run short. */
+export const maxDuration = 300;
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
@@ -117,8 +119,13 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("[splitwise-import] fatal error:", err);
+    const raw = err instanceof Error ? err.message : String(err);
+    const safe = raw.trim().length > 0 ? raw.trim().slice(0, 280) : "";
     return NextResponse.json(
-      { error: "Import failed. Please try again." },
+      {
+        error:
+          safe.length > 0 ? safe : "Import failed. Please try again.",
+      },
       { status: 500 }
     );
   }

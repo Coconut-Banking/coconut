@@ -22,16 +22,52 @@ function getHmacKey(): string {
   return key;
 }
 
-export function createOAuthState(userId: string): string {
+export type OAuthStateOptions = {
+  /** After authorize, send user back into the native app (deep link) instead of web settings. */
+  returnToApp?: boolean;
+  /** Maps to app URL scheme: p → coconut, d → coconut-dev (must match Expo `scheme`). */
+  appSchemeKey?: "p" | "d";
+};
+
+/**
+ * Signed OAuth state. Legacy 3-part format (PayPal, web Splitwise). v2 6-part when `returnToApp`.
+ */
+export function createOAuthState(userId: string, opts?: OAuthStateOptions): string {
   const timestamp = Date.now().toString();
-  const hmac = createHmac("sha256", getHmacKey())
-    .update(`${userId}:${timestamp}`)
-    .digest("hex");
-  return `${userId}:${timestamp}:${hmac}`;
+  if (!opts?.returnToApp) {
+    const hmac = createHmac("sha256", getHmacKey())
+      .update(`${userId}:${timestamp}`)
+      .digest("hex");
+    return `${userId}:${timestamp}:${hmac}`;
+  }
+
+  const schemeKey = opts.appSchemeKey === "d" ? "d" : "p";
+  const payload = `v2:${userId}:${timestamp}:app:${schemeKey}`;
+  const hmac = createHmac("sha256", getHmacKey()).update(payload).digest("hex");
+  return `${payload}:${hmac}`;
 }
 
-export function verifyOAuthState(state: string): { userId: string; valid: boolean } {
+export function verifyOAuthState(state: string): {
+  userId: string;
+  valid: boolean;
+  returnToApp?: boolean;
+  appSchemeKey?: "p" | "d";
+} {
   const parts = state.split(":");
+  if (parts[0] === "v2" && parts.length === 6) {
+    const [, userId, timestamp, mode, schemeKey, hmac] = parts;
+    if (mode !== "app") return { userId: userId ?? "", valid: false };
+    const payload = `v2:${userId}:${timestamp}:${mode}:${schemeKey}`;
+    const expected = createHmac("sha256", getHmacKey()).update(payload).digest("hex");
+    if (hmac !== expected) return { userId: userId ?? "", valid: false };
+
+    const age = Date.now() - parseInt(timestamp, 10);
+    if (age > STATE_MAX_AGE_MS || age < 0) return { userId, valid: false };
+
+    const sk: "p" | "d" = schemeKey === "d" ? "d" : "p";
+    return { userId, valid: true, returnToApp: true, appSchemeKey: sk };
+  }
+
   if (parts.length !== 3) return { userId: "", valid: false };
 
   const [userId, timestamp, hmac] = parts;

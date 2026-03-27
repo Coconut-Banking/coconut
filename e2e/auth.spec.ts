@@ -1,7 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { isPlaceholderClerkSecret } from "./clerk-ci-env";
 import { goAuthenticated } from "./helpers";
 
 test.describe("Authentication — unauthenticated redirects", () => {
+  test.skip(
+    isPlaceholderClerkSecret(),
+    "Placeholder CLERK_SECRET_KEY: Clerk cannot complete handshake / redirects reliably",
+  );
+
   for (const route of [
     "/app/dashboard",
     "/app/transactions",

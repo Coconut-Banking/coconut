@@ -1,6 +1,10 @@
 import { getPlaidClient } from "./plaid-client";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
+import { rateLimit } from "./rate-limit";
+
+/** Min interval between Plaid /transactions/refresh calls per Item (Plaid also enforces daily limits). */
+const PLAID_TX_REFRESH_WINDOW_MS = 120_000;
 import OpenAI from "openai";
 
 const openai = process.env.OPENAI_API_KEY
@@ -190,9 +194,23 @@ async function syncSingleToken(
   accessToken: string,
   plaidItemId: string,
   plaid: ReturnType<typeof getPlaidClient>,
-  db: ReturnType<typeof getSupabase>
+  db: ReturnType<typeof getSupabase>,
+  requestPlaidRefresh: boolean
 ): Promise<{ synced: number; removedIds: string[]; skipped: number }> {
   if (!plaid) return { synced: 0, removedIds: [], skipped: 0 };
+
+  if (requestPlaidRefresh && plaidItemId) {
+    const rl = rateLimit(`plaid-tx-refresh:${plaidItemId}`, 1, PLAID_TX_REFRESH_WINDOW_MS);
+    if (rl.success) {
+      try {
+        await plaid.transactionsRefresh({ access_token: accessToken });
+        console.log("[sync] transactionsRefresh requested", { plaidItemId });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("[sync] transactionsRefresh failed (continuing with sync):", msg);
+      }
+    }
+  }
 
   // Upsert accounts for this bank (plaid_item_id links to institution for display)
   const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
@@ -356,9 +374,19 @@ async function syncSingleToken(
   return { synced: rowsToInsert.length, removedIds: allRemovedIds, skipped };
 }
 
+export type SyncTransactionsOptions = {
+  /**
+   * Ask Plaid to pull the latest from the institution before /transactions/sync.
+   * Use for user-driven sync (pull-to-refresh, POST); omit for webhooks to avoid refresh quotas.
+   */
+  requestPlaidRefresh?: boolean;
+};
+
 export async function syncTransactionsForUser(
-  clerkUserId: string
+  clerkUserId: string,
+  options?: SyncTransactionsOptions
 ): Promise<{ synced: number; error?: string }> {
+  const requestPlaidRefresh = options?.requestPlaidRefresh === true;
   const db = getSupabase();
   const accessTokens = await getAllPlaidTokensForUser(clerkUserId);
   if (accessTokens.length === 0) return { synced: 0, error: "No Plaid connection found for user" };
@@ -378,7 +406,14 @@ export async function syncTransactionsForUser(
     const item = tokenToItem.get(token);
     const plaidItemId = item?.plaid_item_id ?? "";
     try {
-      const { synced, removedIds, skipped } = await syncSingleToken(clerkUserId, token, plaidItemId, plaid, db);
+      const { synced, removedIds, skipped } = await syncSingleToken(
+        clerkUserId,
+        token,
+        plaidItemId,
+        plaid,
+        db,
+        requestPlaidRefresh
+      );
       totalSynced += synced;
       totalSkipped += skipped;
       allRemovedIds.push(...removedIds);
