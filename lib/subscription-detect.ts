@@ -332,7 +332,7 @@ async function detectFromEmailReceipts(
       lastChargeDate: latest.date,
       nextDueDate: nextDue,
       primaryCategory: "SUBSCRIPTIONS",
-      transactionCount: Math.max(list.length, matchingTxs.length),
+      transactionCount: matchingTxs.length > 0 ? matchingTxs.length : list.length,
       transactionIds: matchingTxs.map((t) => t.id),
       transactionDetails: matchingTxs.map((t) => ({ id: t.id, amount: Math.abs(t.amount), date: t.date })),
       source: "email",
