@@ -8,6 +8,8 @@ env:
   NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
   SUPABASE_SERVICE_ROLE_KEY: placeholder
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_YWJzb2x1dGUtbGVtdXItNjguY2xlcmsuYWNjb3VudHMuZGV2JA
+  # Placeholder: invalid with Clerk API/handshake. E2E skips clerkSetup + redirect tests (e2e/clerk-ci-env.ts).
+  # For authenticated E2E, add repo secrets CLERK_SECRET_KEY + NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (matching pair).
   CLERK_SECRET_KEY: sk_test_placeholder
   PLAID_CLIENT_ID: placeholder
   PLAID_PRODUCTION_SECRET: placeholder

@@ -1,10 +1,10 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { getAuthorizationUrl, getSplitwiseConfig } from "@/lib/splitwise";
 import { createOAuthState } from "@/lib/paypal-auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -16,7 +16,15 @@ export async function GET() {
     );
   }
 
-  const state = createOAuthState(userId);
+  const returnToApp =
+    req.nextUrl.searchParams.get("app") === "1" || req.nextUrl.searchParams.get("mobile") === "1";
+  const schemeParam = req.nextUrl.searchParams.get("scheme");
+  const appSchemeKey = schemeParam === "coconut-dev" ? "d" : "p";
+
+  const state = createOAuthState(
+    userId,
+    returnToApp ? { returnToApp: true, appSchemeKey } : undefined
+  );
   const url = getAuthorizationUrl(state);
 
   return NextResponse.redirect(url);

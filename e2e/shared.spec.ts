@@ -1,8 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { isPlaceholderClerkSecret } from "./clerk-ci-env";
 import { goAuthenticated } from "./helpers";
 
 test.describe("Shared page", () => {
   test("loads shared page when not authenticated", async ({ page }) => {
+    test.skip(
+      isPlaceholderClerkSecret(),
+      "Placeholder CLERK_SECRET_KEY: protected-route redirect not reliable without real Clerk",
+    );
     await page.goto("/app/shared");
     await expect(page).toHaveURL(/.*login|.*sign-in|.*clerk|.*accounts\.dev/);
   });

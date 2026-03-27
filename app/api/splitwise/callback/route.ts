@@ -6,22 +6,50 @@ import { getSupabase } from "@/lib/supabase";
 import { encryptToken } from "@/lib/encryption";
 import { verifyOAuthState } from "@/lib/paypal-auth";
 
+function appSchemeFromVerification(v: { appSchemeKey?: "p" | "d" }): string {
+  if (process.env.MOBILE_APP_SCHEME?.trim()) {
+    return process.env.MOBILE_APP_SCHEME.trim();
+  }
+  return v.appSchemeKey === "d" ? "coconut-dev" : "coconut";
+}
+
+function appSettingsDeepLink(req: NextRequest, query: Record<string, string>): NextResponse {
+  const state = req.nextUrl.searchParams.get("state") ?? "";
+  const verified = verifyOAuthState(state);
+  if (!verified.valid || !verified.returnToApp) {
+    const u = new URL("/app/settings", req.url);
+    for (const [k, val] of Object.entries(query)) {
+      u.searchParams.set(k, val);
+    }
+    return NextResponse.redirect(u);
+  }
+  const scheme = appSchemeFromVerification(verified);
+  const q = new URLSearchParams(query).toString();
+  return NextResponse.redirect(`${scheme}:///(tabs)/settings${q ? `?${q}` : ""}`);
+}
+
 export async function GET(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.redirect(new URL("/login", req.url));
 
   const code = req.nextUrl.searchParams.get("code");
+  const state = req.nextUrl.searchParams.get("state") ?? "";
+  const verified = verifyOAuthState(state);
+
   if (!code) {
     const error = req.nextUrl.searchParams.get("error") ?? "missing_code";
+    if (verified.valid && verified.returnToApp) {
+      return appSettingsDeepLink(req, { splitwise_error: error });
+    }
     return NextResponse.redirect(
       new URL(`/app/settings?splitwise_error=${encodeURIComponent(error)}`, req.url)
     );
   }
 
-  // Validate OAuth state to prevent CSRF
-  const state = req.nextUrl.searchParams.get("state") ?? "";
-  const { userId: stateUserId, valid } = verifyOAuthState(state);
-  if (!valid || stateUserId !== userId) {
+  if (!verified.valid || verified.userId !== userId) {
+    if (verified.returnToApp) {
+      return appSettingsDeepLink(req, { splitwise_error: "invalid_state" });
+    }
     return NextResponse.redirect(
       new URL("/app/settings?splitwise_error=invalid_state", req.url)
     );
@@ -30,25 +58,22 @@ export async function GET(req: NextRequest) {
   try {
     const accessToken = await exchangeCode(code);
 
-    // Store encrypted token in DB
     const db = getSupabase();
     await db.from("splitwise_tokens").upsert(
       { clerk_user_id: userId, access_token: encryptToken(accessToken) },
       { onConflict: "clerk_user_id" }
     );
 
-    const mobileScheme = process.env.MOBILE_APP_SCHEME;
-    if (mobileScheme) {
-      // Redirect back into the mobile app so UX can show "Importing..." immediately.
-      return NextResponse.redirect(
-        `${mobileScheme}://settings?splitwise=connected&import=1`
-      );
+    if (verified.returnToApp) {
+      return appSettingsDeepLink(req, { splitwise: "connected", import: "1" });
     }
 
-    // Fallback for web-only usage.
     return NextResponse.redirect(new URL("/app/settings?splitwise=connected", req.url));
   } catch (err) {
     console.error("[splitwise] OAuth callback error:", err);
+    if (verified.returnToApp) {
+      return appSettingsDeepLink(req, { splitwise_error: "token_exchange_failed" });
+    }
     return NextResponse.redirect(
       new URL("/app/settings?splitwise_error=token_exchange_failed", req.url)
     );
