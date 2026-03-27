@@ -29,7 +29,12 @@ async function verifyPlaidWebhook(body: string, verificationHeader: string | nul
 
     if (!cachedVerificationKey || cachedVerificationKey.kid !== kid) {
       const resp = await client.webhookVerificationKeyGet({ key_id: kid });
-      cachedVerificationKey = resp.data.key as jose.JWK;
+      const fetchedKey = resp.data.key as jose.JWK;
+      if (!fetchedKey || !fetchedKey.kty || !fetchedKey.kid) {
+        console.error("[plaid][webhook] webhookVerificationKeyGet returned invalid key", { kid });
+        return false;
+      }
+      cachedVerificationKey = fetchedKey;
     }
 
     const key = await jose.importJWK(cachedVerificationKey, "ES256");
