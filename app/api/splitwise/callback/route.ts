@@ -101,6 +101,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (!verified.valid) {
+    console.warn("[splitwise/callback] invalid OAuth state", {
+      returnToApp: Boolean(verified.returnToApp),
+      stateLength: state.length,
+      hasCode: Boolean(code),
+    });
     if (verified.returnToApp) {
       return appSettingsDeepLink(req, { splitwise_error: "invalid_state" });
     }
