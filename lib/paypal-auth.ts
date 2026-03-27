@@ -1,4 +1,4 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
 import { clearEmailReceiptLinksForTransactionIds } from "./transaction-sync";
@@ -60,7 +60,10 @@ export function verifyOAuthState(state: string): {
     if (mode !== "app") return { userId: userId ?? "", valid: false };
     const payload = `v2:${userId}:${timestamp}:${mode}:${schemeKey}`;
     const expected = createHmac("sha256", getHmacKey()).update(payload).digest("hex");
-    if (hmac !== expected) return { userId: userId ?? "", valid: false };
+    if (hmac.length !== expected.length ||
+        !timingSafeEqual(Buffer.from(hmac, "utf8"), Buffer.from(expected, "utf8"))) {
+      return { userId: userId ?? "", valid: false };
+    }
 
     const age = Date.now() - parseInt(timestamp, 10);
     if (age > STATE_MAX_AGE_MS || age < 0) return { userId, valid: false };
@@ -76,7 +79,10 @@ export function verifyOAuthState(state: string): {
     .update(`${userId}:${timestamp}`)
     .digest("hex");
 
-  if (hmac !== expected) return { userId, valid: false };
+  if (hmac.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(hmac, "utf8"), Buffer.from(expected, "utf8"))) {
+    return { userId, valid: false };
+  }
 
   const age = Date.now() - parseInt(timestamp, 10);
   if (age > STATE_MAX_AGE_MS || age < 0) return { userId, valid: false };
