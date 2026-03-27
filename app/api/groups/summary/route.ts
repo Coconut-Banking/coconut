@@ -72,18 +72,17 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; archived_at?: string | null }[] | null;
+  let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; source?: string | null; archived_at?: string | null }[] | null;
   {
     const res = await db
       .from("groups")
-      .select("id, name, owner_id, created_at, group_type, archived_at")
+      .select("id, name, owner_id, created_at, group_type, source, archived_at")
       .in("id", ids)
       .order("created_at", { ascending: false });
     if (res.error?.code === "42703") {
-      // archived_at column doesn't exist yet — retry without it
       const fallback = await db
         .from("groups")
-        .select("id, name, owner_id, created_at, group_type")
+        .select("id, name, owner_id, created_at, group_type, source")
         .in("id", ids)
         .order("created_at", { ascending: false });
       groupsRaw = fallback.data;
@@ -320,6 +319,69 @@ export async function GET(req: NextRequest) {
       lastActivityAt,
     };
   });
+
+  // Try to use cached Splitwise friend balances (authoritative) instead of recalculated ones.
+  // Splitwise's balance engine handles multi-payer, debt simplification, etc. correctly.
+  {
+    const tokenRes = await db
+      .from("splitwise_tokens")
+      .select("cached_friend_balances")
+      .eq("clerk_user_id", userId)
+      .maybeSingle();
+    // Gracefully handle missing column (pre-migration)
+    const tokenRow = tokenRes.error?.code === "PGRST204" ? null : tokenRes.data;
+
+    type CachedFriend = {
+      id: number;
+      first_name: string;
+      last_name: string;
+      email: string | null;
+      balance: { currency_code: string; amount: string }[];
+    };
+    const cached: CachedFriend[] | null =
+      (tokenRow as Record<string, unknown> | null)?.cached_friend_balances as CachedFriend[] | null;
+
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      // Build a set of emails belonging to Splitwise-imported group members
+      const swGroupIds = new Set(
+        (groups ?? [])
+          .filter((g) => {
+            const row = g as Record<string, unknown>;
+            return row.source === "splitwise";
+          })
+          .map((g) => g.id)
+      );
+      // If we can't detect source, treat ALL imported groups as potentially splitwise
+      // and just overlay cached balances by email match.
+      const memberEmailToKey = new Map<string, { key: string; displayName: string }>();
+      for (const m of members ?? []) {
+        if (m.user_id === userId || !m.email) continue;
+        const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
+        const email = m.email.toLowerCase().trim();
+        if (!memberEmailToKey.has(email)) {
+          memberEmailToKey.set(email, { key, displayName: m.display_name });
+        }
+      }
+
+      // Replace personBalances for Splitwise friends
+      for (const cf of cached) {
+        const email = (cf.email ?? "").toLowerCase().trim();
+        const match = memberEmailToKey.get(email);
+        if (!match) continue;
+        // Splitwise convention: positive amount = you owe them
+        // Coconut convention: positive = they owe you
+        // So we negate the Splitwise amount
+        const newByCurrency = new Map<string, number>();
+        for (const b of cf.balance ?? []) {
+          const amt = parseFloat(b.amount);
+          if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
+          const cur = normalizeSplitCurrency(b.currency_code);
+          newByCurrency.set(cur, Math.round(-amt * 100) / 100);
+        }
+        personBalances.set(match.key, { displayName: match.displayName, byCurrency: newByCurrency });
+      }
+    }
+  }
 
   {
     const allMembers = members ?? [];

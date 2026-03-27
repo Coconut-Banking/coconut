@@ -11,6 +11,7 @@ import {
   getGroups,
   getExpenses,
   getCurrentUser,
+  getFriends,
   type GetExpensesOptions,
   type SplitwiseGroup,
   type SplitwiseExpense,
@@ -108,6 +109,26 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error(`[splitwise-import] failed to import group "${swGroup.name}":`, err);
       }
+    }
+
+    // Cache authoritative Splitwise friend balances
+    try {
+      const friends = await getFriends(token);
+      const balancePayload = friends
+        .filter((f) => f.balance && f.balance.length > 0)
+        .map((f) => ({
+          id: f.id,
+          first_name: f.first_name,
+          last_name: f.last_name,
+          email: f.email ?? null,
+          balance: f.balance,
+        }));
+      await db
+        .from("splitwise_tokens")
+        .update({ cached_friend_balances: balancePayload } as Record<string, unknown>)
+        .eq("clerk_user_id", userId);
+    } catch (err) {
+      console.warn("[splitwise-import] failed to cache friend balances:", err);
     }
 
     console.log("[splitwise-import] done", stats);
@@ -258,8 +279,12 @@ async function importGroup(
   // 5. Fetch and import expenses
   const expenses = await getExpenses(token, swGroup.id, opts.expenseOptions);
 
-  const regularExpenses = expenses.filter((e) => !e.payment);
-  const settlements = expenses.filter((e) => e.payment);
+  const isSettlement = (e: { payment?: boolean; description?: string; repayments?: unknown[] }) =>
+    e.payment ||
+    (e.description ?? "").toLowerCase().includes("settle all balances") ||
+    (Array.isArray(e.repayments) && e.repayments.length > 0 && (e.description ?? "").toLowerCase().includes("settle"));
+  const regularExpenses = expenses.filter((e) => !isSettlement(e));
+  const settlements = expenses.filter((e) => isSettlement(e));
 
   // Batch-check which expenses already exist
   const allExtIds = regularExpenses.map((e) => String(e.id));

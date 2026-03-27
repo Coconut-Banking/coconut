@@ -28,12 +28,14 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 
 // ─── Supabase in-memory mock ──────────────────────────────────────────────────
-const db = {
-  groups: [] as Record<string, unknown>[],
-  group_members: [] as Record<string, unknown>[],
-  split_transactions: [] as Record<string, unknown>[],
-  split_shares: [] as Record<string, unknown>[],
-  settlements: [] as Record<string, unknown>[],
+const db: Record<string, Record<string, unknown>[]> = {
+  groups: [],
+  group_members: [],
+  split_transactions: [],
+  split_shares: [],
+  settlements: [],
+  splitwise_tokens: [],
+  transactions: [],
 };
 
 function makeClient() {
@@ -49,7 +51,7 @@ type MockMaybeRowResult = { data: Record<string, unknown> | null; error: null };
 type MockNullResult = { data: null; error: null };
 
 function makeTable(table: string) {
-  const rows = db[table as keyof typeof db] as Record<string, unknown>[];
+  const rows = (db[table] ?? []) as Record<string, unknown>[];
 
   return {
     select: (_cols?: string) => ({
@@ -176,12 +178,13 @@ vi.mock("next/cache", () => ({ revalidateTag: vi.fn() }));
 
 describe("add friend → summary flow", () => {
   beforeEach(() => {
-    // Reset in-memory DB
     db.groups = [];
     db.group_members = [];
     db.split_transactions = [];
     db.split_shares = [];
     db.settlements = [];
+    db.splitwise_tokens = [];
+    db.transactions = [];
   });
 
   it("creates a group and adds a member", async () => {
