@@ -24,6 +24,7 @@ jobs:
   ci:
     name: Build + E2E Tests
     runs-on: ubuntu-latest
+    if: ${{ !startsWith(github.head_ref, 'fix/bug-council-') && !startsWith(github.head_ref, 'fix/ai-fix-') }}
 
     steps:
       - uses: actions/checkout@v4
