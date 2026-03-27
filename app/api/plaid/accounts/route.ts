@@ -60,7 +60,7 @@ async function deduplicateAccounts(
 
   const byKey = new Map<string, AccountRow[]>();
   for (const a of accounts) {
-    const key = `${a.name ?? ""}|${a.mask ?? ""}`;
+    const key = `${a.name ?? ""}|${a.mask ?? ""}|${a.subtype ?? ""}`;
     const list = byKey.get(key) ?? [];
     list.push(a);
     byKey.set(key, list);
