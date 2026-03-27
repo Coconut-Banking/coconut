@@ -583,7 +583,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                   onClick={async () => {
                     setShowAddToShared(true);
                     const { people: freshPeople } = await loadPeopleAndGroups();
-                    const match = freshPeople.find((p) => p.displayName === tx.splitWith);
+                    const match = freshPeople.find((p: { displayName: string; groupId: string; memberId: string }) => p.displayName === tx.splitWith);
                     if (match) {
                       setSelectedPerson({ groupId: match.groupId, memberId: match.memberId, displayName: match.displayName });
                       loadGroupMembers(match.groupId);
