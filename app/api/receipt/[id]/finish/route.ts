@@ -115,6 +115,7 @@ export async function POST(
       group_id: groupId,
       transaction_id: transaction.id,
       created_by: userId,
+      iso_currency_code: "USD",
     })
     .select()
     .single();

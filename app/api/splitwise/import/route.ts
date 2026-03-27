@@ -314,6 +314,7 @@ async function importExpense(
       description: expense.description,
       amount: safeParseFloat(expense.cost),
       date: expense.date.split("T")[0],
+      iso_currency_code: expense.currency_code?.trim() || "USD",
     })
     .select("id")
     .single();
@@ -384,6 +385,7 @@ async function importSettlement(
       status: "completed",
       external_reference: extRef,
       created_at: expense.date,
+      iso_currency_code: expense.currency_code?.trim() || "USD",
     });
 
     stats.settlements++;

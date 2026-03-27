@@ -276,6 +276,7 @@ describe("add friend → summary flow", () => {
     const friend = contacts.friends.find((f: { displayName: string }) => f.displayName === FRIEND_NAME);
     expect(friend).toBeDefined();
     expect(friend?.balance).toBe(0);
+    expect(friend?.balances ?? []).toEqual([]);
   });
 
   it("summary shows 0 groups and friends when user has none", async () => {
@@ -286,5 +287,6 @@ describe("add friend → summary flow", () => {
     expect(summary.groups).toHaveLength(0);
     expect(summary.friends).toHaveLength(0);
     expect(summary.netBalance).toBe(0);
+    expect(summary.totalsByCurrency ?? []).toEqual([]);
   });
 });

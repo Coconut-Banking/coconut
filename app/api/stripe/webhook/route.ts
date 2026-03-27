@@ -57,7 +57,8 @@ export async function POST(req: NextRequest) {
       const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
         group_id,
         payer_member_id,
-        receiver_member_id
+        receiver_member_id,
+        "USD"
       );
 
       if (!allowed || maxAmount <= 0) {
@@ -72,6 +73,7 @@ export async function POST(req: NextRequest) {
           method: "stripe",
           status: "completed",
           external_reference: pi.id,
+          iso_currency_code: "USD",
         });
 
         if (error) {
@@ -113,7 +115,8 @@ export async function POST(req: NextRequest) {
       const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
         group_id,
         payer_member_id,
-        receiver_member_id
+        receiver_member_id,
+        "USD"
       );
 
       if (!allowed || maxAmount <= 0) {
@@ -128,6 +131,7 @@ export async function POST(req: NextRequest) {
           method: "stripe",
           status: "completed",
           external_reference: session.id,
+          iso_currency_code: "USD",
         });
 
         if (error) {

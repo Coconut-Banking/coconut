@@ -155,6 +155,7 @@ export async function POST(req: NextRequest) {
       transaction_id: transaction.id,
       created_by: userId,
       payer_member_id: effectivePayer,
+      iso_currency_code: "USD",
     })
     .select("id")
     .single();
@@ -165,6 +166,7 @@ export async function POST(req: NextRequest) {
         group_id: groupId,
         transaction_id: transaction.id,
         created_by: userId,
+        iso_currency_code: "USD",
       })
       .select("id")
       .single();

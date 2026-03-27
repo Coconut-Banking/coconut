@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getMaxSettlementAllowed } from "@/lib/group-balances";
+import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cached-queries";
@@ -22,6 +23,13 @@ export async function POST(req: NextRequest) {
   const receiverMemberId = body.receiverMemberId ?? body.receiver_member_id;
   const amount = Number(body.amount);
   const method = (body.method as string) ?? "manual";
+  const currency = normalizeSplitCurrency(
+    typeof body.currency === "string"
+      ? body.currency
+      : typeof body.iso_currency_code === "string"
+        ? body.iso_currency_code
+        : "USD"
+  );
 
   if (!groupId || !payerMemberId || !receiverMemberId || !Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json(
@@ -38,7 +46,8 @@ export async function POST(req: NextRequest) {
   const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
     groupId,
     payerMemberId,
-    receiverMemberId
+    receiverMemberId,
+    currency
   );
 
   if (!allowed || maxAmount <= 0) {
@@ -59,6 +68,7 @@ export async function POST(req: NextRequest) {
       amount: amountToInsert,
       method: ["manual", "in_person", "online"].includes(method) ? method : "manual",
       status: "completed",
+      iso_currency_code: currency,
     })
     .select()
     .single();
@@ -68,7 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
 
-  const postCheck = await getMaxSettlementAllowed(groupId, payerMemberId, receiverMemberId);
+  const postCheck = await getMaxSettlementAllowed(groupId, payerMemberId, receiverMemberId, currency);
   if (postCheck.maxAmount < 0) {
     await db.from("settlements").delete().eq("id", settlement.id);
     return NextResponse.json(

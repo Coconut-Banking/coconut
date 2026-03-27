@@ -1,24 +1,32 @@
 export const dynamic = "force-dynamic";
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
 import { getSupabase } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const archivedOnly = req.nextUrl.searchParams.get("archived") === "1";
 
   const db = getSupabase();
   const ids = await getAccessibleGroupIds(userId);
   if (ids.length === 0) return NextResponse.json([]);
 
-  const { data: groups } = await db
+  const { data: groupsRaw } = await db
     .from("groups")
-    .select("id, name, owner_id, created_at, group_type, invite_token")
+    .select("id, name, owner_id, created_at, group_type, invite_token, archived_at")
     .in("id", ids)
     .order("created_at", { ascending: false });
+
+  const groups = (groupsRaw ?? []).filter((g) => {
+    const a = (g as { archived_at?: string | null }).archived_at;
+    const isArchived = a != null && String(a) !== "";
+    return archivedOnly ? isArchived : !isArchived;
+  });
 
   if (!groups || groups.length === 0) return NextResponse.json([]);
 
