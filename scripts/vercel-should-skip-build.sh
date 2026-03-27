@@ -4,6 +4,13 @@
 
 set -euo pipefail
 
+# Skip all preview deployments — only build on main.
+# CI (GitHub Actions) already runs `npm run build` on PRs.
+if [[ "${VERCEL_GIT_COMMIT_REF:-}" != "main" ]]; then
+  echo "Skipping preview build for branch: $VERCEL_GIT_COMMIT_REF"
+  exit 0
+fi
+
 if [[ -z "${VERCEL_GIT_PREVIOUS_SHA:-}" ]]; then
   exit 1
 fi

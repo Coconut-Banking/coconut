@@ -102,15 +102,17 @@ export async function GET(request: NextRequest) {
       .in("transaction_id", bankOnly.map((tx) => tx.id));
     const { data: receiptRows } = await db
       .from("email_receipts")
-      .select("transaction_id, merchant, raw_subject, merchant_type, merchant_details")
+      .select("id, transaction_id, merchant, raw_subject, merchant_type, merchant_details")
       .not("transaction_id", "is", null)
       .eq("clerk_user_id", effectiveUserId);
     const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id").in("transaction_id", bankOnly.map((tx) => tx.id));
 
     const receiptMatchLineByTxId = new Map<string, string>();
+    const receiptIdByTxId = new Map<string, string>();
     for (const r of receiptRows ?? []) {
       const tid = r.transaction_id as string | null;
       if (!tid) continue;
+      receiptIdByTxId.set(tid, r.id as string);
       const merchant = (r.merchant as string | null | undefined)?.trim();
       const subj = (r.raw_subject as string | null | undefined)?.trim();
       const details = r.merchant_details as Record<string, unknown> | null;
@@ -235,6 +237,7 @@ export async function GET(request: NextRequest) {
         p2pNote: (tx.p2p_note as string) || undefined,
         p2pPlatform: (tx.p2p_platform as string) || undefined,
         hasReceipt: receiptTxIds.has(tx.id as string),
+        receipt_id: receiptIdByTxId.get(tx.id as string) ?? null,
         receiptMatchLine: receiptMatchLineByTxId.get(tx.id as string) ?? undefined,
         alreadySplit: splitTxIds.has(tx.id as string),
       };
