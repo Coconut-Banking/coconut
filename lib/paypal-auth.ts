@@ -1,6 +1,7 @@
 import { createHmac } from "crypto";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
+import { clearEmailReceiptLinksForTransactionIds } from "./transaction-sync";
 
 const PAYPAL_BASE =
   process.env.PAYPAL_ENV === "sandbox"
@@ -244,6 +245,7 @@ export async function removePayPalConnection(clerkUserId: string) {
   // Clean up subscription_transactions references before deleting transactions
   if (txIds.length > 0) {
     await db.from("subscription_transactions").delete().in("transaction_id", txIds);
+    await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, txIds);
   }
 
   await db.from("paypal_connections").delete().eq("clerk_user_id", clerkUserId);

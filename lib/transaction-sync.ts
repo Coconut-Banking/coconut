@@ -183,9 +183,35 @@ export async function fetchAllEmailReceiptsLinkedForUser(
   return out;
 }
 
+const EMAIL_RECEIPT_TX_IN_CHUNK = 100;
+
+/**
+ * Set email_receipts.transaction_id to null for rows still pointing at these transaction UUIDs.
+ * Scoped by clerk_user_id. Required before deleting transactions so email_receipts_transaction_id_fkey is not violated.
+ */
+export async function clearEmailReceiptLinksForTransactionIds(
+  db: SupabaseClient,
+  clerkUserId: string,
+  transactionIds: string[]
+): Promise<void> {
+  if (transactionIds.length === 0) return;
+  for (let i = 0; i < transactionIds.length; i += EMAIL_RECEIPT_TX_IN_CHUNK) {
+    const chunk = transactionIds.slice(i, i + EMAIL_RECEIPT_TX_IN_CHUNK);
+    const { error } = await db
+      .from("email_receipts")
+      .update({ transaction_id: null })
+      .in("transaction_id", chunk)
+      .eq("clerk_user_id", clerkUserId);
+    if (error) {
+      console.warn("[email_receipts] clear transaction_id FK failed:", error.message);
+    }
+  }
+}
+
 /**
  * Point receipt matches at the surviving duplicate row before deleting duplicate transactions.
  * Avoids FK violations on email_receipts_transaction_id_fkey and keeps receipts on the kept tx.
+ * Always clears any remaining links to duplicate IDs afterward so deletes cannot fail if remap missed rows.
  */
 export async function remapEmailReceiptsBeforeTxDedupeDelete(
   db: SupabaseClient,
@@ -201,10 +227,9 @@ export async function remapEmailReceiptsBeforeTxDedupeDelete(
     arr.push(dupId);
     byKept.set(kept, arr);
   }
-  const IN_CHUNK = 100;
   for (const [keptId, dupIds] of byKept) {
-    for (let i = 0; i < dupIds.length; i += IN_CHUNK) {
-      const chunk = dupIds.slice(i, i + IN_CHUNK);
+    for (let i = 0; i < dupIds.length; i += EMAIL_RECEIPT_TX_IN_CHUNK) {
+      const chunk = dupIds.slice(i, i + EMAIL_RECEIPT_TX_IN_CHUNK);
       const { error } = await db
         .from("email_receipts")
         .update({ transaction_id: keptId })
@@ -215,6 +240,7 @@ export async function remapEmailReceiptsBeforeTxDedupeDelete(
       }
     }
   }
+  await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, duplicateIdsBeingDeleted);
 }
 
 /**
@@ -509,6 +535,9 @@ export async function syncTransactionsForUser(
         .in("transaction_id", removedUuids);
     }
 
+    // Plaid-removed rows are deleted outright (not merged); clear receipt FKs first
+    await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, removedUuids);
+
     // Now safe to delete transactions
     const BATCH = 100;
     for (let i = 0; i < allRemovedIds.length; i += BATCH) {
@@ -638,7 +667,11 @@ export async function deleteDuplicateTransactionsForUser(
   for (let i = 0; i < idsToDelete.length; i += BATCH) {
     const batch = idsToDelete.slice(i, i + BATCH);
     await remapEmailReceiptsBeforeTxDedupeDelete(db, clerkUserId, duplicateIdToKeptId, batch);
-    const { error } = await db.from("transactions").delete().in("id", batch);
+    const { error } = await db
+      .from("transactions")
+      .delete()
+      .eq("clerk_user_id", clerkUserId)
+      .in("id", batch);
     if (error) {
       console.warn("[sync] dedupe delete batch failed:", error.message);
       return idsToDelete.length; // partial success

@@ -2,7 +2,14 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { getPlaidClient } from "@/lib/plaid-client";
-import { savePlaidToken, syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
+import {
+  savePlaidToken,
+  syncTransactionsForUser,
+  embedTransactionsForUser,
+  embedRichTransactionsForUser,
+  enrichCategoriesForUser,
+  clearEmailReceiptLinksForTransactionIds,
+} from "@/lib/transaction-sync";
 import { getEffectiveUserId } from "@/lib/demo";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { rateLimit } from "@/lib/rate-limit";
@@ -165,7 +172,12 @@ export async function POST(request: NextRequest) {
         .map((r) => r.id as string)
         .filter((id) => !protectedIds.has(id));
       if (idsToDelete.length > 0) {
-        await db.from("transactions").delete().in("id", idsToDelete);
+        await clearEmailReceiptLinksForTransactionIds(db, effectiveUserId, idsToDelete);
+        await db
+          .from("transactions")
+          .delete()
+          .eq("clerk_user_id", effectiveUserId)
+          .in("id", idsToDelete);
         console.log("[plaid][exchange-token] cleared_existing_transactions", {
           trace_id: traceId,
           user_id: effectiveUserId,
