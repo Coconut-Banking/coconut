@@ -89,8 +89,77 @@ export async function GET(request: NextRequest) {
     const db = getSupabase();
     const baseSelect = "id, plaid_account_id, name, nickname, type, subtype, mask, balance_current, balance_available, iso_currency_code";
 
-    // When refresh=1, bypass cache to fetch live (fixes newly connected banks not showing)
-    if (!forceRefresh) {
+    // When refresh=1, fetch ALL accounts directly from Plaid (includes investment/TFSA/RRSP
+    // accounts that have no transactions and would otherwise never appear in the DB).
+    if (forceRefresh) {
+      const client = getPlaidClient();
+      const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
+      if (client && accessTokens && accessTokens.length > 0) {
+        const items = await getPlaidItemsForUser(effectiveUserId);
+        const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
+        const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
+        for (const accessToken of accessTokens) {
+          try {
+            const item = tokenToItem.get(accessToken);
+            const response = await client.accountsGet({ access_token: accessToken });
+            if (!response.data?.accounts || !Array.isArray(response.data.accounts)) continue;
+            const rows = response.data.accounts.map((acct) => {
+              const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+              const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
+                clerk_user_id: effectiveUserId,
+                plaid_account_id: acct.account_id,
+                name: acct.name,
+                type: acct.type,
+                subtype: acct.subtype ?? null,
+                mask: acct.mask ?? null,
+                balance_current: bal?.current ?? null,
+                balance_available: bal?.available ?? null,
+                iso_currency_code: bal?.iso_currency_code ?? "USD",
+              };
+              if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
+              return row;
+            });
+            allRows.push(...rows);
+          } catch (err) {
+            console.error("[plaid][accounts] refresh accountsGet failed:", err instanceof Error ? err.message : err);
+          }
+        }
+        if (allRows.length > 0) {
+          await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
+        }
+      }
+      // Return all accounts from DB (now includes freshly upserted ones)
+      let { data: refreshed, error: refreshErr } = await db
+        .from("accounts")
+        .select(`${baseSelect}, plaid_item_id`)
+        .eq("clerk_user_id", effectiveUserId);
+      if (refreshErr && /plaid_item_id|does not exist/i.test(refreshErr.message)) {
+        const fallback = await db.from("accounts").select(baseSelect).eq("clerk_user_id", effectiveUserId);
+        refreshed = (fallback.data ?? []).map((r) => Object.assign({}, r, { plaid_item_id: null }));
+      }
+      const accounts: AccountRow[] = (refreshed ?? []).map((row: Record<string, unknown>) => ({
+        account_id: String(row.plaid_account_id ?? ""),
+        id: String(row.id ?? ""),
+        plaid_item_id: (row.plaid_item_id as string | null) ?? null,
+        name: String(row.name ?? ""),
+        nickname: (row.nickname as string | null) ?? null,
+        type: row.type as string | undefined,
+        subtype: row.subtype as string | null | undefined,
+        mask: row.mask as string | null | undefined,
+        balance_current: (row.balance_current as number | null) ?? null,
+        balance_available: (row.balance_available as number | null) ?? null,
+        iso_currency_code: (row.iso_currency_code as string) ?? "USD",
+      }));
+      const withInstitution = await enrichAccountsWithInstitution(db, accounts);
+      const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
+      return NextResponse.json(
+        { accounts: deduped },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
+    // Normal path: return cached accounts from DB
+    {
       let { data: cached, error: cachedErr } = await db
         .from("accounts")
         .select(`${baseSelect}, plaid_item_id`)
