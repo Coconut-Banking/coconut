@@ -29,9 +29,7 @@ function appSettingsDeepLink(req: NextRequest, query: Record<string, string>): N
 }
 
 export async function GET(req: NextRequest) {
-  const userId = await getUserId();
-  if (!userId) return NextResponse.redirect(new URL("/login", req.url));
-
+  const sessionUserId = await getUserId();
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state") ?? "";
   const verified = verifyOAuthState(state);
@@ -46,7 +44,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (!verified.valid || verified.userId !== userId) {
+  if (!verified.valid) {
     if (verified.returnToApp) {
       return appSettingsDeepLink(req, { splitwise_error: "invalid_state" });
     }
@@ -55,12 +53,24 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Mobile Safari has no Clerk session on this domain; user id is bound in signed state from /auth.
+  if (sessionUserId && sessionUserId !== verified.userId) {
+    if (verified.returnToApp) {
+      return appSettingsDeepLink(req, { splitwise_error: "invalid_state" });
+    }
+    return NextResponse.redirect(
+      new URL("/app/settings?splitwise_error=invalid_state", req.url)
+    );
+  }
+
+  const clerkUserId = verified.userId;
+
   try {
     const accessToken = await exchangeCode(code);
 
     const db = getSupabase();
     await db.from("splitwise_tokens").upsert(
-      { clerk_user_id: userId, access_token: encryptToken(accessToken) },
+      { clerk_user_id: clerkUserId, access_token: encryptToken(accessToken) },
       { onConflict: "clerk_user_id" }
     );
 

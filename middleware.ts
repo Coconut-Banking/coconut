@@ -13,6 +13,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/gmail/callback",
   "/api/demo",
   "/api/telegram-webhook",
+  // Splitwise redirects here from their site — Safari has no Clerk cookie; user id comes from signed OAuth state.
+  "/api/splitwise/callback",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
