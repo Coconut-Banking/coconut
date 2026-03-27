@@ -59,9 +59,15 @@ export function useSubscriptions() {
     setDetecting(true);
     try {
       const res = await fetch("/api/subscriptions", { method: "POST" });
-      if (res.ok) await fetchSubs();
+      if (res.ok) {
+        await fetchSubs();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError((body as { error?: string }).error ?? "Detection failed. Please try again.");
+      }
     } catch (e) {
       console.error("[subscriptions] detect:", e);
+      setError("Detection failed. Please try again.");
     } finally {
       setDetecting(false);
     }
