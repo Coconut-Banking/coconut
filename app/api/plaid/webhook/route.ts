@@ -39,8 +39,10 @@ async function verifyPlaidWebhook(body: string, verificationHeader: string | nul
     if (!claimedHash) return false;
 
     const bodyHash = createHash("sha256").update(body).digest("hex");
-    if (bodyHash.length !== claimedHash.length) return false;
-    return timingSafeEqual(Buffer.from(bodyHash, "hex"), Buffer.from(claimedHash, "hex"));
+    const bodyBuf = Buffer.from(bodyHash, "hex");
+    const claimedBuf = Buffer.from(claimedHash, "hex");
+    if (bodyBuf.length !== claimedBuf.length) return false;
+    return timingSafeEqual(bodyBuf, claimedBuf);
   } catch {
     return false;
   }
