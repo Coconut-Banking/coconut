@@ -77,7 +77,7 @@ export function useGroupDetail(id: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDetail = useCallback(async (silent = false) => {
+  const fetchDetail = useCallback(async (silent = false, isCancelled?: () => boolean) => {
     if (!id) {
       setDetail(null);
       setLoading(false);
@@ -87,9 +87,10 @@ export function useGroupDetail(id: string | null) {
     try {
       setError(null);
       const res = await fetch(`/api/groups/${id}`, { cache: "no-store" });
+      if (isCancelled?.()) return;
       if (res.ok) {
         const data = await res.json();
-        setDetail(data && typeof data === "object" ? {
+        if (!isCancelled?.()) setDetail(data && typeof data === "object" ? {
           ...data,
           members: Array.isArray(data.members) ? data.members : [],
           activity: Array.isArray(data.activity) ? data.activity : [],
@@ -97,19 +98,19 @@ export function useGroupDetail(id: string | null) {
         } : null);
       } else {
         const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "Failed to load group");
-        setDetail(null);
+        if (!isCancelled?.()) { setError(body.error ?? "Failed to load group"); setDetail(null); }
       }
     } catch {
-      setError("Failed to load group");
-      setDetail(null);
+      if (!isCancelled?.()) { setError("Failed to load group"); setDetail(null); }
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && !isCancelled?.()) setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
-    fetchDetail();
+    let cancelled = false;
+    fetchDetail(false, () => cancelled);
+    return () => { cancelled = true; };
   }, [fetchDetail]);
 
   useGroupListen(id, () => fetchDetail(true));
