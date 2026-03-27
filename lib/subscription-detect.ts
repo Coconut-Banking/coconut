@@ -100,8 +100,10 @@ function normalizeMerchantName(raw: string): string {
 
 function amountsMatch(a: number, b: number): boolean {
   const absA = Math.abs(a);
-  if (absA < 1) return Math.abs(a - b) < 0.5;
-  return Math.abs(a - b) / absA <= AMOUNT_TOLERANCE;
+  const absB = Math.abs(b);
+  const denom = Math.max(absA, absB);
+  if (denom < 1) return Math.abs(a - b) < 0.5;
+  return Math.abs(a - b) / denom <= AMOUNT_TOLERANCE;
 }
 
 function daysBetween(d1: string, d2: string): number {
