@@ -189,7 +189,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
   };
 
   const effectiveGroupId = splitMode === "person" && selectedPerson ? selectedPerson.groupId : selectedGroupId;
-  const canSubmit = tx.dbId && effectiveGroupId && members.length > 0;
+  const canSubmit = tx.dbId && effectiveGroupId && members.length >= 2;
 
   const handleAddToShared = async () => {
     if (!canSubmit) return;
