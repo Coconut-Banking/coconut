@@ -18,30 +18,68 @@ export function useAccounts(linked: boolean) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(linked);
 
-  const fetchAccounts = useCallback(async () => {
+  const fetchAccounts = useCallback(() => {
     if (!linked) {
       setAccounts([]);
+      setLoading(false);
       return;
     }
+    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
-    try {
-      const res = await fetch("/api/plaid/accounts");
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(Array.isArray(data.accounts) ? data.accounts : []);
-      } else {
-        setAccounts([]);
-      }
-    } catch {
-      setAccounts([]);
-    } finally {
-      setLoading(false);
-    }
+    fetch("/api/plaid/accounts", { signal: controller.signal })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setAccounts(Array.isArray(data.accounts) ? data.accounts : []);
+        } else {
+          if (!cancelled) setAccounts([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAccounts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [linked]);
 
   useEffect(() => {
-    fetchAccounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    const controller = new AbortController();
+
+    if (!linked) {
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetch("/api/plaid/accounts", { signal: controller.signal })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setAccounts(Array.isArray(data.accounts) ? data.accounts : []);
+        } else {
+          if (!cancelled) setAccounts([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAccounts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [linked]);
 
   const usAccounts = accounts.filter((a) => (a.iso_currency_code ?? "USD") === "USD");
