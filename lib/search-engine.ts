@@ -993,7 +993,8 @@ Return JSON: {"keep": ["merchant1", "merchant2"]}`;
 
     const parsed = JSON.parse(raw) as { keep?: unknown };
     const keep = Array.isArray(parsed.keep) ? parsed.keep : null;
-    if (!keep || keep.length === 0) return transactions;
+    if (!keep) return transactions; // parse failure — return unfiltered
+    if (keep.length === 0) return []; // LLM says nothing matches — return empty
 
     const keepSet = new Set(
       keep.filter((m: unknown): m is string => typeof m === "string")
