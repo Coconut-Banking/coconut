@@ -213,7 +213,16 @@ export async function GET(request: NextRequest) {
           console.warn("[plaid][accounts] backfill clerk_user_id failed:", e instanceof Error ? e.message : e);
         }
       }
-      const withInstitution = await enrichAccountsWithInstitution(db, txAccounts as unknown as AccountRow[]);
+      // Fetch nicknames separately since AccountForDisplay doesn't include them
+      const { data: nicknameRows } = acctIds.length > 0
+        ? await db.from("accounts").select("id, nickname").in("id", acctIds)
+        : { data: [] as { id: string; nickname: string | null }[] };
+      const nicknameById = new Map((nicknameRows ?? []).map((n: { id: string; nickname: string | null }) => [n.id, n.nickname]));
+      const accountRows = txAccounts.map((a: typeof txAccounts[0]) => ({
+        ...a,
+        nickname: nicknameById.get(a.id) ?? null,
+      }));
+      const withInstitution = await enrichAccountsWithInstitution(db, accountRows as AccountRow[]);
       const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
       return NextResponse.json(
         { accounts: deduped },
