@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 3000 * attempt)); // 3s, then 6s
       }
-      const result = await syncTransactionsForUser(effectiveUserId);
+      const result = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
       synced = result.synced;
       syncError = result.error;
       if (syncError) {

@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       if (rl.success) {
         try {
           const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
-          const synced = await syncTransactionsForUser(effectiveUserId);
+          const synced = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
           console.log("[transactions] sync-on-read for", effectiveUserId, ":", synced);
           try {
             revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
@@ -259,7 +259,7 @@ export async function POST() {
     // Sync first, THEN clear stale data only if sync succeeds.
     // Previously we cleared before sync, which destroyed data when Plaid tokens failed.
     const { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } = await import("@/lib/transaction-sync");
-    const { synced, error } = await syncTransactionsForUser(effectiveUserId);
+    const { synced, error } = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
     if (error) return NextResponse.json({ error }, { status: 500 });
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");

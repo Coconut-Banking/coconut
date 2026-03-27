@@ -92,7 +92,7 @@ export async function GET(request: Request) {
   if (runSync) {
     try {
       const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
-      syncResult = await syncTransactionsForUser(effectiveUserId);
+      syncResult = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
       if (!syncResult.error) {
         try {
           revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");

@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     // Sync transactions first so we have fresh data for detection
     try {
       const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
-      await syncTransactionsForUser(userId);
+      await syncTransactionsForUser(userId, { requestPlaidRefresh: true });
     } catch (e) {
       console.warn("[subscriptions] pre-detect sync failed:", e instanceof Error ? e.message : e);
     }
