@@ -9,9 +9,6 @@ import { verifyOAuthState } from "@/lib/paypal-auth";
 const ALLOWED_APP_SCHEMES = new Set(["coconut", "coconut-dev"]);
 
 function appSchemeFromVerification(v: { appSchemeKey?: "p" | "d" }): string {
-  // Prefer signed OAuth state from /api/splitwise/auth-url (matches the build that tapped Connect).
-  // If MOBILE_APP_SCHEME overrides this, dev users on production API get coconut:// links while the
-  // app only registers coconut-dev:// — Safari shows "invalid address" and the app never opens.
   if (v.appSchemeKey === "d") return "coconut-dev";
   if (v.appSchemeKey === "p") return "coconut";
   const fromEnv = process.env.MOBILE_APP_SCHEME?.trim().toLowerCase().replace(/[^a-z0-9._+-]/g, "") ?? "";
@@ -19,7 +16,7 @@ function appSchemeFromVerification(v: { appSchemeKey?: "p" | "d" }): string {
   return "coconut";
 }
 
-/** Same host-style shape as Clerk SSO (`scheme://sso-callback`) — iOS Safari often rejects `scheme:///path`. */
+/** Same host-style shape as Clerk SSO (`scheme://sso-callback`). */
 function buildSplitwiseAppDeepLink(schemeRaw: string, query: Record<string, string>): string {
   const scheme = ALLOWED_APP_SCHEMES.has(schemeRaw.trim().toLowerCase())
     ? schemeRaw.trim().toLowerCase()
@@ -36,33 +33,29 @@ function escapeHtmlAttr(s: string): string {
 }
 
 /**
- * Safari often mishandles 302 → custom scheme after OAuth. A short HTML page with a real link + JS handoff
- * is more reliable than Location alone.
+ * Instant redirect to the app's custom-scheme deep link.
+ * ASWebAuthenticationSession watches for the custom scheme (e.g. "coconut-dev://")
+ * and dismisses the browser the moment the redirect fires — the user never sees
+ * this page. The HTML body is only a fallback for external Safari.
  */
 function splitwiseMobileReturnPage(deepLink: string, bodyText: string): NextResponse {
-  // 200 + HTML (not 307 → custom scheme): Safari often rejects Location redirects to coconut://
-  console.info("[splitwise/callback] app handoff: 200 HTML page + link", {
-    schemePreview: deepLink.split(":")[0],
-  });
+  console.info("[splitwise/callback] app handoff", { schemePreview: deepLink.split(":")[0] });
   const href = escapeHtmlAttr(deepLink);
-  // Safe to navigate away via JS: the OAuth code was already consumed on this response.
-  // ASWebAuthenticationSession / Custom Tabs need this so the user isn’t stuck on a dead-end page.
-  const jsUrlLiteral = JSON.stringify(deepLink);
-  const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Coconut</title></head>
-<body style="font-family:system-ui,-apple-system,sans-serif;padding:28px 20px;text-align:center;background:#f8fafc;color:#111">
-<p style="font-size:17px;line-height:1.45;margin:0 0 12px">${bodyText}</p>
-<p style="margin:20px 0 0"><a id="open" href="${href}" style="display:inline-block;padding:14px 22px;background:#3D8E62;color:#fff;border-radius:12px;text-decoration:none;font-weight:600">Open Coconut</a></p>
-<p style="font-size:14px;color:#64748b;margin-top:24px">Opening the app automatically… If nothing happens, tap the button above.</p>
-<script>
-(function(){
-  var u=${jsUrlLiteral};
-  function go(){ try { window.location.replace(u); } catch(e) {} }
-  setTimeout(go, 300);
-})();
-</script>
-</body></html>`;
+  const jsUrl = JSON.stringify(deepLink);
+  const html = [
+    "<!DOCTYPE html>",
+    '<html lang="en"><head><meta charset="utf-8"/>',
+    '<meta name="viewport" content="width=device-width,initial-scale=1"/>',
+    `<meta http-equiv="refresh" content="0;url=${href}"/>`,
+    "<title>Coconut</title>",
+    `<script>window.location.replace(${jsUrl});</script>`,
+    "</head>",
+    '<body style="font-family:system-ui,-apple-system,sans-serif;padding:28px 20px;text-align:center;background:#f8fafc;color:#111">',
+    `<p style="font-size:17px;line-height:1.45;margin:0 0 12px">${bodyText}</p>`,
+    `<p style="margin:20px 0 0"><a id="open" href="${href}" style="display:inline-block;padding:14px 22px;background:#3D8E62;color:#fff;border-radius:12px;text-decoration:none;font-weight:600">Open Coconut</a></p>`,
+    '<p style="font-size:14px;color:#64748b;margin-top:24px">If the app didn&#39;t open, tap the button above.</p>',
+    "</body></html>",
+  ].join("\n");
   return new NextResponse(html, {
     status: 200,
     headers: {
@@ -88,8 +81,8 @@ function appSettingsDeepLink(req: NextRequest, query: Record<string, string>): N
   return splitwiseMobileReturnPage(
     deepLink,
     isError
-      ? "Splitwise couldn&rsquo;t finish connecting. Return to the app to try again."
-      : "You&rsquo;re signed in to Splitwise. Return to Coconut to import your groups."
+      ? "Splitwise couldn&#39;t finish connecting. Return to the app to try again."
+      : "You&#39;re signed in to Splitwise. Return to Coconut to import your groups."
   );
 }
 
@@ -104,7 +97,6 @@ export async function GET(req: NextRequest) {
     if (verified.valid && verified.returnToApp) {
       return appSettingsDeepLink(req, { splitwise_error: error });
     }
-    // Web flow: redirect within the site (Vercel will log 307 — that is normal, not an error).
     return NextResponse.redirect(
       new URL(`/app/settings?splitwise_error=${encodeURIComponent(error)}`, req.url)
     );
@@ -124,7 +116,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Mobile Safari has no Clerk session on this domain; user id is bound in signed state from /auth.
   if (sessionUserId && sessionUserId !== verified.userId) {
     if (verified.returnToApp) {
       return appSettingsDeepLink(req, { splitwise_error: "invalid_state" });
@@ -152,8 +143,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/app/settings?splitwise=connected", req.url));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // OAuth `code` is single-use. Safari prefetch, retries, or a second tab can hit this route again → invalid_grant.
-    // If we already stored a token on the first hit, treat as success so the user still gets the app handoff.
     if (msg.includes("invalid_grant")) {
       const db = getSupabase();
       const { data: existing } = await db
