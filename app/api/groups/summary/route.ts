@@ -61,7 +61,6 @@ export async function GET(req: NextRequest) {
   const db = getSupabaseAdmin();
   const ids = await getAccessibleGroupIds(userId);
 
-  const unsettledOnly = req.nextUrl.searchParams.get("unsettled") === "1";
   const showAll = req.nextUrl.searchParams.get("contacts") === "1";
 
   if (ids.length === 0) {
@@ -427,36 +426,9 @@ export async function GET(req: NextRequest) {
 
   if (showAll) {
     // Return everything (incl. settled) — no filtering.
-  } else if (unsettledOnly) {
-    friends = friends.filter((f) => f.balances.length > 0);
-    groupsOut = groupsWithBalance.filter((g) => (g.myBalances?.length ?? 0) > 0);
   } else {
-    // Smart filter: show friends with non-zero balance OR in an active group.
-    const activeGroupIds = new Set(
-      groupsWithBalance
-        .filter((g) => (g.myBalances?.length ?? 0) > 0)
-        .map((g) => g.id)
-    );
-
-    const memberGroupsByKey = new Map<string, Set<string>>();
-    for (const m of members ?? []) {
-      if (m.user_id === userId) continue;
-      const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
-      const set = memberGroupsByKey.get(key) ?? new Set();
-      set.add(m.group_id);
-      memberGroupsByKey.set(key, set);
-    }
-
-    friends = friends.filter((f) => {
-      if (f.balances.length > 0) return true;
-      const friendGroups = memberGroupsByKey.get(f.key);
-      if (!friendGroups) return false;
-      for (const gid of friendGroups) {
-        if (activeGroupIds.has(gid)) return true;
-      }
-      return false;
-    });
-
+    // Splitwise-style: only show friends with non-zero pairwise balance.
+    friends = friends.filter((f) => f.balances.length > 0);
     groupsOut = groupsWithBalance.filter((g) => (g.myBalances?.length ?? 0) > 0);
   }
 
@@ -499,7 +471,7 @@ export async function GET(req: NextRequest) {
   console.log("[summary] response", {
     groups: groupsOut.length,
     friends: friends.length,
-    unsettledOnly,
+    showAll,
     totalsByCurrency: totalsByCurrency.length,
   });
 

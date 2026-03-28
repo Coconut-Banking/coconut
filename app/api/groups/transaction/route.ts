@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const db = getSupabase();
+  const db = getSupabaseAdmin();
 
   const { data: tx, error: txErr } = await db
     .from("split_transactions")
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
 }
 
 async function buildResponse(
-  db: ReturnType<typeof getSupabase>,
+  db: ReturnType<typeof getSupabaseAdmin>,
   userId: string,
   tx: {
     id: string;
