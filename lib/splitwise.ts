@@ -72,7 +72,7 @@ export interface SplitwiseGroup {
   name: string;
   group_type: string;
   members: SplitwiseUser[];
-  simplified_debts: { from: number; to: number; amount: string }[];
+  simplified_debts: { from: number; to: number; amount: string; currency_code?: string }[];
 }
 
 export interface SplitwiseExpenseShare {

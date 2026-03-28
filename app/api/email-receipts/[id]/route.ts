@@ -15,7 +15,7 @@ export async function GET(
 
   const { data, error } = await db
     .from("email_receipts")
-    .select("id, merchant, amount, subtotal, tax, line_items, merchant_details")
+    .select("id, merchant, amount, subtotal, tax, line_items, merchant_details, merchant_type")
     .eq("id", id)
     .eq("clerk_user_id", userId)
     .maybeSingle();
@@ -51,6 +51,8 @@ export async function GET(
   return NextResponse.json({
     id: data.id,
     merchant_name: data.merchant ?? "Unknown",
+    merchant_type: (data as Record<string, unknown>).merchant_type ?? null,
+    merchant_details: data.merchant_details ?? null,
     subtotal: Number(data.subtotal) || 0,
     tax: Number(data.tax) || 0,
     tip: Number(details.tip) || 0,

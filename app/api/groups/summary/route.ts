@@ -75,17 +75,17 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; source?: string | null; archived_at?: string | null }[] | null;
+  let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; source?: string | null; external_id?: string | null; archived_at?: string | null }[] | null;
   {
     const res = await db
       .from("groups")
-      .select("id, name, owner_id, created_at, group_type, source, archived_at")
+      .select("id, name, owner_id, created_at, group_type, source, external_id, archived_at")
       .in("id", ids)
       .order("created_at", { ascending: false });
     if (res.error?.code === "42703") {
       const fallback = await db
         .from("groups")
-        .select("id, name, owner_id, created_at, group_type, source")
+        .select("id, name, owner_id, created_at, group_type, source, external_id")
         .in("id", ids)
         .order("created_at", { ascending: false });
       groupsRaw = fallback.data;
@@ -323,12 +323,12 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Try to use cached Splitwise friend balances (authoritative) instead of recalculated ones.
+  // Try to use cached Splitwise balances (authoritative) instead of recalculated ones.
   // Splitwise's balance engine handles multi-payer, debt simplification, etc. correctly.
   {
     const tokenRes = await db
       .from("splitwise_tokens")
-      .select("cached_friend_balances")
+      .select("cached_friend_balances, cached_group_balances")
       .eq("clerk_user_id", userId)
       .maybeSingle();
     // Gracefully handle missing column (pre-migration)
@@ -403,6 +403,37 @@ export async function GET(req: NextRequest) {
           const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
           personBalances.set(key, { displayName: m.display_name, byCurrency: new Map() });
         }
+      }
+    }
+
+    // Override group-level balances with Splitwise's authoritative simplified_debts.
+    type CachedGroupBalance = {
+      external_id: string;
+      balances: { currency_code: string; amount: string }[];
+    };
+    const cachedGroups: CachedGroupBalance[] | null =
+      (tokenRow as Record<string, unknown> | null)?.cached_group_balances as CachedGroupBalance[] | null;
+
+    if (cachedGroups && Array.isArray(cachedGroups) && cachedGroups.length > 0) {
+      const groupCacheMap = new Map(cachedGroups.map((g) => [g.external_id, g.balances]));
+
+      for (const g of groupsWithBalance) {
+        const row = (groups ?? []).find((gr) => gr.id === g.id);
+        if (row?.source !== "splitwise" || !row.external_id) continue;
+        const cachedBals = groupCacheMap.get(row.external_id);
+        if (!cachedBals) continue;
+
+        const newBalances = cachedBals
+          .map((b) => ({
+            currency: normalizeSplitCurrency(b.currency_code),
+            amount: Math.round(parseFloat(b.amount) * 100) / 100,
+          }))
+          .filter((b) => Number.isFinite(b.amount) && Math.abs(b.amount) >= BALANCE_EPS);
+        newBalances.sort((a, b) => a.currency.localeCompare(b.currency));
+
+        g.myBalances = newBalances;
+        g.myBalance =
+          newBalances.length === 1 ? newBalances[0].amount : newBalances.length === 0 ? 0 : null;
       }
     }
   }

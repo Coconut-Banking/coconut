@@ -48,7 +48,7 @@ export async function GET() {
     `)
     .in("group_id", ids)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(500);
 
   const seenByGroup = new Map<string, Set<string>>();
   const deduped = (splitsRaw ?? []).filter((s) => {
@@ -98,7 +98,7 @@ export async function GET() {
     .in("group_id", ids)
     .eq("status", "completed")
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(200);
 
   const memberById = new Map<string, { id: string; user_id: string | null; display_name: string }>();
   for (const m of members ?? []) {
@@ -218,7 +218,7 @@ export async function GET() {
 
   // Sort all activity by date descending, take top 30
   activity.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
-  const trimmed = activity.slice(0, 40).map(({ sortDate: _, ...rest }) => rest);
+  const trimmed = activity.slice(0, 200).map(({ sortDate: _, ...rest }) => rest);
 
   return NextResponse.json({ activity: trimmed });
 }

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
 import { getSuggestedSettlements } from "@/lib/split-balances";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { canAccessGroup } from "@/lib/group-access";
@@ -260,6 +260,55 @@ export async function GET(
 
     const archivedAt = (group as { archived_at?: string | null }).archived_at ?? null;
 
+    // Override balances + suggestions for Splitwise groups with authoritative simplified_debts.
+    let finalBalances = balancesFlat;
+    let finalSuggestions = suggestions;
+    if (
+      (group as { source?: string }).source === "splitwise" &&
+      (group as { external_id?: string }).external_id
+    ) {
+      try {
+        const adminDb = getSupabaseAdmin();
+        const { data: tokenRow } = await adminDb
+          .from("splitwise_tokens")
+          .select("cached_group_balances")
+          .eq("clerk_user_id", userId)
+          .maybeSingle();
+
+        type CachedGroupBalance = {
+          external_id: string;
+          balances: { currency_code: string; amount: string }[];
+        };
+        const cachedGroups = (tokenRow as Record<string, unknown> | null)
+          ?.cached_group_balances as CachedGroupBalance[] | null;
+        const extId = (group as { external_id: string }).external_id;
+        const cachedBals = cachedGroups?.find((g) => g.external_id === extId)?.balances;
+
+        if (cachedBals && cachedBals.length > 0) {
+          const myMember = (members ?? []).find((m) => m.user_id === userId);
+          // Rebuild per-member balances from simplified_debts cached at import time.
+          // The cache stores the current user's net per-currency. For individual member
+          // breakdowns we still use the computed values, but override the "total" so the
+          // group-level headline matches Splitwise exactly.
+          const cachedMyByCurrency = new Map(
+            cachedBals.map((b) => [
+              normalizeSplitCurrency(b.currency_code),
+              Math.round(parseFloat(b.amount) * 100) / 100,
+            ])
+          );
+          if (myMember) {
+            for (const b of finalBalances) {
+              if (b.memberId !== myMember.id) continue;
+              const cached = cachedMyByCurrency.get(b.currency);
+              if (cached !== undefined) b.total = cached;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[groups/id] cached group balance overlay failed:", err);
+      }
+    }
+
     return NextResponse.json({
       ...group,
       group,
@@ -267,8 +316,8 @@ export async function GET(
       archivedAt,
       members: members ?? [],
       activity,
-      balances: balancesFlat,
-      suggestions: suggestions.map((s) => ({
+      balances: finalBalances,
+      suggestions: finalSuggestions.map((s) => ({
         ...s,
         fromMember: memberMap.get(s.fromMemberId),
         toMember: memberMap.get(s.toMemberId),

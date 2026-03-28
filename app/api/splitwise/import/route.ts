@@ -131,6 +131,38 @@ export async function POST(req: NextRequest) {
       console.warn("[splitwise-import] failed to cache friend balances:", err);
     }
 
+    // Cache authoritative Splitwise per-group balances from simplified_debts.
+    // This is the exact same number Splitwise shows — debt simplification, multi-payer,
+    // and rounding are all handled by their engine.
+    try {
+      const cachedGroupBalances = swGroups.map((g) => {
+        const byCurrency = new Map<string, number>();
+        for (const debt of g.simplified_debts ?? []) {
+          const cur = (debt.currency_code ?? "USD").trim().toUpperCase() || "USD";
+          const amount = parseFloat(debt.amount);
+          if (!Number.isFinite(amount)) continue;
+          if (debt.from === swUser.id) {
+            byCurrency.set(cur, (byCurrency.get(cur) ?? 0) - amount);
+          } else if (debt.to === swUser.id) {
+            byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + amount);
+          }
+        }
+        return {
+          external_id: String(g.id),
+          balances: [...byCurrency.entries()].map(([currency_code, amount]) => ({
+            currency_code,
+            amount: String(Math.round(amount * 100) / 100),
+          })),
+        };
+      });
+      await db
+        .from("splitwise_tokens")
+        .update({ cached_group_balances: cachedGroupBalances } as Record<string, unknown>)
+        .eq("clerk_user_id", userId);
+    } catch (err) {
+      console.warn("[splitwise-import] failed to cache group balances:", err);
+    }
+
     console.log("[splitwise-import] done", stats);
     return NextResponse.json({
       ok: true,
