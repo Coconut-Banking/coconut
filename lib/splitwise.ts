@@ -85,13 +85,17 @@ export interface SplitwiseExpense {
   id: number;
   group_id: number;
   description: string;
+  details: string | null;
   cost: string;
   currency_code: string;
   date: string; // ISO
   deleted_at: string | null;
   repayments: { from: number; to: number; amount: string }[];
   users: SplitwiseExpenseShare[];
-  payment: boolean; // true = settlement, false = normal expense
+  payment: boolean;
+  category?: { id: number; name: string };
+  receipt?: { large: string | null; original: string | null };
+  created_by?: { id: number; first_name: string; last_name: string };
 }
 
 // ── Fetchers ────────────────────────────────────────────────────────────────

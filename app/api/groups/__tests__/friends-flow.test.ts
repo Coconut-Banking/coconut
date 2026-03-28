@@ -259,20 +259,27 @@ describe("add friend → summary flow", () => {
     const memberRes = await addMember(memberReq, { params: Promise.resolve({ id: group.id }) });
     expect(memberRes.status).toBe(200);
 
-    // Step 3: Default summary now returns all groups/friends (not just unsettled)
+    // Step 3: ?contacts=1 returns all groups/friends including settled
     const { GET: getSummary } = await import("../summary/route");
-    const summaryRes = await getSummary(new NextRequest("http://localhost/api/groups/summary"));
-    expect(summaryRes.status).toBe(200);
-    const summary = await summaryRes.json();
+    const allRes = await getSummary(new NextRequest("http://localhost/api/groups/summary?contacts=1"));
+    expect(allRes.status).toBe(200);
+    const all = await allRes.json();
 
-    expect(summary.groups).toHaveLength(1);
-    expect(summary.groups[0].name).toBe(FRIEND_NAME);
-    const friend = summary.friends.find((f: { displayName: string }) => f.displayName === FRIEND_NAME);
+    expect(all.groups).toHaveLength(1);
+    expect(all.groups[0].name).toBe(FRIEND_NAME);
+    const friend = all.friends.find((f: { displayName: string }) => f.displayName === FRIEND_NAME);
     expect(friend).toBeDefined();
     expect(friend?.balance).toBe(0);
     expect(friend?.balances ?? []).toEqual([]);
 
-    // ?unsettled=1 — only non-zero balances
+    // Default (smart filter) — zero-balance groups/friends with no activity are hidden
+    const smartRes = await getSummary(new NextRequest("http://localhost/api/groups/summary"));
+    expect(smartRes.status).toBe(200);
+    const smart = await smartRes.json();
+    expect(smart.groups).toHaveLength(0);
+    expect(smart.friends).toHaveLength(0);
+
+    // ?unsettled=1 — only non-zero balances (strict)
     const unsettledRes = await getSummary(
       new NextRequest("http://localhost/api/groups/summary?unsettled=1")
     );

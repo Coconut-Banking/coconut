@@ -44,8 +44,11 @@ function friendRowFromAgg(key: string, v: PersonAgg) {
 /**
  * GET /api/groups/summary
  * Returns all friends and groups the user can access, with per-currency balances.
- * ?unsettled=1 — only include friends/groups with non-zero net (Splitwise-style unsettled lists).
- * ?contacts=1 — alias for the default (all), kept for backward compat with older app builds.
+ *
+ * Default: smart filter — friends are shown if they have a non-zero balance OR are in
+ * a group that has any unsettled balance. Groups are shown if they have any unsettled balance.
+ * ?contacts=1 — returns ALL friends/groups (incl. settled), for management/debug.
+ * ?unsettled=1 — strict: only friends/groups with non-zero net (legacy).
  *
  * Balances are **per ISO currency** (`balances` / `myBalances`). Do not sum across currencies.
  * When more than one currency is outstanding, `balance` / `myBalance` / headline totals are `null`
@@ -59,6 +62,7 @@ export async function GET(req: NextRequest) {
   const ids = await getAccessibleGroupIds(userId);
 
   const unsettledOnly = req.nextUrl.searchParams.get("unsettled") === "1";
+  const showAll = req.nextUrl.searchParams.get("contacts") === "1";
 
   if (ids.length === 0) {
     return NextResponse.json({
@@ -419,12 +423,40 @@ export async function GET(req: NextRequest) {
     .map(([key, v]) => friendRowFromAgg(key, v))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-  if (unsettledOnly) {
-    friends = friends.filter((f) => f.balances.length > 0);
-  }
-
   let groupsOut = groupsWithBalance;
-  if (unsettledOnly) {
+
+  if (showAll) {
+    // Return everything (incl. settled) — no filtering.
+  } else if (unsettledOnly) {
+    friends = friends.filter((f) => f.balances.length > 0);
+    groupsOut = groupsWithBalance.filter((g) => (g.myBalances?.length ?? 0) > 0);
+  } else {
+    // Smart filter: show friends with non-zero balance OR in an active group.
+    const activeGroupIds = new Set(
+      groupsWithBalance
+        .filter((g) => (g.myBalances?.length ?? 0) > 0)
+        .map((g) => g.id)
+    );
+
+    const memberGroupsByKey = new Map<string, Set<string>>();
+    for (const m of members ?? []) {
+      if (m.user_id === userId) continue;
+      const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
+      const set = memberGroupsByKey.get(key) ?? new Set();
+      set.add(m.group_id);
+      memberGroupsByKey.set(key, set);
+    }
+
+    friends = friends.filter((f) => {
+      if (f.balances.length > 0) return true;
+      const friendGroups = memberGroupsByKey.get(f.key);
+      if (!friendGroups) return false;
+      for (const gid of friendGroups) {
+        if (activeGroupIds.has(gid)) return true;
+      }
+      return false;
+    });
+
     groupsOut = groupsWithBalance.filter((g) => (g.myBalances?.length ?? 0) > 0);
   }
 

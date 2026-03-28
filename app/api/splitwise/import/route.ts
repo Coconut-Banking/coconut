@@ -337,6 +337,9 @@ async function importGroup(
         amount: safeParseFloat(expense.cost),
         date: expense.date.split("T")[0],
         iso_currency_code: expense.currency_code?.trim() || "USD",
+        notes: expense.details || null,
+        category: expense.category?.name || null,
+        receipt_url: expense.receipt?.large || expense.receipt?.original || null,
       };
     });
 
