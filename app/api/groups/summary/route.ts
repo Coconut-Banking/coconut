@@ -368,15 +368,14 @@ export async function GET(req: NextRequest) {
         const email = (cf.email ?? "").toLowerCase().trim();
         const match = memberEmailToKey.get(email);
         if (!match) continue;
-        // Splitwise convention: positive amount = you owe them
-        // Coconut convention: positive = they owe you
-        // So we negate the Splitwise amount
+        // Splitwise and Coconut use the same sign convention:
+        //   positive = they owe you, negative = you owe them
         const newByCurrency = new Map<string, number>();
         for (const b of cf.balance ?? []) {
           const amt = parseFloat(b.amount);
           if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
           const cur = normalizeSplitCurrency(b.currency_code);
-          newByCurrency.set(cur, Math.round(-amt * 100) / 100);
+          newByCurrency.set(cur, Math.round(amt * 100) / 100);
         }
         personBalances.set(match.key, { displayName: match.displayName, byCurrency: newByCurrency });
       }

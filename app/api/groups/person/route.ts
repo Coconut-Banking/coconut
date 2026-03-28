@@ -314,10 +314,47 @@ export async function GET(req: NextRequest) {
 
     activity.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    const currencyBalances = [...byCurrency.entries()]
-      .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
-      .filter((b) => Math.abs(b.amount) >= BALANCE_EPS)
-      .sort((a, b) => a.currency.localeCompare(b.currency));
+    // Try cached Splitwise friend balance (authoritative) for the headline
+    let currencyBalances: { currency: string; amount: number }[] = [];
+    try {
+      const { data: tokenRow } = await db
+        .from("splitwise_tokens")
+        .select("cached_friend_balances")
+        .eq("clerk_user_id", userId)
+        .maybeSingle();
+
+      type CachedFriend = {
+        email: string | null;
+        balance: { currency_code: string; amount: string }[];
+      };
+      const cached: CachedFriend[] | null =
+        (tokenRow as Record<string, unknown> | null)?.cached_friend_balances as CachedFriend[] | null;
+
+      if (cached && Array.isArray(cached) && email) {
+        const match = cached.find(
+          (f) => (f.email ?? "").toLowerCase().trim() === email.toLowerCase().trim()
+        );
+        if (match) {
+          currencyBalances = (match.balance ?? [])
+            .map((b) => ({
+              currency: normalizeSplitCurrency(b.currency_code),
+              amount: Math.round(parseFloat(b.amount) * 100) / 100,
+            }))
+            .filter((b) => Number.isFinite(b.amount) && Math.abs(b.amount) >= BALANCE_EPS)
+            .sort((a, b) => a.currency.localeCompare(b.currency));
+        }
+      }
+    } catch {
+      // Ignore — fall back to recalculated
+    }
+
+    // Fall back to recalculated balances if no cached data
+    if (currencyBalances.length === 0) {
+      currencyBalances = [...byCurrency.entries()]
+        .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
+        .filter((b) => Math.abs(b.amount) >= BALANCE_EPS)
+        .sort((a, b) => a.currency.localeCompare(b.currency));
+    }
 
     const balance =
       currencyBalances.length === 1
@@ -326,11 +363,16 @@ export async function GET(req: NextRequest) {
           ? 0
           : null;
 
+    // Only show expenses that actually affect the pairwise balance
+    const relevantActivity = activity.filter(
+      (a) => Math.abs(a.effectOnBalance) >= BALANCE_EPS
+    );
+
     return NextResponse.json({
       displayName,
       balance,
       currencyBalances,
-      activity,
+      activity: relevantActivity,
       email,
       key,
       settlements: personSettlements,

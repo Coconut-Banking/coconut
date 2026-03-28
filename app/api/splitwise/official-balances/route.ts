@@ -10,8 +10,8 @@ import { getFriends } from "@/lib/splitwise";
  * GET /api/splitwise/official-balances
  * Raw Splitwise /get_friends balances (per currency) for debugging / comparison with Coconut.
  *
- * Splitwise convention: positive `amount` = you owe that friend in that currency.
- * Coconut summary uses the opposite: positive = they owe you (see balances in /api/groups/summary).
+ * Splitwise convention: positive `amount` = they owe you, negative = you owe them.
+ * This matches Coconut's summary convention (positive = they owe you).
  */
 export async function GET() {
   const userId = await getUserId();
