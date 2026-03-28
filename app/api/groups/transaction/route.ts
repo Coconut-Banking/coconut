@@ -109,11 +109,6 @@ async function buildResponse(
     };
   }).sort((a, b) => b.amount - a.amount);
 
-  const splitwiseUrl =
-    tx.source === "splitwise" && tx.external_id
-      ? `https://www.splitwise.com/expenses/${tx.external_id}`
-      : null;
-
   return NextResponse.json({
     id: tx.id,
     description: tx.description,
@@ -130,6 +125,6 @@ async function buildResponse(
     notes,
     category,
     receiptUrl,
-    splitwiseUrl,
+    splitwiseUrl: null,
   });
 }
