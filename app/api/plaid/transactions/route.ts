@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await db
       .from("transactions")
       .select(
-        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, source, p2p_counterparty, p2p_note, p2p_platform"
+        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform"
       )
       .eq("clerk_user_id", effectiveUserId)
       .order("date", { ascending: false })
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
           const fresh = await db
             .from("transactions")
             .select(
-              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, source, p2p_counterparty, p2p_note, p2p_platform"
+              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform"
             )
             .eq("clerk_user_id", effectiveUserId)
             .order("date", { ascending: false })
@@ -80,6 +80,51 @@ export async function GET(request: NextRequest) {
           console.warn("[transactions] sync-on-read failed:", e);
         }
       }
+    }
+
+    // ── Pending vs posted dedup ─────────────────────────────────────────────
+    // Plaid sends a pending auth and a separate posted settlement for the same
+    // charge. Dates often differ by 1-3 days and the raw_name changes.  Drop
+    // pending rows whose posted counterpart already exists.
+    {
+      // 1. Exact match via pending_transaction_id (Plaid links posted → pending)
+      const pendingPlaidIds = new Set(
+        bankOnly
+          .filter((tx) => tx.is_pending)
+          .map((tx) => tx.plaid_transaction_id as string)
+          .filter(Boolean)
+      );
+      const settledByPendingId = new Set(
+        bankOnly
+          .filter((tx) => !tx.is_pending && tx.pending_transaction_id)
+          .map((tx) => tx.pending_transaction_id as string)
+      );
+
+      // 2. Fuzzy fallback: same normalized merchant + same amount, posted date
+      //    within 4 days after the pending date.
+      const postedByKey = new Map<string, number>();
+      for (const tx of bankOnly) {
+        if (tx.is_pending) continue;
+        const norm = (tx.normalized_merchant || (tx.merchant_name as string || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim());
+        const key = `${norm}|${tx.amount}`;
+        const d = new Date(tx.date as string).getTime();
+        postedByKey.set(key, Math.max(postedByKey.get(key) ?? 0, d));
+      }
+
+      bankOnly = bankOnly.filter((tx) => {
+        if (!tx.is_pending) return true;
+        const plaidId = tx.plaid_transaction_id as string;
+        if (plaidId && settledByPendingId.has(plaidId)) return false;
+        const norm = (tx.normalized_merchant || (tx.merchant_name as string || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim());
+        const key = `${norm}|${tx.amount}`;
+        const postedTime = postedByKey.get(key);
+        if (postedTime !== undefined) {
+          const pendingTime = new Date(tx.date as string).getTime();
+          const dayDiff = (postedTime - pendingTime) / 86400000;
+          if (dayDiff >= -1 && dayDiff <= 4) return false;
+        }
+        return true;
+      });
     }
 
     // Deduplicate: same merchant+amount+date can appear twice (multi-Item or reconnect)

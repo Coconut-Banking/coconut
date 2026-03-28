@@ -54,6 +54,31 @@ export async function GET(
       }
     }
 
+    // Deduplicate members that share the same non-null user_id.
+    // Keeps the row with a real display_name (not "You") and merges payment handles.
+    {
+      const seen = new Map<string, number>();
+      const deduped: typeof members = [];
+      for (const m of members ?? []) {
+        if (!m.user_id) { deduped.push(m); continue; }
+        const prev = seen.get(m.user_id);
+        if (prev == null) {
+          seen.set(m.user_id, deduped.length);
+          deduped.push(m);
+        } else {
+          const kept = deduped[prev];
+          if (kept.display_name === "You" && m.display_name !== "You") {
+            kept.display_name = m.display_name;
+          }
+          kept.email = kept.email || m.email;
+          kept.venmo_username = kept.venmo_username || m.venmo_username;
+          kept.cashapp_cashtag = kept.cashapp_cashtag || m.cashapp_cashtag;
+          kept.paypal_username = kept.paypal_username || m.paypal_username;
+        }
+      }
+      members = deduped;
+    }
+
     const { data: splitsRaw } = await db
       .from("split_transactions")
       .select(`
