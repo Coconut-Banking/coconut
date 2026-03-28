@@ -363,7 +363,12 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Replace personBalances for Splitwise friends
+      // Build set of cached emails for quick lookup
+      const cachedEmailSet = new Set(
+        cached.map((f) => (f.email ?? "").toLowerCase().trim()).filter(Boolean)
+      );
+
+      // Replace personBalances for cached Splitwise friends
       for (const cf of cached) {
         const email = (cf.email ?? "").toLowerCase().trim();
         const match = memberEmailToKey.get(email);
@@ -378,6 +383,23 @@ export async function GET(req: NextRequest) {
           newByCurrency.set(cur, Math.round(amt * 100) / 100);
         }
         personBalances.set(match.key, { displayName: match.displayName, byCurrency: newByCurrency });
+      }
+
+      // For members ONLY in Splitwise groups who are NOT in the cache,
+      // their Splitwise balance is $0 — zero out the bad recalculated value.
+      for (const m of members ?? []) {
+        if (m.user_id === userId || !m.email) continue;
+        const email = m.email.toLowerCase().trim();
+        if (cachedEmailSet.has(email)) continue; // already handled above
+        // Check if this member ONLY appears in Splitwise groups
+        const memberGroups = (members ?? [])
+          .filter((mm) => mm.email === m.email && mm.user_id !== userId)
+          .map((mm) => mm.group_id);
+        const allSw = memberGroups.every((gid) => swGroupIds.has(gid));
+        if (allSw) {
+          const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
+          personBalances.set(key, { displayName: m.display_name, byCurrency: new Map() });
+        }
       }
     }
   }
