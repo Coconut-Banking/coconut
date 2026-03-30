@@ -436,6 +436,26 @@ export async function GET(req: NextRequest) {
           personBalances.set(key, { displayName: m.display_name, byCurrency: new Map() });
         }
       }
+
+      // Add cached Splitwise friends who aren't members of any imported group.
+      // This handles pairwise balances outside of groups (e.g. direct expenses).
+      const matchedEmails = new Set(
+        [...memberEmailToKey.keys()].map((e) => e.toLowerCase().trim())
+      );
+      for (const cf of cached) {
+        const email = (cf.email ?? "").toLowerCase().trim();
+        if (!email || matchedEmails.has(email)) continue;
+        const name = [cf.first_name, cf.last_name].filter(Boolean).join(" ") || email;
+        const key = email;
+        const newByCurrency = new Map<string, number>();
+        for (const b of cf.balance ?? []) {
+          const amt = parseFloat(b.amount);
+          if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
+          const cur = normalizeSplitCurrency(b.currency_code);
+          newByCurrency.set(cur, Math.round(amt * 100) / 100);
+        }
+        personBalances.set(key, { displayName: name, byCurrency: newByCurrency });
+      }
     }
 
     // Override group-level balances with Splitwise's authoritative simplified_debts.
