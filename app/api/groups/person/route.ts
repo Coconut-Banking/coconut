@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
 
     const { data: settlements } = await db
       .from("settlements")
-      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code")
+      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
       .in("group_id", sharedGroupIds)
       .eq("status", "completed");
 
@@ -343,13 +343,15 @@ export async function GET(req: NextRequest) {
             cachedByCurrency.set(normalizeSplitCurrency(b.currency_code), Math.round(amt * 100) / 100);
           }
 
-          // Apply local settlements on top of cached Splitwise balances
+          // Apply only LOCAL (non-Splitwise) settlements on top of cached Splitwise balances
           for (const groupId of sharedGroupIds) {
             const groupMembers = (members ?? []).filter((m) => m.group_id === groupId);
             const myMember = groupMembers.find((m) => m.user_id === userId);
             const theirMember = groupMembers.find((m) => personMemberIds.has(m.id));
             if (!myMember || !theirMember) continue;
-            const gSettlements = (settlements ?? []).filter((s) => s.group_id === groupId);
+            const gSettlements = (settlements ?? []).filter(
+              (s) => s.group_id === groupId && (s as { method?: string }).method !== "splitwise"
+            );
             for (const st of gSettlements) {
               const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
               const amt = Number(st.amount);

@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
 
   const { data: settlements } = await db
     .from("settlements")
-    .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code")
+    .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
     .in("group_id", groupIds)
     .eq("status", "completed");
 
@@ -378,7 +378,9 @@ export async function GET(req: NextRequest) {
         if (m.user_id === userId || !m.email) continue;
         const myMember = memberByGroup.get(m.group_id)?.find((mm) => mm.user_id === userId);
         if (!myMember) continue;
-        const gSettlements = (settlements ?? []).filter((s) => s.group_id === m.group_id);
+        const gSettlements = (settlements ?? []).filter(
+          (s) => s.group_id === m.group_id && (s as { method?: string }).method !== "splitwise"
+        );
         for (const st of gSettlements) {
           const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
           const amt = Number(st.amount);
