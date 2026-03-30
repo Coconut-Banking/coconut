@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { jsPDF } from "jspdf";
 
 interface PersonShare {
@@ -28,6 +29,9 @@ function fmt(n: number) {
  * Body: { merchant: string, personShares: PersonShare[] }
  */
 export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: { merchant?: string; personShares?: PersonShare[] };
   try {
     body = await req.json();
