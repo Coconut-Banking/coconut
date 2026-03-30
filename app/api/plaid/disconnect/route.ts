@@ -94,6 +94,7 @@ export async function POST() {
     }
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+    revalidateTag(CACHE_TAGS.splitTransactions(effectiveUserId), "max");
 
     return NextResponse.json({ ok: true });
   } catch (err) {

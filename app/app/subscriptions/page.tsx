@@ -17,7 +17,7 @@ function MerchantAvatar({ name, color }: { name: string; color: string }) {
 }
 
 export default function SubscriptionsPage() {
-  const { subscriptions, totalMonthly, totalAnnual, loading, detecting, detect, dismiss, dismissPriceChange } = useSubscriptions();
+  const { subscriptions, totalMonthly, totalAnnual, loading, detecting, error, detect, dismiss, dismissPriceChange } = useSubscriptions();
   const { format: fc, formatAbs: fca } = useCurrency();
 
   if (loading) {
@@ -26,6 +26,17 @@ export default function SubscriptionsPage() {
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Subscriptions</h1>
         <div className="mt-6 bg-gray-50 border border-gray-100 rounded-2xl p-12 text-center text-gray-500">
           Loading…
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-3xl mx-auto px-8 py-8">
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Subscriptions</h1>
+        <div className="mt-6 bg-red-50 border border-red-100 rounded-2xl p-12 text-center text-red-600 text-sm">
+          {error}
         </div>
       </div>
     );

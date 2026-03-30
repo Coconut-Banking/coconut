@@ -10,12 +10,17 @@ const OAUTH_AUTHORIZE = "https://secure.splitwise.com/oauth/authorize";
 const OAUTH_TOKEN = "https://secure.splitwise.com/oauth/token";
 
 export function getSplitwiseConfig() {
+  const appBase = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const explicit = process.env.SPLITWISE_REDIRECT_URI?.trim();
+  // Must match Splitwise OAuth app settings exactly on both /authorize and /token requests.
+  const redirectUri =
+    explicit && explicit.length > 0
+      ? explicit.replace(/\/$/, "")
+      : `${appBase}/api/splitwise/callback`;
   return {
     clientId: process.env.SPLITWISE_CLIENT_ID ?? "",
     clientSecret: process.env.SPLITWISE_CLIENT_SECRET ?? "",
-    redirectUri:
-      (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "") +
-      "/api/splitwise/callback",
+    redirectUri,
   };
 }
 
@@ -67,7 +72,7 @@ export interface SplitwiseGroup {
   name: string;
   group_type: string;
   members: SplitwiseUser[];
-  simplified_debts: { from: number; to: number; amount: string }[];
+  simplified_debts: { from: number; to: number; amount: string; currency_code?: string }[];
 }
 
 export interface SplitwiseExpenseShare {
@@ -80,13 +85,17 @@ export interface SplitwiseExpense {
   id: number;
   group_id: number;
   description: string;
+  details: string | null;
   cost: string;
   currency_code: string;
   date: string; // ISO
   deleted_at: string | null;
   repayments: { from: number; to: number; amount: string }[];
   users: SplitwiseExpenseShare[];
-  payment: boolean; // true = settlement, false = normal expense
+  payment: boolean;
+  category?: { id: number; name: string };
+  receipt?: { large: string | null; original: string | null };
+  created_by?: { id: number; first_name: string; last_name: string };
 }
 
 // ── Fetchers ────────────────────────────────────────────────────────────────

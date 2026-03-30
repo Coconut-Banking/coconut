@@ -23,7 +23,7 @@ export function useGroupListen(
       es = new EventSource(`/api/groups/${groupId}/listen`);
 
       es.addEventListener("message", (e: MessageEvent) => {
-        if (e.data === "update" || e.data === "connected") {
+        if (e.data === "update") {
           onUpdateRef.current();
         }
       });

@@ -42,21 +42,29 @@ export async function GET() {
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
-      id, group_id, transaction_id, created_by, created_at, description,
+      id, group_id, transaction_id, created_by, created_at, date, description,
+      payer_member_id, amount, iso_currency_code, receipt_url,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .in("group_id", ids)
     .order("created_at", { ascending: false })
-    .limit(30);
+    .limit(500);
 
   const seenByGroup = new Map<string, Set<string>>();
-  const splits = (splitsRaw ?? []).filter((s) => {
+  const deduped = (splitsRaw ?? []).filter((s) => {
     const seen = seenByGroup.get(s.group_id) ?? new Set();
     const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
     if (seen.has(k)) return false;
     seen.add(k);
     seenByGroup.set(s.group_id, seen);
     return true;
+  });
+
+  // Sort by actual expense date (not insertion time) so imported data shows chronologically
+  const splits = deduped.sort((a, b) => {
+    const da = (a as { date?: string }).date ?? a.created_at;
+    const db_ = (b as { date?: string }).date ?? b.created_at;
+    return db_.localeCompare(da);
   });
 
   if (splits.length === 0) {
@@ -83,7 +91,21 @@ export async function GET() {
     membersByGroup.set(m.group_id, list);
   }
 
-  const activity: Array<{
+  // Fetch settlements for the activity feed too
+  const { data: settlementsRaw } = await db
+    .from("settlements")
+    .select("id, group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, created_at")
+    .in("group_id", ids)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  const memberById = new Map<string, { id: string; user_id: string | null; display_name: string }>();
+  for (const m of members ?? []) {
+    memberById.set(m.id, { id: m.id, user_id: m.user_id, display_name: m.display_name });
+  }
+
+  type ActivityItem = {
     id: string;
     who: string;
     action: string;
@@ -91,10 +113,15 @@ export async function GET() {
     in: string;
     direction: "get_back" | "owe" | "settled";
     amount: number;
+    currency: string;
     time: string;
-  }> = [];
+    sortDate: string;
+    receiptUrl: string | null;
+  };
 
-  for (const s of splits.slice(0, 15)) {
+  const activity: ActivityItem[] = [];
+
+  for (const s of splits) {
     const merchant = merchantLabelFromSplitRow(
       s as { transactions?: unknown; description?: string | null }
     );
@@ -113,6 +140,7 @@ export async function GET() {
     const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
     const myShareRow = myMember ? shareList.find((sh) => sh.member_id === myMember.id) : null;
     const myShare = myShareRow ? Number(myShareRow.amount) : 0;
+    const currency = ((s as { iso_currency_code?: string | null }).iso_currency_code ?? "USD").trim().toUpperCase() || "USD";
 
     let effectOnBalance = 0;
     let direction: "get_back" | "owe" = "owe";
@@ -131,24 +159,72 @@ export async function GET() {
       paidByMember && myMember && paidByMember.id === myMember.id
         ? "You"
         : paidByMember?.display_name ?? "Someone";
-    const action = "paid";
     const groupName = groupNames.get(s.group_id) ?? "";
-    const createdAt = s.created_at;
-    const timeAgo = formatTimeAgo(createdAt);
+    const expenseDate = (s as { date?: string }).date ?? s.created_at;
 
     activity.push({
       id: s.id,
       who,
-      action: who === "You" ? "added" : action,
+      action: "added",
       what: merchant,
       in: groupName,
       direction,
       amount: Math.abs(effectOnBalance),
-      time: timeAgo,
+      currency,
+      time: formatTimeAgo(expenseDate),
+      sortDate: expenseDate,
+      receiptUrl: (s as { receipt_url?: string | null }).receipt_url ?? null,
     });
   }
 
-  return NextResponse.json({ activity });
+  // Add settlements to activity
+  for (const st of settlementsRaw ?? []) {
+    const payer = memberById.get(st.payer_member_id);
+    const receiver = memberById.get(st.receiver_member_id);
+    if (!payer || !receiver) continue;
+
+    const iAmPayer = payer.user_id === userId;
+    const iAmReceiver = receiver.user_id === userId;
+    const currency = (st.iso_currency_code ?? "USD").trim().toUpperCase() || "USD";
+    const groupName = groupNames.get(st.group_id) ?? "";
+    const amt = Number(st.amount);
+
+    if (iAmPayer) {
+      activity.push({
+        id: `st-${st.id}`,
+        who: "You",
+        action: "paid",
+        what: receiver.display_name,
+        in: groupName,
+        direction: "settled",
+        amount: amt,
+        currency,
+        time: formatTimeAgo(st.created_at),
+        sortDate: st.created_at,
+        receiptUrl: null,
+      });
+    } else if (iAmReceiver) {
+      activity.push({
+        id: `st-${st.id}`,
+        who: payer.display_name,
+        action: "paid",
+        what: "you",
+        in: groupName,
+        direction: "settled",
+        amount: amt,
+        currency,
+        time: formatTimeAgo(st.created_at),
+        sortDate: st.created_at,
+        receiptUrl: null,
+      });
+    }
+  }
+
+  // Sort all activity by date descending, take top 30
+  activity.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
+  const trimmed = activity.slice(0, 200).map(({ sortDate: _, ...rest }) => rest);
+
+  return NextResponse.json({ activity: trimmed });
 }
 
 function formatTimeAgo(iso: string): string {

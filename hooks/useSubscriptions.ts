@@ -63,29 +63,29 @@ export function useSubscriptions() {
 
   const detect = useCallback(async () => {
     setDetecting(true);
+    let cancelled = false;
     try {
       const res = await fetch("/api/subscriptions", { method: "POST" });
       if (res.ok) {
-        if (mountedRef.current) await fetchSubs();
+        if (mountedRef.current && !cancelled) await fetchSubs(() => cancelled);
       } else {
         const body = await res.json().catch(() => ({}));
-        if (mountedRef.current) setError((body as { error?: string }).error ?? "Detection failed. Please try again.");
+        if (mountedRef.current && !cancelled) {
+          setError((body as { error?: string }).error ?? "Detection failed. Please try again.");
+        }
       }
     } catch (e) {
       console.error("[subscriptions] detect:", e);
-      if (mountedRef.current) setError("Detection failed. Please try again.");
+      if (mountedRef.current && !cancelled) setError("Detection failed. Please try again.");
     } finally {
+      cancelled = true;
       if (mountedRef.current) setDetecting(false);
     }
   }, [fetchSubs]);
 
   const dismiss = useCallback(async (id: string) => {
-    // Optimistic update with rollback on failure
-    let previousSubscriptions: typeof subscriptions;
-    setSubscriptions((prev) => {
-      previousSubscriptions = prev;
-      return prev.filter((s) => s.id !== id);
-    });
+    // Optimistic update
+    setSubscriptions((prev) => prev.filter((s) => s.id !== id));
 
     try {
       const res = await fetch(`/api/subscriptions/${id}`, {
@@ -94,23 +94,19 @@ export function useSubscriptions() {
         body: JSON.stringify({ status: "dismissed" }),
       });
       if (!res.ok) {
-        // Rollback on API error
-        setSubscriptions(previousSubscriptions!);
+        // Re-fetch authoritative state from server on API error
+        await fetchSubs();
       }
     } catch (e) {
       console.error("[subscriptions] dismiss:", e);
-      // Rollback on network error
-      setSubscriptions(previousSubscriptions!);
+      // Re-fetch authoritative state from server on network error
+      await fetchSubs();
     }
-  }, []);
+  }, [fetchSubs]);
 
   const dismissPriceChange = useCallback(async (id: string) => {
-    // Optimistic update with rollback on failure
-    let previousSubscriptions: typeof subscriptions;
-    setSubscriptions((prev) => {
-      previousSubscriptions = prev;
-      return prev.map((s) => (s.id === id ? { ...s, priceChange: null } : s));
-    });
+    // Optimistic update
+    setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, priceChange: null } : s)));
 
     try {
       const res = await fetch(`/api/subscriptions/${id}`, {
@@ -119,15 +115,15 @@ export function useSubscriptions() {
         body: JSON.stringify({ dismissPriceChange: true }),
       });
       if (!res.ok) {
-        // Rollback on API error
-        setSubscriptions(previousSubscriptions!);
+        // Re-fetch authoritative state from server on API error
+        await fetchSubs();
       }
     } catch (e) {
       console.error("[subscriptions] dismissPriceChange:", e);
-      // Rollback on network error
-      setSubscriptions(previousSubscriptions!);
+      // Re-fetch authoritative state from server on network error
+      await fetchSubs();
     }
-  }, []);
+  }, [fetchSubs]);
 
   const totalMonthly = subscriptions.reduce((acc, s) => {
     const amount = Number(s.amount) || 0;

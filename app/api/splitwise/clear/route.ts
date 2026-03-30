@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       await db.from("split_shares").delete().in("split_transaction_id", sids);
     }
     await db.from("split_transactions").delete().eq("group_id", gid);
-    await db.from("settlements").delete().eq("group_id", gid);
+    // Keep settlements — they record real-world payments between people.
     await db.from("group_members").delete().eq("group_id", gid);
     const { error: delG } = await db.from("groups").delete().eq("id", gid);
     if (!delG) deletedGroups += 1;

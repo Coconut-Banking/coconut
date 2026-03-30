@@ -101,12 +101,12 @@ export async function POST(request: NextRequest) {
         const db = getSupabase();
         const { data: existing } = await db
           .from("plaid_items")
-          .select("id")
+          .select("id, plaid_item_id")
           .eq("clerk_user_id", effectiveUserId)
           .eq("institution_id", institutionId)
           .limit(1)
           .maybeSingle();
-        if (existing) {
+        if (existing && (existing as { plaid_item_id?: string }).plaid_item_id !== item_id) {
           try {
             await client.itemRemove({ access_token: access_token });
           } catch (e) {

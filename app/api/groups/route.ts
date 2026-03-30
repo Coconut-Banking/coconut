@@ -16,15 +16,28 @@ export async function GET(req: NextRequest) {
   const ids = await getAccessibleGroupIds(userId);
   if (ids.length === 0) return NextResponse.json([]);
 
-  const { data: groupsRaw } = await db
-    .from("groups")
-    .select("id, name, owner_id, created_at, group_type, invite_token, archived_at")
-    .in("id", ids)
-    .order("created_at", { ascending: false });
+  type GroupRow = { id: string; name: string; owner_id: string; created_at: string; group_type?: string; invite_token?: string; archived_at?: string | null };
+  let groupsRaw: GroupRow[] | null;
+  {
+    const res = await db
+      .from("groups")
+      .select("id, name, owner_id, created_at, group_type, invite_token, archived_at")
+      .in("id", ids)
+      .order("created_at", { ascending: false });
+    if (res.error?.code === "42703") {
+      const fallback = await db
+        .from("groups")
+        .select("id, name, owner_id, created_at, group_type, invite_token")
+        .in("id", ids)
+        .order("created_at", { ascending: false });
+      groupsRaw = fallback.data;
+    } else {
+      groupsRaw = res.data;
+    }
+  }
 
   const groups = (groupsRaw ?? []).filter((g) => {
-    const a = (g as { archived_at?: string | null }).archived_at;
-    const isArchived = a != null && String(a) !== "";
+    const isArchived = g.archived_at != null && String(g.archived_at) !== "";
     return archivedOnly ? isArchived : !isArchived;
   });
 

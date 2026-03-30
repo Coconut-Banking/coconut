@@ -10,11 +10,40 @@ async function linkMemberByEmail(userId: string) {
   if (!email) return;
 
   const db = getSupabase();
-  await db
+
+  // Only link member rows in NON-Splitwise groups that this user owns.
+  // Splitwise-sourced groups handle their own member linking during import.
+  // This prevents cross-user data leaks entirely.
+  const { data: ownedGroups } = await db
+    .from("groups")
+    .select("id, source")
+    .eq("owner_id", userId);
+
+  const safeGroupIds = new Set(
+    (ownedGroups ?? [])
+      .filter((g) => (g as { source?: string | null }).source !== "splitwise")
+      .map((g) => g.id)
+  );
+  if (safeGroupIds.size === 0) return;
+
+  const { data: candidates } = await db
     .from("group_members")
-    .update({ user_id: userId })
+    .select("id, group_id")
     .eq("email", email)
     .is("user_id", null);
+
+  const idsToLink = (candidates ?? [])
+    .filter((m) => m.group_id && safeGroupIds.has(m.group_id))
+    .map((m) => m.id);
+
+  if (idsToLink.length === 0) return;
+
+  for (const mid of idsToLink) {
+    await db
+      .from("group_members")
+      .update({ user_id: userId })
+      .eq("id", mid);
+  }
 }
 
 /**

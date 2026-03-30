@@ -65,7 +65,10 @@ export function useTransactions() {
     let cancelled = false;
 
     fetch("/api/plaid/status")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error("status check failed");
+        return res.json();
+      })
       .then(async (data) => {
         if (cancelled) return;
         if (!data.linked) {

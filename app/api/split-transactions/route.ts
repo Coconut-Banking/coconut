@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   const { data: tx, error: txError } = await db
     .from("transactions")
-    .select("id, amount, clerk_user_id")
+    .select("id, amount, clerk_user_id, iso_currency_code")
     .eq("id", transactionId)
     .eq("clerk_user_id", userId)
     .single();
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       group_id: groupId,
       transaction_id: transactionId,
       created_by: userId,
-      iso_currency_code: "USD",
+      iso_currency_code: (tx.iso_currency_code ?? "USD"),
     })
     .select("id")
     .single();

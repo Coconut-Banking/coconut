@@ -56,10 +56,11 @@ export async function GET() {
       const isLiability = liabilityTypes.has(type);
 
       // For depository, prefer balance_available (excludes pending debits)
-      const bal =
+      const nativeBal =
         !isLiability && a.balance_available != null
           ? Number(a.balance_available)
           : Number(a.balance_current) || 0;
+      const bal = convertCurrency(nativeBal, a.iso_currency_code ?? "USD", "USD");
 
       const iso = ((a.iso_currency_code ?? "USD") as string).toUpperCase();
       if (isLiability) {
@@ -100,6 +101,7 @@ export async function GET() {
       if (s.frequency === "semiannual") return acc + s.amount / 6;
       return acc + s.amount;
     }, 0);
+    const totalMonthlyRounded = Math.round(totalMonthly * 100) / 100;
 
     const upcomingBills = subs
       .filter((s) => s.nextDue)
@@ -134,7 +136,7 @@ export async function GET() {
 
     return NextResponse.json({
       netWorth: { assets, liabilities, total: assets - liabilities },
-      subscriptions: { totalMonthly, count: subs.length, upcomingBills },
+      subscriptions: { totalMonthly: totalMonthlyRounded, count: subs.length, upcomingBills },
       accounts: accountList,
       wallets,
     }, {

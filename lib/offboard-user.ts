@@ -52,6 +52,21 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
   }
   await db.from("subscriptions").delete().eq("clerk_user_id", clerkUserId);
 
+  // 5b. Clear any remaining subscription_transactions rows referencing this user's
+  //     transactions by transaction_id FK (may exist if subscription_id was null
+  //     or belonged to a different subscription record). Must happen before
+  //     deleting transactions to avoid ON DELETE RESTRICT FK violations.
+  const { data: userTxIds } = await db
+    .from("transactions")
+    .select("id")
+    .eq("clerk_user_id", clerkUserId);
+  if (userTxIds?.length) {
+    await db
+      .from("subscription_transactions")
+      .delete()
+      .in("transaction_id", userTxIds.map((r: { id: string }) => r.id));
+  }
+
   // 6. Delete transactions, accounts, plaid_items
   await db.from("transactions").delete().eq("clerk_user_id", clerkUserId);
   await db.from("accounts").delete().eq("clerk_user_id", clerkUserId);

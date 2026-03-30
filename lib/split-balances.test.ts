@@ -96,3 +96,77 @@ describe("getSuggestedSettlements", () => {
     expect(suggestions.every((s) => s.amount > 0)).toBe(true);
   });
 });
+
+describe("settlement CRUD lifecycle", () => {
+  it("partial settlement reduces balance proportionally", () => {
+    const paid = [{ member_id: "A", amount: 100 }];
+    const owed = [
+      { member_id: "A", amount: 50 },
+      { member_id: "B", amount: 50 },
+    ];
+    const paidSettlements = [{ payer_member_id: "B", amount: 25 }];
+    const receivedSettlements = [{ receiver_member_id: "A", amount: 25 }];
+    const balances = computeBalances(paid, owed, paidSettlements, receivedSettlements);
+    expect(Math.round((balances.get("A")?.total ?? 0) * 100) / 100).toBe(25);
+    expect(Math.round((balances.get("B")?.total ?? 0) * 100) / 100).toBe(-25);
+  });
+
+  it("full settlement zeroes both parties", () => {
+    const paid = [{ member_id: "A", amount: 89.50 }];
+    const owed = [
+      { member_id: "A", amount: 44.75 },
+      { member_id: "B", amount: 44.75 },
+    ];
+    const paidSettlements = [{ payer_member_id: "B", amount: 44.75 }];
+    const receivedSettlements = [{ receiver_member_id: "A", amount: 44.75 }];
+    const balances = computeBalances(paid, owed, paidSettlements, receivedSettlements);
+    expect(Math.round((balances.get("A")?.total ?? 0) * 100) / 100).toBe(0);
+    expect(Math.round((balances.get("B")?.total ?? 0) * 100) / 100).toBe(0);
+    const suggestions = getSuggestedSettlements(balances);
+    expect(suggestions).toHaveLength(0);
+  });
+
+  it("over-settlement flips balance direction", () => {
+    const paid = [{ member_id: "A", amount: 50 }];
+    const owed = [
+      { member_id: "A", amount: 25 },
+      { member_id: "B", amount: 25 },
+    ];
+    const paidSettlements = [{ payer_member_id: "B", amount: 30 }];
+    const receivedSettlements = [{ receiver_member_id: "A", amount: 30 }];
+    const balances = computeBalances(paid, owed, paidSettlements, receivedSettlements);
+    expect(Math.round((balances.get("A")?.total ?? 0) * 100) / 100).toBe(-5);
+    expect(Math.round((balances.get("B")?.total ?? 0) * 100) / 100).toBe(5);
+  });
+
+  it("multiple expenses between two people accumulate correctly", () => {
+    const paid = [
+      { member_id: "A", amount: 30 },
+      { member_id: "A", amount: 20 },
+    ];
+    const owed = [
+      { member_id: "A", amount: 15 },
+      { member_id: "B", amount: 15 },
+      { member_id: "A", amount: 10 },
+      { member_id: "B", amount: 10 },
+    ];
+    const balances = computeBalances(paid, owed, [], []);
+    expect(Math.round((balances.get("A")?.total ?? 0) * 100) / 100).toBe(25);
+    expect(Math.round((balances.get("B")?.total ?? 0) * 100) / 100).toBe(-25);
+  });
+
+  it("3-person group: settling one pair doesn't affect third", () => {
+    const paid = [{ member_id: "A", amount: 90 }];
+    const owed = [
+      { member_id: "A", amount: 30 },
+      { member_id: "B", amount: 30 },
+      { member_id: "C", amount: 30 },
+    ];
+    const paidSettlements = [{ payer_member_id: "B", amount: 30 }];
+    const receivedSettlements = [{ receiver_member_id: "A", amount: 30 }];
+    const balances = computeBalances(paid, owed, paidSettlements, receivedSettlements);
+    expect(Math.round((balances.get("A")?.total ?? 0) * 100) / 100).toBe(30);
+    expect(Math.round((balances.get("B")?.total ?? 0) * 100) / 100).toBe(0);
+    expect(Math.round((balances.get("C")?.total ?? 0) * 100) / 100).toBe(-30);
+  });
+});

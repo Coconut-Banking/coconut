@@ -5,6 +5,20 @@ import { getSupabase } from "@/lib/supabase";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
 import { rateLimit } from "@/lib/rate-limit";
 
+function detectImageFormat(buf: Buffer): string {
+  if (buf[0] === 0xFF && buf[1] === 0xD8) return "jpeg";
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return "png";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return "gif";
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return "webp";
+  const ftypOffset = buf.indexOf("ftyp");
+  if (ftypOffset >= 0 && ftypOffset <= 8) {
+    const brand = buf.slice(ftypOffset + 4, ftypOffset + 8).toString("ascii");
+    if (brand.startsWith("heic") || brand.startsWith("heix") || brand.startsWith("mif1")) return "heic";
+  }
+  return "unknown";
+}
+
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) {
@@ -33,8 +47,36 @@ export async function POST(req: NextRequest) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const base64 = buffer.toString("base64");
-  const mimeType = file.type || "image/png";
+  const rawMime = file.type || "image/png";
+  const detectedFormat = detectImageFormat(buffer);
+
+  console.log("[receipt-parse] file.name:", file.name, "file.type:", rawMime, "size:", file.size, "detected:", detectedFormat);
+
+  let finalBuffer: Buffer = buffer;
+  let mimeType = rawMime;
+
+  if (detectedFormat === "heic" || rawMime === "image/heic" || rawMime === "image/heif") {
+    try {
+      const sharp = (await import("sharp")).default;
+      finalBuffer = Buffer.from(await sharp(buffer).jpeg({ quality: 90 }).toBuffer());
+      mimeType = "image/jpeg";
+      console.log("[receipt-parse] converted HEIC to JPEG, new size:", finalBuffer.length);
+    } catch (convErr) {
+      console.error("[receipt-parse] HEIC conversion failed:", convErr);
+      return NextResponse.json(
+        { error: "Unsupported image format (HEIC). Please use JPEG or PNG." },
+        { status: 400 }
+      );
+    }
+  } else {
+    mimeType = detectedFormat === "jpeg" ? "image/jpeg"
+      : detectedFormat === "png" ? "image/png"
+      : detectedFormat === "gif" ? "image/gif"
+      : detectedFormat === "webp" ? "image/webp"
+      : rawMime;
+  }
+
+  const base64 = finalBuffer.toString("base64");
 
   // Parse with GPT-4o Vision
   let parsed;

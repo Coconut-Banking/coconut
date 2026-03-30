@@ -8,6 +8,8 @@ const isPublicRoute = createRouteMatcher([
   "/auth(.*)",
   "/_clerk(.*)",
   "/api/stripe/webhook",
+  "/api/stripe/connect/onboarding-return",
+  "/api/stripe/connect/onboarding-refresh",
   "/api/plaid/webhook",
   "/api/webhooks(.*)",
   "/api/gmail/callback",

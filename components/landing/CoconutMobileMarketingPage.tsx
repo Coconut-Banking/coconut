@@ -207,7 +207,7 @@ const ALL_BANK_TX: BankTx[] = [
     email:{ kind:"food", restaurant:"Hana Japanese Kitchen", deliveredTo:"2847 Mission St", items:["Spicy Ramen ×2","Vegetable Gyoza","Matcha Latte ×2"], deliveredAt:"Delivered 8:14 PM" } },
   { id:"b4", merchant:"Amazon",          logo:"amazon", amount:67.20,  date:"Mar 18", hint:"Split with Jordan?",    unsplit:true,
     suggestedPeople:["jordan"],
-    email:{ kind:"order", items:["Sony WH-1000XM5 Headphones","USB-C Hub (7-in-1)","Kindle Paperwhite Case"], deliveryDate:"Arrived Mar 20" } },
+    email:{ kind:"order", items:["USB-C Hub (7-in-1)","Phone Stand, Adjustable","Lightning Cable 6ft ×2"], deliveryDate:"Arrived Mar 20" } },
   { id:"b5", merchant:"Lyft",            logo:"lyft", amount:18.50,  date:"Mar 22", hint:"Split with Alex?",      unsplit:true,
     suggestedPeople:["alex"],
     email:{ kind:"ride", time:"9:14 PM", from:"Haight-Ashbury, Haight St", to:"SFO Terminal 2", duration:"38 min", distance:"14.2 mi", driver:"Priya S. · ⭐ 4.88" } },
@@ -2087,15 +2087,119 @@ function FriendDetail({ friend, onBack, onSettle }: { friend: FriendBalance; onB
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GROUP DATA & DETAIL
+// ─────────────────────────────────────────────────────────────────────────────
+interface GroupData {
+  id: string; name: string; members: PersonId[]; balance: number;
+  expenses: { id: string; label: string; amount: number; date: string; logo: MerchantLogoKey; paidBy: PersonId }[];
+}
+
+const GROUPS: GroupData[] = [
+  {
+    id: "g1", name: "Tahoe Trip", members: ["you", "alex", "jordan", "sam"], balance: -24.00,
+    expenses: [
+      { id: "ge1", label: "Airbnb, Tahoe",    amount: 480.00, date: "Mar 15", logo: "airbnb",  paidBy: "alex" },
+      { id: "ge2", label: "Ski Rentals",       amount: 120.00, date: "Mar 16", logo: "default", paidBy: "jordan" },
+      { id: "ge3", label: "Nobu Restaurant",   amount: 248.00, date: "Mar 20", logo: "nobu",    paidBy: "you" },
+    ],
+  },
+  {
+    id: "g2", name: "Roommates", members: ["you", "maya", "ryan"], balance: 106.50,
+    expenses: [
+      { id: "ge4", label: "Electric Bill",  amount: 142.00, date: "Mar 1",  logo: "default", paidBy: "you" },
+      { id: "ge5", label: "Internet",       amount: 89.00,  date: "Mar 1",  logo: "default", paidBy: "maya" },
+      { id: "ge6", label: "Groceries",      amount: 67.50,  date: "Mar 10", logo: "whole_foods", paidBy: "you" },
+    ],
+  },
+];
+
+function GroupDetail({ group, onBack }: { group: GroupData; onBack: () => void }) {
+  const C = React.useContext(ThemeCtx);
+  const pos = group.balance >= 0;
+
+  return (
+    <motion.div initial={{ x:"100%" }} animate={{ x:0 }} exit={{ x:"100%" }} transition={{ type:"spring", damping:28, stiffness:260 }}
+      style={{ position:"absolute", inset:0, background:C.bg, zIndex:10, display:"flex", flexDirection:"column" }}>
+      <div style={{ padding:"10px 20px 0", display:"flex", alignItems:"center" }}>
+        <motion.button whileTap={{ scale:0.9 }} onClick={onBack} style={{ border:"none", background:"none", cursor:"pointer", padding:"8px 10px 8px 0", display:"flex", alignItems:"center", gap:4 }}>
+          <ChevronLeft size={18} color={C.accent} />
+          <span style={{ fontSize:15, color:C.accent, fontWeight:600 }}>Back</span>
+        </motion.button>
+      </div>
+
+      <div style={{ padding:"20px 20px 24px", display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
+        <div style={{ width:72, height:72, borderRadius:22, background:C.accent+"15", border:`2px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <Users size={32} color={C.accent} />
+        </div>
+        <div style={{ textAlign:"center" }}>
+          <p style={{ fontSize:21, fontWeight:800, color:C.label, letterSpacing:"-0.4px" }}>{group.name}</p>
+          <p style={{ fontSize:13, color:C.label3, marginTop:3 }}>{group.members.length} members · {group.expenses.length} expense{group.expenses.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div style={{ padding:"14px 32px", borderRadius:20, background: pos ? C.greenBg : C.redBg, border:`1px solid ${pos ? C.green + "35" : C.red + "35"}` }}>
+          <p style={{ fontSize:34, fontWeight:900, letterSpacing:"-1.5px", color: pos ? C.green : C.red, textAlign:"center", fontVariantNumeric:"tabular-nums" }}>
+            {pos ? "+" : "−"}${Math.abs(group.balance).toFixed(2)}
+          </p>
+          <p style={{ fontSize:12, marginTop:4, color: pos ? C.green : C.red, opacity:0.8, textAlign:"center" }}>
+            {pos ? "you are owed" : "you owe"}
+          </p>
+        </div>
+      </div>
+
+      <div style={{ flex:1, overflowY:"auto", padding:"0 16px 16px", scrollbarWidth:"none" }}>
+        <SectionLabel>Members</SectionLabel>
+        <Card style={{ marginBottom:16 }}>
+          {group.members.map((m, i) => {
+            const c = getContact(m);
+            return (
+              <div key={m}>
+                <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px" }}>
+                  <Avatar id={m} size={36} />
+                  <p style={{ flex:1, fontSize:14, fontWeight:600, color:C.label }}>{c.full}</p>
+                  {m === "you" && <span style={{ fontSize:11, fontWeight:700, color:C.accent, background:C.accent+"18", padding:"3px 10px", borderRadius:99 }}>You</span>}
+                </div>
+                {i < group.members.length - 1 && <Sep ml={64} />}
+              </div>
+            );
+          })}
+        </Card>
+
+        <SectionLabel>Expenses</SectionLabel>
+        <Card>
+          {group.expenses.map((exp, i) => {
+            const payer = getContact(exp.paidBy);
+            return (
+              <div key={exp.id}>
+                <div style={{ display:"flex", alignItems:"center", gap:12, padding:"13px 16px" }}>
+                  <div style={{ width:40, height:40, borderRadius:C.radius, background:C.card2, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <MerchantLogo brand={exp.logo} size={26} />
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:14, fontWeight:600, color:C.label }}>{exp.label}</p>
+                    <p style={{ fontSize:12, color:C.label3, marginTop:1 }}>{payer.name} paid · {exp.date}</p>
+                  </div>
+                  <p style={{ fontSize:15, fontWeight:800, color:C.label, fontVariantNumeric:"tabular-nums" }}>${exp.amount.toFixed(2)}</p>
+                </div>
+                {i < group.expenses.length - 1 && <Sep />}
+              </div>
+            );
+          })}
+        </Card>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HOME SCREEN — fully redesigned
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, onSelectTx, onSeeActivity }: {
+function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, onSelectTx, onSeeActivity, onGroup }: {
   onSettle: (p: PersonId, a: number) => void;
   onAdd: (prefill?: { merchant: string; amount: number }) => void;
   onFriend: (f: FriendBalance) => void;
   onSeeAllTx: () => void;
   onSelectTx: (tx: BankTx) => void;
   onSeeActivity: () => void;
+  onGroup: (g: GroupData) => void;
 }) {
   const C = React.useContext(ThemeCtx);
   const [dismissedBank, setDismissedBank] = useState<string[]>([]);
@@ -2147,10 +2251,6 @@ function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, 
             </span>
           </div>
 
-          <p style={{ fontSize:13, color:C.label2, marginBottom:22, letterSpacing:"-0.1px" }}>
-            {isPos ? "overall. Keep it up." : "to friends. Settle up."}
-          </p>
-
           {/* Mini stat pills */}
           <div style={{ display:"flex", gap:10 }}>
             {[
@@ -2194,9 +2294,9 @@ function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, 
                       <MerchantLogo brand={charge.logo} size={26} />
                       {charge.email && <div style={{ position:"absolute", bottom:-3, right:-3, width:14, height:14, borderRadius:7, background:C.blue, display:"flex", alignItems:"center", justifyContent:"center" }}><Mail size={7} color="white" /></div>}
                     </div>
-                    <button onClick={e => { e.stopPropagation(); setDismissedBank(d => [...d, charge.id]); }} style={{ border:"none", background:"none", cursor:"pointer", padding:4, opacity:0.35 }}>
+                    <div role="button" tabIndex={0} onClick={e => { e.stopPropagation(); setDismissedBank(d => [...d, charge.id]); }} onKeyDown={e => { if (e.key === "Enter") { e.stopPropagation(); setDismissedBank(d => [...d, charge.id]); } }} style={{ border:"none", background:"none", cursor:"pointer", padding:4, opacity:0.35 }}>
                       <X size={12} color={C.label3} />
-                    </button>
+                    </div>
                   </div>
                   <p style={{ fontSize:13, fontWeight:700, color:C.label, marginBottom:2 }}>{charge.merchant}</p>
                   <p style={{ fontSize:23, fontWeight:900, color:C.label, letterSpacing:"-1px", marginBottom:13, fontVariantNumeric:"tabular-nums" }}>${charge.amount.toFixed(2)}</p>
@@ -2230,7 +2330,7 @@ function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, 
             
             return (
               <div key={item.id || item.personId}>
-                <motion.button whileTap={{ scale:0.99 }} onClick={() => !isGroup && onFriend(item)}
+                <motion.button whileTap={{ scale:0.99 }} onClick={() => isGroup ? onGroup(GROUPS.find(g => g.id === item.id)!) : onFriend(item)}
                   style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
                   {isGroup ? (
                     <div style={{ width:44, height:44, borderRadius:14, background:C.accent+"15", border:`1px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -2402,7 +2502,7 @@ function AddFriendModal({ onClose }: { onClose: () => void }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FRIENDS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-function FriendsScreen({ onFriend, onAddGroup }: { onFriend: (f: FriendBalance) => void; onAddGroup: () => void }) {
+function FriendsScreen({ onFriend, onAddGroup, onGroup }: { onFriend: (f: FriendBalance) => void; onAddGroup: () => void; onGroup: (g: GroupData) => void }) {
   const C = React.useContext(ThemeCtx);
   return (
     <div style={{ height:"100%", overflowY:"auto", background:C.bg, scrollbarWidth:"none" }}>
@@ -2416,24 +2516,21 @@ function FriendsScreen({ onFriend, onAddGroup }: { onFriend: (f: FriendBalance) 
       <div style={{ padding:"0 16px 20px" }}>
         <SectionLabel>Groups</SectionLabel>
         <Card>
-          {[
-            { id:"g1", name:"Tahoe Trip", members:4, updated:"2 days ago", balance:-24.00 },
-            { id:"g2", name:"Roommates", members:3, updated:"1 week ago", balance:106.50 },
-          ].map((g, i) => (
+          {GROUPS.map((g, i) => (
             <div key={g.id}>
-              <motion.button whileTap={{ scale:0.99 }} style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
+              <motion.button whileTap={{ scale:0.99 }} onClick={() => onGroup(g)} style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
                 <div style={{ width:44, height:44, borderRadius:14, background:C.accent+"15", border:`1px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
                   <Users size={20} color={C.accent} />
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <p style={{ fontSize:15, fontWeight:700, color:C.label }}>{g.name}</p>
-                  <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>{g.members} members · {g.updated}</p>
+                  <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>{g.members.length} members · {g.expenses.length} expenses</p>
                 </div>
                 <p style={{ fontSize:16, fontWeight:800, color: g.balance >= 0 ? C.green : C.red, fontVariantNumeric:"tabular-nums" }}>
                   {g.balance >= 0 ? "+" : "−"}${Math.abs(g.balance).toFixed(2)}
                 </p>
               </motion.button>
-              {i < 1 && <Sep ml={73} />}
+              {i < GROUPS.length - 1 && <Sep ml={73} />}
             </div>
           ))}
         </Card>
@@ -2657,6 +2754,7 @@ export function CoconutMobileMarketingPage() {
 
   const [screen, setScreen] = useState<"home"|"friends"|"activity"|"account">("home");
   const [friendDetail, setFriendDetail] = useState<FriendBalance|null>(null);
+  const [groupDetail, setGroupDetail] = useState<GroupData|null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
@@ -2755,35 +2853,13 @@ export function CoconutMobileMarketingPage() {
   const features: Array<{
     Icon: LucideIcon;
     label: string;
-    desc: string;
     tag: string;
-    accent: {
-      icon: string;
-      iconWellBg: string;
-      iconWellBorder: string;
-      cardBg: string;
-      cardBgActive: string;
-      border: string;
-      borderActive: string;
-      ring: string;
-    };
     demo: () => void;
   }> = [
     {
       Icon: Zap,
-      label: "Paid back before you're home",
-      desc: "Tap to Pay settles the debt the moment the bill comes. No Venmo messages, no awkward follows.",
+      label: "Collect in person, instantly",
       tag: "Tap to Pay",
-      accent: {
-        icon: "#2f6f38",
-        iconWellBg: "rgba(58, 125, 68, 0.14)",
-        iconWellBorder: "rgba(58, 125, 68, 0.35)",
-        cardBg: "linear-gradient(135deg, rgba(58, 125, 68, 0.07) 0%, rgba(248, 245, 242, 0.95) 48%, #faf9f7 100%)",
-        cardBgActive: "linear-gradient(135deg, rgba(58, 125, 68, 0.16) 0%, rgba(240, 247, 242, 0.98) 55%, #f0f7f2 100%)",
-        border: "rgba(58, 125, 68, 0.22)",
-        borderActive: "rgba(58, 125, 68, 0.45)",
-        ring: "rgba(58, 125, 68, 0.12)",
-      },
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => handleSettle("alex", 86.0));
@@ -2791,62 +2867,31 @@ export function CoconutMobileMarketingPage() {
     },
     {
       Icon: Landmark,
-      label: "Your bank already knows",
-      desc: "Link once. Every Uber, dinner, and Amazon auto-matches your receipt and fills in who was there.",
-      tag: "Auto-linked",
-      accent: {
-        icon: "#1d4ed8",
-        iconWellBg: "rgba(37, 99, 235, 0.12)",
-        iconWellBorder: "rgba(37, 99, 235, 0.32)",
-        cardBg: "linear-gradient(135deg, rgba(37, 99, 235, 0.06) 0%, rgba(248, 245, 242, 0.96) 50%, #faf9f7 100%)",
-        cardBgActive: "linear-gradient(135deg, rgba(37, 99, 235, 0.14) 0%, rgba(238, 242, 255, 0.95) 52%, #eef2ff 100%)",
-        border: "rgba(37, 99, 235, 0.2)",
-        borderActive: "rgba(37, 99, 235, 0.42)",
-        ring: "rgba(37, 99, 235, 0.1)",
-      },
+      label: "Every charge, auto-imported",
+      tag: "Bank connection",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => {
-          const tx = ALL_BANK_TX.find((t) => t.id === "b2")!;
+          setShowAllTx(true);
+        });
+      },
+    },
+    {
+      Icon: Mail,
+      label: "Itemized splits, zero effort",
+      tag: "Email receipts",
+      demo: () => {
+        resetPhoneDemo();
+        scheduleDemoOpen(() => {
+          const tx = ALL_BANK_TX.find((t) => t.id === "b3")!;
           setSelectedTx(tx);
         });
       },
     },
     {
-      Icon: ShieldCheck,
-      label: "Nothing slips through",
-      desc: "Shared history, smart nudges, and a running tab so you do not lose track or ask twice.",
-      tag: "Never forget",
-      accent: {
-        icon: "#6d28d9",
-        iconWellBg: "rgba(109, 40, 217, 0.11)",
-        iconWellBorder: "rgba(109, 40, 217, 0.3)",
-        cardBg: "linear-gradient(135deg, rgba(109, 40, 217, 0.06) 0%, rgba(248, 245, 242, 0.96) 50%, #faf9f7 100%)",
-        cardBgActive: "linear-gradient(135deg, rgba(109, 40, 217, 0.13) 0%, rgba(245, 243, 255, 0.98) 52%, #f5f3ff 100%)",
-        border: "rgba(109, 40, 217, 0.2)",
-        borderActive: "rgba(109, 40, 217, 0.4)",
-        ring: "rgba(109, 40, 217, 0.1)",
-      },
-      demo: () => {
-        resetPhoneDemo();
-        scheduleDemoOpen(() => handleAdd({ merchant: "Dinner at Nobu", amount: 124.5 }));
-      },
-    },
-    {
-      Icon: Camera,
-      label: "Receipt to line items",
-      desc: "Scan a receipt, assign each line to whoever shared it, roll totals into your balances.",
+      Icon: ScanLine,
+      label: "Snap a photo, split the bill",
       tag: "Receipt scan",
-      accent: {
-        icon: "#c2410c",
-        iconWellBg: "rgba(234, 88, 12, 0.12)",
-        iconWellBorder: "rgba(234, 88, 12, 0.32)",
-        cardBg: "linear-gradient(135deg, rgba(234, 88, 12, 0.06) 0%, rgba(248, 245, 242, 0.96) 50%, #faf9f7 100%)",
-        cardBgActive: "linear-gradient(135deg, rgba(234, 88, 12, 0.14) 0%, rgba(255, 247, 237, 0.98) 52%, #fff7ed 100%)",
-        border: "rgba(234, 88, 12, 0.2)",
-        borderActive: "rgba(234, 88, 12, 0.42)",
-        ring: "rgba(234, 88, 12, 0.1)",
-      },
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => setShowReceiptScan(true));
@@ -2882,7 +2927,9 @@ export function CoconutMobileMarketingPage() {
           </div>
 
           <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", flexWrap:"wrap", gap:8 }}>
-            <span
+            <button
+              type="button"
+              onClick={() => {}}
               style={{
                 display:"inline-flex",
                 alignItems:"center",
@@ -2899,203 +2946,199 @@ export function CoconutMobileMarketingPage() {
                 lineHeight:1.25,
                 maxWidth:"min(100%, 220px)",
                 textAlign:"left",
+                cursor:"pointer",
               }}
             >
               <AppleLogo size={18} color={LP.text} />
               {isMobile ? "Get app" : "App Store"}
-            </span>
+            </button>
           </div>
         </nav>
 
         {/* ══ HERO ══ */}
         <div style={{
-          display:"flex", alignItems:isMobile ? "stretch" : "center", justifyContent:"center",
+          display:"flex",
+          alignItems: isMobile ? "center" : "center",
+          justifyContent:"center",
           flexDirection:isMobile ? "column" : "row",
-          gap:isMobile ? 26 : 80, padding:isMobile ? "20px 14px 36px" : "32px 56px 64px",
-          maxWidth:1300, margin:"0 auto",
+          gap:isMobile ? 20 : 64,
+          padding:isMobile ? "20px 18px 28px" : "0 clamp(48px, 6vw, 120px)",
+          maxWidth: 1400,
+          margin:"0 auto",
           minHeight:isMobile ? "auto" : "calc(100vh - 66px)",
           position:"relative", zIndex:1,
+          overflow: isMobile ? "visible" : "hidden",
         }}>
 
-          {/* ── LEFT: Copy ── */}
-          <div style={{ flex:1, minWidth:0, maxWidth:isMobile ? "100%" : 480 }}>
+          {/* ── LEFT: Copy + pills ── */}
+          <div style={{
+            flex: isMobile ? "unset" : "1 1 0",
+            minWidth: 0,
+            maxWidth: isMobile ? "100%" : "none",
+            padding: isMobile ? 0 : "40px 0",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: isMobile ? "center" : "flex-start",
+            textAlign: isMobile ? "center" : "left",
+          }}>
 
-            {/* Eyebrow: one clear value line (lighter than headline so hierarchy reads: proof → headline → detail) */}
-            <motion.p
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              style={{
-                fontSize: isMobile ? 14 : 15,
-                fontWeight: 600,
-                color: LP.textSoft,
-                lineHeight: 1.45,
-                margin: "0 0 16px",
-                maxWidth: isMobile ? "100%" : 400,
-                letterSpacing: "-0.02em",
-              }}
-            >
-              The fastest, easiest way to split and settle with friends.
-            </motion.p>
-
-            {/* Headline */}
-            <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.55, delay:0.05 }}>
-              <h1 style={{ fontSize:isMobile ? 44 : isTablet ? 50 : 56, fontWeight:900, color:LP.text, lineHeight:1.04, letterSpacing:isMobile ? "-1.8px" : "-2.8px", margin:"0 0 18px" }}>
-                Splitting dinner<br />
-                <span style={{ color:LP.gold }}>shouldn&apos;t take longer than dinner.</span>
-              </h1>
-              <p style={{ fontSize:isMobile ? 15 : 16, color:LP.textSoft, margin:"0 0 24px", lineHeight:1.65, maxWidth:isMobile ? "100%" : 420 }}>
-                One app for bank charges, receipt lines, shared balances, and Tap to Pay when you want the tab closed now.
-              </p>
-            </motion.div>
-
-            {/* App Store — primary CTA above features (Cashmere card + Coconut green accent) */}
+            {/* CTA — first thing, stands out */}
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.1 }}
-              style={{ marginBottom: isMobile ? 20 : 28 }}
+              initial={{ opacity:0, y:10 }}
+              animate={{ opacity:1, y:0 }}
+              transition={{ duration:0.4 }}
+              style={{ marginBottom: isMobile ? 20 : 36 }}
             >
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 16,
-                  padding: isMobile ? "14px 14px 14px 12px" : "16px 22px 16px 18px",
-                  background: LP.bgCard,
-                  borderRadius: 16,
-                  border: "1px solid rgba(58, 125, 68, 0.28)",
-                  boxShadow: "0 4px 0 rgba(58, 125, 68, 0.06), 0 16px 48px rgba(43, 42, 41, 0.1), 0 6px 20px rgba(58, 125, 68, 0.08)",
-                  width: isMobile ? "100%" : "auto",
-                  maxWidth: "100%",
-                }}
-              >
-                <div
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 14,
-                    background: "linear-gradient(145deg, rgba(58, 125, 68, 0.12) 0%, rgba(58, 125, 68, 0.05) 100%)",
-                    border: "1px solid rgba(58, 125, 68, 0.22)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.75)",
-                  }}
-                >
-                  <AppleLogo size={26} color={LP.text} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 11, fontWeight: 800, color: "#3a7d44", textTransform: "uppercase", letterSpacing: "0.12em", margin: "0 0 6px" }}>
-                    Get the app
-                  </p>
-                  <p style={{ fontSize: isMobile ? 18 : 21, fontWeight: 800, color: LP.text, lineHeight: 1.2, letterSpacing: "-0.4px", margin: 0 }}>
-                    Download on the App Store
-                  </p>
-                  <p style={{ fontSize: 12, color: LP.textSoft, lineHeight: 1.4, margin: "8px 0 0" }}>iPhone · splits, receipts, settle</p>
-                </div>
+              <div style={{
+                display:"inline-flex", alignItems:"center", gap: isMobile ? 10 : 12,
+                padding: isMobile ? "12px 20px" : "16px 32px",
+                background:LP.text,
+                borderRadius: isMobile ? 14 : 16,
+                cursor:"pointer",
+                boxShadow:"0 8px 32px rgba(43,42,41,0.22), 0 2px 8px rgba(43,42,41,0.10)",
+              }}>
+                <AppleLogo size={isMobile ? 18 : 22} color={LP.bg} />
+                <span style={{ fontSize:isMobile ? 14 : 18, fontWeight:800, color:LP.bg, letterSpacing:"-0.02em" }}>Download on the App Store</span>
               </div>
             </motion.div>
 
-            {/* Feature cards */}
-            <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.55, delay:0.16 }}
-              style={{ display:"flex", flexDirection:"column", gap:isMobile ? 10 : 12, marginBottom:isMobile ? 18 : 34 }}>
-              {features.map((f, i) => {
-                const active = activeFeature === i;
-                return (
-                  <motion.button
-                    key={f.label}
-                    type="button"
-                    aria-current={active ? "true" : undefined}
-                    aria-label={`${f.tag}: ${f.label}. Plays this feature in the phone demo.`}
-                    whileHover={isMobile ? {} : { x: 4, y: -2 }}
-                    whileTap={{ scale: 0.985 }}
-                    onClick={() => {
-                      setActiveFeature(i);
-                      f.demo();
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: isMobile ? 10 : 14,
-                      padding: isMobile ? "13px 14px" : "16px 18px",
-                      borderRadius: 16,
-                      cursor: "pointer",
-                      background: active
-                        ? "linear-gradient(135deg, rgba(58, 125, 68, 0.11) 0%, rgba(248, 245, 242, 0.98) 55%, #f7f3ee 100%)"
-                        : "linear-gradient(135deg, rgba(58, 125, 68, 0.05) 0%, rgba(248, 245, 242, 0.96) 55%, #faf8f5 100%)",
-                      border: `2px solid ${active ? "rgba(58, 125, 68, 0.42)" : "rgba(58, 125, 68, 0.24)"}`,
-                      boxShadow: active
-                        ? "0 0 0 1px rgba(255,255,255,0.65) inset, 0 0 0 3px rgba(58, 125, 68, 0.14), 0 18px 44px rgba(43, 42, 41, 0.1), 0 10px 28px -6px rgba(43, 42, 41, 0.12)"
-                        : "0 1px 0 rgba(255,255,255,0.88) inset, 0 12px 36px rgba(43, 42, 41, 0.08), 0 4px 14px rgba(43, 42, 41, 0.05)",
-                      textAlign: "left",
-                      transition: "all 0.22s ease",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 11,
-                        flexShrink: 0,
-                        background: active ? "rgba(58, 125, 68, 0.14)" : "rgba(58, 125, 68, 0.08)",
-                        border: `1.5px solid ${active ? "rgba(58, 125, 68, 0.35)" : "rgba(58, 125, 68, 0.22)"}`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        boxShadow: active
-                          ? "0 6px 20px rgba(58, 125, 68, 0.16), inset 0 1px 0 rgba(255,255,255,0.9)"
-                          : "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 12px rgba(43, 42, 41, 0.06)",
-                        transition: "all 0.22s ease",
-                      }}
-                    >
-                      <f.Icon size={isMobile ? 16 : 18} color="#3a7d44" strokeWidth={2.1} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: isMobile ? 13 : 14, fontWeight: 700, color: LP.text, margin: "0 0 2px", lineHeight: 1.3 }}>{f.label}</p>
-                      <p style={{ fontSize: isMobile ? 11 : 12, color: LP.textSoft, margin: 0, lineHeight: 1.5 }}>{f.desc}</p>
-                    </div>
-                    {!isMobile && <ChevronRight size={16} color={active ? "#3a7d44" : LP.textMuted} style={{ opacity: active ? 0.95 : 0.7, flexShrink: 0, marginTop: 2 }} />}
-                  </motion.button>
-                );
-              })}
+            <motion.div
+              initial={{ opacity:0, y:20 }}
+              animate={{ opacity:1, y:0 }}
+              transition={{ duration:0.55, delay:0.06 }}
+            >
+              <h1 style={{
+                fontSize: isNarrowMobile ? 32 : isMobile ? 38 : isTablet ? 52 : "clamp(4rem, 6vw, 5.5rem)",
+                fontWeight: 900,
+                color: LP.text,
+                lineHeight: isMobile ? 1.05 : 0.98,
+                letterSpacing: isMobile ? "-1.2px" : "-4px",
+                margin: isMobile ? "0 0 14px" : "0 0 20px",
+              }}>
+                Splitting dinner{!isMobile && <br />}
+                {isMobile && " "}
+                <span style={{ color:LP.gold }}>shouldn&apos;t take{!isMobile && <br />}{isMobile && " "}longer than dinner.</span>
+              </h1>
+              <p style={{ fontSize:isMobile ? 14 : 18, color:LP.textSoft, margin: isMobile ? "0 auto 24px" : "0 0 32px", lineHeight:1.5, maxWidth:isMobile ? 340 : 520 }}>
+                One app for bank charges, receipt lines, shared balances, and Tap to Pay when you want the tab closed now
+              </p>
             </motion.div>
 
+            {/* Feature pills — desktop only (mobile renders below phone) */}
+            {!isMobile && (
+              <>
+                <motion.div
+                  initial={{ opacity:0, y:10 }}
+                  animate={{ opacity:1, y:0 }}
+                  transition={{ duration:0.45, delay:0.14 }}
+                  style={{
+                    display:"flex",
+                    alignItems:"center",
+                    gap: 10,
+                    flexWrap:"wrap",
+                  }}
+                >
+                  {features.map((f, i) => {
+                    const active = activeFeature === i;
+                    return (
+                      <motion.button
+                        key={f.tag}
+                        type="button"
+                        aria-current={active ? "true" : undefined}
+                        aria-label={`${f.tag}: ${f.label}. Plays this feature in the phone demo.`}
+                        whileTap={{ scale: 0.96 }}
+                        onClick={() => {
+                          setActiveFeature(i);
+                          f.demo();
+                        }}
+                        style={{
+                          display:"flex",
+                          alignItems:"center",
+                          gap: 9,
+                          padding: "12px 22px",
+                          borderRadius: 999,
+                          cursor:"pointer",
+                          background: active ? LP.text : LP.bgCard,
+                          border: `1.5px solid ${active ? LP.text : LP.border}`,
+                          boxShadow: active ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
+                          transition:"all 0.2s ease",
+                        }}
+                      >
+                        <f.Icon size={17} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
+                        <span style={{
+                          fontSize: 15,
+                          fontWeight: active ? 700 : 500,
+                          color: active ? LP.bg : LP.textSoft,
+                          letterSpacing:"-0.01em",
+                          transition:"all 0.2s ease",
+                        }}>
+                          {f.tag}
+                        </span>
+                      </motion.button>
+                    );
+                  })}
+                </motion.div>
+
+                <AnimatePresence mode="wait">
+                  <motion.p
+                    key={activeFeature}
+                    initial={{ opacity:0, y:6 }}
+                    animate={{ opacity:1, y:0 }}
+                    exit={{ opacity:0, y:-6 }}
+                    transition={{ duration:0.2 }}
+                    style={{
+                      fontSize: 15,
+                      color: LP.textMuted,
+                      marginTop: 14,
+                      fontWeight: 500,
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    {activeFeature != null ? features[activeFeature]?.label : null}
+                  </motion.p>
+                </AnimatePresence>
+              </>
+            )}
           </div>
 
           {/* ── RIGHT: Phone demo ── */}
-          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0, width:isMobile ? "100%" : "auto" }}>
-            {/* Live badge */}
-            <motion.div initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
-              style={{ display:"flex", alignItems:"center", gap:8, marginBottom:18 }}>
-              <motion.div
-                animate={{ opacity:[0.92,1,0.92] }}
-                transition={{ duration:2.2, repeat:Infinity }}
-                style={{
-                  display:"flex",
-                  alignItems:"center",
-                  gap:8,
-                  padding:"7px 16px",
-                  borderRadius:999,
-                  background:LP.bgCard,
-                  border:`1px solid ${LP.border}`,
-                  boxShadow:LP.shadowMd,
-                }}
-              >
-                <motion.div
-                  animate={{ scale:[1,1.35,1] }}
-                  transition={{ duration:1.8, repeat:Infinity }}
-                  style={{ width:8, height:8, borderRadius:4, background:"#3a7d44", boxShadow:"0 0 0 3px rgba(58,125,68,0.2)" }}
-                />
-                <span style={{ fontSize:12, fontWeight:800, color:LP.text, letterSpacing:"-0.02em" }}>Live demo</span>
-              </motion.div>
+          <div style={{
+            flex: isMobile ? "unset" : "0 0 auto",
+            display:"flex",
+            flexDirection:"column",
+            alignItems:"center",
+            justifyContent:"center",
+            width: isMobile ? "100%" : "auto",
+          }}>
+            <motion.div
+              initial={{ opacity:0 }}
+              animate={{ opacity:1 }}
+              transition={{ delay:0.8, duration:0.4 }}
+              style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}
+            >
+              <div style={{
+                display:"inline-flex", alignItems:"center", gap:7,
+                padding:"6px 14px",
+                borderRadius:999,
+                background:"rgba(61,142,98,0.08)",
+                border:"1px solid rgba(61,142,98,0.2)",
+              }}>
+                <div style={{ position:"relative", width:8, height:8 }}>
+                  <motion.div
+                    animate={{ scale:[1, 2, 1], opacity:[0.5, 0, 0.5] }}
+                    transition={{ duration:2, repeat:Infinity, ease:"easeInOut" }}
+                    style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#3D8E62" }}
+                  />
+                  <div style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#3D8E62" }} />
+                </div>
+                <span style={{ fontSize:13, fontWeight:700, color:"#3D8E62", letterSpacing:"-0.01em" }}>Live Demo</span>
+              </div>
+              <span style={{ fontSize:13, color:LP.textMuted }}>· Tap anything</span>
             </motion.div>
-
-            {/* Scaled phone */}
             <motion.div initial={{ opacity:0, y:36, scale:0.93 }} animate={{ opacity:1, y:0, scale:1 }}
               transition={{ duration:0.72, delay:0.12, type:"spring", damping:22 }}
-              style={{ position:"relative", width:393 * phoneScale, height:852 * phoneScale, flexShrink:0, marginTop:isMobile ? 4 : 0 }}>
+              style={{ position:"relative", width:393 * phoneScale, height:852 * phoneScale, flexShrink:0 }}>
               <div style={{ position:"absolute", top:0, left:0, width:393, height:852, transform:`scale(${phoneScale})`, transformOrigin:"0 0" }}>
                 <PhoneFrame>
                   {/* Status bar */}
@@ -3118,14 +3161,15 @@ export function CoconutMobileMarketingPage() {
                     <AnimatePresence mode="wait">
                       <motion.div key={screen} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.15 }}
                         style={{ position:"absolute", inset:0, paddingTop:56, paddingBottom:84 }}>
-                        {screen === "home" && <HomeScreen onSettle={handleSettle} onAdd={handleAdd} onFriend={f => setFriendDetail(f)} onSeeAllTx={() => setShowAllTx(true)} onSelectTx={setSelectedTx} onSeeActivity={() => setScreen("activity")} />}
-                        {screen === "friends" && <FriendsScreen onFriend={f => setFriendDetail(f)} onAddGroup={() => setShowAddFriend(true)} />}
+                        {screen === "home" && <HomeScreen onSettle={handleSettle} onAdd={handleAdd} onFriend={f => setFriendDetail(f)} onSeeAllTx={() => setShowAllTx(true)} onSelectTx={setSelectedTx} onSeeActivity={() => setScreen("activity")} onGroup={g => setGroupDetail(g)} />}
+                        {screen === "friends" && <FriendsScreen onFriend={f => setFriendDetail(f)} onAddGroup={() => setShowAddFriend(true)} onGroup={g => setGroupDetail(g)} />}
                         {screen === "activity" && <ActivityScreen onAdd={() => handleAdd()} />}
                         {screen === "account" && <AccountScreen />}
                       </motion.div>
                     </AnimatePresence>
 
                     <AnimatePresence>{friendDetail && <FriendDetail friend={friendDetail} onBack={() => setFriendDetail(null)} onSettle={handleSettle} />}</AnimatePresence>
+                    <AnimatePresence>{groupDetail && <GroupDetail group={groupDetail} onBack={() => setGroupDetail(null)} />}</AnimatePresence>
                     <AnimatePresence>{showAllTx && <AllTxSheet onClose={() => setShowAllTx(false)} onSplit={tx => { handleAdd({ merchant:tx.merchant, amount:tx.amount }); setShowAllTx(false); }} />}</AnimatePresence>
                     <AnimatePresence>
                       {showAddMenu && (
@@ -3180,429 +3224,97 @@ export function CoconutMobileMarketingPage() {
                 </PhoneFrame>
               </div>
             </motion.div>
-
-            {/* Hints */}
-            {!isMobile && <div style={{ display:"flex", gap:18, marginTop:18, flexWrap:"wrap", justifyContent:"center" }}>
-              {["Tap a charge, see receipt", "Tap a friend, settle now", "+ to add expense or scan receipt"].map(h => (
-                <span key={h} style={{ fontSize:11, color:LP.textMuted, opacity:0.6 }}>{h}</span>
-              ))}
-            </div>}
           </div>
-        </div>
 
-        {/* Tap to Pay on iPhone (sellers): mirrors prior landing narrative, Cashmere chrome, no em dashes */}
-        <section
-          id="feature-tap-to-pay"
-          aria-labelledby="tap-to-pay-section-title"
-          style={{
-            borderTop: `1px solid ${LP.border}`,
-            background: LP.bgCard,
-            padding: isMobile ? "40px 16px 46px" : "56px 32px 64px",
-            position: "relative",
-            zIndex: 1,
-            scrollMarginTop: 88,
-          }}
-        >
-          <div
-            style={{
-              maxWidth: 1100,
-              margin: "0 auto",
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: isMobile ? 30 : 48,
-            }}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              style={{ flex: "1 1 280px", display: "flex", justifyContent: "center" }}
-            >
-              <div style={{ position: "relative", width: "100%", maxWidth: 300 }}>
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: -16,
-                    borderRadius: 36,
-                    background: "rgba(58, 125, 68, 0.08)",
-                    filter: "blur(28px)",
-                  }}
-                />
-                <div
-                  style={{
-                    position: "relative",
-                    borderRadius: 28,
-                    border: `2px solid ${LP.goldBorder}`,
-                    background: "linear-gradient(165deg, #f5f1eb 0%, #ebe6df 100%)",
-                    padding: 8,
-                    boxShadow: `${LP.shadowMd}, 0 0 0 1px rgba(58,125,68,0.06)`,
-                  }}
-                >
-                  <div
-                    style={{
-                      borderRadius: 22,
-                      overflow: "hidden",
-                      background: "linear-gradient(180deg, #faf9f7 0%, #f0ebe6 100%)",
-                      minHeight: 360,
-                      padding: "20px 18px 24px",
-                      display: "flex",
-                      flexDirection: "column",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 11, fontWeight: 700, color: LP.textSoft }}>
-                      <span>Coconut</span>
-                      <span>9:41</span>
-                    </div>
-                    <p style={{ textAlign: "center", fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", color: LP.textMuted, textTransform: "uppercase", marginBottom: 6 }}>
-                      Charge
-                    </p>
-                    <p style={{ textAlign: "center", fontSize: 36, fontWeight: 900, letterSpacing: "-1px", color: LP.text, marginBottom: 4 }}>$42.00</p>
-                    <p style={{ textAlign: "center", fontSize: 12, color: LP.textMuted, marginBottom: 28 }}>In person</p>
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 140 }}>
-                      <div style={{ position: "relative", width: 120, height: 120, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {[0, 1, 2].map((i) => (
-                          <motion.div
-                            key={i}
-                            style={{
-                              position: "absolute",
-                              borderRadius: "50%",
-                              border: `2px solid rgba(61, 142, 98, ${0.22 + i * 0.08})`,
-                              width: 52 + i * 28,
-                              height: 52 + i * 28,
-                            }}
-                            animate={{ opacity: [0.4, 0.85, 0.4], scale: [1, 1.04, 1] }}
-                            transition={{ duration: 2.2, repeat: Infinity, delay: i * 0.45 }}
-                          />
-                        ))}
-                        <div
-                          style={{
-                            width: 56,
-                            height: 56,
-                            borderRadius: 16,
-                            background: "#3D8E62",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            boxShadow: "0 10px 32px rgba(61,142,98,0.38)",
-                            zIndex: 2,
-                            overflow: "hidden",
-                          }}
-                        >
-                          <img
-                            src={COCONUT_LOGO_SRC}
-                            alt=""
-                            width={30}
-                            height={30}
-                            style={{ borderRadius: 6, objectFit: "cover" }}
-                          />
-                        </div>
-                      </div>
-                      <p style={{ marginTop: 16, fontSize: 13, fontWeight: 600, color: LP.textSoft, textAlign: "center" }}>Tap to Pay on iPhone</p>
-                    </div>
-                    <button
+          {/* Feature pills — mobile only, below phone so both visible */}
+          {isMobile && (
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", width:"100%" }}>
+              <motion.div
+                initial={{ opacity:0, y:10 }}
+                animate={{ opacity:1, y:0 }}
+                transition={{ duration:0.45, delay:0.14 }}
+                style={{
+                  display:"flex",
+                  alignItems:"center",
+                  justifyContent:"center",
+                  gap: 6,
+                  flexWrap:"wrap",
+                }}
+              >
+                {features.map((f, i) => {
+                  const active = activeFeature === i;
+                  return (
+                    <motion.button
+                      key={f.tag}
                       type="button"
-                      onClick={triggerTapToPayDemo}
-                      disabled={tapToPayDemoState === "processing"}
+                      aria-current={active ? "true" : undefined}
+                      aria-label={`${f.tag}: ${f.label}.`}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => {
+                        setActiveFeature(i);
+                        f.demo();
+                      }}
                       style={{
-                        marginTop: 8,
-                        width: "100%",
-                        border: "none",
-                        borderRadius: 14,
-                        padding: "14px 0",
-                        background: tapToPayDemoState === "accepted" ? "#2f6f38" : "#3D8E62",
-                        color: "#fff",
-                        fontSize: 15,
-                        fontWeight: 800,
-                        cursor: tapToPayDemoState === "processing" ? "wait" : "pointer",
-                        transition: "background-color 0.18s ease",
-                        opacity: tapToPayDemoState === "processing" ? 0.92 : 1,
+                        display:"flex",
+                        alignItems:"center",
+                        gap: 6,
+                        padding: isNarrowMobile ? "8px 12px" : "9px 14px",
+                        borderRadius: 999,
+                        cursor:"pointer",
+                        background: active ? LP.text : LP.bgCard,
+                        border: `1.5px solid ${active ? LP.text : LP.border}`,
+                        boxShadow: active ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
+                        transition:"all 0.2s ease",
                       }}
                     >
-                      {tapToPayDemoState === "idle" && "Accept payment"}
-                      {tapToPayDemoState === "processing" && "Processing…"}
-                      {tapToPayDemoState === "accepted" && "Payment accepted ✓"}
-                    </button>
-                    <p style={{ textAlign: "center", fontSize: 10, color: tapToPayDemoState === "accepted" ? "#2f6f38" : LP.textMuted, marginTop: 10, fontWeight: tapToPayDemoState === "accepted" ? 700 : 500 }}>
-                      {tapToPayDemoState === "accepted" ? "Tap again to run another demo payment." : "Interactive Tap to Pay demo."}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            <div style={{ flex: "1 1 300px", maxWidth: 520 }}>
-              <p
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  color: "#3a7d44",
-                  marginBottom: 14,
-                }}
-              >
-                <Zap size={14} strokeWidth={2.5} aria-hidden />
-                Sellers and side hustles
-              </p>
-              <h2
-                id="tap-to-pay-section-title"
-                style={{
-                  fontSize: "clamp(1.75rem, 4vw, 2.25rem)",
-                  fontWeight: 900,
-                  letterSpacing: "-0.03em",
-                  color: LP.text,
-                  lineHeight: 1.1,
-                  margin: "0 0 16px",
-                }}
-              >
-                Accept contactless payments on iPhone
-              </h2>
-              <p style={{ fontSize: 16, lineHeight: 1.65, color: LP.textSoft, margin: "0 0 20px" }}>
-                Tap to Pay when you sell in person with Stripe. No extra card reader. One account for in-person payments, linked banks, and group splits.
-              </p>
-              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-                <li style={{ display: "flex", gap: 12, alignItems: "flex-start", fontSize: 15, color: LP.textSoft, lineHeight: 1.5 }}>
-                  <span style={{ color: "#3a7d44", fontWeight: 800, marginTop: 2 }} aria-hidden>
-                    ✓
-                  </span>
-                  <span>
-                    <strong style={{ color: LP.text }}>Cards and Apple Pay.</strong> Your customer taps their card or phone to your iPhone.
-                  </span>
-                </li>
-                <li style={{ display: "flex", gap: 12, alignItems: "flex-start", fontSize: 15, color: LP.textSoft, lineHeight: 1.5 }}>
-                  <span style={{ color: "#3a7d44", fontWeight: 800, marginTop: 2 }} aria-hidden>
-                    ✓
-                  </span>
-                  <span>
-                    <strong style={{ color: LP.text }}>Works with the rest of Coconut.</strong> Optional alongside linked banks and group expense settling.
-                  </span>
-                </li>
-              </ul>
+                      <f.Icon size={13} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
+                      <span style={{
+                        fontSize: isNarrowMobile ? 12 : 13,
+                        fontWeight: active ? 700 : 500,
+                        color: active ? LP.bg : LP.textSoft,
+                        letterSpacing:"-0.01em",
+                        transition:"all 0.2s ease",
+                      }}>
+                        {f.tag}
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </motion.div>
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={activeFeature}
+                  initial={{ opacity:0, y:6 }}
+                  animate={{ opacity:1, y:0 }}
+                  exit={{ opacity:0, y:-6 }}
+                  transition={{ duration:0.2 }}
+                  style={{ fontSize:13, color:LP.textMuted, marginTop:10, fontWeight:500, letterSpacing:"-0.01em" }}
+                >
+                  {activeFeature != null ? features[activeFeature]?.label : null}
+                </motion.p>
+              </AnimatePresence>
             </div>
-          </div>
-        </section>
-
-        {/* Key product loop: one hero block below Tap to Pay (replaces plain feature list) */}
-        <section
-          aria-labelledby="coconut-key-feature-title"
-          style={{
-            borderTop: `1px solid ${LP.border}`,
-            background: `linear-gradient(180deg, ${LP.bg} 0%, #f3efe8 52%, ${LP.bg} 100%)`,
-            padding: isMobile ? "40px 14px 48px" : "56px 28px 72px",
-            position: "relative",
-            zIndex: 1,
-            scrollMarginTop: 88,
-          }}
-        >
-          <div style={{ maxWidth: 1040, margin: "0 auto" }}>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.55 }}
-              style={{
-                borderRadius: 28,
-                border: `1px solid ${LP.goldBorder}`,
-                background: "linear-gradient(145deg, #ffffff 0%, #faf8f5 42%, #f4efe8 100%)",
-                boxShadow: `${LP.shadowMd}, 0 0 0 1px rgba(58,125,68,0.06)`,
-                padding: "clamp(28px, 5vw, 48px)",
-                marginBottom: 28,
-                overflow: "hidden",
-                position: "relative",
-              }}
-            >
-              <div
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  top: -80,
-                  right: -60,
-                  width: 280,
-                  height: 280,
-                  borderRadius: "50%",
-                  background: "radial-gradient(circle, rgba(58,125,68,0.14) 0%, transparent 70%)",
-                  pointerEvents: "none",
-                }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  gap: 40,
-                  position: "relative",
-                  zIndex: 1,
-                }}
-              >
-                <div style={{ flex: "1 1 280px", minWidth: 0 }}>
-                  <p
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontSize: 11,
-                      fontWeight: 800,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                      color: "#3a7d44",
-                      marginBottom: 14,
-                    }}
-                  >
-                    <Wallet size={14} strokeWidth={2.5} aria-hidden />
-                    Key feature
-                  </p>
-                  <h2
-                    id="coconut-key-feature-title"
-                    style={{
-                      fontSize: "clamp(1.65rem, 3.8vw, 2.1rem)",
-                      fontWeight: 900,
-                      letterSpacing: "-0.03em",
-                      color: LP.text,
-                      lineHeight: 1.12,
-                      margin: "0 0 16px",
-                    }}
-                  >
-                    Real bank charges. Friends on the receipt. One running tab.
-                  </h2>
-                  <p style={{ fontSize: 16, lineHeight: 1.65, color: LP.textSoft, margin: "0 0 22px", maxWidth: 480 }}>
-                    Link accounts with Plaid, split Uber and dinner from real transactions, scan receipts into line items, and settle balances without switching apps.
-                  </p>
-                  <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                    {[
-                      "Read-only bank link; we never store your bank password.",
-                      "Plain-language search over linked spending in the app.",
-                      "iPhone first; sign in on the web to link where supported.",
-                    ].map((t) => (
-                      <li
-                        key={t}
-                        style={{
-                          display: "flex",
-                          gap: 10,
-                          alignItems: "flex-start",
-                          fontSize: 14,
-                          color: LP.textSoft,
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        <span style={{ color: "#3a7d44", fontWeight: 800, marginTop: 2 }} aria-hidden>
-                          ✓
-                        </span>
-                        <span>{t}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div style={{ flex: "1 1 260px", display: "flex", justifyContent: "center" }}>
-                  <div style={{ width: "100%", maxWidth: 320, display: "flex", flexDirection: "column", gap: 12 }}>
-                    {[
-                      {
-                        anchorId: "feature-bank-link",
-                        k: "Bank",
-                        v: "Nobu · matched to your card",
-                        tone: "rgba(37,99,235,0.12)",
-                        edge: "rgba(37,99,235,0.22)",
-                        Icon: Landmark,
-                        iconC: "#1d4ed8",
-                      },
-                      {
-                        anchorId: "feature-receipt",
-                        k: "Receipt",
-                        v: "4 lines · assigned to friends",
-                        tone: "rgba(234,88,12,0.12)",
-                        edge: "rgba(234,88,12,0.22)",
-                        Icon: Camera,
-                        iconC: "#c2410c",
-                      },
-                      {
-                        anchorId: "feature-running-tab",
-                        k: "Tab",
-                        v: "Alex · you owe $42",
-                        tone: "rgba(109,40,217,0.12)",
-                        edge: "rgba(109,40,217,0.22)",
-                        Icon: Users,
-                        iconC: "#6d28d9",
-                      },
-                    ].map((row, i) => {
-                      const StepIcon = row.Icon;
-                      return (
-                      <motion.div
-                        key={row.anchorId}
-                        id={row.anchorId}
-                        initial={{ opacity: 0, x: 14 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.4, delay: i * 0.08 }}
-                        style={{
-                          scrollMarginTop: 88,
-                          borderRadius: 16,
-                          padding: "14px 16px",
-                          background: row.tone,
-                          border: `1.5px solid ${row.edge}`,
-                          boxShadow: LP.shadow,
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 12,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 10,
-                            background: `${row.iconC}20`,
-                            border: `1px solid ${row.iconC}40`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <StepIcon size={17} color={row.iconC} strokeWidth={2} />
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <p
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 800,
-                              letterSpacing: "0.1em",
-                              color: LP.textMuted,
-                              textTransform: "uppercase",
-                              margin: "0 0 4px",
-                            }}
-                          >
-                            {row.k}
-                          </p>
-                          <p style={{ fontSize: 15, fontWeight: 700, color: LP.text, margin: 0, lineHeight: 1.35 }}>{row.v}</p>
-                        </div>
-                      </motion.div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            <p style={{ fontSize: 13, color: LP.textMuted, marginTop: 8, lineHeight: 1.65, maxWidth: 720 }}>
-              Coconut is not a bank. Banking services and card processing are provided by partners (for example Plaid and Stripe) under their terms. The App Store release is coming soon; you can sign in on the web to link accounts where supported.
-            </p>
-          </div>
-        </section>
+          )}
+        </div>
 
         {/* ══ FOOTER ══ */}
-        <footer style={{ borderTop:`1px solid ${LP.border}`, padding:"24px 40px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"relative", zIndex:1 }}>
+        <footer style={{
+          borderTop:`1px solid ${LP.border}`,
+          padding: isMobile ? "20px 18px" : "24px 40px",
+          display:"flex",
+          alignItems: isMobile ? "center" : "center",
+          justifyContent: isMobile ? "center" : "space-between",
+          flexDirection: isMobile ? "column" : "row",
+          gap: isMobile ? 12 : 0,
+          position:"relative", zIndex:1,
+        }}>
           <div style={{ display:"flex", alignItems:"center", gap:9 }}>
             <div style={{ width:26, height:26, borderRadius:8, background:"#0F0D0B", display:"flex", alignItems:"center", justifyContent:"center" }}>
               <img src={COCONUT_LOGO_SRC} alt="" style={{ width:16, height:16, borderRadius: 3, objectFit: "cover" }} />
             </div>
             <span style={{ fontSize:13, fontWeight:700, color:LP.textSoft }}>Coconut</span>
           </div>
-          <p style={{ fontSize:12, color:LP.textMuted }}>© 2026 Coconut. Made for people who split things.</p>
+          <p style={{ fontSize:12, color:LP.textMuted, textAlign:"center" }}>© 2026 Coconut. Made for people who split things.</p>
           <div style={{ display:"flex", gap:20 }}>
             {["Privacy", "Terms", "Contact"].map(l => (
               <button key={l} style={{ border:"none", background:"none", fontSize:12, color:LP.textMuted, cursor:"pointer", padding:0 }}>{l}</button>

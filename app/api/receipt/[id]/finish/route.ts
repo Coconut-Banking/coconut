@@ -116,6 +116,9 @@ export async function POST(
       transaction_id: transaction.id,
       created_by: userId,
       iso_currency_code: "USD",
+      description: receipt.merchant_name || "Receipt Split",
+      amount: receipt.total || 0,
+      payer_member_id: payerMember.id,
     })
     .select()
     .single();

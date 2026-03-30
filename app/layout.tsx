@@ -61,8 +61,8 @@ export default function RootLayout({
 }) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${instrument.variable} ${syne.variable}`}>
-        <body className="min-h-screen antialiased font-sans">{children}</body>
+      <html lang="en" className={`${instrument.variable} ${syne.variable}`} suppressHydrationWarning>
+        <body className="min-h-screen antialiased font-sans" suppressHydrationWarning>{children}</body>
       </html>
     </ClerkProvider>
   );

@@ -578,7 +578,7 @@ function SharedPageContent() {
   const [pendingMembers, setPendingMembers] = useState<{ displayName: string; email: string | null }[]>([]);
   const [newMemberInput, setNewMemberInput] = useState("");
 
-  const { detail: groupDetail, refetch: refetchGroupDetail } = useGroupDetail(selectedId);
+  const { detail: groupDetail, loading: groupDetailLoading, refetch: refetchGroupDetail } = useGroupDetail(selectedId);
   const { detail: personDetail, loading: personDetailLoading, refetch: refetchPersonDetail } = usePersonDetail(
     settleTarget?.key ?? expandedPerson ?? selectedPersonKey ?? null
   );
@@ -828,6 +828,17 @@ function SharedPageContent() {
   // (Bank link gate removed — groups work without a linked bank account)
 
   // Group detail view
+  if (selectedId && groupDetailLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Loading group...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (selectedId && groupDetail) {
     return (
       <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6 pb-24 sm:pb-8">
@@ -1164,7 +1175,8 @@ function SharedPageContent() {
           <div className="flex gap-3">
             <button
               onClick={() => setShowAdd(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-3.5 rounded-2xl text-sm font-semibold transition-all shadow-lg shadow-[#3D8E62]/25 hover:shadow-[#3D8E62]/30 hover:-translate-y-0.5"
+              disabled={loading}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-3.5 rounded-2xl text-sm font-semibold transition-all shadow-lg shadow-[#3D8E62]/25 hover:shadow-[#3D8E62]/30 hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Plus size={18} strokeWidth={2.5} />
               Add expense

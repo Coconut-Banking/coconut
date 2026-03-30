@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
       .from("split_transactions")
       .select(`
       id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code,
+      iso_currency_code, receipt_url,
       transactions(merchant_name, raw_name, amount, date)
     `)
       .in("group_id", sharedGroupIds)
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
 
     const { data: settlements } = await db
       .from("settlements")
-      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code")
+      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
       .in("group_id", sharedGroupIds)
       .eq("status", "completed");
 
@@ -164,6 +164,7 @@ export async function GET(req: NextRequest) {
       theirShare: number;
       effectOnBalance: number;
       createdAt: string;
+      receiptUrl: string | null;
     }> = [];
 
     for (const groupId of sharedGroupIds) {
@@ -308,16 +309,79 @@ export async function GET(req: NextRequest) {
           theirShare,
           effectOnBalance,
           createdAt: s.created_at,
+          receiptUrl: (s as { receipt_url?: string | null }).receipt_url ?? null,
         });
       }
     }
 
     activity.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    const currencyBalances = [...byCurrency.entries()]
-      .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
-      .filter((b) => Math.abs(b.amount) >= BALANCE_EPS)
-      .sort((a, b) => a.currency.localeCompare(b.currency));
+    // Try cached Splitwise friend balance (authoritative) for the headline
+    let currencyBalances: { currency: string; amount: number }[] = [];
+    try {
+      const { data: tokenRow } = await db
+        .from("splitwise_tokens")
+        .select("cached_friend_balances")
+        .eq("clerk_user_id", userId)
+        .maybeSingle();
+
+      type CachedFriend = {
+        email: string | null;
+        balance: { currency_code: string; amount: string }[];
+      };
+      const cached: CachedFriend[] | null =
+        (tokenRow as Record<string, unknown> | null)?.cached_friend_balances as CachedFriend[] | null;
+
+      if (cached && Array.isArray(cached) && email) {
+        const match = cached.find(
+          (f) => (f.email ?? "").toLowerCase().trim() === email.toLowerCase().trim()
+        );
+        if (match) {
+          // Start with cached Splitwise balance, then apply local Coconut settlement deltas
+          const cachedByCurrency = new Map<string, number>();
+          for (const b of match.balance ?? []) {
+            const amt = parseFloat(b.amount);
+            if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
+            cachedByCurrency.set(normalizeSplitCurrency(b.currency_code), Math.round(amt * 100) / 100);
+          }
+
+          // Apply only LOCAL (non-Splitwise) settlements on top of cached Splitwise balances
+          for (const groupId of sharedGroupIds) {
+            const groupMembers = (members ?? []).filter((m) => m.group_id === groupId);
+            const myMember = groupMembers.find((m) => m.user_id === userId);
+            const theirMember = groupMembers.find((m) => personMemberIds.has(m.id));
+            if (!myMember || !theirMember) continue;
+            const gSettlements = (settlements ?? []).filter(
+              (s) => s.group_id === groupId && (s as { method?: string }).method !== "splitwise"
+            );
+            for (const st of gSettlements) {
+              const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
+              const amt = Number(st.amount);
+              if (st.payer_member_id === theirMember.id && st.receiver_member_id === myMember.id) {
+                cachedByCurrency.set(cur, Math.round(((cachedByCurrency.get(cur) ?? 0) + amt) * 100) / 100);
+              } else if (st.payer_member_id === myMember.id && st.receiver_member_id === theirMember.id) {
+                cachedByCurrency.set(cur, Math.round(((cachedByCurrency.get(cur) ?? 0) - amt) * 100) / 100);
+              }
+            }
+          }
+
+          currencyBalances = [...cachedByCurrency.entries()]
+            .map(([currency, amount]) => ({ currency, amount }))
+            .filter((b) => Number.isFinite(b.amount) && Math.abs(b.amount) >= BALANCE_EPS)
+            .sort((a, b) => a.currency.localeCompare(b.currency));
+        }
+      }
+    } catch {
+      // Ignore — fall back to recalculated
+    }
+
+    // Fall back to recalculated balances if no cached data
+    if (currencyBalances.length === 0) {
+      currencyBalances = [...byCurrency.entries()]
+        .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
+        .filter((b) => Math.abs(b.amount) >= BALANCE_EPS)
+        .sort((a, b) => a.currency.localeCompare(b.currency));
+    }
 
     const balance =
       currencyBalances.length === 1
@@ -326,11 +390,16 @@ export async function GET(req: NextRequest) {
           ? 0
           : null;
 
+    // Only show expenses that actually affect the pairwise balance
+    const relevantActivity = activity.filter(
+      (a) => Math.abs(a.effectOnBalance) >= BALANCE_EPS
+    );
+
     return NextResponse.json({
       displayName,
       balance,
       currencyBalances,
-      activity,
+      activity: relevantActivity,
       email,
       key,
       settlements: personSettlements,

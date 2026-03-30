@@ -466,9 +466,19 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
         .eq("normalized_merchant", d.normalizedMerchant)
         .maybeSingle();
 
-      if (sub) {
+      if (sub && d.transactionDetails.length > 0) {
         try {
+          const idsToLink = d.transactionDetails.slice(0, 10).map(td => td.id);
+          // Verify these IDs still exist in the DB
+          const { data: validTxs } = await db
+            .from("transactions")
+            .select("id")
+            .eq("clerk_user_id", clerkUserId)
+            .in("id", idsToLink);
+          const validIds = new Set((validTxs ?? []).map((r: { id: string }) => r.id));
+
           for (const td of d.transactionDetails.slice(0, 10)) {
+            if (!validIds.has(td.id)) continue;  // skip if transaction no longer exists
             await db.from("subscription_transactions").upsert(
               { subscription_id: sub.id, transaction_id: td.id, amount: td.amount, date: td.date },
               { onConflict: "subscription_id,transaction_id" }

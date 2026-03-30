@@ -15,7 +15,8 @@ const PAYPAL_AUTH_BASE =
 
 const SCOPES = ["openid", "email", "https://uri.paypal.com/services/reporting/search/read"];
 
-const STATE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+/** Splitwise / PayPal OAuth: allow slow authorize + multi-device flows without spurious invalid_state. */
+const STATE_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
 function getHmacKey(): string {
   const key = process.env.TOKEN_ENCRYPTION_KEY || process.env.CLERK_SECRET_KEY;
