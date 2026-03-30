@@ -232,10 +232,11 @@ async function importGroup(
     return;
   }
 
-  // Check if already imported
+  // Check if already imported BY THIS USER (scoped to owner_id for data isolation)
   const { data: existing } = await db
     .from("groups")
     .select("id")
+    .eq("owner_id", userId)
     .eq("source", "splitwise")
     .eq("external_id", String(swGroup.id))
     .maybeSingle();
@@ -318,7 +319,7 @@ async function importGroup(
   const regularExpenses = expenses.filter((e) => !isSettlement(e));
   const settlements = expenses.filter((e) => isSettlement(e));
 
-  // Batch-check which expenses already exist
+  // Batch-check which expenses already exist FOR THIS USER'S GROUPS ONLY
   const allExtIds = regularExpenses.map((e) => String(e.id));
   const existingExpenseIds = new Set<string>();
   if (allExtIds.length > 0) {
@@ -328,12 +329,13 @@ async function importGroup(
         .from("split_transactions")
         .select("external_id")
         .eq("source", "splitwise")
+        .eq("group_id", groupId)
         .in("external_id", batch);
       for (const row of data ?? []) existingExpenseIds.add(row.external_id);
     }
   }
 
-  // Batch-check which settlements already exist
+  // Batch-check which settlements already exist FOR THIS USER'S GROUP ONLY
   const allSettlementRefs = settlements.map((e) => `splitwise:${e.id}`);
   const existingSettlementRefs = new Set<string>();
   if (allSettlementRefs.length > 0) {
@@ -342,6 +344,7 @@ async function importGroup(
       const { data } = await db
         .from("settlements")
         .select("external_reference")
+        .eq("group_id", groupId)
         .in("external_reference", batch);
       for (const row of data ?? []) existingSettlementRefs.add(row.external_reference);
     }

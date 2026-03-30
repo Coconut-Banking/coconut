@@ -10,11 +10,38 @@ async function linkMemberByEmail(userId: string) {
   if (!email) return;
 
   const db = getSupabase();
-  await db
+
+  // Only link member rows in groups this user owns. This prevents
+  // cross-user data leaks when two users import the same Splitwise
+  // group — each user's import creates a separate group row and
+  // we only auto-link members within the user's own groups.
+  const { data: ownedGroups } = await db
+    .from("groups")
+    .select("id")
+    .eq("owner_id", userId);
+
+  const safeGroupIds = new Set((ownedGroups ?? []).map((g) => g.id));
+  if (safeGroupIds.size === 0) return;
+
+  // Find unlinked members matching this email, then filter to safe groups
+  const { data: candidates } = await db
     .from("group_members")
-    .update({ user_id: userId })
+    .select("id, group_id")
     .eq("email", email)
     .is("user_id", null);
+
+  const idsToLink = (candidates ?? [])
+    .filter((m) => m.group_id && safeGroupIds.has(m.group_id))
+    .map((m) => m.id);
+
+  if (idsToLink.length === 0) return;
+
+  for (const mid of idsToLink) {
+    await db
+      .from("group_members")
+      .update({ user_id: userId })
+      .eq("id", mid);
+  }
 }
 
 /**
