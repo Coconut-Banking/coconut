@@ -29,7 +29,12 @@ async function verifyPlaidWebhook(body: string, verificationHeader: string | nul
 
     if (!cachedVerificationKey || cachedVerificationKey.kid !== kid) {
       const resp = await client.webhookVerificationKeyGet({ key_id: kid });
-      cachedVerificationKey = resp.data.key as jose.JWK;
+      const fetchedKey = resp.data.key as jose.JWK;
+      if (!fetchedKey || !fetchedKey.kty || !fetchedKey.kid) {
+        console.error("[plaid][webhook] webhookVerificationKeyGet returned invalid key", { kid });
+        return false;
+      }
+      cachedVerificationKey = fetchedKey;
     }
 
     const key = await jose.importJWK(cachedVerificationKey, "ES256");
@@ -40,8 +45,10 @@ async function verifyPlaidWebhook(body: string, verificationHeader: string | nul
 
     const bodyHash = createHash("sha256").update(body).digest("hex");
     const normalizedClaimed = claimedHash.toLowerCase();
-    if (bodyHash.length !== normalizedClaimed.length) return false;
-    return timingSafeEqual(Buffer.from(bodyHash, "hex"), Buffer.from(normalizedClaimed, "hex"));
+    const bodyBuf = Buffer.from(bodyHash, "hex");
+    const claimedBuf = Buffer.from(normalizedClaimed, "hex");
+    if (bodyBuf.length !== claimedBuf.length) return false;
+    return timingSafeEqual(bodyBuf, claimedBuf);
   } catch {
     return false;
   }
@@ -175,6 +182,10 @@ export async function POST(request: NextRequest) {
       webhook_code === "USER_ACCOUNT_REVOKED"
     ) {
       console.log("[plaid][webhook] user revoked", { webhook_code, item_id, user_id: clerkUserId });
+      await db
+        .from("plaid_items")
+        .update({ needs_reauth: true })
+        .eq("plaid_item_id", item_id);
     }
   }
 

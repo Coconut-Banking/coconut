@@ -94,11 +94,14 @@ export async function syncPayPalTransactions(clerkUserId: string): Promise<{
     await delay(RATE_LIMIT_DELAY_MS);
   }
 
-  // Update sync cursor
-  await db
-    .from("paypal_connections")
-    .update({ last_sync_at: now.toISOString(), sync_cursor: now.toISOString() })
-    .eq("clerk_user_id", clerkUserId);
+  // Update sync cursor only if there were no errors or some transactions were synced.
+  // This prevents permanently skipping a date range when PayPal is down.
+  if (errors.length === 0 || totalSynced > 0) {
+    await db
+      .from("paypal_connections")
+      .update({ last_sync_at: now.toISOString(), sync_cursor: now.toISOString() })
+      .eq("clerk_user_id", clerkUserId);
+  }
 
   // Update PayPal balance in manual_accounts
   await syncPayPalBalance(clerkUserId, accessToken);

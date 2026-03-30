@@ -37,7 +37,8 @@ export async function PATCH(
   const { error } = await db
     .from("accounts")
     .update({ nickname: trimmed })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("clerk_user_id", userId);
 
   if (error) {
     console.error("[accounts] nickname update error:", error);

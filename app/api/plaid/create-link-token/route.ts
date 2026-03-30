@@ -111,9 +111,8 @@ export async function POST(request: NextRequest) {
     const startedAt = Date.now();
     let accessTokenForUpdate: string | undefined;
     if (isUpdateMode) {
-      const { getAllPlaidTokensForUser } = await import("@/lib/transaction-sync");
-      const tokens = await getAllPlaidTokensForUser(effectiveUserId);
-      accessTokenForUpdate = tokens[0] ?? undefined;
+      const { getReauthPriorityToken } = await import("@/lib/transaction-sync");
+      accessTokenForUpdate = (await getReauthPriorityToken(effectiveUserId)) ?? undefined;
     }
     if (isUpdateMode && !accessTokenForUpdate) {
       return NextResponse.json(

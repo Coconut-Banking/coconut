@@ -74,7 +74,7 @@ export function useNLSearch<T extends UITransaction>(
   const [answer, setAnswer] = useState("");
   const [metric, setMetric] = useState("list");
   const [total, setTotal] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => query.trim().length > 0);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const abortRef = useRef<AbortController>();
 

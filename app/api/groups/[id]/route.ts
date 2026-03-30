@@ -25,11 +25,15 @@ export async function GET(
   try {
     const db = getSupabase();
 
+    const allowed = await canAccessGroup(userId, id);
+    if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
     const { data: group, error: groupError } = await db.from("groups").select("*").eq("id", id).single();
     if (groupError || !group) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const allowed = await canAccessGroup(userId, id);
-    if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const isOwner = group.owner_id === userId;
+    const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
+    const maskedGroup = { ...groupWithoutToken, invite_token: isOwner ? invite_token : null };
 
     let { data: members } = await db
       .from("group_members")
@@ -99,7 +103,7 @@ export async function GET(
 
     if (splits.length === 0) {
       return NextResponse.json({
-        group,
+        group: maskedGroup,
         members: members ?? [],
         activity: [],
         balances: (members ?? []).map((m) => ({
@@ -336,9 +340,9 @@ export async function GET(
     }
 
     return NextResponse.json({
-      ...group,
-      group,
-      isOwner: group.owner_id === userId,
+      ...maskedGroup,
+      group: maskedGroup,
+      isOwner,
       archivedAt,
       members: members ?? [],
       activity,

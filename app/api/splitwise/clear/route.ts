@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getUserId } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 /**
  * POST /api/splitwise/clear
@@ -52,6 +54,10 @@ export async function POST(req: NextRequest) {
 
   if (disconnectToken) {
     await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
+  }
+
+  if (deletedGroups > 0) {
+    revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   }
 
   return NextResponse.json({

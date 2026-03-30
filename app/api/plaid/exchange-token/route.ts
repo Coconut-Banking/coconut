@@ -131,13 +131,15 @@ export async function POST(request: NextRequest) {
     // wiping other banks when adding a second account). Multi-bank: each item is separate.
     const { getSupabase } = await import("@/lib/supabase");
     const db = getSupabase();
+
+    await savePlaidToken(effectiveUserId, access_token, item_id, institutionName, institutionId);
+
+    // Recount AFTER save — concurrent connections will see count > 1
     const { data: existingItems } = await db
       .from("plaid_items")
       .select("id")
       .eq("clerk_user_id", effectiveUserId);
-    const isFirstConnection = !existingItems || existingItems.length === 0;
-
-    await savePlaidToken(effectiveUserId, access_token, item_id, institutionName, institutionId);
+    const isFirstConnection = !existingItems || existingItems.length <= 1;
     console.log("[plaid][exchange-token] token_saved", {
       trace_id: traceId,
       user_id: effectiveUserId,
@@ -185,32 +187,15 @@ export async function POST(request: NextRequest) {
         });
       }
     }
-    let synced = 0;
-    let syncError: string | undefined;
-    // Plaid can return 0 immediately after OAuth handoff; retry a couple times.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, 3000 * attempt)); // 3s, then 6s
-      }
-      const result = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
-      synced = result.synced;
-      syncError = result.error;
-      if (syncError) {
-        console.warn("[plaid][exchange-token] sync_warning", {
-          trace_id: traceId,
-          user_id: effectiveUserId,
-          attempt: attempt + 1,
-          error: syncError,
-        });
-      }
-      console.log("[plaid][exchange-token] sync_attempt_result", {
-        trace_id: traceId,
-        user_id: effectiveUserId,
-        attempt: attempt + 1,
-        synced,
-      });
-      if (synced > 0 || syncError) break;
-    }
+    const synced = 0;
+    // Fire sync in background — don't block response (prevents Vercel timeout)
+    syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true })
+      .then((result) => {
+        if (result.synced > 0) {
+          revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+        }
+      })
+      .catch((e) => console.error("[plaid][exchange-token] background_sync_failed", { error: e instanceof Error ? e.message : String(e) }));
 
     // Invalidate cached transactions so the user sees fresh data immediately
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");

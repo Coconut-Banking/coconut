@@ -825,17 +825,6 @@ function SharedPageContent() {
     refetchSummary();
   };
 
-  if (txLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Loading shared expenses...</p>
-        </div>
-      </div>
-    );
-  }
-
   // (Bank link gate removed — groups work without a linked bank account)
 
   // Group detail view

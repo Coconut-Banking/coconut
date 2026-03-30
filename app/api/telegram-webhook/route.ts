@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
       const imageMarkdown = hasMedia ? await getMediaMarkdown(message, "coconut") : "";
       const issueUrl = await createGitHubIssue("coconut", {
         title: `Bug: ${description.slice(0, 80)}${description.length > 80 ? "..." : ""}`,
-        body: `## Bug Report\n\n${description}${imageMarkdown}\n\n---\n_Submitted by ${submitter} via Telegram_`,
+        body: `## Bug Report\n\n\`\`\`\n${description.replace(/`/g, "'")}\n\`\`\`${imageMarkdown}\n\n---\n_Submitted by ${submitter} via Telegram_`,
         labels: ["ai-fix"],
       });
       await sendTelegramWithMenu(chatId, `Bug filed! Claude is on it.\n${issueUrl}`);
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
 
       const issueUrl = await createGitHubIssue(repo, {
         title: `Bug: ${bugText.slice(0, 80)}${bugText.length > 80 ? "..." : ""}`,
-        body: `## Bug Report\n\n${bugText}${imageMarkdown}\n\n---\n_Submitted by ${submitter} via Telegram_`,
+        body: `## Bug Report\n\n\`\`\`\n${bugText.replace(/`/g, "'")}\n\`\`\`${imageMarkdown}\n\n---\n_Submitted by ${submitter} via Telegram_`,
         labels: ["ai-fix"],
       });
 

@@ -141,9 +141,13 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
     const res = await fetch("/api/groups/people");
     if (res.ok) {
       const data = await res.json();
-      setPeople(Array.isArray(data.people) ? data.people : []);
-      setGroups(Array.isArray(data.groups) ? data.groups : []);
+      const freshPeople = Array.isArray(data.people) ? data.people : [];
+      const freshGroups = Array.isArray(data.groups) ? data.groups : [];
+      setPeople(freshPeople);
+      setGroups(freshGroups);
+      return { people: freshPeople, groups: freshGroups };
     }
+    return { people: [], groups: [] };
   };
 
   const loadGroupMembers = async (groupId: string) => {
@@ -185,7 +189,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
   };
 
   const effectiveGroupId = splitMode === "person" && selectedPerson ? selectedPerson.groupId : selectedGroupId;
-  const canSubmit = tx.dbId && effectiveGroupId && members.length > 0;
+  const canSubmit = tx.dbId && effectiveGroupId && members.length >= 2;
 
   const handleAddToShared = async () => {
     if (!canSubmit) return;
@@ -578,8 +582,8 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                 <button
                   onClick={async () => {
                     setShowAddToShared(true);
-                    await loadPeopleAndGroups();
-                    const match = people.find((p) => p.displayName === tx.splitWith);
+                    const { people: freshPeople } = await loadPeopleAndGroups();
+                    const match = freshPeople.find((p: { displayName: string; groupId: string; memberId: string }) => p.displayName === tx.splitWith);
                     if (match) {
                       setSelectedPerson({ groupId: match.groupId, memberId: match.memberId, displayName: match.displayName });
                       loadGroupMembers(match.groupId);

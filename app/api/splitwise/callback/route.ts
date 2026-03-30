@@ -116,13 +116,19 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (sessionUserId && sessionUserId !== verified.userId) {
-    if (verified.returnToApp) {
+  if (!verified.returnToApp) {
+    // Web flow: Clerk session must be present and match the userId in the signed state.
+    if (!sessionUserId || sessionUserId !== verified.userId) {
+      return NextResponse.redirect(
+        new URL("/app/settings?splitwise_error=invalid_state", req.url)
+      );
+    }
+  } else {
+    // Mobile app flow (returnToApp=true): Mobile Safari has no Clerk session on this domain;
+    // rely on HMAC-signed state exclusively.
+    if (sessionUserId && sessionUserId !== verified.userId) {
       return appSettingsDeepLink(req, { splitwise_error: "invalid_state" });
     }
-    return NextResponse.redirect(
-      new URL("/app/settings?splitwise_error=invalid_state", req.url)
-    );
   }
 
   const clerkUserId = verified.userId;

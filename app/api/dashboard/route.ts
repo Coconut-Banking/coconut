@@ -62,22 +62,25 @@ export async function GET() {
           : Number(a.balance_current) || 0;
       const bal = convertCurrency(nativeBal, a.iso_currency_code ?? "USD", "USD");
 
+      const iso = ((a.iso_currency_code ?? "USD") as string).toUpperCase();
       if (isLiability) {
         if (bal >= 0) {
-          liabilities += bal;
+          liabilities += convertCurrency(bal, iso, "USD");
         } else {
           // Negative balance on credit/loan = overpayment, treat as asset
-          assets += Math.abs(bal);
+          assets += convertCurrency(Math.abs(bal), iso, "USD");
         }
       } else {
-        assets += bal;
+        assets += convertCurrency(bal, iso, "USD");
       }
     }
 
     // Add manual P2P wallet balances to assets
     const manualAccounts = walletsResult.data ?? [];
     for (const w of manualAccounts) {
-      assets += convertCurrency(Number(w.balance) || 0, w.iso_currency_code ?? "USD", "USD");
+      const bal = Number(w.balance) || 0;
+      const walletCurrency = ((w.iso_currency_code ?? "USD") as string).toUpperCase();
+      assets += convertCurrency(bal, walletCurrency, "USD");
     }
 
     // Upcoming bills: next 5 subscriptions by due date

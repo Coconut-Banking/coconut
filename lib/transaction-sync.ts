@@ -73,7 +73,9 @@ async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
       input: texts,
       dimensions: EMBED_DIMENSIONS,
     });
-    return data.map((d) => d.embedding);
+    const result: (number[] | null)[] = data.map((d: { embedding: number[] }) => d.embedding ?? null);
+    while (result.length < texts.length) result.push(null);
+    return result;
   } catch (e) {
     console.warn("[embed] batch failed:", e);
     return texts.map(() => null);
@@ -98,6 +100,23 @@ export async function getAllPlaidTokensForUser(clerkUserId: string): Promise<str
     .select("access_token")
     .eq("clerk_user_id", clerkUserId);
   return (data ?? []).map((r: { access_token: string }) => decryptToken(r.access_token)).filter(Boolean);
+}
+
+/**
+ * Returns the access token for the plaid_item most in need of re-auth.
+ * Items with needs_reauth=true are ordered first so that update-mode link
+ * tokens target the failing bank rather than always the first connected bank.
+ */
+export async function getReauthPriorityToken(clerkUserId: string): Promise<string | null> {
+  const db = getSupabase();
+  const { data } = await db
+    .from("plaid_items")
+    .select("access_token")
+    .eq("clerk_user_id", clerkUserId)
+    .order("needs_reauth", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.access_token ? decryptToken(data.access_token) : null;
 }
 
 export type PlaidItemInfo = { access_token: string; plaid_item_id: string; institution_name: string | null };
@@ -318,35 +337,41 @@ async function syncSingleToken(
     console.error("[sync] accountsGet returned invalid data", { clerkUserId, plaidItemId });
     return { synced: 0, removedIds: [], skipped: 0 };
   }
-  for (const acct of acctResp.accounts) {
-    const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-    const row: Record<string, unknown> = {
-      clerk_user_id: clerkUserId,
-      plaid_account_id: acct.account_id,
-      plaid_item_id: plaidItemId,
-      name: acct.name,
-      type: acct.type,
-      subtype: acct.subtype ?? null,
-      mask: acct.mask ?? null,
-    };
-    try {
-      await db.from("accounts").upsert(
-        { ...row, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
-        { onConflict: "plaid_account_id" }
-      );
-    } catch (e) {
-      const errMsg = (e as Error).message ?? "";
-      if (/column.*plaid_item_id|does not exist/i.test(errMsg)) {
-        const { plaid_item_id: _pid, ...rowWithout } = row;
+  try {
+    for (const acct of acctResp.accounts) {
+      const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+      const row: Record<string, unknown> = {
+        clerk_user_id: clerkUserId,
+        plaid_account_id: acct.account_id,
+        plaid_item_id: plaidItemId,
+        name: acct.name,
+        type: acct.type,
+        subtype: acct.subtype ?? null,
+        mask: acct.mask ?? null,
+      };
+      try {
         await db.from("accounts").upsert(
-          { ...rowWithout, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
+          { ...row, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
           { onConflict: "plaid_account_id" }
         );
-      } else {
-        console.error("[sync] account upsert unhandled error:", errMsg, { clerkUserId, plaidAccountId: row.plaid_account_id });
-        throw new Error(`Account upsert failed: ${errMsg}`);
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        if (/column.*plaid_item_id|does not exist/i.test(errMsg)) {
+          const { plaid_item_id: _pid, ...rowWithout } = row;
+          await db.from("accounts").upsert(
+            { ...rowWithout, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
+            { onConflict: "plaid_account_id" }
+          );
+        } else {
+          console.error("[sync] account upsert error:", errMsg, {
+            clerkUserId,
+            plaidAccountId: row.plaid_account_id,
+          });
+        }
       }
     }
+  } catch (e) {
+    console.error("[sync] account upsert failed (continuing with tx sync):", (e as Error).message);
   }
 
   // Build account UUID map
@@ -452,6 +477,11 @@ async function syncSingleToken(
   const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
   const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
 
+  const droppedCount = allAdded.length + allModified.length - addedRows.length - modifiedRows.length;
+  if (droppedCount > 0) {
+    console.error(`[sync] DROPPED ${droppedCount} transactions with no matching account for user ${clerkUserId}`);
+  }
+
   // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
   // IDs when same bank is linked multiple times (duplicate Items). Modified transactions
   // must always be upserted so pending->posted transitions and merchant name refinements
@@ -460,11 +490,17 @@ async function syncSingleToken(
   const rowsToInsert = [...filteredAdded, ...modifiedRows];
 
   const BATCH = 100;
+  let actualSynced = 0;
   for (let i = 0; i < rowsToInsert.length; i += BATCH) {
+    const batch = rowsToInsert.slice(i, i + BATCH);
     const { error } = await db
       .from("transactions")
-      .upsert(rowsToInsert.slice(i, i + BATCH), { onConflict: "plaid_transaction_id" });
-    if (error) console.error("[sync] upsert error:", error.message);
+      .upsert(batch, { onConflict: "plaid_transaction_id" });
+    if (error) {
+      console.error("[sync] upsert error:", error.message);
+    } else {
+      actualSynced += batch.length;
+    }
   }
 
   const skipped = addedRows.length - filteredAdded.length;
@@ -472,7 +508,7 @@ async function syncSingleToken(
     console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
   }
 
-  return { synced: rowsToInsert.length, removedIds: allRemovedIds, skipped };
+  return { synced: actualSynced, removedIds: allRemovedIds, skipped };
 }
 
 export type SyncTransactionsOptions = {

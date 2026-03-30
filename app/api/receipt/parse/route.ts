@@ -146,15 +146,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch back the full receipt with items
-    const { data: full, error: fullErr } = await db
+    const { data: full, error: fullError } = await db
       .from("receipt_scans")
       .select("*, receipt_items(*)")
       .eq("id", receipt.id)
       .single();
 
-    if (fullErr || !full) {
-      console.error("Failed to fetch full receipt:", fullErr);
-      return NextResponse.json({ error: "Failed to retrieve saved receipt" }, { status: 500 });
+    if (fullError || !full) {
+      console.error("[receipt] Failed to fetch created receipt:", fullError);
+      return NextResponse.json({ error: "Receipt saved but could not be retrieved" }, { status: 500 });
     }
 
     return NextResponse.json(full);

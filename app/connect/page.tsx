@@ -280,7 +280,12 @@ function ConnectBankContent() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ public_token: publicToken, trace_id: traceId || null }),
           });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 409 && data.code === "DUPLICATE_INSTITUTION") {
+            // Bank is already linked — treat as success
+            setStep("connected");
+            return;
+          }
           if (!res.ok) {
             setError(data.error ?? "Failed to connect");
             logPlaidEvent({

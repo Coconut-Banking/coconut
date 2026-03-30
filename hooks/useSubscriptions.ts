@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { hashColor, fmtDate } from "@/lib/plaid-mappers";
 
 export interface PriceChange {
@@ -28,6 +28,12 @@ export function useSubscriptions() {
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const fetchSubs = useCallback(async (isCancelled?: () => boolean) => {
     try {
@@ -60,12 +66,20 @@ export function useSubscriptions() {
     let cancelled = false;
     try {
       const res = await fetch("/api/subscriptions", { method: "POST" });
-      if (res.ok) await fetchSubs(() => cancelled);
+      if (res.ok) {
+        if (mountedRef.current && !cancelled) await fetchSubs(() => cancelled);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        if (mountedRef.current && !cancelled) {
+          setError((body as { error?: string }).error ?? "Detection failed. Please try again.");
+        }
+      }
     } catch (e) {
       console.error("[subscriptions] detect:", e);
+      if (mountedRef.current && !cancelled) setError("Detection failed. Please try again.");
     } finally {
       cancelled = true;
-      setDetecting(false);
+      if (mountedRef.current) setDetecting(false);
     }
   }, [fetchSubs]);
 

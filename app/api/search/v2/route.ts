@@ -69,7 +69,8 @@ export async function GET(request: NextRequest) {
   const dateStart = dateStartRaw || undefined;
   const dateEnd = dateEndRaw || undefined;
   const accountId = request.nextUrl.searchParams.get("account_id") || undefined;
-  const location = request.nextUrl.searchParams.get("location") || undefined;
+  const rawLocation = request.nextUrl.searchParams.get("location");
+  const location = rawLocation ? rawLocation.trim().slice(0, 100) : undefined;
 
   ensureRichEmbeddings(userId).catch(() => {});
 

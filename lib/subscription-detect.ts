@@ -26,6 +26,11 @@ export async function deleteExcludedSubscriptions(clerkUserId: string): Promise<
   const ids = toDelete.map((r) => r.id);
   await db.from("subscription_transactions").delete().in("subscription_id", ids);
   await db.from("subscriptions").delete().in("id", ids);
+  // Re-delete subscription_transactions to catch any concurrent re-inserts
+  await db
+    .from("subscription_transactions")
+    .delete()
+    .in("subscription_id", ids);
   return ids.length;
 }
 
@@ -94,9 +99,11 @@ function normalizeMerchantName(raw: string): string {
 }
 
 function amountsMatch(a: number, b: number): boolean {
-  const ref = Math.abs(b);
-  if (ref < 1) return Math.abs(a - b) < 0.5;
-  return Math.abs(a - b) / ref <= AMOUNT_TOLERANCE;
+  const absA = Math.abs(a);
+  const absB = Math.abs(b);
+  const denom = Math.max(absA, absB);
+  if (denom < 1) return Math.abs(a - b) < 0.5;
+  return Math.abs(a - b) / denom <= AMOUNT_TOLERANCE;
 }
 
 function daysBetween(d1: string, d2: string): number {
@@ -332,7 +339,7 @@ async function detectFromEmailReceipts(
       lastChargeDate: latest.date,
       nextDueDate: nextDue,
       primaryCategory: "SUBSCRIPTIONS",
-      transactionCount: Math.max(list.length, matchingTxs.length),
+      transactionCount: matchingTxs.length > 0 ? matchingTxs.length : list.length,
       transactionIds: matchingTxs.map((t) => t.id),
       transactionDetails: matchingTxs.map((t) => ({ id: t.id, amount: Math.abs(t.amount), date: t.date })),
       source: "email",
@@ -442,7 +449,7 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
           primary_category: d.primaryCategory,
           transaction_count: d.transactionCount,
           confidence: d.confidence,
-          status: "active",
+          status: existing ? existing.status : "active",
           updated_at: new Date().toISOString(),
           ...priceChangeFields,
         },
