@@ -2087,15 +2087,119 @@ function FriendDetail({ friend, onBack, onSettle }: { friend: FriendBalance; onB
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GROUP DATA & DETAIL
+// ─────────────────────────────────────────────────────────────────────────────
+interface GroupData {
+  id: string; name: string; members: PersonId[]; balance: number;
+  expenses: { id: string; label: string; amount: number; date: string; logo: MerchantLogoKey; paidBy: PersonId }[];
+}
+
+const GROUPS: GroupData[] = [
+  {
+    id: "g1", name: "Tahoe Trip", members: ["you", "alex", "jordan", "sam"], balance: -24.00,
+    expenses: [
+      { id: "ge1", label: "Airbnb, Tahoe",    amount: 480.00, date: "Mar 15", logo: "airbnb",  paidBy: "alex" },
+      { id: "ge2", label: "Ski Rentals",       amount: 120.00, date: "Mar 16", logo: "default", paidBy: "jordan" },
+      { id: "ge3", label: "Nobu Restaurant",   amount: 248.00, date: "Mar 20", logo: "nobu",    paidBy: "you" },
+    ],
+  },
+  {
+    id: "g2", name: "Roommates", members: ["you", "maya", "ryan"], balance: 106.50,
+    expenses: [
+      { id: "ge4", label: "Electric Bill",  amount: 142.00, date: "Mar 1",  logo: "default", paidBy: "you" },
+      { id: "ge5", label: "Internet",       amount: 89.00,  date: "Mar 1",  logo: "default", paidBy: "maya" },
+      { id: "ge6", label: "Groceries",      amount: 67.50,  date: "Mar 10", logo: "whole_foods", paidBy: "you" },
+    ],
+  },
+];
+
+function GroupDetail({ group, onBack }: { group: GroupData; onBack: () => void }) {
+  const C = React.useContext(ThemeCtx);
+  const pos = group.balance >= 0;
+
+  return (
+    <motion.div initial={{ x:"100%" }} animate={{ x:0 }} exit={{ x:"100%" }} transition={{ type:"spring", damping:28, stiffness:260 }}
+      style={{ position:"absolute", inset:0, background:C.bg, zIndex:10, display:"flex", flexDirection:"column" }}>
+      <div style={{ padding:"10px 20px 0", display:"flex", alignItems:"center" }}>
+        <motion.button whileTap={{ scale:0.9 }} onClick={onBack} style={{ border:"none", background:"none", cursor:"pointer", padding:"8px 10px 8px 0", display:"flex", alignItems:"center", gap:4 }}>
+          <ChevronLeft size={18} color={C.accent} />
+          <span style={{ fontSize:15, color:C.accent, fontWeight:600 }}>Back</span>
+        </motion.button>
+      </div>
+
+      <div style={{ padding:"20px 20px 24px", display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
+        <div style={{ width:72, height:72, borderRadius:22, background:C.accent+"15", border:`2px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <Users size={32} color={C.accent} />
+        </div>
+        <div style={{ textAlign:"center" }}>
+          <p style={{ fontSize:21, fontWeight:800, color:C.label, letterSpacing:"-0.4px" }}>{group.name}</p>
+          <p style={{ fontSize:13, color:C.label3, marginTop:3 }}>{group.members.length} members · {group.expenses.length} expense{group.expenses.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div style={{ padding:"14px 32px", borderRadius:20, background: pos ? C.greenBg : C.redBg, border:`1px solid ${pos ? C.green + "35" : C.red + "35"}` }}>
+          <p style={{ fontSize:34, fontWeight:900, letterSpacing:"-1.5px", color: pos ? C.green : C.red, textAlign:"center", fontVariantNumeric:"tabular-nums" }}>
+            {pos ? "+" : "−"}${Math.abs(group.balance).toFixed(2)}
+          </p>
+          <p style={{ fontSize:12, marginTop:4, color: pos ? C.green : C.red, opacity:0.8, textAlign:"center" }}>
+            {pos ? "you are owed" : "you owe"}
+          </p>
+        </div>
+      </div>
+
+      <div style={{ flex:1, overflowY:"auto", padding:"0 16px 16px", scrollbarWidth:"none" }}>
+        <SectionLabel>Members</SectionLabel>
+        <Card style={{ marginBottom:16 }}>
+          {group.members.map((m, i) => {
+            const c = getContact(m);
+            return (
+              <div key={m}>
+                <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px" }}>
+                  <Avatar id={m} size={36} />
+                  <p style={{ flex:1, fontSize:14, fontWeight:600, color:C.label }}>{c.full}</p>
+                  {m === "you" && <span style={{ fontSize:11, fontWeight:700, color:C.accent, background:C.accent+"18", padding:"3px 10px", borderRadius:99 }}>You</span>}
+                </div>
+                {i < group.members.length - 1 && <Sep ml={64} />}
+              </div>
+            );
+          })}
+        </Card>
+
+        <SectionLabel>Expenses</SectionLabel>
+        <Card>
+          {group.expenses.map((exp, i) => {
+            const payer = getContact(exp.paidBy);
+            return (
+              <div key={exp.id}>
+                <div style={{ display:"flex", alignItems:"center", gap:12, padding:"13px 16px" }}>
+                  <div style={{ width:40, height:40, borderRadius:C.radius, background:C.card2, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <MerchantLogo brand={exp.logo} size={26} />
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:14, fontWeight:600, color:C.label }}>{exp.label}</p>
+                    <p style={{ fontSize:12, color:C.label3, marginTop:1 }}>{payer.name} paid · {exp.date}</p>
+                  </div>
+                  <p style={{ fontSize:15, fontWeight:800, color:C.label, fontVariantNumeric:"tabular-nums" }}>${exp.amount.toFixed(2)}</p>
+                </div>
+                {i < group.expenses.length - 1 && <Sep />}
+              </div>
+            );
+          })}
+        </Card>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HOME SCREEN — fully redesigned
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, onSelectTx, onSeeActivity }: {
+function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, onSelectTx, onSeeActivity, onGroup }: {
   onSettle: (p: PersonId, a: number) => void;
   onAdd: (prefill?: { merchant: string; amount: number }) => void;
   onFriend: (f: FriendBalance) => void;
   onSeeAllTx: () => void;
   onSelectTx: (tx: BankTx) => void;
   onSeeActivity: () => void;
+  onGroup: (g: GroupData) => void;
 }) {
   const C = React.useContext(ThemeCtx);
   const [dismissedBank, setDismissedBank] = useState<string[]>([]);
@@ -2230,7 +2334,7 @@ function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, 
             
             return (
               <div key={item.id || item.personId}>
-                <motion.button whileTap={{ scale:0.99 }} onClick={() => !isGroup && onFriend(item)}
+                <motion.button whileTap={{ scale:0.99 }} onClick={() => isGroup ? onGroup(GROUPS.find(g => g.id === item.id)!) : onFriend(item)}
                   style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
                   {isGroup ? (
                     <div style={{ width:44, height:44, borderRadius:14, background:C.accent+"15", border:`1px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -2402,7 +2506,7 @@ function AddFriendModal({ onClose }: { onClose: () => void }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FRIENDS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-function FriendsScreen({ onFriend, onAddGroup }: { onFriend: (f: FriendBalance) => void; onAddGroup: () => void }) {
+function FriendsScreen({ onFriend, onAddGroup, onGroup }: { onFriend: (f: FriendBalance) => void; onAddGroup: () => void; onGroup: (g: GroupData) => void }) {
   const C = React.useContext(ThemeCtx);
   return (
     <div style={{ height:"100%", overflowY:"auto", background:C.bg, scrollbarWidth:"none" }}>
@@ -2416,24 +2520,21 @@ function FriendsScreen({ onFriend, onAddGroup }: { onFriend: (f: FriendBalance) 
       <div style={{ padding:"0 16px 20px" }}>
         <SectionLabel>Groups</SectionLabel>
         <Card>
-          {[
-            { id:"g1", name:"Tahoe Trip", members:4, updated:"2 days ago", balance:-24.00 },
-            { id:"g2", name:"Roommates", members:3, updated:"1 week ago", balance:106.50 },
-          ].map((g, i) => (
+          {GROUPS.map((g, i) => (
             <div key={g.id}>
-              <motion.button whileTap={{ scale:0.99 }} style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
+              <motion.button whileTap={{ scale:0.99 }} onClick={() => onGroup(g)} style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
                 <div style={{ width:44, height:44, borderRadius:14, background:C.accent+"15", border:`1px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
                   <Users size={20} color={C.accent} />
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <p style={{ fontSize:15, fontWeight:700, color:C.label }}>{g.name}</p>
-                  <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>{g.members} members · {g.updated}</p>
+                  <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>{g.members.length} members · {g.expenses.length} expenses</p>
                 </div>
                 <p style={{ fontSize:16, fontWeight:800, color: g.balance >= 0 ? C.green : C.red, fontVariantNumeric:"tabular-nums" }}>
                   {g.balance >= 0 ? "+" : "−"}${Math.abs(g.balance).toFixed(2)}
                 </p>
               </motion.button>
-              {i < 1 && <Sep ml={73} />}
+              {i < GROUPS.length - 1 && <Sep ml={73} />}
             </div>
           ))}
         </Card>
@@ -2657,6 +2758,7 @@ export function CoconutMobileMarketingPage() {
 
   const [screen, setScreen] = useState<"home"|"friends"|"activity"|"account">("home");
   const [friendDetail, setFriendDetail] = useState<FriendBalance|null>(null);
+  const [groupDetail, setGroupDetail] = useState<GroupData|null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
@@ -2857,11 +2959,11 @@ export function CoconutMobileMarketingPage() {
         {/* ══ HERO ══ */}
         <div style={{
           display:"flex",
-          alignItems:isMobile ? "stretch" : "center",
+          alignItems: isMobile ? "center" : "center",
           justifyContent:"center",
           flexDirection:isMobile ? "column" : "row",
-          gap:isMobile ? 24 : 64,
-          padding:isMobile ? "20px 14px 24px" : "0 clamp(48px, 6vw, 120px)",
+          gap:isMobile ? 32 : 64,
+          padding:isMobile ? "24px 18px 32px" : "0 clamp(48px, 6vw, 120px)",
           maxWidth: 1400,
           margin:"0 auto",
           minHeight:isMobile ? "auto" : "calc(100vh - 66px)",
@@ -2878,6 +2980,8 @@ export function CoconutMobileMarketingPage() {
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
+            alignItems: isMobile ? "center" : "flex-start",
+            textAlign: isMobile ? "center" : "left",
           }}>
 
             {/* CTA — first thing, stands out */}
@@ -2885,18 +2989,18 @@ export function CoconutMobileMarketingPage() {
               initial={{ opacity:0, y:10 }}
               animate={{ opacity:1, y:0 }}
               transition={{ duration:0.4 }}
-              style={{ marginBottom: isMobile ? 24 : 36 }}
+              style={{ marginBottom: isMobile ? 20 : 36 }}
             >
               <div style={{
-                display:"inline-flex", alignItems:"center", gap:12,
-                padding: isMobile ? "14px 24px" : "16px 32px",
+                display:"inline-flex", alignItems:"center", gap: isMobile ? 10 : 12,
+                padding: isMobile ? "12px 20px" : "16px 32px",
                 background:LP.text,
-                borderRadius:16,
+                borderRadius: isMobile ? 14 : 16,
                 cursor:"pointer",
                 boxShadow:"0 8px 32px rgba(43,42,41,0.22), 0 2px 8px rgba(43,42,41,0.10)",
               }}>
-                <AppleLogo size={22} color={LP.bg} />
-                <span style={{ fontSize:isMobile ? 16 : 18, fontWeight:800, color:LP.bg, letterSpacing:"-0.02em" }}>Download on the App Store</span>
+                <AppleLogo size={isMobile ? 18 : 22} color={LP.bg} />
+                <span style={{ fontSize:isMobile ? 14 : 18, fontWeight:800, color:LP.bg, letterSpacing:"-0.02em" }}>Download on the App Store</span>
               </div>
             </motion.div>
 
@@ -2906,18 +3010,18 @@ export function CoconutMobileMarketingPage() {
               transition={{ duration:0.55, delay:0.06 }}
             >
               <h1 style={{
-                fontSize: isMobile ? 40 : isTablet ? 52 : "clamp(4rem, 6vw, 5.5rem)",
+                fontSize: isNarrowMobile ? 32 : isMobile ? 38 : isTablet ? 52 : "clamp(4rem, 6vw, 5.5rem)",
                 fontWeight: 900,
                 color: LP.text,
-                lineHeight: 0.98,
-                letterSpacing: isMobile ? "-1.8px" : "-4px",
-                margin: "0 0 20px",
+                lineHeight: isMobile ? 1.05 : 0.98,
+                letterSpacing: isMobile ? "-1.2px" : "-4px",
+                margin: isMobile ? "0 0 14px" : "0 0 20px",
               }}>
                 Splitting dinner{!isMobile && <br />}
                 {isMobile && " "}
                 <span style={{ color:LP.gold }}>shouldn&apos;t take{!isMobile && <br />}{isMobile && " "}longer than dinner.</span>
               </h1>
-              <p style={{ fontSize:isMobile ? 15 : 18, color:LP.textSoft, margin:"0 0 32px", lineHeight:1.5, maxWidth:isMobile ? "100%" : 520 }}>
+              <p style={{ fontSize:isMobile ? 14 : 18, color:LP.textSoft, margin: isMobile ? "0 auto 24px" : "0 0 32px", lineHeight:1.5, maxWidth:isMobile ? 340 : 520 }}>
                 One app for bank charges, receipt lines, shared balances, and Tap to Pay when you want the tab closed now.
               </p>
             </motion.div>
@@ -2930,7 +3034,8 @@ export function CoconutMobileMarketingPage() {
               style={{
                 display:"flex",
                 alignItems:"center",
-                gap: isMobile ? 8 : 10,
+                justifyContent: isMobile ? "center" : "flex-start",
+                gap: isMobile ? 6 : 10,
                 flexWrap:"wrap",
               }}
             >
@@ -2950,8 +3055,8 @@ export function CoconutMobileMarketingPage() {
                     style={{
                       display:"flex",
                       alignItems:"center",
-                      gap: 9,
-                      padding: isMobile ? "10px 16px" : "12px 22px",
+                      gap: isMobile ? 6 : 9,
+                      padding: isNarrowMobile ? "8px 12px" : isMobile ? "9px 14px" : "12px 22px",
                       borderRadius: 999,
                       cursor:"pointer",
                       background: active ? LP.text : LP.bgCard,
@@ -2960,9 +3065,9 @@ export function CoconutMobileMarketingPage() {
                       transition:"all 0.2s ease",
                     }}
                   >
-                    <f.Icon size={isMobile ? 15 : 17} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
+                    <f.Icon size={isMobile ? 13 : 17} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
                     <span style={{
-                      fontSize: isMobile ? 14 : 15,
+                      fontSize: isNarrowMobile ? 12 : isMobile ? 13 : 15,
                       fontWeight: active ? 700 : 500,
                       color: active ? LP.bg : LP.textSoft,
                       letterSpacing:"-0.01em",
@@ -2984,9 +3089,9 @@ export function CoconutMobileMarketingPage() {
                 exit={{ opacity:0, y:-6 }}
                 transition={{ duration:0.2 }}
                 style={{
-                  fontSize: isMobile ? 14 : 15,
+                  fontSize: isMobile ? 13 : 15,
                   color: LP.textMuted,
-                  marginTop: 14,
+                  marginTop: isMobile ? 10 : 14,
                   fontWeight: 500,
                   letterSpacing: "-0.01em",
                 }}
@@ -3002,6 +3107,7 @@ export function CoconutMobileMarketingPage() {
             display:"flex",
             alignItems:"center",
             justifyContent:"center",
+            width: isMobile ? "100%" : "auto",
           }}>
             <motion.div initial={{ opacity:0, y:36, scale:0.93 }} animate={{ opacity:1, y:0, scale:1 }}
               transition={{ duration:0.72, delay:0.12, type:"spring", damping:22 }}
@@ -3028,14 +3134,15 @@ export function CoconutMobileMarketingPage() {
                     <AnimatePresence mode="wait">
                       <motion.div key={screen} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.15 }}
                         style={{ position:"absolute", inset:0, paddingTop:56, paddingBottom:84 }}>
-                        {screen === "home" && <HomeScreen onSettle={handleSettle} onAdd={handleAdd} onFriend={f => setFriendDetail(f)} onSeeAllTx={() => setShowAllTx(true)} onSelectTx={setSelectedTx} onSeeActivity={() => setScreen("activity")} />}
-                        {screen === "friends" && <FriendsScreen onFriend={f => setFriendDetail(f)} onAddGroup={() => setShowAddFriend(true)} />}
+                        {screen === "home" && <HomeScreen onSettle={handleSettle} onAdd={handleAdd} onFriend={f => setFriendDetail(f)} onSeeAllTx={() => setShowAllTx(true)} onSelectTx={setSelectedTx} onSeeActivity={() => setScreen("activity")} onGroup={g => setGroupDetail(g)} />}
+                        {screen === "friends" && <FriendsScreen onFriend={f => setFriendDetail(f)} onAddGroup={() => setShowAddFriend(true)} onGroup={g => setGroupDetail(g)} />}
                         {screen === "activity" && <ActivityScreen onAdd={() => handleAdd()} />}
                         {screen === "account" && <AccountScreen />}
                       </motion.div>
                     </AnimatePresence>
 
                     <AnimatePresence>{friendDetail && <FriendDetail friend={friendDetail} onBack={() => setFriendDetail(null)} onSettle={handleSettle} />}</AnimatePresence>
+                    <AnimatePresence>{groupDetail && <GroupDetail group={groupDetail} onBack={() => setGroupDetail(null)} />}</AnimatePresence>
                     <AnimatePresence>{showAllTx && <AllTxSheet onClose={() => setShowAllTx(false)} onSplit={tx => { handleAdd({ merchant:tx.merchant, amount:tx.amount }); setShowAllTx(false); }} />}</AnimatePresence>
                     <AnimatePresence>
                       {showAddMenu && (
@@ -3094,14 +3201,23 @@ export function CoconutMobileMarketingPage() {
         </div>
 
         {/* ══ FOOTER ══ */}
-        <footer style={{ borderTop:`1px solid ${LP.border}`, padding:"24px 40px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"relative", zIndex:1 }}>
+        <footer style={{
+          borderTop:`1px solid ${LP.border}`,
+          padding: isMobile ? "20px 18px" : "24px 40px",
+          display:"flex",
+          alignItems: isMobile ? "center" : "center",
+          justifyContent: isMobile ? "center" : "space-between",
+          flexDirection: isMobile ? "column" : "row",
+          gap: isMobile ? 12 : 0,
+          position:"relative", zIndex:1,
+        }}>
           <div style={{ display:"flex", alignItems:"center", gap:9 }}>
             <div style={{ width:26, height:26, borderRadius:8, background:"#0F0D0B", display:"flex", alignItems:"center", justifyContent:"center" }}>
               <img src={COCONUT_LOGO_SRC} alt="" style={{ width:16, height:16, borderRadius: 3, objectFit: "cover" }} />
             </div>
             <span style={{ fontSize:13, fontWeight:700, color:LP.textSoft }}>Coconut</span>
           </div>
-          <p style={{ fontSize:12, color:LP.textMuted }}>© 2026 Coconut. Made for people who split things.</p>
+          <p style={{ fontSize:12, color:LP.textMuted, textAlign:"center" }}>© 2026 Coconut. Made for people who split things.</p>
           <div style={{ display:"flex", gap:20 }}>
             {["Privacy", "Terms", "Contact"].map(l => (
               <button key={l} style={{ border:"none", background:"none", fontSize:12, color:LP.textMuted, cursor:"pointer", padding:0 }}>{l}</button>
