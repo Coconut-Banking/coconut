@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
       .from("split_transactions")
       .select(`
       id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code,
+      iso_currency_code, receipt_url,
       transactions(merchant_name, raw_name, amount, date)
     `)
       .in("group_id", sharedGroupIds)
@@ -164,6 +164,7 @@ export async function GET(req: NextRequest) {
       theirShare: number;
       effectOnBalance: number;
       createdAt: string;
+      receiptUrl: string | null;
     }> = [];
 
     for (const groupId of sharedGroupIds) {
@@ -308,6 +309,7 @@ export async function GET(req: NextRequest) {
           theirShare,
           effectOnBalance,
           createdAt: s.created_at,
+          receiptUrl: (s as { receipt_url?: string | null }).receipt_url ?? null,
         });
       }
     }

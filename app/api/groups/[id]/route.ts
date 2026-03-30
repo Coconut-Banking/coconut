@@ -83,7 +83,7 @@ export async function GET(
       .from("split_transactions")
       .select(`
       id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code,
+      iso_currency_code, receipt_url,
       transactions(merchant_name, raw_name, amount, date)
     `)
       .eq("group_id", id)
@@ -280,6 +280,7 @@ export async function GET(
         paidByDisplayName: paidByMember?.display_name ?? "Someone",
         splitCount: totalShares,
         createdAt: s.created_at,
+        receiptUrl: (s as { receipt_url?: string | null }).receipt_url ?? null,
       };
     });
 

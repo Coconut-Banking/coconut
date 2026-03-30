@@ -43,7 +43,7 @@ export async function GET() {
     .from("split_transactions")
     .select(`
       id, group_id, transaction_id, created_by, created_at, date, description,
-      payer_member_id, amount, iso_currency_code,
+      payer_member_id, amount, iso_currency_code, receipt_url,
       transactions(merchant_name, raw_name, amount, date)
     `)
     .in("group_id", ids)
@@ -116,6 +116,7 @@ export async function GET() {
     currency: string;
     time: string;
     sortDate: string;
+    receiptUrl: string | null;
   };
 
   const activity: ActivityItem[] = [];
@@ -172,6 +173,7 @@ export async function GET() {
       currency,
       time: formatTimeAgo(expenseDate),
       sortDate: expenseDate,
+      receiptUrl: (s as { receipt_url?: string | null }).receipt_url ?? null,
     });
   }
 
@@ -199,6 +201,7 @@ export async function GET() {
         currency,
         time: formatTimeAgo(st.created_at),
         sortDate: st.created_at,
+        receiptUrl: null,
       });
     } else if (iAmReceiver) {
       activity.push({
@@ -212,6 +215,7 @@ export async function GET() {
         currency,
         time: formatTimeAgo(st.created_at),
         sortDate: st.created_at,
+        receiptUrl: null,
       });
     }
   }
