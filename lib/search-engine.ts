@@ -125,23 +125,22 @@ export async function extractIntent(
   if (!openai) return defaultIntent(query);
 
   const todayStr = today();
-  const hasMerchants = merchantContext && merchantContext.merchants.length > 0;
-
   // Build merchant section if we have context — always include category for disambiguation
+  const sanitizeForPrompt = (s: string) => String(s ?? "").replace(/[\n\r"\\]/g, " ").slice(0, 100);
   let merchantSection = "";
-  if (hasMerchants) {
-    const list = merchantContext!.merchants;
+  if (merchantContext && merchantContext.merchants.length > 0) {
+    const list = merchantContext.merchants;
     if (list.length <= 50) {
       merchantSection = `\n\nThe user's actual merchants (${list.length} unique) with context:\n` +
-        list.map((m) => `"${m.name}" (raw: "${m.raw}", category: ${m.category}, ${m.count}x)`).join("\n");
+        list.map((m) => `"${sanitizeForPrompt(m.name)}" (raw: "${sanitizeForPrompt(m.raw)}", category: ${sanitizeForPrompt(m.category)}, ${m.count}x)`).join("\n");
     } else {
       // Include category even for large lists — helps disambiguate (e.g. Pioneer could be gas or restaurant)
       merchantSection = `\n\nThe user's actual merchants (${list.length} unique):\n` +
-        list.map((m) => `"${m.name}" [${m.category}]`).join(", ");
+        list.map((m) => `"${sanitizeForPrompt(m.name)}" [${sanitizeForPrompt(m.category)}]`).join(", ");
     }
   }
 
-  const merchantKeywordsInstructions = hasMerchants
+  const merchantKeywordsInstructions = merchantContext && merchantContext.merchants.length > 0
     ? `2. "merchant_keywords" (array of EXACT merchant names from the list below): Use when the query describes an ACTIVITY or CONCEPT. Pick ALL merchant names from the user's data that match the concept.
    ⚠️ Pick EVERY matching merchant, not just one. "gas" should include ALL gas stations (Shell, Esso, Petro-Canada, Macewen, Pioneer, etc), not just one.
    Examples: "rideshare" → pick ["Uber", "Lyft"] (NOT "Uber Eats"), "gas" → pick ALL gas stations from the list, "coffee" → pick ALL coffee shops
@@ -328,8 +327,8 @@ function applyFilters(
       const isExactName = sanitized.includes(" ") || sanitized.length > 8 || /[A-Z]/.test(sanitized);
       if (isExactName) {
         return [
-          `merchant_name.ilike.${sanitized}`,
-          `raw_name.ilike.${sanitized}`,
+          `merchant_name.ilike.%${sanitized}%`,
+          `raw_name.ilike.%${sanitized}%`,
         ];
       }
       // Fuzzy match for short concept keywords (fallback when resolution fails).
