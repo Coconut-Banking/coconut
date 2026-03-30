@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
 
   const amountCents = Math.round(amount * 100);
   const stripe = new Stripe(key);
+  const db = getSupabase();
 
   const metadata: Record<string, string> = {};
   if (body.groupId && body.payerMemberId && body.receiverMemberId) {
@@ -48,7 +49,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const db = getSupabase();
     const { data: groupMembers } = await db
       .from("group_members")
       .select("id")
@@ -68,14 +68,46 @@ export async function POST(req: NextRequest) {
     metadata.source = "terminal";
   }
 
+  // Look up the receiver's Stripe Connected Account for direct payouts
+  let destinationAccountId: string | null = null;
+  if (body.receiverMemberId) {
+    const { data: receiverMember } = await db
+      .from("group_members")
+      .select("user_id")
+      .eq("id", body.receiverMemberId)
+      .maybeSingle();
+
+    if (receiverMember?.user_id) {
+      const { data: connectAccount } = await db
+        .from("stripe_connected_accounts")
+        .select("stripe_account_id")
+        .eq("clerk_user_id", receiverMember.user_id)
+        .eq("onboarding_complete", true)
+        .maybeSingle();
+
+      if (connectAccount) {
+        destinationAccountId = connectAccount.stripe_account_id;
+      }
+    }
+  }
+
   try {
-    const paymentIntent = await stripe.paymentIntents.create({
+    const piParams: Stripe.PaymentIntentCreateParams = {
       amount: amountCents,
       currency: DEFAULT_CURRENCY,
       metadata,
       payment_method_types: ["card_present"],
+    };
+
+    if (destinationAccountId) {
+      piParams.transfer_data = { destination: destinationAccountId };
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(piParams);
+    return NextResponse.json({
+      clientSecret: paymentIntent.client_secret,
+      directPayout: !!destinationAccountId,
     });
-    return NextResponse.json({ clientSecret: paymentIntent.client_secret });
   } catch (e) {
     console.error("[terminal] create payment intent error:", e);
     return NextResponse.json(

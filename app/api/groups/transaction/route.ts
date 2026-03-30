@@ -109,10 +109,14 @@ async function buildResponse(
     };
   }).sort((a, b) => b.amount - a.amount);
 
+  const sharesTotal = shareRows.reduce((sum, s) => sum + s.amount, 0);
+  const effectiveAmount = (tx.amount && tx.amount > 0) ? tx.amount : (sharesTotal > 0 ? Math.round(sharesTotal * 100) / 100 : 0);
+  const effectiveDescription = tx.description || group?.name || "Expense";
+
   return NextResponse.json({
     id: tx.id,
-    description: tx.description,
-    amount: tx.amount,
+    description: effectiveDescription,
+    amount: effectiveAmount,
     currency,
     date: tx.date,
     createdAt: tx.created_at,

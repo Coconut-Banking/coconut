@@ -85,6 +85,31 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Stripe Connect: update onboarding status when account details change
+  if (event.type === "account.updated") {
+    const account = event.data.object as Stripe.Account;
+    const db = getSupabase();
+
+    const { error } = await db
+      .from("stripe_connected_accounts")
+      .update({
+        onboarding_complete: (account.charges_enabled && account.payouts_enabled) ?? false,
+        charges_enabled: account.charges_enabled ?? false,
+        payouts_enabled: account.payouts_enabled ?? false,
+      })
+      .eq("stripe_account_id", account.id);
+
+    if (error) {
+      console.error("[stripe-webhook] connect account update failed:", error);
+    } else {
+      console.log("[stripe-webhook] connect account updated", {
+        accountId: account.id,
+        charges_enabled: account.charges_enabled,
+        payouts_enabled: account.payouts_enabled,
+      });
+    }
+  }
+
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     const session = event.data.object as Stripe.Checkout.Session;
     const { group_id, payer_member_id, receiver_member_id } = session.metadata ?? {};
