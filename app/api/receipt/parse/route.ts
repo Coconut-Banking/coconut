@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
-  const mimeType = file.type || "image/png";
+  const rawMime = file.type || "image/png";
+  const mimeType = rawMime === "image/heic" || rawMime === "image/heif" ? "image/jpeg" : rawMime;
 
   // Parse with GPT-4o Vision
   let parsed;
