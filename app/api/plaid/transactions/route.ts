@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await db
       .from("transactions")
       .select(
-        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform"
+        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
       )
       .eq("clerk_user_id", effectiveUserId)
       .order("date", { ascending: false })
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
           const fresh = await db
             .from("transactions")
             .select(
-              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform"
+              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
             )
             .eq("clerk_user_id", effectiveUserId)
             .order("date", { ascending: false })
@@ -303,6 +303,7 @@ export async function GET(request: NextRequest) {
         receipt_id: receiptIdByTxId.get(tx.id as string) ?? null,
         receiptMatchLine: receiptMatchLineByTxId.get(tx.id as string) ?? undefined,
         alreadySplit: splitTxIds.has(tx.id as string),
+        logoUrl: (tx as Record<string, unknown>).counterparty_logo_url as string | null ?? null,
       };
     });
 
