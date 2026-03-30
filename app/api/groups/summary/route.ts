@@ -371,19 +371,49 @@ export async function GET(req: NextRequest) {
         cached.map((f) => (f.email ?? "").toLowerCase().trim()).filter(Boolean)
       );
 
-      // Replace personBalances for cached Splitwise friends
+      // Build per-person local settlement deltas (Coconut settlements not yet reflected in Splitwise cache).
+      // These must be subtracted from the cached balance so "mark as paid" works immediately.
+      const localSettlementDeltas = new Map<string, Map<string, number>>();
+      for (const m of members ?? []) {
+        if (m.user_id === userId || !m.email) continue;
+        const myMember = memberByGroup.get(m.group_id)?.find((mm) => mm.user_id === userId);
+        if (!myMember) continue;
+        const gSettlements = (settlements ?? []).filter((s) => s.group_id === m.group_id);
+        for (const st of gSettlements) {
+          const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
+          const amt = Number(st.amount);
+          const personKey = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
+          if (!localSettlementDeltas.has(personKey)) localSettlementDeltas.set(personKey, new Map());
+          const pMap = localSettlementDeltas.get(personKey)!;
+          if (st.payer_member_id === m.id && st.receiver_member_id === myMember.id) {
+            pMap.set(cur, (pMap.get(cur) ?? 0) + amt);
+          } else if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
+            pMap.set(cur, (pMap.get(cur) ?? 0) - amt);
+          }
+        }
+      }
+
+      // Replace personBalances with cached Splitwise balances, then apply local settlement deltas
       for (const cf of cached) {
         const email = (cf.email ?? "").toLowerCase().trim();
         const match = memberEmailToKey.get(email);
         if (!match) continue;
-        // Splitwise and Coconut use the same sign convention:
-        //   positive = they owe you, negative = you owe them
         const newByCurrency = new Map<string, number>();
         for (const b of cf.balance ?? []) {
           const amt = parseFloat(b.amount);
           if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
           const cur = normalizeSplitCurrency(b.currency_code);
           newByCurrency.set(cur, Math.round(amt * 100) / 100);
+        }
+        // Apply local Coconut settlements on top of cached Splitwise balance
+        const deltas = localSettlementDeltas.get(match.key);
+        if (deltas) {
+          for (const [cur, delta] of deltas) {
+            const current = newByCurrency.get(cur) ?? 0;
+            const adjusted = Math.round((current + delta) * 100) / 100;
+            if (Math.abs(adjusted) < BALANCE_EPS) newByCurrency.delete(cur);
+            else newByCurrency.set(cur, adjusted);
+          }
         }
         personBalances.set(match.key, { displayName: match.displayName, byCurrency: newByCurrency });
       }

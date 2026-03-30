@@ -335,11 +335,34 @@ export async function GET(req: NextRequest) {
           (f) => (f.email ?? "").toLowerCase().trim() === email.toLowerCase().trim()
         );
         if (match) {
-          currencyBalances = (match.balance ?? [])
-            .map((b) => ({
-              currency: normalizeSplitCurrency(b.currency_code),
-              amount: Math.round(parseFloat(b.amount) * 100) / 100,
-            }))
+          // Start with cached Splitwise balance, then apply local Coconut settlement deltas
+          const cachedByCurrency = new Map<string, number>();
+          for (const b of match.balance ?? []) {
+            const amt = parseFloat(b.amount);
+            if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
+            cachedByCurrency.set(normalizeSplitCurrency(b.currency_code), Math.round(amt * 100) / 100);
+          }
+
+          // Apply local settlements on top of cached Splitwise balances
+          for (const groupId of sharedGroupIds) {
+            const groupMembers = (members ?? []).filter((m) => m.group_id === groupId);
+            const myMember = groupMembers.find((m) => m.user_id === userId);
+            const theirMember = groupMembers.find((m) => personMemberIds.has(m.id));
+            if (!myMember || !theirMember) continue;
+            const gSettlements = (settlements ?? []).filter((s) => s.group_id === groupId);
+            for (const st of gSettlements) {
+              const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
+              const amt = Number(st.amount);
+              if (st.payer_member_id === theirMember.id && st.receiver_member_id === myMember.id) {
+                cachedByCurrency.set(cur, Math.round(((cachedByCurrency.get(cur) ?? 0) + amt) * 100) / 100);
+              } else if (st.payer_member_id === myMember.id && st.receiver_member_id === theirMember.id) {
+                cachedByCurrency.set(cur, Math.round(((cachedByCurrency.get(cur) ?? 0) - amt) * 100) / 100);
+              }
+            }
+          }
+
+          currencyBalances = [...cachedByCurrency.entries()]
+            .map(([currency, amount]) => ({ currency, amount }))
             .filter((b) => Number.isFinite(b.amount) && Math.abs(b.amount) >= BALANCE_EPS)
             .sort((a, b) => a.currency.localeCompare(b.currency));
         }
