@@ -94,9 +94,9 @@ function normalizeMerchantName(raw: string): string {
 }
 
 function amountsMatch(a: number, b: number): boolean {
-  const absA = Math.abs(a);
-  if (absA < 1) return Math.abs(a - b) < 0.5;
-  return Math.abs(a - b) / absA <= AMOUNT_TOLERANCE;
+  const ref = Math.abs(b);
+  if (ref < 1) return Math.abs(a - b) < 0.5;
+  return Math.abs(a - b) / ref <= AMOUNT_TOLERANCE;
 }
 
 function daysBetween(d1: string, d2: string): number {
@@ -459,9 +459,19 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
         .eq("normalized_merchant", d.normalizedMerchant)
         .maybeSingle();
 
-      if (sub) {
+      if (sub && d.transactionDetails.length > 0) {
         try {
+          const idsToLink = d.transactionDetails.slice(0, 10).map(td => td.id);
+          // Verify these IDs still exist in the DB
+          const { data: validTxs } = await db
+            .from("transactions")
+            .select("id")
+            .eq("clerk_user_id", clerkUserId)
+            .in("id", idsToLink);
+          const validIds = new Set((validTxs ?? []).map((r: { id: string }) => r.id));
+
           for (const td of d.transactionDetails.slice(0, 10)) {
+            if (!validIds.has(td.id)) continue;  // skip if transaction no longer exists
             await db.from("subscription_transactions").upsert(
               { subscription_id: sub.id, transaction_id: td.id, amount: td.amount, date: td.date },
               { onConflict: "subscription_id,transaction_id" }
