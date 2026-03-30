@@ -2251,10 +2251,6 @@ function HomeScreen({ onSettle: _onSettle, onAdd: _onAdd, onFriend, onSeeAllTx, 
             </span>
           </div>
 
-          <p style={{ fontSize:13, color:C.label2, marginBottom:22, letterSpacing:"-0.1px" }}>
-            {isPos ? "overall. Keep it up." : "to friends. Settle up."}
-          </p>
-
           {/* Mini stat pills */}
           <div style={{ display:"flex", gap:10 }}>
             {[
@@ -2962,8 +2958,8 @@ export function CoconutMobileMarketingPage() {
           alignItems: isMobile ? "center" : "center",
           justifyContent:"center",
           flexDirection:isMobile ? "column" : "row",
-          gap:isMobile ? 32 : 64,
-          padding:isMobile ? "24px 18px 32px" : "0 clamp(48px, 6vw, 120px)",
+          gap:isMobile ? 20 : 64,
+          padding:isMobile ? "20px 18px 28px" : "0 clamp(48px, 6vw, 120px)",
           maxWidth: 1400,
           margin:"0 auto",
           minHeight:isMobile ? "auto" : "calc(100vh - 66px)",
@@ -3026,79 +3022,81 @@ export function CoconutMobileMarketingPage() {
               </p>
             </motion.div>
 
-            {/* Feature pills */}
-            <motion.div
-              initial={{ opacity:0, y:10 }}
-              animate={{ opacity:1, y:0 }}
-              transition={{ duration:0.45, delay:0.14 }}
-              style={{
-                display:"flex",
-                alignItems:"center",
-                justifyContent: isMobile ? "center" : "flex-start",
-                gap: isMobile ? 6 : 10,
-                flexWrap:"wrap",
-              }}
-            >
-              {features.map((f, i) => {
-                const active = activeFeature === i;
-                return (
-                  <motion.button
-                    key={f.tag}
-                    type="button"
-                    aria-current={active ? "true" : undefined}
-                    aria-label={`${f.tag}: ${f.label}. Plays this feature in the phone demo.`}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => {
-                      setActiveFeature(i);
-                      f.demo();
-                    }}
+            {/* Feature pills — desktop only (mobile renders below phone) */}
+            {!isMobile && (
+              <>
+                <motion.div
+                  initial={{ opacity:0, y:10 }}
+                  animate={{ opacity:1, y:0 }}
+                  transition={{ duration:0.45, delay:0.14 }}
+                  style={{
+                    display:"flex",
+                    alignItems:"center",
+                    gap: 10,
+                    flexWrap:"wrap",
+                  }}
+                >
+                  {features.map((f, i) => {
+                    const active = activeFeature === i;
+                    return (
+                      <motion.button
+                        key={f.tag}
+                        type="button"
+                        aria-current={active ? "true" : undefined}
+                        aria-label={`${f.tag}: ${f.label}. Plays this feature in the phone demo.`}
+                        whileTap={{ scale: 0.96 }}
+                        onClick={() => {
+                          setActiveFeature(i);
+                          f.demo();
+                        }}
+                        style={{
+                          display:"flex",
+                          alignItems:"center",
+                          gap: 9,
+                          padding: "12px 22px",
+                          borderRadius: 999,
+                          cursor:"pointer",
+                          background: active ? LP.text : LP.bgCard,
+                          border: `1.5px solid ${active ? LP.text : LP.border}`,
+                          boxShadow: active ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
+                          transition:"all 0.2s ease",
+                        }}
+                      >
+                        <f.Icon size={17} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
+                        <span style={{
+                          fontSize: 15,
+                          fontWeight: active ? 700 : 500,
+                          color: active ? LP.bg : LP.textSoft,
+                          letterSpacing:"-0.01em",
+                          transition:"all 0.2s ease",
+                        }}>
+                          {f.tag}
+                        </span>
+                      </motion.button>
+                    );
+                  })}
+                </motion.div>
+
+                <AnimatePresence mode="wait">
+                  <motion.p
+                    key={activeFeature}
+                    initial={{ opacity:0, y:6 }}
+                    animate={{ opacity:1, y:0 }}
+                    exit={{ opacity:0, y:-6 }}
+                    transition={{ duration:0.2 }}
                     style={{
-                      display:"flex",
-                      alignItems:"center",
-                      gap: isMobile ? 6 : 9,
-                      padding: isNarrowMobile ? "8px 12px" : isMobile ? "9px 14px" : "12px 22px",
-                      borderRadius: 999,
-                      cursor:"pointer",
-                      background: active ? LP.text : LP.bgCard,
-                      border: `1.5px solid ${active ? LP.text : LP.border}`,
-                      boxShadow: active ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
-                      transition:"all 0.2s ease",
+                      fontSize: 15,
+                      color: LP.textMuted,
+                      marginTop: 14,
+                      fontWeight: 500,
+                      letterSpacing: "-0.01em",
                     }}
                   >
-                    <f.Icon size={isMobile ? 13 : 17} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
-                    <span style={{
-                      fontSize: isNarrowMobile ? 12 : isMobile ? 13 : 15,
-                      fontWeight: active ? 700 : 500,
-                      color: active ? LP.bg : LP.textSoft,
-                      letterSpacing:"-0.01em",
-                      transition:"all 0.2s ease",
-                    }}>
-                      {f.tag}
-                    </span>
-                  </motion.button>
-                );
-              })}
-            </motion.div>
-
-            {/* Active feature value label */}
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={activeFeature}
-                initial={{ opacity:0, y:6 }}
-                animate={{ opacity:1, y:0 }}
-                exit={{ opacity:0, y:-6 }}
-                transition={{ duration:0.2 }}
-                style={{
-                  fontSize: isMobile ? 13 : 15,
-                  color: LP.textMuted,
-                  marginTop: isMobile ? 10 : 14,
-                  fontWeight: 500,
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {activeFeature != null ? features[activeFeature]?.label : null}
-              </motion.p>
-            </AnimatePresence>
+                    {activeFeature != null ? features[activeFeature]?.label : null}
+                  </motion.p>
+                </AnimatePresence>
+              </>
+            )}
           </div>
 
           {/* ── RIGHT: Phone demo ── */}
@@ -3198,6 +3196,76 @@ export function CoconutMobileMarketingPage() {
               </div>
             </motion.div>
           </div>
+
+          {/* Feature pills — mobile only, below phone so both visible */}
+          {isMobile && (
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", width:"100%" }}>
+              <motion.div
+                initial={{ opacity:0, y:10 }}
+                animate={{ opacity:1, y:0 }}
+                transition={{ duration:0.45, delay:0.14 }}
+                style={{
+                  display:"flex",
+                  alignItems:"center",
+                  justifyContent:"center",
+                  gap: 6,
+                  flexWrap:"wrap",
+                }}
+              >
+                {features.map((f, i) => {
+                  const active = activeFeature === i;
+                  return (
+                    <motion.button
+                      key={f.tag}
+                      type="button"
+                      aria-current={active ? "true" : undefined}
+                      aria-label={`${f.tag}: ${f.label}.`}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => {
+                        setActiveFeature(i);
+                        f.demo();
+                      }}
+                      style={{
+                        display:"flex",
+                        alignItems:"center",
+                        gap: 6,
+                        padding: isNarrowMobile ? "8px 12px" : "9px 14px",
+                        borderRadius: 999,
+                        cursor:"pointer",
+                        background: active ? LP.text : LP.bgCard,
+                        border: `1.5px solid ${active ? LP.text : LP.border}`,
+                        boxShadow: active ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
+                        transition:"all 0.2s ease",
+                      }}
+                    >
+                      <f.Icon size={13} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
+                      <span style={{
+                        fontSize: isNarrowMobile ? 12 : 13,
+                        fontWeight: active ? 700 : 500,
+                        color: active ? LP.bg : LP.textSoft,
+                        letterSpacing:"-0.01em",
+                        transition:"all 0.2s ease",
+                      }}>
+                        {f.tag}
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </motion.div>
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={activeFeature}
+                  initial={{ opacity:0, y:6 }}
+                  animate={{ opacity:1, y:0 }}
+                  exit={{ opacity:0, y:-6 }}
+                  transition={{ duration:0.2 }}
+                  style={{ fontSize:13, color:LP.textMuted, marginTop:10, fontWeight:500, letterSpacing:"-0.01em" }}
+                >
+                  {activeFeature != null ? features[activeFeature]?.label : null}
+                </motion.p>
+              </AnimatePresence>
+            </div>
+          )}
         </div>
 
         {/* ══ FOOTER ══ */}
