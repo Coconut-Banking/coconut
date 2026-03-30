@@ -1137,10 +1137,10 @@ function TransactionsPageContent() {
         return afterCategory.filter((tx) => parseLocalDate(tx.date) >= cutoff);
       case "This year":
         cutoff = new Date(now.getFullYear(), 0, 1);
-        return afterCategory.filter((tx) => new Date(tx.date) >= cutoff);
+        return afterCategory.filter((tx) => parseLocalDate(tx.date) >= cutoff);
       default: // "This month"
         cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
-        return afterCategory.filter((tx) => new Date(tx.date) >= cutoff);
+        return afterCategory.filter((tx) => parseLocalDate(tx.date) >= cutoff);
     }
   })();
   // Type filter
