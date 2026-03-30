@@ -72,11 +72,16 @@ export async function POST(req: Request) {
       if (txErr || !tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
       const merchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       const normalized = (tx.normalized_merchant as string) || merchant.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-      const { error } = await db.from("subscriptions").upsert({ clerk_user_id: userId, merchant_name: merchant, normalized_merchant: normalized, amount: Math.abs(tx.amount as number), frequency: "monthly", last_charge_date: tx.date, next_due_date: addMonth(tx.date as string), primary_category: tx.primary_category || "SUBSCRIPTIONS", transaction_count: 1, status: "active", updated_at: new Date().toISOString() }, { onConflict: "clerk_user_id,normalized_merchant" });
+      const txAmount = Number(tx.amount);
+      if (!Number.isFinite(txAmount) || txAmount === 0) {
+        return NextResponse.json({ error: "Transaction has no valid amount" }, { status: 400 });
+      }
+      const { error } = await db.from("subscriptions").upsert({ clerk_user_id: userId, merchant_name: merchant, normalized_merchant: normalized, amount: Math.abs(txAmount), frequency: "monthly", last_charge_date: tx.date, next_due_date: addMonth(tx.date as string), primary_category: tx.primary_category || "SUBSCRIPTIONS", transaction_count: 1, status: "active", updated_at: new Date().toISOString() }, { onConflict: "clerk_user_id,normalized_merchant" });
       if (error) {
         console.error("[subscriptions] upsert error:", error);
         return NextResponse.json({ error: "Failed to add subscription" }, { status: 500 });
       }
+      revalidateTag(CACHE_TAGS.transactions(userId), "max");
       return NextResponse.json({ added: true });
     }
     // Sync transactions first so we have fresh data for detection

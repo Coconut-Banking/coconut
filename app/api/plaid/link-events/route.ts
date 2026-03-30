@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
   }
 
   const userId = await getEffectiveUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const payload = {
     ts: new Date().toISOString(),
     trace_id: body?.trace_id ?? `plaid_evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,

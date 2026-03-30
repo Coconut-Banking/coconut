@@ -60,8 +60,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing query parameter 'q'" }, { status: 400 });
   }
 
-  const dateStart = request.nextUrl.searchParams.get("date_start") || undefined;
-  const dateEnd = request.nextUrl.searchParams.get("date_end") || undefined;
+  const dateStartRaw = request.nextUrl.searchParams.get("date_start");
+  const dateEndRaw = request.nextUrl.searchParams.get("date_end");
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  if ((dateStartRaw && !ISO_DATE.test(dateStartRaw)) || (dateEndRaw && !ISO_DATE.test(dateEndRaw))) {
+    return NextResponse.json({ error: "date_start and date_end must be YYYY-MM-DD" }, { status: 400 });
+  }
+  const dateStart = dateStartRaw || undefined;
+  const dateEnd = dateEndRaw || undefined;
   const accountId = request.nextUrl.searchParams.get("account_id") || undefined;
   const location = request.nextUrl.searchParams.get("location") || undefined;
 

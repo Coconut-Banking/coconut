@@ -29,6 +29,10 @@ export async function POST(
     );
   }
 
+  if (assignments.length > 200) {
+    return NextResponse.json({ error: "Too many assignments" }, { status: 400 });
+  }
+
   const db = getSupabase();
 
   // Verify ownership
@@ -72,9 +76,11 @@ export async function POST(
   for (const a of assignments) {
     if (!validItemIds.has(a.itemId)) continue;
     for (const assignee of a.assignees) {
+      const name = typeof assignee.name === "string" ? assignee.name.trim().slice(0, 200) : "";
+      if (!name) continue;
       rows.push({
         receipt_item_id: a.itemId,
-        assignee_name: assignee.name,
+        assignee_name: name,
         member_id: assignee.memberId ?? null,
       });
     }

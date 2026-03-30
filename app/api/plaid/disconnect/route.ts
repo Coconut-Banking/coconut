@@ -75,9 +75,18 @@ export async function POST() {
     }
 
     // Delete subscription_transactions before subscriptions to avoid orphaned rows
+    // Skip rows referencing protected transaction IDs to preserve subscription history
     const { data: userSubs } = await db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId);
     if (userSubs?.length) {
-      await db.from("subscription_transactions").delete().in("subscription_id", userSubs.map(s => s.id));
+      const stQuery = db
+        .from("subscription_transactions")
+        .delete()
+        .in("subscription_id", userSubs.map((s: { id: string }) => s.id));
+      if (protectedIds.size > 0) {
+        await stQuery.not("transaction_id", "in", `(${[...protectedIds].join(",")})`);
+      } else {
+        await stQuery;
+      }
     }
     // Delete subscriptions (will be re-detected on reconnect)
     await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
@@ -91,6 +100,7 @@ export async function POST() {
     }
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+    revalidateTag(CACHE_TAGS.splitTransactions(effectiveUserId), "max");
 
     return NextResponse.json({ ok: true });
   } catch (err) {

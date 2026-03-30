@@ -173,8 +173,8 @@ export async function fetchAllEmailReceiptsLinkedForUser(
       .order("id", { ascending: true })
       .range(from, from + EMAIL_RECEIPT_PAGE - 1);
     if (error) {
-      console.warn("[email_receipts] paginated fetch failed:", error.message);
-      break;
+      console.error("[email_receipts] paginated fetch failed:", error.message);
+      throw new Error(`email_receipts paginated fetch failed: ${error.message}`);
     }
     if (!data?.length) break;
     out.push(...(data as unknown as Record<string, unknown>[]));
@@ -248,35 +248,36 @@ export async function remapEmailReceiptsBeforeTxDedupeDelete(
  * Plaid returns different transaction_ids for the same real tx when the same bank
  * is linked multiple times (reconnect / duplicate Items). We skip inserting dupes.
  */
-async function filterDuplicateTransactions<T extends { normalized_merchant: string; amount: number; date: string }>(
+async function filterDuplicateTransactions<T extends { normalized_merchant: string; amount: number; date: string; plaid_transaction_id: string }>(
   db: Awaited<ReturnType<typeof getSupabase>>,
   clerkUserId: string,
   rows: T[]
 ): Promise<T[]> {
   if (rows.length === 0) return rows;
 
-  const keys = rows.map((r) => dedupeKey(r.normalized_merchant, r.amount, r.date));
-  const uniqueKeys = [...new Set(keys)];
-
-  // Fetch existing (normalized_merchant, amount, date) for this user from DB
-  const { data: existing } = await db
-    .from("transactions")
-    .select("normalized_merchant, amount, date")
-    .eq("clerk_user_id", clerkUserId)
-    .not("plaid_transaction_id", "like", "manual_%");
-
-  const existingKeys = new Set(
-    (existing ?? []).map((r) =>
-      dedupeKey((r.normalized_merchant ?? "").trim(), Number(r.amount), (r.date as string) ?? "")
-    )
-  );
+  // Query only the incoming plaid_transaction_ids to avoid unbounded full-table scans.
+  // PostgREST caps unranged queries at 1000 rows; users with >1000 transactions would
+  // silently get an incomplete duplicate filter using the old approach.
+  const PAGE = 1000;
+  const existingIds = new Set<string>();
+  const incomingIds = rows.map((r) => r.plaid_transaction_id).filter(Boolean);
+  for (let from = 0; from < incomingIds.length; from += PAGE) {
+    const chunk = incomingIds.slice(from, from + PAGE);
+    const { data: existingPage } = await db
+      .from("transactions")
+      .select("plaid_transaction_id")
+      .eq("clerk_user_id", clerkUserId)
+      .in("plaid_transaction_id", chunk);
+    for (const r of existingPage ?? []) {
+      if (r.plaid_transaction_id) existingIds.add(r.plaid_transaction_id as string);
+    }
+  }
 
   const seenInBatch = new Set<string>();
   return rows.filter((r) => {
-    const key = dedupeKey(r.normalized_merchant, r.amount, r.date);
-    if (existingKeys.has(key)) return false;
-    if (seenInBatch.has(key)) return false;
-    seenInBatch.add(key);
+    if (!r.plaid_transaction_id || existingIds.has(r.plaid_transaction_id)) return false;
+    if (seenInBatch.has(r.plaid_transaction_id)) return false;
+    seenInBatch.add(r.plaid_transaction_id);
     return true;
   });
 }
@@ -305,7 +306,14 @@ async function syncSingleToken(
   }
 
   // Upsert accounts for this bank (plaid_item_id links to institution for display)
-  const { data: acctResp } = await plaid.accountsGet({ access_token: accessToken });
+  let acctResp: Awaited<ReturnType<typeof plaid.accountsGet>>["data"] | null = null;
+  try {
+    const result = await plaid.accountsGet({ access_token: accessToken });
+    acctResp = result.data;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[sync] accountsGet failed (skipping account upsert):", msg);
+  }
   if (!acctResp?.accounts || !Array.isArray(acctResp.accounts)) {
     console.error("[sync] accountsGet returned invalid data", { clerkUserId, plaidItemId });
     return { synced: 0, removedIds: [], skipped: 0 };
@@ -335,7 +343,8 @@ async function syncSingleToken(
           { onConflict: "plaid_account_id" }
         );
       } else {
-        await db.from("accounts").upsert(row, { onConflict: "plaid_account_id" });
+        console.error("[sync] account upsert unhandled error:", errMsg, { clerkUserId, plaidAccountId: row.plaid_account_id });
+        throw new Error(`Account upsert failed: ${errMsg}`);
       }
     }
   }
@@ -846,7 +855,11 @@ export async function enrichCategoriesForUser(
         .from("transactions")
         .update({ primary_category: category })
         .eq("id", id);
-      if (!updateErr) updated++;
+      if (updateErr) {
+        console.warn("[categorize] update failed for tx", id, ":", updateErr.message);
+      } else {
+        updated++;
+      }
     }
   }
 

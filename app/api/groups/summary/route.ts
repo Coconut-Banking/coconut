@@ -397,11 +397,12 @@ export async function GET(req: NextRequest) {
 
       // Replace personBalances with cached Splitwise balances, then apply local settlement deltas
       for (const cf of cached) {
+        if (!cf || typeof cf !== "object" || !Array.isArray(cf.balance)) continue;
         const email = (cf.email ?? "").toLowerCase().trim();
         const match = memberEmailToKey.get(email);
         if (!match) continue;
         const newByCurrency = new Map<string, number>();
-        for (const b of cf.balance ?? []) {
+        for (const b of cf.balance) {
           const amt = parseFloat(b.amount);
           if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
           const cur = normalizeSplitCurrency(b.currency_code);

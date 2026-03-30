@@ -39,6 +39,10 @@ export async function GET(req: NextRequest) {
       .eq("id", id)
       .maybeSingle();
     if (!txFallback) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+    const accessibleIdsFallback = await getAccessibleGroupIds(userId);
+    if (!accessibleIdsFallback.includes(txFallback.group_id)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     return buildResponse(db, userId, txFallback, null, null, null);
   }
 

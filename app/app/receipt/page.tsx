@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { useReceiptSplit, type Step } from "@/hooks/useReceiptSplit";
 import type { ReceiptItem } from "@/lib/receipt-split";
 import { exportReceiptSplitPdf } from "@/lib/receipt-pdf";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -711,6 +712,7 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
 function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
   const grandTotal = rs.personShares.reduce((s, p) => s + p.totalOwed, 0);
+  const { currencyCode } = useCurrency();
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
   const [finishing, setFinishing] = useState(false);
@@ -851,7 +853,8 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             exportReceiptSplitPdf(
               rs.editMerchant,
               rs.personShares,
-              `receipt-split-${(rs.editMerchant || "receipt").replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`
+              `receipt-split-${(rs.editMerchant || "receipt").replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.pdf`,
+              currencyCode
             )
           }
           className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"

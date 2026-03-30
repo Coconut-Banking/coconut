@@ -30,6 +30,12 @@ export interface TransactionRow {
   detailed_category: string | null;
   iso_currency_code: string | null;
   is_pending: boolean | null;
+  pending_transaction_id?: string | null;
+  source?: string | null;
+  p2p_counterparty?: string | null;
+  p2p_note?: string | null;
+  p2p_platform?: string | null;
+  counterparty_logo_url?: string | null;
 }
 
 export async function getCachedTransactions(
@@ -57,7 +63,7 @@ async function fetchTransactions(
   const { data, error } = await db
     .from("transactions")
     .select(
-      "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending"
+      "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
     )
     .eq("clerk_user_id", userId)
     .order("date", { ascending: false })

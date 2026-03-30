@@ -39,8 +39,9 @@ async function verifyPlaidWebhook(body: string, verificationHeader: string | nul
     if (!claimedHash) return false;
 
     const bodyHash = createHash("sha256").update(body).digest("hex");
-    if (bodyHash.length !== claimedHash.length) return false;
-    return timingSafeEqual(Buffer.from(bodyHash, "hex"), Buffer.from(claimedHash, "hex"));
+    const normalizedClaimed = claimedHash.toLowerCase();
+    if (bodyHash.length !== normalizedClaimed.length) return false;
+    return timingSafeEqual(Buffer.from(bodyHash, "hex"), Buffer.from(normalizedClaimed, "hex"));
   } catch {
     return false;
   }
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
       );
     } catch (e) {
       console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
+      return NextResponse.json({ error: "Sync failed" }, { status: 500 });
     }
   } else if (webhook_type === "ITEM") {
     if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
@@ -150,6 +152,7 @@ export async function POST(request: NextRequest) {
         );
       } catch (e) {
         console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
+        return NextResponse.json({ error: "Sync failed" }, { status: 500 });
       }
     } else if (webhook_code === "ERROR" && payload.error?.error_code === "ITEM_LOGIN_REQUIRED") {
       console.log("[plaid][webhook] ITEM_LOGIN_REQUIRED", { item_id, user_id: clerkUserId });
@@ -165,6 +168,7 @@ export async function POST(request: NextRequest) {
         revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
       } catch (e) {
         console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e);
+        return NextResponse.json({ error: "Sync failed" }, { status: 500 });
       }
     } else if (
       webhook_code === "USER_PERMISSION_REVOKED" ||
