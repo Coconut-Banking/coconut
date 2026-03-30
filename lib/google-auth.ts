@@ -7,9 +7,11 @@ const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 export function getOAuth2Client() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  const redirectUri =
+    process.env.GOOGLE_REDIRECT_URI ||
+    (process.env.APP_URL ? `${process.env.APP_URL}/api/gmail/callback` : null);
   if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI must be set");
+    throw new Error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI (or APP_URL) must be set");
   }
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
