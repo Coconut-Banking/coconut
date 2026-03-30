@@ -82,6 +82,12 @@ export async function GET(request: NextRequest) {
     await saveGmailTokens(clerkUserId, tokens, email);
     console.log("[Gmail Callback] Tokens saved successfully");
 
+    // Fire-and-forget: scan last 90 days of receipts on first connect
+    import("@/lib/receipt-parser")
+      .then(({ scanGmailForReceipts }) => scanGmailForReceipts(clerkUserId, 90, true, false))
+      .then((result) => console.log("[Gmail Callback] Initial scan complete:", result))
+      .catch((err) => console.warn("[Gmail Callback] Initial scan failed (non-blocking):", err));
+
     if (sanitizedRedirect) {
       const url = sanitizedRedirect.startsWith("/")
         ? new URL(`${sanitizedRedirect}?connected=true`, request.url)
