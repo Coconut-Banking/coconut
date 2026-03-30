@@ -561,17 +561,33 @@ export async function syncTransactionsForUser(
     }
   }
 
-  // Post-sync receipt matching: if Gmail is connected, scan for receipts to match new transactions
+  // Post-sync: if Gmail is connected, scan for new receipts then match to transactions.
+  // Scanning on every Plaid sync means enriched data is ready the moment a charge appears.
   if (totalSynced > 0) {
     try {
       const { data: gmailConn } = await db
         .from("gmail_connections")
-        .select("id")
+        .select("id, last_scan_at")
         .eq("clerk_user_id", clerkUserId)
         .maybeSingle();
       if (gmailConn) {
+        // Scan Gmail if last scan was > 5 minutes ago (avoids redundant scans on rapid refreshes)
+        const lastScan = (gmailConn as { last_scan_at?: string | null }).last_scan_at;
+        const minsSinceScan = lastScan
+          ? (Date.now() - new Date(lastScan).getTime()) / 60_000
+          : Infinity;
+        if (minsSinceScan > 5) {
+          try {
+            const { scanGmailForReceipts } = await import("./receipt-parser");
+            const scanResult = await scanGmailForReceipts(clerkUserId, 7, true, false);
+            console.log(`[sync] Gmail scan: ${scanResult.inserted} new, ${scanResult.matched} matched for user ${clerkUserId}`);
+          } catch (scanErr) {
+            console.warn("[sync] Gmail scan failed (non-blocking):", scanErr);
+          }
+        }
+
+        // Also match any older unmatched receipts against the new transactions
         const { matchReceiptsToTransactions } = await import("./receipt-matcher");
-        // Get unmatched receipts from the last 30 days
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const { data: unmatched } = await db
@@ -586,7 +602,7 @@ export async function syncTransactionsForUser(
         }
       }
     } catch (err) {
-      console.error("[sync] receipt matching failed (non-blocking):", err);
+      console.error("[sync] receipt scan/match failed (non-blocking):", err);
     }
   }
 
