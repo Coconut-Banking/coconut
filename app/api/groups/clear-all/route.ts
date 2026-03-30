@@ -42,11 +42,32 @@ export async function POST() {
     if (!delG) deleted += 1;
   }
 
-  // Also clear Splitwise tokens
+  // Remove this user's membership from groups they DON'T own
+  // (e.g. linked via email into another user's Splitwise import).
+  // This prevents those foreign groups from appearing in their feed.
+  const { data: foreignMemberships } = await db
+    .from("group_members")
+    .select("id, group_id")
+    .eq("user_id", userId);
+
+  const ownedIdSet = new Set(ids);
+  const foreignIds = (foreignMemberships ?? [])
+    .filter((m) => m.group_id && !ownedIdSet.has(m.group_id))
+    .map((m) => m.id);
+
+  if (foreignIds.length > 0) {
+    await db.from("group_members").delete().in("id", foreignIds);
+  }
+
+  // Clear Splitwise tokens and cached balances
   await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
 
   // Clear any receipt scans owned by this user
   await db.from("receipt_scans").delete().eq("clerk_user_id", userId);
 
-  return NextResponse.json({ ok: true, deletedGroups: deleted });
+  return NextResponse.json({
+    ok: true,
+    deletedGroups: deleted,
+    removedForeignMemberships: foreignIds.length,
+  });
 }
