@@ -207,7 +207,7 @@ const ALL_BANK_TX: BankTx[] = [
     email:{ kind:"food", restaurant:"Hana Japanese Kitchen", deliveredTo:"2847 Mission St", items:["Spicy Ramen ×2","Vegetable Gyoza","Matcha Latte ×2"], deliveredAt:"Delivered 8:14 PM" } },
   { id:"b4", merchant:"Amazon",          logo:"amazon", amount:67.20,  date:"Mar 18", hint:"Split with Jordan?",    unsplit:true,
     suggestedPeople:["jordan"],
-    email:{ kind:"order", items:["Sony WH-1000XM5 Headphones","USB-C Hub (7-in-1)","Kindle Paperwhite Case"], deliveryDate:"Arrived Mar 20" } },
+    email:{ kind:"order", items:["USB-C Hub (7-in-1)","Phone Stand, Adjustable","Lightning Cable 6ft ×2"], deliveryDate:"Arrived Mar 20" } },
   { id:"b5", merchant:"Lyft",            logo:"lyft", amount:18.50,  date:"Mar 22", hint:"Split with Alex?",      unsplit:true,
     suggestedPeople:["alex"],
     email:{ kind:"ride", time:"9:14 PM", from:"Haight-Ashbury, Haight St", to:"SFO Terminal 2", duration:"38 min", distance:"14.2 mi", driver:"Priya S. · ⭐ 4.88" } },
@@ -2927,7 +2927,9 @@ export function CoconutMobileMarketingPage() {
           </div>
 
           <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", flexWrap:"wrap", gap:8 }}>
-            <span
+            <button
+              type="button"
+              onClick={() => {}}
               style={{
                 display:"inline-flex",
                 alignItems:"center",
@@ -2944,11 +2946,12 @@ export function CoconutMobileMarketingPage() {
                 lineHeight:1.25,
                 maxWidth:"min(100%, 220px)",
                 textAlign:"left",
+                cursor:"pointer",
               }}
             >
               <AppleLogo size={18} color={LP.text} />
               {isMobile ? "Get app" : "App Store"}
-            </span>
+            </button>
           </div>
         </nav>
 
@@ -3103,10 +3106,36 @@ export function CoconutMobileMarketingPage() {
           <div style={{
             flex: isMobile ? "unset" : "0 0 auto",
             display:"flex",
+            flexDirection:"column",
             alignItems:"center",
             justifyContent:"center",
             width: isMobile ? "100%" : "auto",
           }}>
+            <motion.div
+              initial={{ opacity:0 }}
+              animate={{ opacity:1 }}
+              transition={{ delay:0.8, duration:0.4 }}
+              style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}
+            >
+              <div style={{
+                display:"inline-flex", alignItems:"center", gap:7,
+                padding:"6px 14px",
+                borderRadius:999,
+                background:"rgba(61,142,98,0.08)",
+                border:"1px solid rgba(61,142,98,0.2)",
+              }}>
+                <div style={{ position:"relative", width:8, height:8 }}>
+                  <motion.div
+                    animate={{ scale:[1, 2, 1], opacity:[0.5, 0, 0.5] }}
+                    transition={{ duration:2, repeat:Infinity, ease:"easeInOut" }}
+                    style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#3D8E62" }}
+                  />
+                  <div style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#3D8E62" }} />
+                </div>
+                <span style={{ fontSize:13, fontWeight:700, color:"#3D8E62", letterSpacing:"-0.01em" }}>Live Demo</span>
+              </div>
+              <span style={{ fontSize:13, color:LP.textMuted }}>· Tap anything</span>
+            </motion.div>
             <motion.div initial={{ opacity:0, y:36, scale:0.93 }} animate={{ opacity:1, y:0, scale:1 }}
               transition={{ duration:0.72, delay:0.12, type:"spring", damping:22 }}
               style={{ position:"relative", width:393 * phoneScale, height:852 * phoneScale, flexShrink:0 }}>
