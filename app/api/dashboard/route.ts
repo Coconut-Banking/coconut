@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
+import { convertCurrency } from "@/lib/currency";
 
 export async function GET() {
   const { userId, getToken } = await auth();
@@ -55,10 +56,11 @@ export async function GET() {
       const isLiability = liabilityTypes.has(type);
 
       // For depository, prefer balance_available (excludes pending debits)
-      const bal =
+      const nativeBal =
         !isLiability && a.balance_available != null
           ? Number(a.balance_available)
           : Number(a.balance_current) || 0;
+      const bal = convertCurrency(nativeBal, a.iso_currency_code ?? "USD", "USD");
 
       if (isLiability) {
         if (bal >= 0) {
@@ -75,7 +77,7 @@ export async function GET() {
     // Add manual P2P wallet balances to assets
     const manualAccounts = walletsResult.data ?? [];
     for (const w of manualAccounts) {
-      assets += Number(w.balance) || 0;
+      assets += convertCurrency(Number(w.balance) || 0, w.iso_currency_code ?? "USD", "USD");
     }
 
     // Upcoming bills: next 5 subscriptions by due date
@@ -96,6 +98,7 @@ export async function GET() {
       if (s.frequency === "semiannual") return acc + s.amount / 6;
       return acc + s.amount;
     }, 0);
+    const totalMonthlyRounded = Math.round(totalMonthly * 100) / 100;
 
     const upcomingBills = subs
       .filter((s) => s.nextDue)
@@ -130,7 +133,7 @@ export async function GET() {
 
     return NextResponse.json({
       netWorth: { assets, liabilities, total: assets - liabilities },
-      subscriptions: { totalMonthly, count: subs.length, upcomingBills },
+      subscriptions: { totalMonthly: totalMonthlyRounded, count: subs.length, upcomingBills },
       accounts: accountList,
       wallets,
     }, {
