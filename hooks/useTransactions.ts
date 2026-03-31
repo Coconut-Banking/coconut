@@ -108,7 +108,10 @@ export function useTransactions() {
         }
       })
       .catch(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError("Failed to load transactions");
+          setLoading(false);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
