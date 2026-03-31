@@ -16,7 +16,7 @@ export async function GET() {
   }
 
   try {
-    const token = session.userId ? await getCachedSupabaseToken(session.getToken) : null;
+    const token = session.userId ? await getCachedSupabaseToken(session.getToken, session.userId) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     const [accountsResult, subsResult, walletsResult] = await Promise.all([

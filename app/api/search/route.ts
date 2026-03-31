@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
 
   try {
-    const token = session.userId ? await getCachedSupabaseToken(session.getToken) : null;
+    const token = session.userId ? await getCachedSupabaseToken(session.getToken, session.userId) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     // Direct query so RLS is enforced when available

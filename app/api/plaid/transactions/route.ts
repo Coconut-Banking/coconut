@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   console.log("[pipeline:tx] GET start", { userId: effectiveUserId, refresh: bypassCache });
 
   try {
-    const token = clerkUserId ? await getCachedSupabaseToken(getToken) : null;
+    const token = clerkUserId ? await getCachedSupabaseToken(getToken, clerkUserId) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     // Use direct RLS-backed query (avoid service-role cached query for security hardening)

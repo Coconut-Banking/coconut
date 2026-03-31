@@ -88,26 +88,30 @@ export function getClerkRateLimitRetryAfterSeconds(): number {
   return Math.max(1, Math.ceil((_clerkRateLimitedUntil - Date.now()) / 1000));
 }
 
-let _supabaseTokenCache: { token: string; expiresAt: number } | null = null;
+const _supabaseTokenCacheByUser = new Map<string, { token: string; expiresAt: number }>();
 const SUPABASE_TOKEN_CACHE_TTL_MS = 50_000;
 
 /**
  * Wraps getToken({ template: "supabase" }) with an in-memory cache so
  * concurrent requests to the same serverless instance share one token
- * instead of each hitting Clerk's Backend API. Returns null on failure.
+ * instead of each hitting Clerk's Backend API. The cache is keyed by
+ * userId to prevent cross-user data leaks on warm serverless instances.
+ * Returns null on failure.
  */
 export async function getCachedSupabaseToken(
-  getToken: ClerkAuthSnapshot["getToken"]
+  getToken: ClerkAuthSnapshot["getToken"],
+  userId: string
 ): Promise<string | null> {
   const now = Date.now();
-  if (_supabaseTokenCache && now < _supabaseTokenCache.expiresAt) {
-    return _supabaseTokenCache.token;
+  const cached = _supabaseTokenCacheByUser.get(userId);
+  if (cached && now < cached.expiresAt) {
+    return cached.token;
   }
-  if (now < _clerkRateLimitedUntil) return _supabaseTokenCache?.token ?? null;
+  if (now < _clerkRateLimitedUntil) return cached?.token ?? null;
   try {
     const token = await getToken({ template: "supabase" });
     if (token) {
-      _supabaseTokenCache = { token, expiresAt: now + SUPABASE_TOKEN_CACHE_TTL_MS };
+      _supabaseTokenCacheByUser.set(userId, { token, expiresAt: now + SUPABASE_TOKEN_CACHE_TTL_MS });
     }
     return token;
   } catch (e) {
@@ -117,7 +121,7 @@ export async function getCachedSupabaseToken(
         : (e as { retryAfter?: number }).retryAfter ?? 5;
       markClerkRateLimited(ra);
     }
-    return _supabaseTokenCache?.token ?? null;
+    return cached?.token ?? null;
   }
 }
 
