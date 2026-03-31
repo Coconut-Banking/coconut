@@ -44,9 +44,9 @@ export type LoadClerkAuthResult =
   | { ok: false; reason: "rate_limited" };
 
 export const loadClerkAuth = cache(async (): Promise<LoadClerkAuthResult> => {
-  if (Date.now() < _clerkRateLimitedUntil) {
-    return { ok: false, reason: "rate_limited" };
-  }
+  // auth() reads from the middleware-computed request context — it does NOT hit
+  // Clerk's Backend API, so it is safe to call even during a rate-limit window.
+  // Only getToken() makes an outbound API call; callers should handle that failure.
   try {
     const a = await auth();
     return { ok: true, userId: a.userId ?? null, getToken: a.getToken };
@@ -86,6 +86,39 @@ export function isClerkCurrentlyRateLimited(): boolean {
 /** Seconds until local Clerk backoff ends (for Retry-After headers). */
 export function getClerkRateLimitRetryAfterSeconds(): number {
   return Math.max(1, Math.ceil((_clerkRateLimitedUntil - Date.now()) / 1000));
+}
+
+let _supabaseTokenCache: { token: string; expiresAt: number } | null = null;
+const SUPABASE_TOKEN_CACHE_TTL_MS = 50_000;
+
+/**
+ * Wraps getToken({ template: "supabase" }) with an in-memory cache so
+ * concurrent requests to the same serverless instance share one token
+ * instead of each hitting Clerk's Backend API. Returns null on failure.
+ */
+export async function getCachedSupabaseToken(
+  getToken: ClerkAuthSnapshot["getToken"]
+): Promise<string | null> {
+  const now = Date.now();
+  if (_supabaseTokenCache && now < _supabaseTokenCache.expiresAt) {
+    return _supabaseTokenCache.token;
+  }
+  if (now < _clerkRateLimitedUntil) return _supabaseTokenCache?.token ?? null;
+  try {
+    const token = await getToken({ template: "supabase" });
+    if (token) {
+      _supabaseTokenCache = { token, expiresAt: now + SUPABASE_TOKEN_CACHE_TTL_MS };
+    }
+    return token;
+  } catch (e) {
+    if (e instanceof ClerkRateLimitError || isClerkRateLimitError(e)) {
+      const ra = e instanceof ClerkRateLimitError
+        ? e.retryAfter
+        : (e as { retryAfter?: number }).retryAfter ?? 5;
+      markClerkRateLimited(ra);
+    }
+    return _supabaseTokenCache?.token ?? null;
+  }
 }
 
 export { markClerkRateLimited };

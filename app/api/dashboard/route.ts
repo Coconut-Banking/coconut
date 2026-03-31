@@ -3,15 +3,12 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import { convertCurrency } from "@/lib/currency";
-import { getClerkRateLimitRetryAfterSeconds, loadClerkAuth } from "@/lib/auth";
+import { getCachedSupabaseToken, loadClerkAuth } from "@/lib/auth";
 
 export async function GET() {
   const session = await loadClerkAuth();
   if (!session.ok) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const effectiveUserId = await getEffectiveUserId({ userId: session.userId });
   if (!effectiveUserId) {
@@ -19,7 +16,7 @@ export async function GET() {
   }
 
   try {
-    const token = session.userId ? await session.getToken({ template: "supabase" }) : null;
+    const token = session.userId ? await getCachedSupabaseToken(session.getToken) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     const [accountsResult, subsResult, walletsResult] = await Promise.all([

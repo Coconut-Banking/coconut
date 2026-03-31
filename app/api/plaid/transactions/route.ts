@@ -5,11 +5,8 @@ import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
 import {
-  ClerkRateLimitError,
-  getClerkRateLimitRetryAfterSeconds,
-  isClerkRateLimitError,
+  getCachedSupabaseToken,
   loadClerkAuth,
-  markClerkRateLimited,
 } from "@/lib/auth";
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
 import { rateLimit } from "@/lib/rate-limit";
@@ -27,10 +24,7 @@ import {
 export async function GET(request: NextRequest) {
   const session = await loadClerkAuth();
   if (!session.ok) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { userId: clerkUserId, getToken } = session;
 
@@ -44,28 +38,7 @@ export async function GET(request: NextRequest) {
   console.log("[pipeline:tx] GET start", { userId: effectiveUserId, refresh: bypassCache });
 
   try {
-    let token: string | null = null;
-    if (clerkUserId) {
-      try {
-        token = await getToken({ template: "supabase" });
-      } catch (tokenErr) {
-        if (tokenErr instanceof ClerkRateLimitError) {
-          return NextResponse.json(
-            { error: "Too many requests" },
-            { status: 429, headers: { "Retry-After": String(tokenErr.retryAfter) } }
-          );
-        }
-        if (isClerkRateLimitError(tokenErr)) {
-          const ra = (tokenErr as { retryAfter?: number }).retryAfter ?? 5;
-          markClerkRateLimited(ra);
-          return NextResponse.json(
-            { error: "Too many requests" },
-            { status: 429, headers: { "Retry-After": String(ra) } }
-          );
-        }
-        console.warn("[pipeline:tx] getToken failed, falling back to admin:", tokenErr);
-      }
-    }
+    const token = clerkUserId ? await getCachedSupabaseToken(getToken) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     // Use direct RLS-backed query (avoid service-role cached query for security hardening)
@@ -395,10 +368,7 @@ export async function GET(request: NextRequest) {
 export async function POST() {
   const session = await loadClerkAuth();
   if (!session.ok) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const effectiveUserId = await getEffectiveUserId({ userId: session.userId });
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

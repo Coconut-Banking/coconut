@@ -4,16 +4,13 @@ import { searchTransactions } from "@/lib/search";
 import { SEARCH } from "@/lib/config";
 import { getEffectiveUserId } from "@/lib/demo";
 import { rateLimit } from "@/lib/rate-limit";
-import { getClerkRateLimitRetryAfterSeconds, loadClerkAuth } from "@/lib/auth";
+import { getCachedSupabaseToken, loadClerkAuth } from "@/lib/auth";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
   const session = await loadClerkAuth();
   if (!session.ok) {
-    return NextResponse.json(
-      { error: "Too many requests" },
-      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const userId = await getEffectiveUserId({ userId: session.userId });
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,7 +23,7 @@ export async function GET(request: NextRequest) {
   const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
 
   try {
-    const token = session.userId ? await session.getToken({ template: "supabase" }) : null;
+    const token = session.userId ? await getCachedSupabaseToken(session.getToken) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     // Direct query so RLS is enforced when available
