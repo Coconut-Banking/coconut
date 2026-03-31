@@ -475,12 +475,12 @@ async function syncSingleToken(
     };
   };
 
-  const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
-  const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null && r.account_id !== null);
+  const addedRows = allAdded.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null);
+  const modifiedRows = allModified.map(mapTxToRow).filter((r): r is NonNullable<typeof r> => r !== null);
 
   const droppedCount = allAdded.length + allModified.length - addedRows.length - modifiedRows.length;
   if (droppedCount > 0) {
-    console.error(`[sync] DROPPED ${droppedCount} transactions with no matching account for user ${clerkUserId}`);
+    console.error(`[sync] DROPPED ${droppedCount} transactions with invalid data (e.g. invalid amount) for user ${clerkUserId}`);
   }
 
   // Sync-time dedupe: only for ADDED transactions. Plaid can return same tx with different
