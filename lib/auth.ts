@@ -42,10 +42,14 @@ function markClerkRateLimited(retryAfter: number): void {
 /**
  * Get the current user ID. When SKIP_AUTH is true and no token,
  * returns a fixed dev user ID so testing always works without auth.
- * Throws ClerkRateLimitError when Clerk returns 429.
+ * Returns null (not throw) when Clerk is rate-limited — callers
+ * already handle null as 401 Unauthorized, which is safe.
  */
 export async function getUserId(): Promise<string | null> {
-  checkClerkRateLimit();
+  if (Date.now() < _clerkRateLimitedUntil) {
+    console.warn("[auth] Clerk rate-limited, returning null");
+    return null;
+  }
 
   try {
     const { userId } = await auth();
@@ -54,7 +58,8 @@ export async function getUserId(): Promise<string | null> {
     if (isClerkRateLimitError(e)) {
       const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
       markClerkRateLimited(retryAfter);
-      throw new ClerkRateLimitError(retryAfter);
+      console.warn(`[auth] Clerk 429 (retry ${retryAfter}s), returning null`);
+      return null;
     }
     throw e;
   }
@@ -62,6 +67,10 @@ export async function getUserId(): Promise<string | null> {
   if (!SKIP_AUTH) return null;
 
   return DEV_SKIP_AUTH_USER_ID;
+}
+
+export function isClerkCurrentlyRateLimited(): boolean {
+  return Date.now() < _clerkRateLimitedUntil;
 }
 
 export { checkClerkRateLimit, markClerkRateLimited };

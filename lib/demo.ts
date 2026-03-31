@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
-import { ClerkRateLimitError, isClerkRateLimitError, checkClerkRateLimit, markClerkRateLimited } from "@/lib/auth";
+import { ClerkRateLimitError, isClerkRateLimitError, isClerkCurrentlyRateLimited, markClerkRateLimited } from "@/lib/auth";
 
 export const DEMO_USER_ID = "demo-sandbox-user";
 export const DEMO_COOKIE = "coconut_demo_mode";
@@ -64,7 +64,10 @@ export type EffectiveUserAuthHint = { userId: string | null };
  *   to avoid redundant Clerk session resolution.
  */
 export async function getEffectiveUserId(authHint?: EffectiveUserAuthHint): Promise<string | null> {
-  checkClerkRateLimit();
+  if (isClerkCurrentlyRateLimited()) {
+    console.warn("[demo] Clerk rate-limited, returning null");
+    return null;
+  }
 
   let userId: string | null;
   if (authHint !== undefined) {
@@ -77,7 +80,8 @@ export async function getEffectiveUserId(authHint?: EffectiveUserAuthHint): Prom
       if (isClerkRateLimitError(e)) {
         const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
         markClerkRateLimited(retryAfter);
-        throw new ClerkRateLimitError(retryAfter);
+        console.warn(`[demo] Clerk 429 (retry ${retryAfter}s), returning null`);
+        return null;
       }
       throw e;
     }
