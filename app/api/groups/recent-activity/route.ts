@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
-import { getUserId } from "@/lib/auth";
+import { getUserId, ClerkRateLimitError } from "@/lib/auth";
 import { merchantLabelFromSplitRow, splitTransactionDedupeKey } from "@/lib/split-transaction-helpers";
 
 /**
@@ -10,7 +10,18 @@ import { merchantLabelFromSplitRow, splitTransactionDedupeKey } from "@/lib/spli
  * Returns recent activity across all groups for the overview feed.
  */
 export async function GET() {
-  const userId = await getUserId();
+  let userId: string | null;
+  try {
+    userId = await getUserId();
+  } catch (e) {
+    if (e instanceof ClerkRateLimitError) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(e.retryAfter) } }
+      );
+    }
+    throw e;
+  }
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getSupabase();

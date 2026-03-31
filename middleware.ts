@@ -19,6 +19,15 @@ const isPublicRoute = createRouteMatcher([
   "/api/splitwise/callback",
 ]);
 
+function isClerkRateLimitError(e: unknown): e is { status: number; retryAfter?: number } {
+  if (!e || typeof e !== "object") return false;
+  const err = e as Record<string, unknown>;
+  return (
+    err.clerkError === true &&
+    (err.status === 429 || err.code === "api_response_error")
+  );
+}
+
 export default clerkMiddleware(async (auth, req) => {
   const path = req.nextUrl.pathname;
 
@@ -54,14 +63,24 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  const { userId } = await auth();
-  if (!userId) {
-    // API routes: return 401 so the app can show "Sign in with same account" (Clerk's protect() returns 404)
-    if (req.nextUrl.pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      if (req.nextUrl.pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      await auth.protect();
     }
-    // For pages, let Clerk handle the redirect flow.
-    await auth.protect();
+  } catch (e) {
+    if (isClerkRateLimitError(e)) {
+      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
+      console.warn(`[middleware] Clerk 429 — returning rate limit response (retry ${retryAfter}s)`);
+      return NextResponse.json(
+        { error: "Too many requests — please try again shortly" },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
+    throw e;
   }
 });
 

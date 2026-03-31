@@ -5,6 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
+import { ClerkRateLimitError } from "@/lib/auth";
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
 import { rateLimit } from "@/lib/rate-limit";
 import {
@@ -18,8 +19,37 @@ import {
 } from "@/lib/transaction-sync";
 
 export async function GET(request: NextRequest) {
-  const { userId: clerkUserId, getToken } = await auth();
-  const effectiveUserId = await getEffectiveUserId();
+  let clerkUserId: string | null;
+  let getToken: Awaited<ReturnType<typeof auth>>["getToken"];
+  try {
+    const session = await auth();
+    clerkUserId = session.userId;
+    getToken = session.getToken;
+  } catch (e) {
+    if (e instanceof ClerkRateLimitError ||
+        (e && typeof e === "object" && (e as Record<string, unknown>).clerkError === true &&
+         ((e as Record<string, unknown>).status === 429))) {
+      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
+    throw e;
+  }
+
+  let effectiveUserId: string | null;
+  try {
+    effectiveUserId = await getEffectiveUserId();
+  } catch (e) {
+    if (e instanceof ClerkRateLimitError) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(e.retryAfter) } }
+      );
+    }
+    throw e;
+  }
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -319,7 +349,18 @@ export async function GET(request: NextRequest) {
 
 // Re-sync from Plaid on demand. Body: { fullResync?: true } to clear stale/sandbox tx first.
 export async function POST() {
-  const effectiveUserId = await getEffectiveUserId();
+  let effectiveUserId: string | null;
+  try {
+    effectiveUserId = await getEffectiveUserId();
+  } catch (e) {
+    if (e instanceof ClerkRateLimitError) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(e.retryAfter) } }
+      );
+    }
+    throw e;
+  }
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
+import { ClerkRateLimitError } from "@/lib/auth";
 
 export const DEMO_USER_ID = "demo-sandbox-user";
 export const DEMO_COOKIE = "coconut_demo_mode";
@@ -52,8 +53,16 @@ async function getClerkBypassUserId(): Promise<string | null> {
  * - Otherwise returns null (unauthenticated, no demo)
  */
 export async function getEffectiveUserId(): Promise<string | null> {
-  const { userId } = await auth();
-  if (userId) return userId;
+  try {
+    const { userId } = await auth();
+    if (userId) return userId;
+  } catch (e) {
+    if (e && typeof e === "object" && (e as Record<string, unknown>).clerkError === true &&
+        ((e as Record<string, unknown>).status === 429 || (e as Record<string, unknown>).code === "api_response_error")) {
+      throw new ClerkRateLimitError(((e as { retryAfter?: number }).retryAfter) ?? 5);
+    }
+    throw e;
+  }
 
   if (process.env.CLERK_DISABLED === "true" && process.env.NODE_ENV !== "production") {
     return getClerkBypassUserId();
