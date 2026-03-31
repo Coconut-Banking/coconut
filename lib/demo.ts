@@ -46,26 +46,44 @@ async function getClerkBypassUserId(): Promise<string | null> {
 }
 
 /**
+ * Optional result of `auth()` from the same request. When provided, `getEffectiveUserId`
+ * skips a second `auth()` call. Important for routes that already called `auth()` for
+ * `getToken` etc. — each `auth()` can hit Clerk's Backend API; doubling it per request
+ * plus parallel mobile calls (summary + transactions + focus refetch) triggers 429s.
+ */
+export type EffectiveUserAuthHint = { userId: string | null };
+
+/**
  * Returns the effective user ID for API routes:
  * - If authenticated via Clerk, returns the real userId (never demo)
  * - If CLERK_DISABLED and no Clerk session, returns AUTH_BYPASS_USER_ID or first plaid user
  * - If in demo mode (cookie + env guard), returns DEMO_USER_ID
  * - Otherwise returns null (unauthenticated, no demo)
+ *
+ * @param authHint - Pass `{ userId }` from an `auth()` you already awaited in this handler
+ *   to avoid redundant Clerk session resolution.
  */
-export async function getEffectiveUserId(): Promise<string | null> {
+export async function getEffectiveUserId(authHint?: EffectiveUserAuthHint): Promise<string | null> {
   checkClerkRateLimit();
 
-  try {
-    const { userId } = await auth();
-    if (userId) return userId;
-  } catch (e) {
-    if (isClerkRateLimitError(e)) {
-      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
-      markClerkRateLimited(retryAfter);
-      throw new ClerkRateLimitError(retryAfter);
+  let userId: string | null;
+  if (authHint !== undefined) {
+    userId = authHint.userId;
+  } else {
+    try {
+      const a = await auth();
+      userId = a.userId;
+    } catch (e) {
+      if (isClerkRateLimitError(e)) {
+        const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
+        markClerkRateLimited(retryAfter);
+        throw new ClerkRateLimitError(retryAfter);
+      }
+      throw e;
     }
-    throw e;
   }
+
+  if (userId) return userId;
 
   if (process.env.CLERK_DISABLED === "true" && process.env.NODE_ENV !== "production") {
     return getClerkBypassUserId();

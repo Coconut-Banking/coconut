@@ -46,7 +46,8 @@ export async function GET(request: NextRequest) {
 
   let effectiveUserId: string | null;
   try {
-    effectiveUserId = await getEffectiveUserId();
+    // Reuse session from above — do not call auth() again inside getEffectiveUserId (Clerk 429).
+    effectiveUserId = await getEffectiveUserId({ userId: clerkUserId });
   } catch (e) {
     if (e instanceof ClerkRateLimitError) {
       return NextResponse.json(
