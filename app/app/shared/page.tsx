@@ -5,13 +5,21 @@ import {
   Plus,
   ArrowLeft,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   X,
+  Check,
   CheckCircle2,
   Wallet,
+  Nfc,
+  Equal,
+  Hash,
+  DollarSign,
+  Sliders,
+  Zap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -20,6 +28,8 @@ import {
   usePersonDetail,
   useRecentActivity,
   type PersonDetail,
+  type GroupSummary,
+  type FriendBalance,
 } from "@/hooks/useGroups";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -70,55 +80,250 @@ function GroupIcon({ emoji, size = "md" }: { emoji: string; size?: "sm" | "md" }
   );
 }
 
-// ── Add Expense modal ─────────────────────────────────────────────────────
+// ── Add Expense modal (3-step flow) ───────────────────────────────────────
+type ExpenseSplitMode = "equal" | "amount" | "percent" | "shares" | "adjustment";
+const GROUP_EMOJI: Record<string, string> = { home: "🏠", trip: "✈️", couple: "💑", other: "👥" };
+
+interface PeopleDataItem {
+  displayName: string;
+  email: string | null;
+  groupId: string;
+  groupName: string;
+  memberId: string;
+  memberCount: number;
+}
+
 function AddExpenseModal({
   onClose,
   onSuccess,
-  groups,
-  friends: _friends,
+  summaryGroups,
+  summaryFriends,
   selectedGroupId,
   selectedPersonKey,
 }: {
   onClose: () => void;
   onSuccess: () => void;
-  groups: { id: string; name: string }[];
-  friends: { key: string; displayName: string }[];
+  summaryGroups: GroupSummary[];
+  summaryFriends: FriendBalance[];
   selectedGroupId: string | null;
   selectedPersonKey: string | null;
 }) {
   const { format: fc, symbol: currSymbol } = useCurrency();
+  const { user } = useUser();
+
+  // Step management
+  const [step, setStep] = useState<1 | 2 | 3>(selectedGroupId ? 2 : 1);
+
+  // Step 1: "With whom?"
   const [groupId, setGroupId] = useState<string | null>(selectedGroupId);
-  const [personKey, setPersonKey] = useState<string | null>(selectedPersonKey);
+  const [selectedFriendKeys, setSelectedFriendKeys] = useState<string[]>(
+    selectedPersonKey ? [selectedPersonKey] : []
+  );
+  const [peopleData, setPeopleData] = useState<PeopleDataItem[]>([]);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+
+  // Step 2: "Enter details"
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
   const [payerMemberId, setPayerMemberId] = useState<string | null>(null);
-  const [splitMode, setSplitMode] = useState<"equal" | "person" | "custom">("equal");
+  const [splitMode, setSplitMode] = useState<ExpenseSplitMode>("equal");
   const [customShares, setCustomShares] = useState<Record<string, string>>({});
+  const [showPaidBySheet, setShowPaidBySheet] = useState(false);
+  const [showSplitMethodSheet, setShowSplitMethodSheet] = useState(false);
+  const [showSplitDetailSheet, setShowSplitDetailSheet] = useState(false);
+
+  // Step 3: Summary / save
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settledPersons, setSettledPersons] = useState<string[]>([]);
+  const [settlingPerson, setSettlingPerson] = useState<string | null>(null);
 
-  const { user } = useUser();
+  // Data hooks
   const { detail: groupDetail } = useGroupDetail(groupId);
-
   const members = groupDetail?.members ?? [];
   const currentUserMember = members.find((m) => m.user_id === user?.id);
-
+  const effectivePayerId = payerMemberId ?? currentUserMember?.id ?? null;
   const amt = parseFloat(amount) || 0;
-  const customSharesValid = (() => {
-    if (splitMode !== "custom" || amt <= 0) return false;
-    const sumCents = Object.values(customShares).reduce(
-      (s, v) => s + Math.round((parseFloat(v) || 0) * 100), 0
-    );
-    return Math.abs(sumCents - Math.round(amt * 100)) <= 1;
+
+  // Fetch people data on mount for friend→group mapping
+  useEffect(() => {
+    fetch("/api/groups/people")
+      .then((r) => (r.ok ? r.json() : { people: [] }))
+      .then((d) => setPeopleData(Array.isArray(d.people) ? d.people : []))
+      .catch(() => {});
+  }, []);
+
+  // Compute per-member shares for display and API
+  const computeShares = useCallback((): Record<string, number> => {
+    if (!members.length || amt <= 0) return {};
+    const result: Record<string, number> = {};
+
+    switch (splitMode) {
+      case "equal": {
+        const share = amt / members.length;
+        members.forEach((m) => { result[m.id] = share; });
+        break;
+      }
+      case "amount": {
+        members.forEach((m) => {
+          result[m.id] = parseFloat(customShares[m.id] || "0");
+        });
+        break;
+      }
+      case "percent": {
+        members.forEach((m) => {
+          const pct = parseFloat(customShares[m.id] || "0");
+          result[m.id] = Math.round(amt * (pct / 100) * 100) / 100;
+        });
+        break;
+      }
+      case "shares": {
+        const total = members.reduce(
+          (s, m) => s + (parseFloat(customShares[m.id] || "1") || 0), 0
+        );
+        if (total > 0) {
+          members.forEach((m) => {
+            const sh = parseFloat(customShares[m.id] || "1") || 0;
+            result[m.id] = Math.round(amt * (sh / total) * 100) / 100;
+          });
+        }
+        break;
+      }
+      case "adjustment": {
+        const base = amt / members.length;
+        members.forEach((m) => {
+          const adj = parseFloat(customShares[m.id] || "0");
+          result[m.id] = Math.round((base + adj) * 100) / 100;
+        });
+        break;
+      }
+    }
+    return result;
+  }, [members, amt, splitMode, customShares]);
+
+  const shares = computeShares();
+  const equalShare = members.length > 0 ? amt / members.length : 0;
+
+  // People who owe the payer
+  const oweList = (() => {
+    if (!effectivePayerId || !members.length) return [];
+    const payerIsMe = effectivePayerId === currentUserMember?.id;
+    return members
+      .filter((m) => m.id !== effectivePayerId)
+      .filter((m) => (shares[m.id] ?? 0) > 0)
+      .map((m) => ({
+        memberId: m.id,
+        displayName: m.user_id === user?.id ? "You" : m.display_name,
+        initials: m.display_name.slice(0, 2).toUpperCase(),
+        amount: shares[m.id] ?? 0,
+        isMe: m.user_id === user?.id,
+        payerIsMe,
+      }));
   })();
 
+  // Resolve friend keys to a group when transitioning from step 1 → 2
+  const resolveAndContinue = () => {
+    setResolveError(null);
+    if (selectedFriendKeys.length === 0) return;
+
+    // Find groups that contain ALL selected friends
+    const friendGroups = selectedFriendKeys.map((key) => {
+      const match = peopleData.find(
+        (p) => (p.email === key || p.memberId === key || p.displayName === key) ||
+          key.includes(p.memberId)
+      );
+      return match;
+    });
+
+    if (friendGroups.some((f) => !f)) {
+      setResolveError("Could not find all selected friends. Try selecting a group instead.");
+      return;
+    }
+
+    // Check if all are in same group
+    const groupIds = new Set(friendGroups.map((f) => f!.groupId));
+    if (groupIds.size === 1) {
+      setGroupId(friendGroups[0]!.groupId);
+      setStep(2);
+      return;
+    }
+
+    // Try to find a group that contains all selected friends
+    const allGroupIds = summaryGroups.map((g) => g.id);
+    for (const gId of allGroupIds) {
+      const groupPeople = peopleData.filter((p) => p.groupId === gId);
+      const groupPeopleKeys = new Set(
+        groupPeople.flatMap((p) => [p.email, p.memberId, p.displayName].filter(Boolean))
+      );
+      const allFound = selectedFriendKeys.every((key) =>
+        groupPeopleKeys.has(key) ||
+        groupPeople.some((p) => key.includes(p.memberId))
+      );
+      if (allFound) {
+        setGroupId(gId);
+        setStep(2);
+        return;
+      }
+    }
+
+    // Default: use first friend's group
+    setGroupId(friendGroups[0]!.groupId);
+    setStep(2);
+  };
+
+  const toggleFriend = (key: string) => {
+    setSelectedFriendKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+    setResolveError(null);
+  };
+
+  const initShares = (mode: ExpenseSplitMode, total = amt) => {
+    if (!members.length || total <= 0) return;
+    const next: Record<string, string> = {};
+    switch (mode) {
+      case "amount": {
+        const perPerson = (total / members.length).toFixed(2);
+        members.forEach((m) => { next[m.id] = perPerson; });
+        break;
+      }
+      case "percent": {
+        const pct = (100 / members.length).toFixed(0);
+        members.forEach((m) => { next[m.id] = pct; });
+        break;
+      }
+      case "shares":
+        members.forEach((m) => { next[m.id] = "1"; });
+        break;
+      case "adjustment":
+        members.forEach((m) => { next[m.id] = "0"; });
+        break;
+    }
+    setCustomShares(next);
+  };
+
+  const sharesValidForApi = (() => {
+    if (splitMode === "equal") return true;
+    if (amt <= 0) return false;
+    if (splitMode === "amount") {
+      const sum = members.reduce((s, m) => s + (parseFloat(customShares[m.id] || "0")), 0);
+      return Math.abs(Math.round(sum * 100) - Math.round(amt * 100)) <= 1;
+    }
+    if (splitMode === "percent") {
+      const sum = members.reduce((s, m) => s + (parseFloat(customShares[m.id] || "0")), 0);
+      return Math.abs(sum - 100) < 0.5;
+    }
+    return true; // shares and adjustment always valid
+  })();
+
+  // Save expense via API
   const save = async () => {
-    if (!groupId || !amt || amt <= 0) {
+    if (!groupId || amt <= 0) {
       setError("Select a group and enter a valid amount.");
       return;
     }
-    if (splitMode === "custom" && !customSharesValid) {
-      setError("Custom amounts must add up to the total.");
+    if (!sharesValidForApi) {
+      setError("Shares must add up to the total amount.");
       return;
     }
     setError(null);
@@ -128,13 +333,13 @@ function AddExpenseModal({
         groupId,
         description: desc.trim() || "Expense",
         amount: amt,
-        payerMemberId: payerMemberId || currentUserMember?.id || undefined,
+        payerMemberId: effectivePayerId || undefined,
       };
-      if (splitMode === "person" && personKey) payload.personKey = personKey;
-      if (splitMode === "custom" && customSharesValid) {
-        payload.shares = Object.entries(customShares)
-          .filter(([, v]) => parseFloat(v) > 0)
-          .map(([memberId, v]) => ({ memberId, amount: parseFloat(v) }));
+      if (splitMode !== "equal") {
+        const apiShares = members
+          .map((m) => ({ memberId: m.id, amount: shares[m.id] ?? 0 }))
+          .filter((s) => s.amount > 0);
+        payload.shares = apiShares;
       }
       const res = await fetch("/api/manual-expense", {
         method: "POST",
@@ -143,12 +348,6 @@ function AddExpenseModal({
       });
       const data = await res.json();
       if (res.ok) {
-        setDesc("");
-        setAmount("");
-        setGroupId(null);
-        setPersonKey(null);
-        setPayerMemberId(null);
-        setCustomShares({});
         onSuccess();
         onClose();
       } else {
@@ -161,24 +360,459 @@ function AddExpenseModal({
     }
   };
 
-  const initCustomShares = (total = amt) => {
-    if (!groupDetail || !members.length || total <= 0) return;
-    const totalCents = Math.round(total * 100);
-    const baseCents = Math.floor(totalCents / members.length);
-    const remainderCents = totalCents - baseCents * members.length;
-    const next: Record<string, string> = {};
-    members.forEach((m, i) => {
-      next[m.id] = ((baseCents + (i < remainderCents ? 1 : 0)) / 100).toFixed(2);
-    });
-    setCustomShares(next);
+  // Create a Stripe payment link for settlement
+  const handleSettle = async (memberId: string, memberAmount: number) => {
+    if (settlingPerson) return;
+    setSettlingPerson(memberId);
+    try {
+      const receiverMember = currentUserMember;
+      const res = await fetch("/api/stripe/create-payment-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: memberAmount,
+          description: desc || "Expense settlement",
+          recipientName: members.find((m) => m.id === memberId)?.display_name ?? "Friend",
+          groupId: groupId || undefined,
+          payerMemberId: memberId,
+          receiverMemberId: receiverMember?.id,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        await navigator.clipboard.writeText(data.url);
+        setSettledPersons((prev) => [...prev, memberId]);
+      }
+    } catch {
+      // Silently handle — user can retry
+    } finally {
+      setSettlingPerson(null);
+    }
   };
 
+  const payerName =
+    effectivePayerId === currentUserMember?.id
+      ? "you"
+      : members.find((m) => m.id === effectivePayerId)?.display_name ?? "you";
+
+  const splitModeLabel =
+    splitMode === "equal" ? "equally"
+    : splitMode === "amount" ? "by amount"
+    : splitMode === "percent" ? "by %"
+    : splitMode === "shares" ? "by shares"
+    : "by adjustment";
+
+  const canReview = amt > 0 && desc.trim().length > 0 && groupId && sharesValidForApi;
+
+  // ── STEP 1: With whom? ─────────────────────────────────────────────────
+  if (step === 1) {
+    return (
+      <>
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 bg-black/30 backdrop-blur-md z-40"
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ type: "spring", damping: 30, stiffness: 400 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92vh] flex flex-col border border-gray-100">
+            {/* Header */}
+            <div className="flex items-center px-6 py-5 shrink-0 border-b border-gray-100">
+              <button onClick={onClose} aria-label="Close" className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">
+                <X size={18} />
+              </button>
+              <h3 className="flex-1 text-lg font-bold text-gray-900 tracking-tight text-center">With whom?</h3>
+              <div className="w-9" />
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 min-h-0">
+              {/* Groups */}
+              {summaryGroups.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Groups</p>
+                  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                    {summaryGroups.map((g, i) => (
+                      <button
+                        key={g.id}
+                        onClick={() => { setGroupId(g.id); setStep(2); }}
+                        className={`w-full flex items-center gap-4 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left ${i < summaryGroups.length - 1 ? "border-b border-gray-50" : ""}`}
+                      >
+                        <div className="w-11 h-11 rounded-xl bg-[#F0F9F4] border border-[#C3E0D3] flex items-center justify-center text-xl shrink-0">
+                          {GROUP_EMOJI[g.groupType ?? "other"] ?? "👥"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900">{g.name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{g.memberCount} people</p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Friends */}
+              {summaryFriends.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Friends</p>
+                  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                    {summaryFriends.map((f, i) => {
+                      const selected = selectedFriendKeys.includes(f.key);
+                      return (
+                        <button
+                          key={f.key}
+                          onClick={() => toggleFriend(f.key)}
+                          className={`w-full flex items-center gap-4 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left ${i < summaryFriends.length - 1 ? "border-b border-gray-50" : ""}`}
+                        >
+                          <Avatar
+                            initials={f.displayName.slice(0, 2).toUpperCase()}
+                            color={MEMBER_COLORS[i % MEMBER_COLORS.length]}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900">{f.displayName}</p>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                            selected ? "border-[#3D8E62] bg-[#3D8E62]" : "border-gray-300"
+                          }`}>
+                            {selected && <Check size={12} className="text-white" strokeWidth={3} />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {summaryGroups.length === 0 && summaryFriends.length === 0 && (
+                <div className="py-12 text-center">
+                  <p className="text-sm text-gray-500">Create a group first to split expenses.</p>
+                </div>
+              )}
+
+              {resolveError && <p className="text-sm text-red-600 font-medium">{resolveError}</p>}
+            </div>
+
+            {selectedFriendKeys.length > 0 && (
+              <div className="px-6 pb-6 pt-2 shrink-0">
+                <button
+                  onClick={resolveAndContinue}
+                  className="w-full py-3.5 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
+                >
+                  Continue with {selectedFriendKeys.length}{" "}
+                  {selectedFriendKeys.length === 1 ? "person" : "people"} →
+                </button>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </>
+    );
+  }
+
+  // ── STEP 2: Enter details ──────────────────────────────────────────────
+  if (step === 2) {
+    return (
+      <>
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 bg-black/30 backdrop-blur-md z-40"
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ type: "spring", damping: 30, stiffness: 400 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92vh] flex flex-col border border-gray-100">
+            {/* Header */}
+            <div className="flex items-center px-6 py-5 shrink-0 border-b border-gray-100">
+              <button onClick={() => setStep(1)} className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">
+                <ChevronLeft size={18} />
+              </button>
+              <h3 className="flex-1 text-lg font-bold text-gray-900 tracking-tight text-center">Enter details</h3>
+              <div className="w-9" />
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 min-h-0">
+              {/* Description */}
+              <div>
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Description</label>
+                <input
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="What's this for?"
+                  autoFocus
+                  className="w-full px-4 py-3.5 text-sm font-semibold border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
+                />
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Amount</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl font-bold">{currSymbol}</span>
+                  <input
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    type="number"
+                    step="0.01"
+                    className="w-full pl-10 pr-4 py-3.5 text-2xl font-bold border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50 tabular-nums"
+                  />
+                </div>
+              </div>
+
+              {/* Paid by + Split method */}
+              <div className="flex items-center justify-center gap-1 px-4 py-4 rounded-2xl bg-gray-50 border border-gray-100 text-sm text-gray-600">
+                <span>Paid by</span>
+                <button
+                  onClick={() => setShowPaidBySheet(true)}
+                  className="px-2.5 py-0.5 rounded-lg bg-white border border-gray-200 hover:border-[#3D8E62] transition-colors"
+                >
+                  <span className="font-bold text-gray-900">{payerName}</span>
+                </button>
+                <span>and split</span>
+                <button
+                  onClick={() => setShowSplitMethodSheet(true)}
+                  className="px-2.5 py-0.5 rounded-lg bg-white border border-gray-200 hover:border-[#3D8E62] transition-colors"
+                >
+                  <span className="font-bold text-gray-900">{splitModeLabel}</span>
+                </button>
+              </div>
+
+              {amt > 0 && members.length > 0 && splitMode === "equal" && (
+                <p className="text-xs text-gray-400 text-center">
+                  {currSymbol}{equalShare.toFixed(2)} per person
+                </p>
+              )}
+            </div>
+
+            <div className="px-6 pb-6 pt-2 shrink-0">
+              <button
+                onClick={() => setStep(3)}
+                disabled={!canReview}
+                className="w-full py-3.5 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
+              >
+                Review summary →
+              </button>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* ── Paid by sub-sheet ── */}
+        <AnimatePresence>
+          {showPaidBySheet && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setShowPaidBySheet(false)}
+                className="fixed inset-0 bg-black/20 z-[60]"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", damping: 30, stiffness: 400 }}
+                className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+              >
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden max-h-[70vh] flex flex-col border border-gray-100">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <h4 className="text-base font-bold text-gray-900">Paid by</h4>
+                    <button onClick={() => setShowPaidBySheet(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                      <X size={16} className="text-gray-500" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                    {members.map((m, i) => {
+                      const isSelected = (effectivePayerId) === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => { setPayerMemberId(m.id); setShowPaidBySheet(false); }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
+                            isSelected ? "bg-[#EEF7F2] border border-[#3D8E62]/30" : "hover:bg-gray-50 border border-transparent"
+                          }`}
+                        >
+                          <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
+                          <span className="flex-1 text-sm font-medium text-gray-900">{m.user_id === user?.id ? "You" : m.display_name}</span>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            isSelected ? "border-[#3D8E62] bg-[#3D8E62]" : "border-gray-300"
+                          }`}>
+                            {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* ── Split method sub-sheet ── */}
+        <AnimatePresence>
+          {showSplitMethodSheet && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setShowSplitMethodSheet(false)}
+                className="fixed inset-0 bg-black/20 z-[60]"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", damping: 30, stiffness: 400 }}
+                className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+              >
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden max-h-[80vh] flex flex-col border border-gray-100">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <h4 className="text-lg font-bold text-gray-900">Split method</h4>
+                    <button onClick={() => setShowSplitMethodSheet(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                      <X size={16} className="text-gray-500" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                    {([
+                      { mode: "equal" as const, Icon: Equal, title: "Split equally", desc: amt > 0 && members.length > 0 ? `${currSymbol}${equalShare.toFixed(2)} each` : "Even split" },
+                      { mode: "amount" as const, Icon: DollarSign, title: "Unequal amounts", desc: "Enter exact amounts" },
+                      { mode: "percent" as const, Icon: Hash, title: "By percentages", desc: "Split by % of total" },
+                      { mode: "shares" as const, Icon: Sliders, title: "By shares", desc: "Use ratio (e.g., 2:1:1)" },
+                      { mode: "adjustment" as const, Icon: Zap, title: "By adjustment", desc: "Adjust from equal split" },
+                    ]).map(({ mode, Icon, title, desc: modeDesc }) => {
+                      const isSelected = splitMode === mode;
+                      return (
+                        <button
+                          key={mode}
+                          onClick={() => {
+                            setSplitMode(mode);
+                            if (mode === "equal") {
+                              setShowSplitMethodSheet(false);
+                            } else {
+                              initShares(mode);
+                              setShowSplitMethodSheet(false);
+                              setShowSplitDetailSheet(true);
+                            }
+                          }}
+                          className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl transition-all text-left ${
+                            isSelected ? "bg-[#EEF7F2] border border-[#3D8E62]/30" : "hover:bg-gray-50 border border-transparent"
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                            <Icon size={18} className="text-gray-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900">{title}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{modeDesc}</p>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            isSelected ? "border-[#3D8E62] bg-[#3D8E62]" : "border-gray-300"
+                          }`}>
+                            {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* ── Split detail sub-sheet ── */}
+        <AnimatePresence>
+          {showSplitDetailSheet && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setShowSplitDetailSheet(false)}
+                className="fixed inset-0 bg-black/20 z-[80]"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", damping: 30, stiffness: 400 }}
+                className="fixed inset-0 z-[90] flex items-center justify-center p-4"
+              >
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden max-h-[85vh] flex flex-col border border-gray-100">
+                  <div className="flex items-center px-6 py-4 border-b border-gray-100">
+                    <button onClick={() => setShowSplitDetailSheet(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                      <ChevronLeft size={16} className="text-gray-500" />
+                    </button>
+                    <h4 className="flex-1 text-base font-bold text-gray-900 text-center">
+                      {splitMode === "amount" ? "By amounts" : splitMode === "percent" ? "By percentages" : splitMode === "shares" ? "By shares" : "Adjustments"}
+                    </h4>
+                    <button onClick={() => setShowSplitDetailSheet(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                      <X size={16} className="text-gray-500" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                      {members.map((m, i) => {
+                        const val = customShares[m.id] ?? "";
+                        return (
+                          <div key={m.id} className={`flex items-center gap-3 px-4 py-3 ${i < members.length - 1 ? "border-b border-gray-50" : ""}`}>
+                            <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900">{m.user_id === user?.id ? "You" : m.display_name}</p>
+                              <p className="text-xs text-gray-400">
+                                {splitMode === "shares" && `${val || "1"} share${(val || "1") === "1" ? "" : "s"}`}
+                                {splitMode === "amount" && `${currSymbol}${val || "0"}`}
+                                {splitMode === "percent" && `${val || "0"}%`}
+                                {splitMode === "adjustment" && `${Number(val) >= 0 ? "+" : ""}${currSymbol}${val || "0"}`}
+                              </p>
+                            </div>
+                            <input
+                              type="number"
+                              value={val}
+                              onChange={(e) => setCustomShares((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                              className="w-20 px-3 py-2 text-sm font-bold text-right border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] bg-gray-50/50"
+                              step={splitMode === "shares" ? "1" : "0.01"}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Remaining / total indicator */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                        {splitMode === "shares" ? "Total" : "Remaining"}
+                      </p>
+                      <p className="text-base font-bold text-gray-900">
+                        {splitMode === "amount" && `${currSymbol}${amt.toFixed(2)}`}
+                        {splitMode === "percent" && "100%"}
+                        {splitMode === "shares" && `${members.reduce((s, m) => s + (parseFloat(customShares[m.id] || "1") || 0), 0)} shares`}
+                        {splitMode === "adjustment" && `${currSymbol}${amt.toFixed(2)}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="px-4 pb-4 pt-2 shrink-0">
+                    <button
+                      onClick={() => setShowSplitDetailSheet(false)}
+                      className="w-full py-3.5 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
+
+  // ── STEP 3: Summary ────────────────────────────────────────────────────
   return (
     <>
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose}
         className="fixed inset-0 bg-black/30 backdrop-blur-md z-40"
       />
@@ -190,201 +824,89 @@ function AddExpenseModal({
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92vh] flex flex-col border border-gray-100">
-          <div className="flex items-center justify-between px-6 py-5 shrink-0 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-100">
-            <h3 className="text-lg font-bold text-gray-900 tracking-tight">Add expense</h3>
-            <button
-              onClick={onClose}
-              aria-label="Close add expense"
-              className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
-            >
+          {/* Header */}
+          <div className="flex items-center px-6 py-5 shrink-0 border-b border-gray-100">
+            <button onClick={() => setStep(2)} className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">
+              <ChevronLeft size={18} />
+            </button>
+            <h3 className="flex-1 text-lg font-bold text-gray-900 tracking-tight text-center">Summary</h3>
+            <button onClick={onClose} aria-label="Close" className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">
               <X size={18} />
             </button>
           </div>
-          <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
-            <div>
-              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
-                Amount
-              </label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg font-medium">{currSymbol}</span>
-                <input
-                  value={amount}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setAmount(v);
-                    if (splitMode === "custom") {
-                      const n = parseFloat(v) || 0;
-                      if (n > 0) initCustomShares(n);
-                    }
-                  }}
-                  placeholder="0.00"
-                  type="number"
-                  step="0.01"
-                  autoFocus
-                  className="w-full pl-9 pr-4 py-3.5 text-lg font-semibold border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
-                What for
-              </label>
-              <input
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="Dinner, groceries, rent…"
-                className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
-                Group
-              </label>
-              {groups.length === 0 ? (
-                <p className="text-sm text-amber-600 py-4 px-4 rounded-2xl bg-amber-50 border border-amber-100">
-                  Create a group first to add expenses.
-                </p>
-              ) : (
-                <select
-                  value={groupId ?? ""}
-                  onChange={(e) => {
-                    setGroupId(e.target.value || null);
-                    setPersonKey(null);
-                    setCustomShares({});
-                  }}
-                  className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
-                >
-                  <option value="">Select a group</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 min-h-0">
+            {/* Expense card */}
+            <div className="p-5 rounded-2xl bg-[#F0F9F4] border border-[#C3E0D3]">
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1">Expense</p>
+              <p className="text-3xl font-bold text-gray-900 tracking-tight tabular-nums">{currSymbol}{amt.toFixed(2)}</p>
+              <p className="text-sm font-medium text-gray-700 mt-1">{desc || "Expense"}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Paid by {payerName === "you" ? "You" : payerName} · {members.length} people
+              </p>
             </div>
 
-            {groupId && groupDetail && members.length > 0 && (
-              <>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
-                    Paid by
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {members.map((m, i) => {
-                      const isPayer = (payerMemberId ?? currentUserMember?.id) === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => setPayerMemberId(m.id)}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
-                            isPayer
-                              ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52]"
-                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-600"
-                          }`}
-                        >
-                          <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
-                          {m.user_id === user?.id ? "You" : m.display_name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">
-                    Split
-                  </label>
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => { setSplitMode("equal"); setPersonKey(null); }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                        splitMode === "equal" ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
-                      }`}
-                    >
-                      <Users size={18} className="text-gray-500 shrink-0" />
-                      <span className="text-sm font-medium">Split equally</span>
-                      {splitMode === "equal" && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
-                    </button>
-                    {members.filter((m) => m.user_id !== user?.id).map((m) => {
-                      const key = m.user_id ?? m.email ?? `${groupId}-${m.id}`;
-                      const isSelected = splitMode === "person" && personKey === key;
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => { setSplitMode("person"); setPersonKey(isSelected ? null : key); }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                            isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
-                          }`}
-                        >
-                          <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[members.indexOf(m) % MEMBER_COLORS.length]} size="sm" />
-                          <span className="text-sm font-medium">Split with {m.display_name}</span>
-                          {isSelected && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
-                        </button>
-                      );
-                    })}
-                    <button
-                      onClick={() => {
-                        setSplitMode("custom");
-                        setPersonKey(null);
-                        initCustomShares();
-                      }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                        splitMode === "custom" ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
-                      }`}
-                    >
-                      <span className="text-base">✏️</span>
-                      <span className="text-sm font-medium">Custom amounts</span>
-                      {splitMode === "custom" && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
-                    </button>
-                  </div>
-                </div>
-                {splitMode === "custom" && amt > 0 && (
-                  <div className="space-y-2 pt-1">
-                    <p className="text-xs text-gray-500">Enter each person&apos;s share (must total {fc(amt)})</p>
-                    {members.map((m, i) => (
-                      <div key={m.id} className="flex items-center gap-3">
-                        <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[i % MEMBER_COLORS.length]} size="sm" />
-                        <span className="text-sm font-medium w-24 truncate">{m.user_id === user?.id ? "You" : m.display_name}</span>
-                        <div className="flex-1 relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{currSymbol}</span>
-                            <input
-                            value={customShares[m.id] ?? ""}
-                            onChange={(e) => setCustomShares((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                            placeholder="0"
-                            type="number"
-                            step="0.01"
-                            aria-label={`Share for ${m.user_id === user?.id ? "You" : m.display_name}`}
-                            className="w-full pl-7 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20"
+            {/* They owe you / You owe */}
+            {oweList.length > 0 && (
+              <div>
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+                  {oweList[0]?.payerIsMe ? "They owe you" : "You owe"}
+                </p>
+                <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                  {oweList.map((person, i) => {
+                    const isSettled = settledPersons.includes(person.memberId);
+                    const isSettling = settlingPerson === person.memberId;
+                    return (
+                      <div key={person.memberId} className={`px-4 py-4 ${i < oweList.length - 1 ? "border-b border-gray-50" : ""}`}>
+                        <div className="flex items-center gap-3 mb-3">
+                          <Avatar
+                            initials={person.initials}
+                            color={MEMBER_COLORS[i % MEMBER_COLORS.length]}
                           />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900">{person.displayName}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">their share</p>
+                          </div>
+                          <p className="text-lg font-bold text-gray-900 tabular-nums">
+                            {currSymbol}{person.amount.toFixed(2)}
+                          </p>
                         </div>
+                        {person.payerIsMe && (
+                          <button
+                            onClick={() => handleSettle(person.memberId, person.amount)}
+                            disabled={isSettled || isSettling}
+                            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
+                              isSettled
+                                ? "border-[#C3E0D3] bg-[#EEF7F2] text-[#3D8E62]"
+                                : "border-gray-200 hover:border-[#3D8E62] hover:bg-[#EEF7F2] text-gray-700"
+                            }`}
+                          >
+                            {isSettled ? (
+                              <><CheckCircle2 size={14} /> Link copied</>
+                            ) : isSettling ? (
+                              "Creating link…"
+                            ) : (
+                              <><Nfc size={14} /> Settle now with Tap to Pay</>
+                            )}
+                          </button>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </>
+                    );
+                  })}
+                </div>
+              </div>
             )}
+
             {error && <p className="text-sm text-red-600 font-medium">{error}</p>}
           </div>
-          <div className="px-6 pb-6 pt-2 flex gap-3 shrink-0 bg-gray-50/30">
-            <button
-              onClick={onClose}
-              className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm text-gray-600 font-semibold hover:bg-gray-100 transition-colors"
-            >
-              Cancel
-            </button>
+
+          <div className="px-6 pb-6 pt-2 shrink-0">
             <button
               onClick={save}
-              disabled={
-                groups.length === 0 ||
-                !groupId ||
-                !amount ||
-                amt <= 0 ||
-                saving ||
-                (splitMode === "custom" && !customSharesValid)
-              }
-              className="flex-1 py-3 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
+              disabled={saving}
+              className="w-full py-3.5 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
             >
-              {saving ? "Saving…" : "Add expense"}
+              {saving ? "Saving…" : "Done"}
             </button>
           </div>
         </div>
@@ -1156,7 +1678,7 @@ function SharedPageContent() {
     summary?.groups?.map((g) => ({
       id: g.id,
       name: g.name,
-      emoji: GROUP_EMOJI[(g as { groupType?: string }).groupType ?? "other"] ?? "👥",
+      emoji: GROUP_EMOJI[g.groupType ?? "other"] ?? "👥",
       memberCount: g.memberCount,
       direction:
         g.myBalance > 0 ? ("owed" as const) : g.myBalance < 0 ? ("you_owe" as const) : ("settled" as const),
@@ -1559,8 +2081,8 @@ function SharedPageContent() {
           <AddExpenseModal
             onClose={() => setShowAdd(false)}
             onSuccess={() => { refetchSummary(); refetchActivity(); }}
-            groups={summary?.groups?.map((g) => ({ id: g.id, name: g.name })) ?? []}
-            friends={summary?.friends?.map((f) => ({ key: f.key, displayName: f.displayName })) ?? []}
+            summaryGroups={summary?.groups ?? []}
+            summaryFriends={summary?.friends ?? []}
             selectedGroupId={null}
             selectedPersonKey={null}
           />

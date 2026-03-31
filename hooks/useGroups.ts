@@ -124,6 +124,7 @@ export interface GroupSummary {
   memberCount: number;
   myBalance: number;
   lastActivityAt: string;
+  groupType?: string;
 }
 
 export interface FriendBalance {
