@@ -201,10 +201,12 @@ const PERSON_POLL_MS = 30000; // Person view spans multiple groups — poll ever
 export function usePersonDetail(key: string | null) {
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchDetail = useCallback(async (silent = false) => {
     if (!key) {
       setDetail(null);
+      setError(null);
       setLoading(false);
       return;
     }
@@ -213,12 +215,19 @@ export function usePersonDetail(key: string | null) {
       const res = await fetch(`/api/groups/person?key=${encodeURIComponent(key)}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
+        setError(null);
         setDetail(data && typeof data === "object" ? {
           ...data,
           activity: Array.isArray(data.activity) ? data.activity : [],
           settlements: Array.isArray(data.settlements) ? data.settlements : [],
         } : null);
-      } else setDetail(null);
+      } else {
+        setDetail(null);
+        setError("Failed to load person details");
+      }
+    } catch {
+      setDetail(null);
+      setError("Failed to load person details");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -237,7 +246,7 @@ export function usePersonDetail(key: string | null) {
     return () => clearInterval(interval);
   }, [key]);
 
-  return { detail, loading, refetch: fetchDetail };
+  return { detail, loading, error, refetch: fetchDetail };
 }
 
 export interface RecentActivityItem {

@@ -28,16 +28,27 @@ async function verifyPlaidWebhook(body: string, verificationHeader: string | nul
     if (!kid) return false;
 
     if (!cachedVerificationKey || cachedVerificationKey.kid !== kid) {
-      const resp = await client.webhookVerificationKeyGet({ key_id: kid });
-      const fetchedKey = resp.data.key as jose.JWK;
-      if (!fetchedKey || !fetchedKey.kty || !fetchedKey.kid) {
-        console.error("[plaid][webhook] webhookVerificationKeyGet returned invalid key", { kid });
-        return false;
+      try {
+        const resp = await client.webhookVerificationKeyGet({ key_id: kid });
+        const fetchedKey = resp.data.key as jose.JWK;
+        if (!fetchedKey || !fetchedKey.kty || !fetchedKey.kid) {
+          console.error("[plaid][webhook] webhookVerificationKeyGet returned invalid key", { kid });
+          return false;
+        }
+        cachedVerificationKey = fetchedKey;
+      } catch (fetchErr) {
+        console.error(
+          "[plaid][webhook] webhookVerificationKeyGet failed:",
+          fetchErr instanceof Error ? fetchErr.message : fetchErr
+        );
+        // Transient Plaid API failure: fall back to cached key if kid matches,
+        // otherwise we have no key to verify with — reject.
+        if (!cachedVerificationKey || cachedVerificationKey.kid !== kid) return false;
+        // cachedVerificationKey.kid === kid: use it as fallback
       }
-      cachedVerificationKey = fetchedKey;
     }
 
-    const key = await jose.importJWK(cachedVerificationKey, "ES256");
+    const key = await jose.importJWK(cachedVerificationKey!, "ES256");
     const { payload } = await jose.jwtVerify(verificationHeader, key, { maxTokenAge: "5 min" });
 
     const claimedHash = (payload as { request_body_sha256?: string }).request_body_sha256;
