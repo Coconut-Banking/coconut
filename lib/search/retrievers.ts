@@ -254,16 +254,15 @@ export async function expandByMerchants(
   parsed: ParsedQuery,
   accountId?: string,
 ): Promise<SearchTransaction[]> {
-  if (merchantNames.length === 0) return [];
-
-  const db = getSupabaseAdmin();
-
   const { location } = parsed.structured_filters;
 
-  // When searching by location, don't filter by merchant — return ALL
-  // transactions in the location within the date/amount range.
-  // The user said "transactions in California", not "these specific merchants in California".
+  // When searching by location with no merchants, return ALL transactions in
+  // that location — the user said "in California", not specific merchants.
   const isLocationQuery = !!location && merchantNames.length === 0;
+
+  if (merchantNames.length === 0 && !isLocationQuery) return [];
+
+  const db = getSupabaseAdmin();
 
   let query = db
     .from("transactions")
