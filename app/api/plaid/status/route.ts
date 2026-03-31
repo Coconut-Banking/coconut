@@ -2,8 +2,15 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
+import { getClerkRateLimitRetryAfterSeconds, isClerkCurrentlyRateLimited } from "@/lib/auth";
 
 export async function GET() {
+  if (isClerkCurrentlyRateLimited()) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
+    );
+  }
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

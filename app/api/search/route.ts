@@ -4,12 +4,18 @@ import { searchTransactions } from "@/lib/search";
 import { SEARCH } from "@/lib/config";
 import { getEffectiveUserId } from "@/lib/demo";
 import { rateLimit } from "@/lib/rate-limit";
-import { auth } from "@clerk/nextjs/server";
+import { getClerkRateLimitRetryAfterSeconds, loadClerkAuth } from "@/lib/auth";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
-  const { userId: clerkUserId, getToken } = await auth();
-  const userId = await getEffectiveUserId();
+  const session = await loadClerkAuth();
+  if (!session.ok) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
+    );
+  }
+  const userId = await getEffectiveUserId({ userId: session.userId });
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rl = rateLimit(`search:${userId}`, 60, 60_000);
@@ -20,7 +26,7 @@ export async function GET(request: NextRequest) {
   const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
 
   try {
-    const token = clerkUserId ? await getToken({ template: "supabase" }) : null;
+    const token = session.userId ? await session.getToken({ template: "supabase" }) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     // Direct query so RLS is enforced when available
