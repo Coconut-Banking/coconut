@@ -14,6 +14,7 @@ import {
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
 import { rateLimit } from "@/lib/rate-limit";
 import {
+  merchantLlmResultKey,
   needsLLMNormalization,
   normalizeMerchantsWithLLM,
 } from "@/lib/merchant-normalize-llm";
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await db
       .from("transactions")
       .select(
-        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
+        "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, merchant_display_llm, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
       )
       .eq("clerk_user_id", effectiveUserId)
       .order("date", { ascending: false })
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
           const fresh = await db
             .from("transactions")
             .select(
-              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
+              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, merchant_display_llm, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
             )
             .eq("clerk_user_id", effectiveUserId)
             .order("date", { ascending: false })
@@ -270,18 +271,53 @@ export async function GET(request: NextRequest) {
       return `${months[d.getMonth()]} ${d.getDate()}`;
     }
 
-    // LLM normalization for long/weird descriptions (batched, cached)
+    // LLM normalization: skip rows that already have merchant_display_llm in DB; dedupe by raw+category for one OpenAI row per key.
     const llmCandidates = deduped.filter((tx) => {
+      if ((tx.merchant_display_llm as string | null)?.trim()) return false;
       const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       const primary = (tx.primary_category ?? "OTHER") as string;
       return needsLLMNormalization(raw, primary);
     });
-    const llmResults = await normalizeMerchantsWithLLM(
-      llmCandidates.map((tx) => ({
-        raw: (tx.merchant_name || tx.raw_name || "Unknown") as string,
-        category: (tx.primary_category ?? "OTHER") as string,
-      }))
-    );
+    const seenLlmKey = new Set<string>();
+    const llmItems: Array<{ raw: string; category: string }> = [];
+    for (const tx of llmCandidates) {
+      const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+      const category = (tx.primary_category ?? "OTHER") as string;
+      const k = merchantLlmResultKey(raw, category);
+      if (seenLlmKey.has(k)) continue;
+      seenLlmKey.add(k);
+      llmItems.push({ raw, category });
+    }
+    const llmResults = await normalizeMerchantsWithLLM(llmItems);
+
+    const adminDb = getSupabaseAdmin();
+    const toPersist: { id: string; value: string }[] = [];
+    for (const tx of deduped) {
+      const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+      const primary = (tx.primary_category ?? "OTHER") as string;
+      if ((tx.merchant_display_llm as string | null)?.trim()) continue;
+      if (!needsLLMNormalization(raw, primary)) continue;
+      const n = llmResults.get(merchantLlmResultKey(raw, primary));
+      if (!n) continue;
+      const trimmed = n.slice(0, 200).trim();
+      if (!trimmed || trimmed === raw) continue;
+      toPersist.push({ id: tx.id as string, value: trimmed });
+    }
+    if (toPersist.length > 0) {
+      const CHUNK = 40;
+      for (let i = 0; i < toPersist.length; i += CHUNK) {
+        const chunk = toPersist.slice(i, i + CHUNK);
+        await Promise.all(
+          chunk.map((u) =>
+            adminDb
+              .from("transactions")
+              .update({ merchant_display_llm: u.value })
+              .eq("id", u.id)
+              .eq("clerk_user_id", effectiveUserId)
+          )
+        );
+      }
+    }
 
     const accountIdToMask = new Map<string, string>();
     if (deduped.length > 0) {
@@ -309,8 +345,10 @@ export async function GET(request: NextRequest) {
     const mapped = deduped.map((tx) => {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const rawMerchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+      const storedLlm = (tx.merchant_display_llm as string | null)?.trim() ?? "";
+      const freshLlm = llmResults.get(merchantLlmResultKey(rawMerchant, primary)) ?? "";
       const merchant =
-        llmResults.get(rawMerchant) ?? cleanMerchantForDisplay(rawMerchant, primary);
+        storedLlm || freshLlm || cleanMerchantForDisplay(rawMerchant, primary);
       const aid = tx.account_id as string | undefined;
       const normalizedForRecurring = rawMerchant.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       return {
