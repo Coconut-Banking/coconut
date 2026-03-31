@@ -891,7 +891,8 @@ export async function enrichCategoriesForUser(
       const { error: updateErr } = await db
         .from("transactions")
         .update({ primary_category: category })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("clerk_user_id", clerkUserId);
       if (updateErr) {
         console.warn("[categorize] update failed for tx", id, ":", updateErr.message);
       } else {
