@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
 
         if (error) {
           console.error("[stripe-webhook] terminal settlement insert failed:", error);
+          return NextResponse.json({ error: "DB insert failed" }, { status: 500 });
         } else {
           console.log("[stripe-webhook] terminal settlement recorded", { group_id, amount: amountToInsert });
         }
@@ -161,6 +162,7 @@ export async function POST(req: NextRequest) {
 
         if (error) {
           console.error("[stripe-webhook] settlement insert failed:", error);
+          return NextResponse.json({ error: "DB insert failed" }, { status: 500 });
         } else {
           console.log("[stripe-webhook] settlement recorded", { group_id, amount: amountToInsert });
         }
