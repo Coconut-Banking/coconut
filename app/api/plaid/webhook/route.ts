@@ -185,8 +185,8 @@ export async function POST(request: NextRequest) {
         await syncTransactionsForUser(clerkUserId);
         revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
       } catch (e) {
-        console.warn("[plaid][webhook] post-repair sync failed:", e instanceof Error ? e.message : e);
-        return NextResponse.json({ error: "Sync failed" }, { status: 500 });
+        console.warn("[plaid][webhook] post-repair sync failed (non-fatal):", e instanceof Error ? e.message : e);
+        // Do NOT return 500 — reauth flag is already cleared; let Plaid not retry
       }
     } else if (
       webhook_code === "USER_PERMISSION_REVOKED" ||
