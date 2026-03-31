@@ -66,6 +66,20 @@ export async function POST() {
     // 2. Delete subscriptions (will be re-detected on reconnect)
     await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
 
+    // 2b. Clear any remaining subscription_transactions rows referencing this user's
+    //     transactions by transaction_id FK (may exist if subscription_id was null
+    //     or belonged to a different subscription record from a prior partial run).
+    //     Must happen before deleting transactions to avoid ON DELETE RESTRICT FK violations.
+    if (userTxIds.length > 0) {
+      const CHUNK = 100;
+      for (let i = 0; i < userTxIds.length; i += CHUNK) {
+        await db
+          .from("subscription_transactions")
+          .delete()
+          .in("transaction_id", userTxIds.slice(i, i + CHUNK));
+      }
+    }
+
     // 3. Protect bank transactions that are still referenced by split_transactions
     //    (subscription FK refs are already gone at this point)
     const { data: inSplits } = await db
