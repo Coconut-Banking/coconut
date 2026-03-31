@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { auth } from "@clerk/nextjs/server";
 
 const SKIP_AUTH =
@@ -27,17 +28,37 @@ export function isClerkRateLimitError(e: unknown): boolean {
 
 let _clerkRateLimitedUntil = 0;
 
-function checkClerkRateLimit(): void {
-  const now = Date.now();
-  if (now < _clerkRateLimitedUntil) {
-    const remaining = Math.ceil((_clerkRateLimitedUntil - now) / 1000);
-    throw new ClerkRateLimitError(remaining);
-  }
-}
-
 function markClerkRateLimited(retryAfter: number): void {
   _clerkRateLimitedUntil = Date.now() + Math.max(retryAfter, 3) * 1000;
 }
+
+type ClerkAuthSnapshot = Awaited<ReturnType<typeof auth>>;
+
+/**
+ * One Clerk `auth()` per incoming request (dedupes multiple callers in the same
+ * route/module tree). Pair with `getEffectiveUserId({ userId })` instead of a
+ * second bare `auth()` + `getEffectiveUserId()` to cut Backend API traffic.
+ */
+export type LoadClerkAuthResult =
+  | { ok: true; userId: string | null; getToken: ClerkAuthSnapshot["getToken"] }
+  | { ok: false; reason: "rate_limited" };
+
+export const loadClerkAuth = cache(async (): Promise<LoadClerkAuthResult> => {
+  if (Date.now() < _clerkRateLimitedUntil) {
+    return { ok: false, reason: "rate_limited" };
+  }
+  try {
+    const a = await auth();
+    return { ok: true, userId: a.userId ?? null, getToken: a.getToken };
+  } catch (e) {
+    if (isClerkRateLimitError(e)) {
+      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
+      markClerkRateLimited(retryAfter);
+      return { ok: false, reason: "rate_limited" };
+    }
+    throw e;
+  }
+});
 
 /**
  * Get the current user ID. When SKIP_AUTH is true and no token,
@@ -46,23 +67,12 @@ function markClerkRateLimited(retryAfter: number): void {
  * already handle null as 401 Unauthorized, which is safe.
  */
 export async function getUserId(): Promise<string | null> {
-  if (Date.now() < _clerkRateLimitedUntil) {
+  const r = await loadClerkAuth();
+  if (!r.ok) {
     console.warn("[auth] Clerk rate-limited, returning null");
     return null;
   }
-
-  try {
-    const { userId } = await auth();
-    if (userId) return userId;
-  } catch (e) {
-    if (isClerkRateLimitError(e)) {
-      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
-      markClerkRateLimited(retryAfter);
-      console.warn(`[auth] Clerk 429 (retry ${retryAfter}s), returning null`);
-      return null;
-    }
-    throw e;
-  }
+  if (r.userId) return r.userId;
 
   if (!SKIP_AUTH) return null;
 
@@ -73,4 +83,9 @@ export function isClerkCurrentlyRateLimited(): boolean {
   return Date.now() < _clerkRateLimitedUntil;
 }
 
-export { checkClerkRateLimit, markClerkRateLimited };
+/** Seconds until local Clerk backoff ends (for Retry-After headers). */
+export function getClerkRateLimitRetryAfterSeconds(): number {
+  return Math.max(1, Math.ceil((_clerkRateLimitedUntil - Date.now()) / 1000));
+}
+
+export { markClerkRateLimited };

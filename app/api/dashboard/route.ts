@@ -1,19 +1,25 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { getEffectiveUserId } from "@/lib/demo";
 import { convertCurrency } from "@/lib/currency";
+import { getClerkRateLimitRetryAfterSeconds, loadClerkAuth } from "@/lib/auth";
 
 export async function GET() {
-  const { userId, getToken } = await auth();
-  const effectiveUserId = await getEffectiveUserId();
+  const session = await loadClerkAuth();
+  if (!session.ok) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
+    );
+  }
+  const effectiveUserId = await getEffectiveUserId({ userId: session.userId });
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const token = userId ? await getToken({ template: "supabase" }) : null;
+    const token = session.userId ? await session.getToken({ template: "supabase" }) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     const [accountsResult, subsResult, walletsResult] = await Promise.all([

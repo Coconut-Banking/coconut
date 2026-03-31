@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
-import { ClerkRateLimitError, isClerkRateLimitError, isClerkCurrentlyRateLimited, markClerkRateLimited } from "@/lib/auth";
+import { isClerkCurrentlyRateLimited, loadClerkAuth } from "@/lib/auth";
 
 export const DEMO_USER_ID = "demo-sandbox-user";
 export const DEMO_COOKIE = "coconut_demo_mode";
@@ -73,18 +72,12 @@ export async function getEffectiveUserId(authHint?: EffectiveUserAuthHint): Prom
   if (authHint !== undefined) {
     userId = authHint.userId;
   } else {
-    try {
-      const a = await auth();
-      userId = a.userId;
-    } catch (e) {
-      if (isClerkRateLimitError(e)) {
-        const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
-        markClerkRateLimited(retryAfter);
-        console.warn(`[demo] Clerk 429 (retry ${retryAfter}s), returning null`);
-        return null;
-      }
-      throw e;
+    const r = await loadClerkAuth();
+    if (!r.ok) {
+      console.warn("[demo] Clerk rate-limited, returning null");
+      return null;
     }
+    userId = r.userId;
   }
 
   if (userId) return userId;

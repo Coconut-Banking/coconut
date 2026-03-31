@@ -1,11 +1,16 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
-import { ClerkRateLimitError, isClerkRateLimitError, checkClerkRateLimit, markClerkRateLimited } from "@/lib/auth";
+import {
+  ClerkRateLimitError,
+  getClerkRateLimitRetryAfterSeconds,
+  isClerkRateLimitError,
+  loadClerkAuth,
+  markClerkRateLimited,
+} from "@/lib/auth";
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
 import { rateLimit } from "@/lib/rate-limit";
 import {
@@ -19,44 +24,17 @@ import {
 } from "@/lib/transaction-sync";
 
 export async function GET(request: NextRequest) {
-  let clerkUserId: string | null;
-  let getToken: Awaited<ReturnType<typeof auth>>["getToken"];
-  try {
-    checkClerkRateLimit();
-    const session = await auth();
-    clerkUserId = session.userId;
-    getToken = session.getToken;
-  } catch (e) {
-    if (e instanceof ClerkRateLimitError) {
-      return NextResponse.json(
-        { error: "Too many requests" },
-        { status: 429, headers: { "Retry-After": String(e.retryAfter) } }
-      );
-    }
-    if (isClerkRateLimitError(e)) {
-      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
-      markClerkRateLimited(retryAfter);
-      return NextResponse.json(
-        { error: "Too many requests" },
-        { status: 429, headers: { "Retry-After": String(retryAfter) } }
-      );
-    }
-    throw e;
+  const session = await loadClerkAuth();
+  if (!session.ok) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
+    );
   }
+  const { userId: clerkUserId, getToken } = session;
 
-  let effectiveUserId: string | null;
-  try {
-    // Reuse session from above — do not call auth() again inside getEffectiveUserId (Clerk 429).
-    effectiveUserId = await getEffectiveUserId({ userId: clerkUserId });
-  } catch (e) {
-    if (e instanceof ClerkRateLimitError) {
-      return NextResponse.json(
-        { error: "Too many requests" },
-        { status: 429, headers: { "Retry-After": String(e.retryAfter) } }
-      );
-    }
-    throw e;
-  }
+  // Reuse session from loadClerkAuth — do not call auth() again inside getEffectiveUserId (Clerk 429).
+  const effectiveUserId = await getEffectiveUserId({ userId: clerkUserId });
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -377,18 +355,14 @@ export async function GET(request: NextRequest) {
 
 // Re-sync from Plaid on demand. Body: { fullResync?: true } to clear stale/sandbox tx first.
 export async function POST() {
-  let effectiveUserId: string | null;
-  try {
-    effectiveUserId = await getEffectiveUserId();
-  } catch (e) {
-    if (e instanceof ClerkRateLimitError) {
-      return NextResponse.json(
-        { error: "Too many requests" },
-        { status: 429, headers: { "Retry-After": String(e.retryAfter) } }
-      );
-    }
-    throw e;
+  const session = await loadClerkAuth();
+  if (!session.ok) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
+    );
   }
+  const effectiveUserId = await getEffectiveUserId({ userId: session.userId });
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {

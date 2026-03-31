@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { getAccessibleGroupIds } from "@/lib/group-access";
-import { getUserId } from "@/lib/auth";
+import { getClerkRateLimitRetryAfterSeconds, getUserId, isClerkCurrentlyRateLimited } from "@/lib/auth";
 import {
   paidAmountFromSplitRow,
   splitTransactionDedupeKey,
@@ -55,6 +55,12 @@ function friendRowFromAgg(key: string, v: PersonAgg) {
  * and clients must use `totalsByCurrency` / per-friend `balances`.
  */
 export async function GET(req: NextRequest) {
+  if (isClerkCurrentlyRateLimited()) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(getClerkRateLimitRetryAfterSeconds()) } }
+    );
+  }
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
