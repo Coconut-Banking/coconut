@@ -334,45 +334,45 @@ async function syncSingleToken(
     const msg = e instanceof Error ? e.message : String(e);
     console.warn("[sync] accountsGet failed (skipping account upsert):", msg);
   }
-  if (!acctResp?.accounts || !Array.isArray(acctResp.accounts)) {
-    console.error("[sync] accountsGet returned invalid data", { clerkUserId, plaidItemId });
-    return { synced: 0, removedIds: [], skipped: 0 };
-  }
-  try {
-    for (const acct of acctResp.accounts) {
-      const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-      const row: Record<string, unknown> = {
-        clerk_user_id: clerkUserId,
-        plaid_account_id: acct.account_id,
-        plaid_item_id: plaidItemId,
-        name: acct.name,
-        type: acct.type,
-        subtype: acct.subtype ?? null,
-        mask: acct.mask ?? null,
-      };
-      try {
-        await db.from("accounts").upsert(
-          { ...row, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
-          { onConflict: "plaid_account_id" }
-        );
-      } catch (e) {
-        const errMsg = e instanceof Error ? e.message : String(e);
-        if (/column.*plaid_item_id|does not exist/i.test(errMsg)) {
-          const { plaid_item_id: _pid, ...rowWithout } = row;
+  if (acctResp?.accounts && Array.isArray(acctResp.accounts)) {
+    try {
+      for (const acct of acctResp.accounts) {
+        const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+        const row: Record<string, unknown> = {
+          clerk_user_id: clerkUserId,
+          plaid_account_id: acct.account_id,
+          plaid_item_id: plaidItemId,
+          name: acct.name,
+          type: acct.type,
+          subtype: acct.subtype ?? null,
+          mask: acct.mask ?? null,
+        };
+        try {
           await db.from("accounts").upsert(
-            { ...rowWithout, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
+            { ...row, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
             { onConflict: "plaid_account_id" }
           );
-        } else {
-          console.error("[sync] account upsert error:", errMsg, {
-            clerkUserId,
-            plaidAccountId: row.plaid_account_id,
-          });
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          if (/column.*plaid_item_id|does not exist/i.test(errMsg)) {
+            const { plaid_item_id: _pid, ...rowWithout } = row;
+            await db.from("accounts").upsert(
+              { ...rowWithout, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
+              { onConflict: "plaid_account_id" }
+            );
+          } else {
+            console.error("[sync] account upsert error:", errMsg, {
+              clerkUserId,
+              plaidAccountId: row.plaid_account_id,
+            });
+          }
         }
       }
+    } catch (e) {
+      console.error("[sync] account upsert failed (continuing with tx sync):", (e as Error).message);
     }
-  } catch (e) {
-    console.error("[sync] account upsert failed (continuing with tx sync):", (e as Error).message);
+  } else {
+    console.warn("[sync] accountsGet returned no accounts — skipping account upsert, continuing transaction sync", { clerkUserId, plaidItemId });
   }
 
   // Build account UUID map
