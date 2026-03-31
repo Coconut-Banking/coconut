@@ -69,6 +69,16 @@ export async function GET(req: NextRequest) {
   }
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  try {
+  return await handleSummary(req, userId);
+  } catch (err) {
+    console.error("[summary] unhandled error:", err);
+    return NextResponse.json({ error: "Failed to load summary" }, { status: 500 });
+  }
+}
+
+async function handleSummary(req: NextRequest, userId: string) {
+
   const db = getSupabaseAdmin();
   const ids = await getAccessibleGroupIds(userId);
 

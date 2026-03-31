@@ -65,7 +65,28 @@ export async function GET(request: NextRequest) {
   console.log("[pipeline:tx] GET start", { userId: effectiveUserId, refresh: bypassCache });
 
   try {
-    const token = clerkUserId ? await getToken({ template: "supabase" }) : null;
+    let token: string | null = null;
+    if (clerkUserId) {
+      try {
+        token = await getToken({ template: "supabase" });
+      } catch (tokenErr) {
+        if (tokenErr instanceof ClerkRateLimitError) {
+          return NextResponse.json(
+            { error: "Too many requests" },
+            { status: 429, headers: { "Retry-After": String(tokenErr.retryAfter) } }
+          );
+        }
+        if (isClerkRateLimitError(tokenErr)) {
+          const ra = (tokenErr as { retryAfter?: number }).retryAfter ?? 5;
+          markClerkRateLimited(ra);
+          return NextResponse.json(
+            { error: "Too many requests" },
+            { status: 429, headers: { "Retry-After": String(ra) } }
+          );
+        }
+        console.warn("[pipeline:tx] getToken failed, falling back to admin:", tokenErr);
+      }
+    }
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     // Use direct RLS-backed query (avoid service-role cached query for security hardening)
