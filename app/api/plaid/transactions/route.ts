@@ -160,18 +160,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Actually delete duplicate rows from Supabase (first occurrence in list order stays).
-    // Remap email_receipts onto the kept row before delete (FK + PostgREST 1k row cap on receipt fetch).
-    const { data: inSplits } = await db
-      .from("split_transactions")
-      .select("transaction_id")
-      .in("transaction_id", bankOnly.map((tx) => tx.id));
-    const receiptRows = await fetchAllEmailReceiptsLinkedForUser(
-      db,
-      effectiveUserId,
-      "id, transaction_id, merchant, raw_subject, merchant_type, merchant_details"
-    );
-    const { data: inSubscriptions } = await db.from("subscription_transactions").select("transaction_id").in("transaction_id", bankOnly.map((tx) => tx.id));
+    // Parallel lookups: splits, receipts, subscriptions are independent.
+    const txIds = bankOnly.map((tx) => tx.id);
+    const [{ data: inSplits }, receiptRows, { data: inSubscriptions }] = await Promise.all([
+      db.from("split_transactions").select("transaction_id").in("transaction_id", txIds),
+      fetchAllEmailReceiptsLinkedForUser(
+        db,
+        effectiveUserId,
+        "id, transaction_id, merchant, raw_subject, merchant_type, merchant_details"
+      ),
+      db.from("subscription_transactions").select("transaction_id").in("transaction_id", txIds),
+    ]);
 
     const receiptMatchLineByTxId = new Map<string, string>();
     const receiptIdByTxId = new Map<string, string>();
@@ -244,73 +243,72 @@ export async function GET(request: NextRequest) {
       return `${months[d.getMonth()]} ${d.getDate()}`;
     }
 
-    // LLM normalization: skip rows that already have merchant_display_llm in DB; dedupe by raw+category for one OpenAI row per key.
-    const llmCandidates = deduped.filter((tx) => {
-      if ((tx.merchant_display_llm as string | null)?.trim()) return false;
-      const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
-      const primary = (tx.primary_category ?? "OTHER") as string;
-      return needsLLMNormalization(raw, primary);
-    });
-    const seenLlmKey = new Set<string>();
-    const llmItems: Array<{ raw: string; category: string }> = [];
-    for (const tx of llmCandidates) {
-      const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
-      const category = (tx.primary_category ?? "OTHER") as string;
-      const k = merchantLlmResultKey(raw, category);
-      if (seenLlmKey.has(k)) continue;
-      seenLlmKey.add(k);
-      llmItems.push({ raw, category });
-    }
-    const llmResults = await normalizeMerchantsWithLLM(llmItems);
-
-    const adminDb = getSupabaseAdmin();
-    const toPersist: { id: string; value: string }[] = [];
-    for (const tx of deduped) {
-      const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
-      const primary = (tx.primary_category ?? "OTHER") as string;
-      if ((tx.merchant_display_llm as string | null)?.trim()) continue;
-      if (!needsLLMNormalization(raw, primary)) continue;
-      const n = llmResults.get(merchantLlmResultKey(raw, primary));
-      if (!n) continue;
-      const trimmed = n.slice(0, 200).trim();
-      if (!trimmed || trimmed === raw) continue;
-      toPersist.push({ id: tx.id as string, value: trimmed });
-    }
-    if (toPersist.length > 0) {
-      const CHUNK = 40;
-      for (let i = 0; i < toPersist.length; i += CHUNK) {
-        const chunk = toPersist.slice(i, i + CHUNK);
-        await Promise.all(
-          chunk.map((u) =>
-            adminDb
-              .from("transactions")
-              .update({ merchant_display_llm: u.value })
-              .eq("id", u.id)
-              .eq("clerk_user_id", effectiveUserId)
-          )
-        );
-      }
-    }
-
-    const accountIdToMask = new Map<string, string>();
-    if (deduped.length > 0) {
-      const acctIds = [...new Set((deduped as { account_id?: string }[]).map((t) => t.account_id).filter(Boolean))];
-      if (acctIds.length > 0) {
-        const { data: accts } = await db.from("accounts").select("id, plaid_account_id, name, mask").in("id", acctIds);
-        for (const a of accts ?? []) {
-          accountIdToMask.set(a.id, a.mask ?? "****");
-          accountIdToMask.set(`name:${a.id}`, a.name ?? "");
-          accountIdToMask.set(`plaid:${a.id}`, a.plaid_account_id);
+    // LLM normalization: fire-and-forget so it doesn't block the GET response.
+    // Results are persisted to DB and will appear on the next load.
+    {
+      const llmCandidates = deduped.filter((tx) => {
+        if ((tx.merchant_display_llm as string | null)?.trim()) return false;
+        const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+        const primary = (tx.primary_category ?? "OTHER") as string;
+        return needsLLMNormalization(raw, primary);
+      });
+      if (llmCandidates.length > 0) {
+        const seenLlmKey = new Set<string>();
+        const llmItems: Array<{ raw: string; category: string }> = [];
+        const llmTxSnapshot: Array<{ id: string; raw: string; category: string }> = [];
+        for (const tx of llmCandidates) {
+          const raw = (tx.merchant_name || tx.raw_name || "Unknown") as string;
+          const category = (tx.primary_category ?? "OTHER") as string;
+          const k = merchantLlmResultKey(raw, category);
+          llmTxSnapshot.push({ id: tx.id as string, raw, category });
+          if (!seenLlmKey.has(k)) {
+            seenLlmKey.add(k);
+            llmItems.push({ raw, category });
+          }
         }
+        const uid = effectiveUserId;
+        normalizeMerchantsWithLLM(llmItems).then(async (llmResults) => {
+          if (llmResults.size === 0) return;
+          const adminDbBg = getSupabaseAdmin();
+          const toPersist: { id: string; value: string }[] = [];
+          for (const snap of llmTxSnapshot) {
+            const n = llmResults.get(merchantLlmResultKey(snap.raw, snap.category));
+            if (!n) continue;
+            const trimmed = n.slice(0, 200).trim();
+            if (!trimmed || trimmed === snap.raw) continue;
+            toPersist.push({ id: snap.id, value: trimmed });
+          }
+          const CHUNK = 40;
+          for (let i = 0; i < toPersist.length; i += CHUNK) {
+            const chunk = toPersist.slice(i, i + CHUNK);
+            await Promise.all(
+              chunk.map((u) =>
+                adminDbBg
+                  .from("transactions")
+                  .update({ merchant_display_llm: u.value })
+                  .eq("id", u.id)
+                  .eq("clerk_user_id", uid)
+              )
+            );
+          }
+        }).catch((e) => console.warn("[transactions] background LLM failed:", e));
       }
     }
 
-    // Load subscription merchants to flag recurring transactions
-    const { data: activeSubs } = await db
-      .from("subscriptions")
-      .select("normalized_merchant")
-      .eq("clerk_user_id", effectiveUserId)
-      .eq("status", "active");
+    // Parallel: account masks + subscription merchants
+    const acctIds = [...new Set((deduped as { account_id?: string }[]).map((t) => t.account_id).filter(Boolean))];
+    const [acctRows, { data: activeSubs }] = await Promise.all([
+      acctIds.length > 0
+        ? db.from("accounts").select("id, plaid_account_id, name, mask").in("id", acctIds).then((r) => r.data ?? [])
+        : Promise.resolve([]),
+      db.from("subscriptions").select("normalized_merchant").eq("clerk_user_id", effectiveUserId).eq("status", "active"),
+    ]);
+    const accountIdToMask = new Map<string, string>();
+    for (const a of acctRows) {
+      accountIdToMask.set(a.id, a.mask ?? "****");
+      accountIdToMask.set(`name:${a.id}`, a.name ?? "");
+      accountIdToMask.set(`plaid:${a.id}`, a.plaid_account_id);
+    }
     const recurringMerchants = new Set(
       (activeSubs ?? []).map((s) => (s.normalized_merchant as string || "").toLowerCase()).filter(Boolean)
     );
@@ -319,9 +317,7 @@ export async function GET(request: NextRequest) {
       const primary = (tx.primary_category ?? "OTHER") as string;
       const rawMerchant = (tx.merchant_name || tx.raw_name || "Unknown") as string;
       const storedLlm = (tx.merchant_display_llm as string | null)?.trim() ?? "";
-      const freshLlm = llmResults.get(merchantLlmResultKey(rawMerchant, primary)) ?? "";
-      const merchant =
-        storedLlm || freshLlm || cleanMerchantForDisplay(rawMerchant, primary);
+      const merchant = storedLlm || cleanMerchantForDisplay(rawMerchant, primary);
       const aid = tx.account_id as string | undefined;
       const normalizedForRecurring = rawMerchant.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
       return {
