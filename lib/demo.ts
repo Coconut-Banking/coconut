@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { getSupabase } from "@/lib/supabase";
-import { isClerkCurrentlyRateLimited, loadClerkAuth } from "@/lib/auth";
+import { loadClerkAuth } from "@/lib/auth";
 
 export const DEMO_USER_ID = "demo-sandbox-user";
 export const DEMO_COOKIE = "coconut_demo_mode";
@@ -63,20 +63,12 @@ export type EffectiveUserAuthHint = { userId: string | null };
  *   to avoid redundant Clerk session resolution.
  */
 export async function getEffectiveUserId(authHint?: EffectiveUserAuthHint): Promise<string | null> {
-  if (isClerkCurrentlyRateLimited()) {
-    console.warn("[demo] Clerk rate-limited, returning null");
-    return null;
-  }
-
   let userId: string | null;
   if (authHint !== undefined) {
     userId = authHint.userId;
   } else {
     const r = await loadClerkAuth();
-    if (!r.ok) {
-      console.warn("[demo] Clerk rate-limited, returning null");
-      return null;
-    }
+    if (!r.ok) return null;
     userId = r.userId;
   }
 
