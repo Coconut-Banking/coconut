@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
-import { ClerkRateLimitError } from "@/lib/auth";
+import { ClerkRateLimitError, isClerkRateLimitError, checkClerkRateLimit, markClerkRateLimited } from "@/lib/auth";
 
 export const DEMO_USER_ID = "demo-sandbox-user";
 export const DEMO_COOKIE = "coconut_demo_mode";
@@ -53,13 +53,16 @@ async function getClerkBypassUserId(): Promise<string | null> {
  * - Otherwise returns null (unauthenticated, no demo)
  */
 export async function getEffectiveUserId(): Promise<string | null> {
+  checkClerkRateLimit();
+
   try {
     const { userId } = await auth();
     if (userId) return userId;
   } catch (e) {
-    if (e && typeof e === "object" && (e as Record<string, unknown>).clerkError === true &&
-        ((e as Record<string, unknown>).status === 429 || (e as Record<string, unknown>).code === "api_response_error")) {
-      throw new ClerkRateLimitError(((e as { retryAfter?: number }).retryAfter) ?? 5);
+    if (isClerkRateLimitError(e)) {
+      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
+      markClerkRateLimited(retryAfter);
+      throw new ClerkRateLimitError(retryAfter);
     }
     throw e;
   }

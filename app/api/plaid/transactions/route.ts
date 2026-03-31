@@ -5,7 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin, getSupabaseForUser } from "@/lib/supabase";
 import { cleanMerchantForDisplay } from "@/lib/merchant-display";
 import { getEffectiveUserId } from "@/lib/demo";
-import { ClerkRateLimitError } from "@/lib/auth";
+import { ClerkRateLimitError, isClerkRateLimitError, checkClerkRateLimit, markClerkRateLimited } from "@/lib/auth";
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
 import { rateLimit } from "@/lib/rate-limit";
 import {
@@ -22,14 +22,20 @@ export async function GET(request: NextRequest) {
   let clerkUserId: string | null;
   let getToken: Awaited<ReturnType<typeof auth>>["getToken"];
   try {
+    checkClerkRateLimit();
     const session = await auth();
     clerkUserId = session.userId;
     getToken = session.getToken;
   } catch (e) {
-    if (e instanceof ClerkRateLimitError ||
-        (e && typeof e === "object" && (e as Record<string, unknown>).clerkError === true &&
-         ((e as Record<string, unknown>).status === 429))) {
+    if (e instanceof ClerkRateLimitError) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(e.retryAfter) } }
+      );
+    }
+    if (isClerkRateLimitError(e)) {
       const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
+      markClerkRateLimited(retryAfter);
       return NextResponse.json(
         { error: "Too many requests" },
         { status: 429, headers: { "Retry-After": String(retryAfter) } }

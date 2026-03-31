@@ -16,10 +16,27 @@ export class ClerkRateLimitError extends Error {
   }
 }
 
-function isClerkRateLimitError(e: unknown): boolean {
+export function isClerkRateLimitError(e: unknown): boolean {
   if (!e || typeof e !== "object") return false;
   const err = e as Record<string, unknown>;
-  return err.clerkError === true && (err.status === 429 || err.code === "api_response_error");
+  return (
+    err.clerkError === true &&
+    (err.status === 429 || err.code === "api_response_error")
+  );
+}
+
+let _clerkRateLimitedUntil = 0;
+
+function checkClerkRateLimit(): void {
+  const now = Date.now();
+  if (now < _clerkRateLimitedUntil) {
+    const remaining = Math.ceil((_clerkRateLimitedUntil - now) / 1000);
+    throw new ClerkRateLimitError(remaining);
+  }
+}
+
+function markClerkRateLimited(retryAfter: number): void {
+  _clerkRateLimitedUntil = Date.now() + Math.max(retryAfter, 3) * 1000;
 }
 
 /**
@@ -28,12 +45,16 @@ function isClerkRateLimitError(e: unknown): boolean {
  * Throws ClerkRateLimitError when Clerk returns 429.
  */
 export async function getUserId(): Promise<string | null> {
+  checkClerkRateLimit();
+
   try {
     const { userId } = await auth();
     if (userId) return userId;
   } catch (e) {
     if (isClerkRateLimitError(e)) {
-      throw new ClerkRateLimitError((e as { retryAfter?: number }).retryAfter ?? 5);
+      const retryAfter = (e as { retryAfter?: number }).retryAfter ?? 5;
+      markClerkRateLimited(retryAfter);
+      throw new ClerkRateLimitError(retryAfter);
     }
     throw e;
   }
@@ -42,3 +63,5 @@ export async function getUserId(): Promise<string | null> {
 
   return DEV_SKIP_AUTH_USER_ID;
 }
+
+export { checkClerkRateLimit, markClerkRateLimited };
