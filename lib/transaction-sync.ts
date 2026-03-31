@@ -222,7 +222,8 @@ export async function clearEmailReceiptLinksForTransactionIds(
       .in("transaction_id", chunk)
       .eq("clerk_user_id", clerkUserId);
     if (error) {
-      console.warn("[email_receipts] clear transaction_id FK failed:", error.message);
+      console.error("[email_receipts] clear transaction_id FK failed:", error.message);
+      throw new Error(`Failed to clear email receipt FK links: ${error.message}`);
     }
   }
 }
