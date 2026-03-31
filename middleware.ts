@@ -28,15 +28,13 @@ function isClerkRateLimitError(e: unknown): e is { status: number; retryAfter?: 
   );
 }
 
-export default clerkMiddleware(async (auth, req) => {
+const clerkHandler = clerkMiddleware(async (auth, req) => {
   const path = req.nextUrl.pathname;
 
-  // Dev-only pages: redirect to dashboard in production
   if (process.env.NODE_ENV === "production" && path === "/app/test-gmail") {
     return NextResponse.redirect(new URL("/app/dashboard", req.url), 302);
   }
 
-  // Dedicated app entry: /connect-from-app always redirects to login (no caching, no race)
   if (path === "/connect-from-app") {
     const redirectBack = "/connect?from_app=1&via_login=1";
     const loginUrl = new URL("/login", req.url);
@@ -46,7 +44,6 @@ export default clerkMiddleware(async (auth, req) => {
     return NextResponse.redirect(loginUrl, 307);
   }
 
-  // When /connect?from_app=1 without via_login: force through login first
   const fromApp = req.nextUrl.searchParams.get("from_app") === "1";
   const viaLogin = req.nextUrl.searchParams.get("via_login") === "1";
   if (path === "/connect" && fromApp && !viaLogin) {
@@ -58,7 +55,6 @@ export default clerkMiddleware(async (auth, req) => {
 
   if (isPublicRoute(req)) return;
 
-  // Bypass Clerk auth when CLERK_DISABLED=true (dev only — never in production)
   if (process.env.CLERK_DISABLED === "true" && process.env.NODE_ENV !== "production") {
     return NextResponse.next();
   }
@@ -83,6 +79,27 @@ export default clerkMiddleware(async (auth, req) => {
     throw e;
   }
 });
+
+export default async function middleware(req: Parameters<typeof clerkHandler>[0], evt: Parameters<typeof clerkHandler>[1]) {
+  try {
+    return await clerkHandler(req, evt);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[middleware] unhandled:", msg);
+    if (msg.includes("jwk-kid-mismatch") || msg.includes("token verification failed")) {
+      const url = new URL("/login", req.url);
+      const res = NextResponse.redirect(url, 307);
+      res.cookies.delete("__session");
+      res.cookies.delete("__client_uat");
+      res.cookies.delete("__clerk_db_jwt");
+      return res;
+    }
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Auth error" }, { status: 401 });
+    }
+    return NextResponse.redirect(new URL("/login", req.url), 307);
+  }
+}
 
 export const config = {
   matcher: [
