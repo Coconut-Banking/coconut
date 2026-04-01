@@ -28,10 +28,13 @@ export function computeTwoWayShares(
 ): { memberId: string; amount: number }[] {
   const totalCents = toCents(amount);
   const halfCents = Math.floor(totalCents / 2);
-  const remainderCents = totalCents - halfCents;
+  const remainder = totalCents % 2; // 0 or 1
+  const [firstId, secondId] = memberIdA <= memberIdB
+    ? [memberIdA, memberIdB]
+    : [memberIdB, memberIdA];
   return [
-    { memberId: memberIdA, amount: halfCents / 100 },
-    { memberId: memberIdB, amount: remainderCents / 100 },
+    { memberId: firstId, amount: (halfCents + remainder) / 100 },
+    { memberId: secondId, amount: halfCents / 100 },
   ];
 }
 
