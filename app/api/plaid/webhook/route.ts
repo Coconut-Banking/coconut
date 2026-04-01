@@ -4,6 +4,7 @@ import * as jose from "jose";
 import { revalidateTag } from "next/cache";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getSupabase } from "@/lib/supabase";
+import { decryptToken } from "@/lib/encryption";
 import { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 
@@ -192,11 +193,23 @@ export async function POST(request: NextRequest) {
       webhook_code === "USER_PERMISSION_REVOKED" ||
       webhook_code === "USER_ACCOUNT_REVOKED"
     ) {
-      console.log("[plaid][webhook] user revoked", { webhook_code, item_id, user_id: clerkUserId });
-      await db
-        .from("plaid_items")
-        .update({ needs_reauth: true })
-        .eq("plaid_item_id", item_id);
+      console.log("[plaid][webhook] user revoked — calling itemRemove", { webhook_code, item_id, user_id: clerkUserId });
+      try {
+        const { data: itemRow } = await db
+          .from("plaid_items")
+          .select("access_token")
+          .eq("plaid_item_id", item_id)
+          .maybeSingle();
+        if (itemRow?.access_token) {
+          const token = decryptToken(itemRow.access_token as string);
+          await client.itemRemove({ access_token: token }).catch((e: unknown) =>
+            console.warn("[plaid][webhook] itemRemove for revoked item:", e instanceof Error ? e.message : e)
+          );
+        }
+      } catch (e) {
+        console.warn("[plaid][webhook] failed to fetch token for itemRemove:", e instanceof Error ? e.message : e);
+      }
+      await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
     }
   }
 
