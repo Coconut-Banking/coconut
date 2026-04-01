@@ -24,8 +24,16 @@ export async function deleteExcludedSubscriptions(clerkUserId: string): Promise<
   );
   if (toDelete.length === 0) return 0;
   const ids = toDelete.map((r) => r.id);
-  await db.from("subscription_transactions").delete().in("subscription_id", ids);
-  await db.from("subscriptions").delete().in("id", ids);
+  const { error: stErr } = await db.from("subscription_transactions").delete().in("subscription_id", ids);
+  if (stErr) {
+    console.error("[subscription-detect] subscription_transactions delete failed:", stErr.message);
+    throw new Error(`Failed to delete subscription_transactions: ${stErr.message}`);
+  }
+  const { error: subErr } = await db.from("subscriptions").delete().in("id", ids);
+  if (subErr) {
+    console.error("[subscription-detect] subscriptions delete failed:", subErr.message);
+    throw new Error(`Failed to delete subscriptions: ${subErr.message}`);
+  }
   // Re-delete subscription_transactions to catch any concurrent re-inserts
   await db
     .from("subscription_transactions")
@@ -458,20 +466,23 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
     } else {
       const { error: insertError } = await db
         .from("subscriptions")
-        .insert({
-          clerk_user_id: clerkUserId,
-          merchant_name: d.merchantName,
-          normalized_merchant: d.normalizedMerchant,
-          amount: d.amount,
-          frequency: d.frequency,
-          last_charge_date: d.lastChargeDate,
-          next_due_date: d.nextDueDate,
-          primary_category: d.primaryCategory,
-          transaction_count: d.transactionCount,
-          confidence: d.confidence,
-          status: "active",
-          updated_at: new Date().toISOString(),
-        });
+        .upsert(
+          {
+            clerk_user_id: clerkUserId,
+            merchant_name: d.merchantName,
+            normalized_merchant: d.normalizedMerchant,
+            amount: d.amount,
+            frequency: d.frequency,
+            last_charge_date: d.lastChargeDate,
+            next_due_date: d.nextDueDate,
+            primary_category: d.primaryCategory,
+            transaction_count: d.transactionCount,
+            confidence: d.confidence,
+            status: "active",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "clerk_user_id,normalized_merchant", ignoreDuplicates: true }
+        );
       error = insertError;
     }
 
@@ -503,8 +514,8 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
               { onConflict: "subscription_id,transaction_id" }
             );
           }
-        } catch {
-          // best-effort
+        } catch (linkErr) {
+          console.warn("[subscription-detect] subscription_transactions link failed for", d.normalizedMerchant, ":", linkErr instanceof Error ? linkErr.message : linkErr);
         }
       }
     }
