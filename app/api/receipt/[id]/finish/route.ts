@@ -5,6 +5,7 @@ import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
+import { paidAmountFromSplitRow } from "@/lib/split-transaction-helpers";
 import { randomUUID } from "crypto";
 
 export async function POST(
@@ -234,11 +235,10 @@ export async function POST(
   for (const split of allSplits ?? []) {
     // Find who paid (for now, assume the payer is the one who created the split)
     // In our case, it's the current user's member
-    const tx = split.transactions as { amount?: number };
-    paidRows.push({
-      member_id: payerMember.id,
-      amount: Math.abs(tx?.amount ?? 0)
-    });
+    const amt = paidAmountFromSplitRow(
+      split as { transactions?: unknown; amount?: number | string | null }
+    );
+    paidRows.push({ member_id: payerMember.id, amount: amt });
   }
 
   // Build owed rows from shares

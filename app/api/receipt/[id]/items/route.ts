@@ -47,7 +47,7 @@ export async function PUT(
   if (Array.isArray(other_fees)) {
     updatePayload.other_fees = other_fees;
   }
-  await db.from("receipt_scans").update(updatePayload).eq("id", id);
+  await db.from("receipt_scans").update(updatePayload).eq("id", id).eq("clerk_user_id", userId);
 
   // Replace all items
   await db.from("receipt_items").delete().eq("receipt_id", id);
@@ -79,6 +79,7 @@ export async function PUT(
     .from("receipt_scans")
     .select("*, receipt_items(*)")
     .eq("id", id)
+    .eq("clerk_user_id", userId)
     .single();
 
   return NextResponse.json(updated);

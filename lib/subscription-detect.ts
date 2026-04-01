@@ -435,10 +435,30 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
       }
     }
 
-    const { error } = await db
-      .from("subscriptions")
-      .upsert(
-        {
+    let error: { message: string } | null = null;
+    if (existing) {
+      // UPDATE — never reactivate dismissed subscriptions
+      const { error: updateError } = await db
+        .from("subscriptions")
+        .update({
+          merchant_name: d.merchantName,
+          amount: d.amount,
+          frequency: d.frequency,
+          last_charge_date: d.lastChargeDate,
+          next_due_date: d.nextDueDate,
+          primary_category: d.primaryCategory,
+          transaction_count: d.transactionCount,
+          confidence: d.confidence,
+          updated_at: new Date().toISOString(),
+          ...priceChangeFields,
+        })
+        .eq("id", existing.id)
+        .neq("status", "dismissed"); // guard: never reactivate dismissed subscriptions
+      error = updateError;
+    } else {
+      const { error: insertError } = await db
+        .from("subscriptions")
+        .insert({
           clerk_user_id: clerkUserId,
           merchant_name: d.merchantName,
           normalized_merchant: d.normalizedMerchant,
@@ -449,12 +469,11 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
           primary_category: d.primaryCategory,
           transaction_count: d.transactionCount,
           confidence: d.confidence,
-          status: existing ? existing.status : "active",
+          status: "active",
           updated_at: new Date().toISOString(),
-          ...priceChangeFields,
-        },
-        { onConflict: "clerk_user_id,normalized_merchant" }
-      );
+        });
+      error = insertError;
+    }
 
     if (error) continue;
 

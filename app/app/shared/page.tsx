@@ -579,7 +579,7 @@ function SharedPageContent() {
   const [newMemberInput, setNewMemberInput] = useState("");
 
   const { detail: groupDetail, loading: groupDetailLoading, refetch: refetchGroupDetail } = useGroupDetail(selectedId);
-  const { detail: personDetail, loading: personDetailLoading, refetch: refetchPersonDetail } = usePersonDetail(
+  const { detail: personDetail, loading: personDetailLoading, error: personDetailError, refetch: refetchPersonDetail } = usePersonDetail(
     settleTarget?.key ?? expandedPerson ?? selectedPersonKey ?? null
   );
 
@@ -1030,13 +1030,26 @@ function SharedPageContent() {
 
   // Person detail view (simplified - could be expanded)
   if (selectedPersonKey) {
-    if (personDetailLoading || !personDetail) {
+    if (personDetailLoading) {
       return (
         <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
           <button onClick={goBack} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-5">
             <ArrowLeft size={16} /> Back
           </button>
           <div className="text-sm text-gray-500 py-12">Loading…</div>
+        </div>
+      );
+    }
+    if (!personDetail) {
+      return (
+        <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+          <button onClick={goBack} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-5">
+            <ArrowLeft size={16} /> Back
+          </button>
+          <p className="text-sm text-red-500 py-12 text-center">
+            {personDetailError ?? "Failed to load."}{" "}
+            <button onClick={() => refetchPersonDetail()} className="underline">Retry</button>
+          </p>
         </div>
       );
     }

@@ -81,8 +81,9 @@ export function convertCurrency(
   const from = (fromCurrency || "USD").toUpperCase();
   const to = (toCurrency || "USD").toUpperCase();
   if (from === to) return amount;
-  const fromRate = RATES_TO_USD[from] ?? 1;
-  const toRate = RATES_TO_USD[to] ?? 1;
+  const fromRate = RATES_TO_USD[from];
+  const toRate = RATES_TO_USD[to];
+  if (fromRate === undefined || toRate === undefined) return amount;
   const usdAmount = amount * fromRate;
   return usdAmount / toRate;
 }

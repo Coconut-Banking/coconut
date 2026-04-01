@@ -237,14 +237,14 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[splitwise-import] fatal error:", err);
     const raw = err instanceof Error ? err.message : String(err);
-    const safe = raw.trim().length > 0 ? raw.trim().slice(0, 280) : "";
-    return NextResponse.json(
-      {
-        error:
-          safe.length > 0 ? safe : "Import failed. Please try again.",
-      },
-      { status: 500 }
-    );
+    const isAuthError = /invalid.*token|unauthorized|401|403/i.test(raw);
+    const isRateLimit = /rate.?limit|429|too many/i.test(raw);
+    const userMessage = isAuthError
+      ? "Splitwise connection expired. Please reconnect in Settings."
+      : isRateLimit
+      ? "Too many requests to Splitwise. Please try again in a few minutes."
+      : "Import failed. Please try again.";
+    return NextResponse.json({ error: userMessage }, { status: 500 });
   }
 }
 

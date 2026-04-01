@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
       rawDescription: t.raw_name ?? "",
     }));
 
+    const sanitizeForPrompt = (s: string) => String(s ?? "").replace(/[\n\r]/g, " ").slice(0, 100);
+
     let emailLineItems: string | undefined;
     try {
       const txIds = txs.map(t => t.id).filter(Boolean);
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
             .map(r => {
               const items = Array.isArray(r.line_items)
                 ? (r.line_items as Array<{ name?: string; quantity?: number; price?: number }>)
-                    .map(i => `  - ${i.name ?? "item"} ${i.quantity && i.quantity > 1 ? `×${i.quantity}` : ""} $${(i.price ?? 0).toFixed(2)}`)
+                    .map(i => `  - ${sanitizeForPrompt(i.name ?? "item")} ${i.quantity && i.quantity > 1 ? `×${i.quantity}` : ""} $${(i.price ?? 0).toFixed(2)}`)
                     .join("\n")
                 : "";
               return `${r.merchant_name} (${r.order_date}) $${r.total_amount?.toFixed(2) ?? "?"}:\n${items}`;

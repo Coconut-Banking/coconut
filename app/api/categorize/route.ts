@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { enrichCategoriesForUser } from "@/lib/transaction-sync";
 import { getEffectiveUserId } from "@/lib/demo";
 import { rateLimit } from "@/lib/rate-limit";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 export async function POST(request: NextRequest) {
   const effectiveUserId = await getEffectiveUserId();
@@ -26,6 +28,9 @@ export async function POST(request: NextRequest) {
     const updated = await enrichCategoriesForUser(effectiveUserId, {
       forceAll: body.forceAll ?? false,
     });
+    if (updated > 0) {
+      revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+    }
     return NextResponse.json({ updated });
   } catch (err) {
     console.error("[categorize]", err);

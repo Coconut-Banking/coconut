@@ -16,7 +16,7 @@ export async function GET() {
   }
 
   try {
-    const token = session.userId ? await getCachedSupabaseToken(session.getToken) : null;
+    const token = session.userId ? await getCachedSupabaseToken(session.getToken, session.userId) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     const [accountsResult, subsResult, walletsResult] = await Promise.all([
@@ -65,16 +65,15 @@ export async function GET() {
           : Number(a.balance_current) || 0;
       const bal = convertCurrency(nativeBal, a.iso_currency_code ?? "USD", "USD");
 
-      const iso = ((a.iso_currency_code ?? "USD") as string).toUpperCase();
       if (isLiability) {
         if (bal >= 0) {
-          liabilities += convertCurrency(bal, iso, "USD");
+          liabilities += bal;
         } else {
           // Negative balance on credit/loan = overpayment, treat as asset
-          assets += convertCurrency(Math.abs(bal), iso, "USD");
+          assets += Math.abs(bal);
         }
       } else {
-        assets += convertCurrency(bal, iso, "USD");
+        assets += bal;
       }
     }
 

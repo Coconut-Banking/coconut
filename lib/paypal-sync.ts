@@ -170,7 +170,9 @@ async function upsertTransactions(
       : info.shipping_info?.name ?? "Unknown";
 
     const note = tx.cart_info?.item_details?.[0]?.item_name ?? null;
-    const amount = parseFloat(info.transaction_amount.value);
+    const amount = info.transaction_amount?.value != null
+      ? parseFloat(info.transaction_amount.value)
+      : NaN;
     const date = info.transaction_initiation_date?.slice(0, 10);
 
     if (!date || isNaN(amount)) continue;

@@ -15,9 +15,7 @@ export function isDisplayAsOutflow(
   const isTransferOut = cat.includes("TRANSFER") && cat.includes("OUT");
   const looksLikeP2PSend = /zelle|venmo|cash\s*app/i.test(text);
   if (isTransferOut && looksLikeP2PSend) return true;
-  // Rideshare/transportation (Uber, Lyft) are always expenses — never show green
-  const isTransport = cat.includes("TRANSPORTATION") || /uber|lyft|rideshare|taxi/i.test(text);
-  return !!isTransport;
+  return false;
 }
 
 /** Credit card payments (TRANSFER_OUT reducing debt) display as positive/green like income. */
