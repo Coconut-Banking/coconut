@@ -1,9 +1,11 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import { createRecurringExpense, processRecurringExpenses } from "@/lib/recurring-expenses";
 import { rateLimit } from "@/lib/rate-limit";
+import { CACHE_TAGS } from "@/lib/cached-queries";
 
 export async function GET() {
   const userId = await getUserId();
@@ -45,6 +47,10 @@ export async function POST(request: NextRequest) {
 
   if (action === "process") {
     const created = await processRecurringExpenses(userId);
+    if (created > 0) {
+      revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+      revalidateTag(CACHE_TAGS.transactions(userId), "max");
+    }
     return NextResponse.json({ processed: created });
   }
 
