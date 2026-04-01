@@ -600,7 +600,7 @@ export async function syncTransactionsForUser(
   // Post-sync cleanup: only run when we actually skipped dupes (multi-Item state).
   // Avoids full-scan on every sync once DB is clean. Plaid transaction_id is unique
   // per Item, but same bank linked multiple times = same tx with different IDs.
-  if (totalSkipped > 0) {
+  if (totalSkipped > 0 || items.length > 1) {
     const deleted = await deleteDuplicateTransactionsForUser(db, clerkUserId);
     if (deleted > 0) {
       console.log("[sync] cleaned", deleted, "duplicate tx(s) for user", clerkUserId);
