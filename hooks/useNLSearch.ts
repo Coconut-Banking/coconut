@@ -102,6 +102,12 @@ export function useNLSearch<T extends UITransaction>(
         const res = await fetch(`/api/search/v2?q=${encodeURIComponent(q)}`, {
           signal: controller.signal,
         });
+        if (!res.ok) {
+          setResults(fallbackTransactions);
+          setAnswer("");
+          setMetric("list");
+          return;
+        }
         const data: SearchV2Response = await res.json();
 
         if (controller.signal.aborted) return;
