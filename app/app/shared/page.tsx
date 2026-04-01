@@ -250,6 +250,7 @@ function AddExpenseModal({
                   onChange={(e) => {
                     setGroupId(e.target.value || null);
                     setPersonKey(null);
+                    setPayerMemberId(null);
                     setCustomShares({});
                   }}
                   className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
@@ -849,8 +850,7 @@ function SharedPageContent() {
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{groupDetail.name}</h2>
             <p className="text-sm text-gray-500">
-              {groupDetail.members.length} members · $
-              {groupDetail.totalSpend?.toFixed(2) ?? "0.00"} total
+              {groupDetail.members.length} members · {fc(groupDetail.totalSpend ?? 0)} total
             </p>
           </div>
           <div className="flex -space-x-2 shrink-0">
