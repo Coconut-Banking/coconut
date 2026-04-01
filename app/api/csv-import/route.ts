@@ -56,7 +56,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse CSV
-    const platform = forcePlatform as "venmo" | "cashapp" | "paypal" | undefined;
+    const VALID_PLATFORMS = ["venmo", "cashapp", "paypal"] as const;
+    type ValidPlatform = typeof VALID_PLATFORMS[number];
+    const platform: ValidPlatform | undefined = (VALID_PLATFORMS as readonly string[]).includes(forcePlatform ?? "")
+      ? (forcePlatform as ValidPlatform)
+      : undefined;
     const { platform: detectedPlatform, rows, errors: parseErrors } = parseP2PCSV(text, platform);
 
     if (rows.length > 10000) {
