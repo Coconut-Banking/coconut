@@ -199,7 +199,8 @@ export async function POST(
   await db
     .from("receipt_scans")
     .update({ status: "completed" })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("clerk_user_id", userId);
 
   // Fetch updated balances for the group
   const { computeBalances, getSuggestedSettlements } = await import("@/lib/split-balances");
