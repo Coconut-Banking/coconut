@@ -217,6 +217,9 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
         setShowAddToShared(false);
         setSelectedPerson(null);
         setSelectedGroupId(null);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        alert((body as { error?: string }).error ?? "Failed to add to shared. Please try again.");
       }
     } finally {
       setSubmitting(false);
@@ -997,7 +1000,7 @@ type SearchMode = "filter" | "ask";
 function TransactionsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { transactions, linked, loading, syncAndRefetch } = useTransactions();
+  const { transactions, linked, loading, error, syncAndRefetch } = useTransactions();
   const { usAccounts, cadAccounts, otherAccounts } = useAccounts(linked);
   const { currencyCode, format: fc, symbol: currSymbol } = useCurrency();
   const { compact: compactView } = useCompactView();
@@ -1066,6 +1069,8 @@ function TransactionsPageContent() {
   useEffect(() => {
     if (semanticQuery.trim()) {
       setDateFilter("All time");
+    } else {
+      setDateFilter("Last 3 months");
     }
   }, [semanticQuery]);
 
@@ -1090,6 +1095,22 @@ function TransactionsPageContent() {
         <div className="flex flex-col items-center gap-4">
           <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
           <p className="text-sm text-gray-500">Fetching your transactions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <p className="text-sm text-red-600">{error}</p>
+          <button
+            onClick={() => syncAndRefetch()}
+            className="text-sm text-[#3D8E62] hover:underline"
+          >
+            Try again
+          </button>
         </div>
       </div>
     );
