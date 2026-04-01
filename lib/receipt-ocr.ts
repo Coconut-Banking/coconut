@@ -222,7 +222,7 @@ export async function parseReceiptImage(
         body: form,
       });
       if (res.ok) {
-        const data = (await res.json()) as ParsedReceipt;
+        const data = validateParsedReceipt(await res.json());
         return await cleanReceiptWithLLM(data);
       }
     } catch (e) {
