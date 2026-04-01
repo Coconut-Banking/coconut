@@ -32,6 +32,17 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
   // 2. Delete groups owned by user (cascades to members, splits, settlements)
   await db.from("groups").delete().eq("owner_id", clerkUserId);
 
+  // 3a. Delete settlements referencing this user's member rows to avoid FK RESTRICT violation
+  const { data: foreignMemberRows } = await db
+    .from("group_members")
+    .select("id")
+    .eq("user_id", clerkUserId);
+  if (foreignMemberRows?.length) {
+    const memberIds = foreignMemberRows.map((m: { id: string }) => m.id);
+    await db.from("settlements").delete().in("payer_member_id", memberIds);
+    await db.from("settlements").delete().in("receiver_member_id", memberIds);
+  }
+
   // 3. Remove user from groups they're in but don't own
   await db.from("group_members").delete().eq("user_id", clerkUserId);
 
