@@ -62,7 +62,8 @@ export async function POST(req: NextRequest) {
       );
 
       if (!allowed || maxAmount <= 0) {
-        console.warn("[stripe-webhook] terminal settlement not allowed:", { allowed, maxAmount, reason });
+        console.error("[stripe-webhook] terminal settlement not allowed — returning 500 for retry:", { allowed, maxAmount, reason });
+        return NextResponse.json({ error: "Settlement validation failed" }, { status: 500 });
       } else {
         const amountToInsert = Math.min(amount, maxAmount);
         const { error } = await db.from("settlements").insert({
@@ -146,7 +147,8 @@ export async function POST(req: NextRequest) {
       );
 
       if (!allowed || maxAmount <= 0) {
-        console.warn("[stripe-webhook] settlement not allowed:", { allowed, maxAmount, reason });
+        console.error("[stripe-webhook] settlement not allowed — returning 500 for retry:", { allowed, maxAmount, reason });
+        return NextResponse.json({ error: "Settlement validation failed" }, { status: 500 });
       } else {
         const amountToInsert = Math.min(amount, maxAmount);
         const { error } = await db.from("settlements").insert({
