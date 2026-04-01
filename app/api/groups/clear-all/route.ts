@@ -15,8 +15,11 @@ export async function POST() {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await currentUser();
+  const user = await currentUser().catch(() => null);
   const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase().trim();
+  if (!email) {
+    console.warn("[clear-all] Could not fetch Clerk user email for step 5 — email-matched members will not be unlinked for userId:", userId);
+  }
 
   const db = getSupabaseAdmin();
   const log: string[] = [];
