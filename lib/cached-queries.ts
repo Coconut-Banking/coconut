@@ -38,6 +38,28 @@ export interface TransactionRow {
   counterparty_logo_url?: string | null;
 }
 
+const cachedFetchByUser = new Map<
+  string,
+  () => Promise<{ data: TransactionRow[] | null; error: { message: string } | null }>
+>();
+
+function getCachedFetchForUser(userId: string) {
+  if (!cachedFetchByUser.has(userId)) {
+    cachedFetchByUser.set(
+      userId,
+      unstable_cache(
+        () => fetchTransactions(userId),
+        ["transactions", userId],
+        {
+          tags: [CACHE_TAGS.transactions(userId)],
+          revalidate: CACHE.TRANSACTIONS_REVALIDATE_SEC,
+        }
+      )
+    );
+  }
+  return cachedFetchByUser.get(userId)!;
+}
+
 export async function getCachedTransactions(
   userId: string,
   opts?: { bypassCache?: boolean }
@@ -46,14 +68,7 @@ export async function getCachedTransactions(
     return fetchTransactions(userId);
   }
 
-  return unstable_cache(
-    () => fetchTransactions(userId),
-    ["transactions", userId],
-    {
-      tags: [CACHE_TAGS.transactions(userId)],
-      revalidate: CACHE.TRANSACTIONS_REVALIDATE_SEC,
-    }
-  )();
+  return getCachedFetchForUser(userId)();
 }
 
 async function fetchTransactions(
