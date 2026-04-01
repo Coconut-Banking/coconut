@@ -161,6 +161,7 @@ function ConnectBankContent() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (!traceId) return;
     const fromApp = searchParams.get("from_app") === "1";
     const viaLogin = searchParams.get("via_login") === "1";
     if (fromApp && !viaLogin) return; // Redirect handled above, don't fetch
