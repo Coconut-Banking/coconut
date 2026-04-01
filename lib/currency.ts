@@ -27,18 +27,19 @@ export type CurrencyCode = (typeof SUPPORTED_CURRENCIES)[number]["code"];
 const formatterCache = new Map<string, Intl.NumberFormat>();
 
 function getFormatter(currencyCode: string): Intl.NumberFormat {
-  const cached = formatterCache.get(currencyCode);
+  const code = currencyCode.toUpperCase();
+  const cached = formatterCache.get(code);
   if (cached) return cached;
 
-  const info = SUPPORTED_CURRENCIES.find((c) => c.code === currencyCode);
+  const info = SUPPORTED_CURRENCIES.find((c) => c.code === code);
   const locale = info?.locale ?? DEFAULT_LOCALE;
   const fmt = new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: currencyCode,
-    minimumFractionDigits: currencyCode === "JPY" ? 0 : 2,
-    maximumFractionDigits: currencyCode === "JPY" ? 0 : 2,
+    currency: code,
+    minimumFractionDigits: code === "JPY" ? 0 : 2,
+    maximumFractionDigits: code === "JPY" ? 0 : 2,
   });
-  formatterCache.set(currencyCode, fmt);
+  formatterCache.set(code, fmt);
   return fmt;
 }
 
