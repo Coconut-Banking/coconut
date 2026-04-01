@@ -89,7 +89,7 @@ export function getClerkRateLimitRetryAfterSeconds(): number {
 }
 
 const _supabaseTokenCacheByUser = new Map<string, { token: string; expiresAt: number }>();
-const SUPABASE_TOKEN_CACHE_TTL_MS = 50_000;
+const SUPABASE_TOKEN_CACHE_TTL_MS = 45_000;
 
 /**
  * Wraps getToken({ template: "supabase" }) with an in-memory cache so
