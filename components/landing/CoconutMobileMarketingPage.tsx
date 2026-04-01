@@ -6,7 +6,7 @@ import {
   Plus, X, Check, ChevronRight, ChevronLeft, Search,
   Nfc, Share2, Wallet, Clock, ArrowDownLeft,
   ArrowUpRight, Mail, Package, Lock, Unlock,
-  Equal, Sliders, Hash, Zap, Landmark, ShieldCheck,
+  Equal, Sliders, Hash, Landmark, ShieldCheck,
   Users, User, Camera, ScanLine, FileText,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -2648,23 +2648,71 @@ function AccountScreen() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SPLITWISE COMPARISON SCREEN
+// SPLITWISE IMPORT SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
+const SW_IMPORTED_FRIENDS: { name: string; initials: string; color: string; amount: number; dir: "owes_you"|"you_owe" }[] = [
+  { name: "Alex Chen", initials: "AC", color: "#818CF8", amount: 86.00, dir: "owes_you" },
+  { name: "Sam Rivera", initials: "SR", color: "#F472B6", amount: 32.50, dir: "you_owe" },
+  { name: "Jordan Lee", initials: "JL", color: "#FACC15", amount: 45.00, dir: "owes_you" },
+];
+const SW_IMPORTED_GROUPS: { name: string; members: number; expenses: number; balance: number }[] = [
+  { name: "Tahoe Trip 🏔️", members: 4, expenses: 8, balance: -24.00 },
+  { name: "Apartment 🏠", members: 3, expenses: 14, balance: 112.50 },
+  { name: "Concert crew 🎵", members: 5, expenses: 3, balance: -18.00 },
+];
+const SW_IMPORTED_EXPENSES: { name: string; amount: number; date: string; who: string }[] = [
+  { name: "Nobu dinner", amount: 186.40, date: "Mar 28", who: "Alex" },
+  { name: "Uber to SFO", amount: 42.00, date: "Mar 25", who: "Sam" },
+  { name: "Airbnb", amount: 320.00, date: "Mar 22", who: "Group" },
+  { name: "Groceries", amount: 67.50, date: "Mar 20", who: "Jordan" },
+  { name: "Thai takeout", amount: 54.20, date: "Mar 15", who: "Alex" },
+  { name: "Concert tickets", amount: 95.00, date: "Mar 12", who: "Group" },
+];
+const SW_TOTAL_EXPENSES = 23;
+
 function SplitwiseScreen({ onBack }: { onBack: () => void }) {
   const C = React.useContext(ThemeCtx);
-  const [importing, setImporting] = React.useState<"idle"|"loading"|"done">("idle");
+  const [phase, setPhase] = React.useState<"connecting"|"friends"|"groups"|"expenses"|"done">("connecting");
+  const [friendIdx, setFriendIdx] = React.useState(0);
+  const [groupIdx, setGroupIdx] = React.useState(0);
+  const [expenseIdx, setExpenseIdx] = React.useState(0);
 
-  function handleImport() {
-    setImporting("loading");
-    setTimeout(() => setImporting("done"), 1800);
-  }
+  React.useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      await wait(1400);
+      if (cancelled) return;
+      setPhase("friends");
+      for (let i = 1; i <= SW_IMPORTED_FRIENDS.length; i++) {
+        await wait(400);
+        if (cancelled) return;
+        setFriendIdx(i);
+      }
+      await wait(500);
+      if (cancelled) return;
+      setPhase("groups");
+      for (let i = 1; i <= SW_IMPORTED_GROUPS.length; i++) {
+        await wait(400);
+        if (cancelled) return;
+        setGroupIdx(i);
+      }
+      await wait(500);
+      if (cancelled) return;
+      setPhase("expenses");
+      for (let i = 1; i <= SW_IMPORTED_EXPENSES.length; i++) {
+        await wait(300);
+        if (cancelled) return;
+        setExpenseIdx(i);
+      }
+      await wait(600);
+      if (cancelled) return;
+      setPhase("done");
+    };
+    run();
+    return () => { cancelled = true; };
+  }, []);
 
-  const rows: Array<{ feature: string; coconut: string; splitwise: string; Icon: LucideIcon }> = [
-    { feature: "Bank connection", coconut: "Auto-import via Plaid", splitwise: "Manual entry only", Icon: Landmark },
-    { feature: "Tap to Pay", coconut: "Collect in person instantly", splitwise: "No in-person payments", Icon: Zap },
-    { feature: "Email receipts", coconut: "Auto-parsed, itemized splits", splitwise: "Not supported", Icon: Mail },
-    { feature: "Receipt scan", coconut: "Line-item splits from photo", splitwise: "Basic photo, no line items", Icon: ScanLine },
-  ];
+  const swGreen = "#1DB954";
 
   return (
     <div style={{ height:"100%", overflowY:"auto", background:C.bg, scrollbarWidth:"none" }}>
@@ -2677,113 +2725,202 @@ function SplitwiseScreen({ onBack }: { onBack: () => void }) {
           <ChevronLeft size={22} strokeWidth={2.5} />
         </button>
         <p style={{ fontSize:20, letterSpacing:"-0.7px", margin:0 }}>
-          <span style={{ fontWeight:900, color:C.label }}>Coconut</span>
-          <span style={{ fontWeight:400, color:C.label3 }}> vs Splitwise</span>
+          <span style={{ fontWeight:900, color:C.label }}>Splitwise Import</span>
         </p>
       </div>
 
-      {/* Subtitle */}
-      <div style={{ padding:"0 20px 16px" }}>
-        <p style={{ fontSize:13, color:C.label3, lineHeight:1.5 }}>
-          All the splitting. None of the manual entry.
-        </p>
-      </div>
+      <div style={{ padding:"0 16px", display:"flex", flexDirection:"column" }}>
+        {/* Connecting phase */}
+        {phase === "connecting" && (
+          <motion.div
+            initial={{ opacity:0 }}
+            animate={{ opacity:1 }}
+            style={{ textAlign:"center", paddingTop:48 }}
+          >
+            <motion.div
+              animate={{ rotate:360 }}
+              transition={{ duration:1, repeat:Infinity, ease:"linear" }}
+              style={{ width:40, height:40, border:`3px solid ${C.stroke}`, borderTopColor:swGreen, borderRadius:"50%", margin:"0 auto 18px" }}
+            />
+            <p style={{ fontSize:15, fontWeight:700, color:C.label, letterSpacing:"-0.3px" }}>Connecting to Splitwise…</p>
+            <p style={{ fontSize:12, color:C.label3, marginTop:6 }}>Syncing your friends, groups & expenses</p>
+          </motion.div>
+        )}
 
-      {/* Column headers */}
-      <div style={{ padding:"0 16px 8px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginLeft:48 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-          <div style={{ width:8, height:8, borderRadius:"50%", background:C.green }} />
-          <span style={{ fontSize:11, fontWeight:800, color:C.green, textTransform:"uppercase", letterSpacing:"0.06em" }}>Coconut</span>
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-          <div style={{ width:8, height:8, borderRadius:"50%", background:C.label3 }} />
-          <span style={{ fontSize:11, fontWeight:700, color:C.label3, textTransform:"uppercase", letterSpacing:"0.06em" }}>Splitwise</span>
-        </div>
-      </div>
-
-      {/* Comparison rows */}
-      <div style={{ padding:"0 16px 36px", display:"flex", flexDirection:"column", gap:10 }}>
-        {rows.map((r) => {
-          const RowIcon = r.Icon;
-          return (
-            <div
-              key={r.feature}
-              style={{
-                background:C.card,
-                border:`${C.borderW} solid ${C.stroke}`,
-                borderRadius:C.radius,
-                padding:"14px 16px",
-                boxShadow:C.shSm,
-              }}
-            >
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-                <div style={{ width:30, height:30, borderRadius:9, background:C.card2, border:`${C.borderW} solid ${C.stroke}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                  <RowIcon size={14} color={C.label2} />
+        {/* Content phases */}
+        {phase !== "connecting" && (
+          <div style={{ display:"flex", flexDirection:"column", gap:12, paddingBottom:24 }}>
+            {/* Success banner */}
+            {phase === "done" && (
+              <motion.div
+                initial={{ opacity:0, scale:0.95 }}
+                animate={{ opacity:1, scale:1 }}
+                style={{
+                  background:C.greenBg,
+                  border:`1px solid ${C.greenMid}`,
+                  borderRadius:C.radius,
+                  padding:"14px 16px",
+                  display:"flex",
+                  alignItems:"center",
+                  gap:10,
+                }}
+              >
+                <div style={{ width:32, height:32, borderRadius:10, background:C.green, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <Check size={18} color="#fff" strokeWidth={2.5} />
                 </div>
-                <p style={{ fontSize:13, fontWeight:800, color:C.label, letterSpacing:"-0.2px" }}>{r.feature}</p>
+                <div>
+                  <p style={{ fontSize:14, fontWeight:800, color:C.green, letterSpacing:"-0.2px" }}>All imported!</p>
+                  <p style={{ fontSize:11, color:C.green, marginTop:1, opacity:0.8 }}>{SW_IMPORTED_FRIENDS.length} friends · {SW_IMPORTED_GROUPS.length} groups · {SW_TOTAL_EXPENSES} expenses</p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Friends section */}
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8, padding:"0 4px" }}>
+                <Users size={13} color={C.label3} strokeWidth={2} />
+                <span style={{ fontSize:11, fontWeight:700, color:C.label3, textTransform:"uppercase", letterSpacing:"0.06em" }}>Friends</span>
+                {friendIdx > 0 && (
+                  <motion.span initial={{ opacity:0 }} animate={{ opacity:1 }} style={{ fontSize:11, fontWeight:700, color:swGreen, marginLeft:"auto" }}>
+                    {friendIdx}/{SW_IMPORTED_FRIENDS.length}
+                  </motion.span>
+                )}
               </div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                {/* Coconut */}
-                <div style={{ background:C.greenBg, border:`1px solid ${C.greenMid}`, borderRadius:10, padding:"8px 10px" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:3 }}>
-                    <Check size={11} color={C.green} strokeWidth={3} />
-                    <span style={{ fontSize:10, fontWeight:800, color:C.green, textTransform:"uppercase", letterSpacing:"0.05em" }}>Yes</span>
+              <div style={{ background:C.card, border:`${C.borderW} solid ${C.stroke}`, borderRadius:C.radius, overflow:"hidden", boxShadow:C.shSm }}>
+                {SW_IMPORTED_FRIENDS.slice(0, friendIdx).map((f, i) => (
+                  <motion.div
+                    key={f.name}
+                    initial={{ opacity:0, x:-16 }}
+                    animate={{ opacity:1, x:0 }}
+                    transition={{ duration:0.25 }}
+                    style={{
+                      display:"flex", alignItems:"center", gap:12, padding:"12px 14px",
+                      borderTop: i > 0 ? `1px solid ${C.stroke}` : "none",
+                    }}
+                  >
+                    <div style={{ width:36, height:36, borderRadius:12, background:f.color+"20", border:`1.5px solid ${f.color}40`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      <span style={{ fontSize:12, fontWeight:800, color:f.color }}>{f.initials}</span>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <p style={{ fontSize:13, fontWeight:700, color:C.label, letterSpacing:"-0.2px" }}>{f.name}</p>
+                      <p style={{ fontSize:11, color:C.label3, marginTop:1 }}>{f.dir === "owes_you" ? "owes you" : "you owe"}</p>
+                    </div>
+                    <span style={{ fontSize:14, fontWeight:800, color: f.dir === "owes_you" ? C.green : C.red, letterSpacing:"-0.3px" }}>
+                      {f.dir === "owes_you" ? "+" : "-"}${f.amount.toFixed(2)}
+                    </span>
+                  </motion.div>
+                ))}
+                {friendIdx === 0 && (
+                  <div style={{ padding:"16px", textAlign:"center" }}>
+                    <motion.div animate={{ opacity:[0.3,0.7,0.3] }} transition={{ duration:1.2, repeat:Infinity }} style={{ height:12, width:100, background:C.stroke, borderRadius:6, margin:"0 auto" }} />
                   </div>
-                  <p style={{ fontSize:11, color:C.green, fontWeight:600, lineHeight:1.4 }}>{r.coconut}</p>
-                </div>
-                {/* Splitwise */}
-                <div style={{ background:C.redBg, border:`1px solid ${C.red}22`, borderRadius:10, padding:"8px 10px" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:3 }}>
-                    <X size={11} color={C.red} strokeWidth={3} />
-                    <span style={{ fontSize:10, fontWeight:800, color:C.red, textTransform:"uppercase", letterSpacing:"0.05em" }}>No</span>
-                  </div>
-                  <p style={{ fontSize:11, color:C.red, fontWeight:600, lineHeight:1.4 }}>{r.splitwise}</p>
-                </div>
+                )}
               </div>
             </div>
-          );
-        })}
 
-        {/* Switch CTA */}
-        <button
-          onClick={importing === "idle" ? handleImport : undefined}
-          style={{
-            marginTop:4, width:"100%", cursor: importing === "idle" ? "pointer" : "default",
-            background: importing === "done" ? C.greenBg : C.card,
-            border: `1.5px solid ${importing === "done" ? C.green : C.green}`,
-            borderRadius:C.radius, padding:"14px 16px",
-            boxShadow: importing === "idle" ? "0 2px 12px rgba(58,125,68,0.12)" : "none",
-            textAlign:"left", display:"flex", alignItems:"center", justifyContent:"space-between",
-          }}
-        >
-          {importing === "idle" && (
-            <>
+            {/* Group section */}
+            {(phase === "groups" || phase === "expenses" || phase === "done") && (
               <div>
-                <p style={{ fontSize:13, fontWeight:800, color:C.label, letterSpacing:"-0.2px" }}>Already on Splitwise?</p>
-                <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>Import your history in one tap.</p>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8, padding:"0 4px" }}>
+                  <Hash size={13} color={C.label3} strokeWidth={2} />
+                  <span style={{ fontSize:11, fontWeight:700, color:C.label3, textTransform:"uppercase", letterSpacing:"0.06em" }}>Groups</span>
+                  {groupIdx > 0 && (
+                    <motion.span initial={{ opacity:0 }} animate={{ opacity:1 }} style={{ fontSize:11, fontWeight:700, color:swGreen, marginLeft:"auto" }}>
+                      {groupIdx}/{SW_IMPORTED_GROUPS.length}
+                    </motion.span>
+                  )}
+                </div>
+                <div style={{ background:C.card, border:`${C.borderW} solid ${C.stroke}`, borderRadius:C.radius, overflow:"hidden", boxShadow:C.shSm }}>
+                  {SW_IMPORTED_GROUPS.slice(0, groupIdx).map((g, i) => (
+                    <motion.div
+                      key={g.name}
+                      initial={{ opacity:0, x:-16 }}
+                      animate={{ opacity:1, x:0 }}
+                      transition={{ duration:0.25 }}
+                      style={{
+                        display:"flex", alignItems:"center", gap:12, padding:"12px 14px",
+                        borderTop: i > 0 ? `1px solid ${C.stroke}` : "none",
+                      }}
+                    >
+                      <div style={{ width:36, height:36, borderRadius:12, background:C.accent+"15", border:`1px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                        <Users size={15} color={C.accent} strokeWidth={2} />
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <p style={{ fontSize:13, fontWeight:700, color:C.label, letterSpacing:"-0.2px" }}>{g.name}</p>
+                        <p style={{ fontSize:11, color:C.label3, marginTop:1 }}>{g.members} members · {g.expenses} expenses</p>
+                      </div>
+                      <span style={{ fontSize:13, fontWeight:800, color: g.balance >= 0 ? C.green : C.red, letterSpacing:"-0.3px" }}>
+                        {g.balance >= 0 ? "+" : "-"}${Math.abs(g.balance).toFixed(2)}
+                      </span>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
-              <div style={{ width:32, height:32, borderRadius:10, background:C.green, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                <ChevronRight size={16} color="#fff" strokeWidth={2.5} />
+            )}
+
+            {/* Expenses section */}
+            {(phase === "expenses" || phase === "done") && (
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8, padding:"0 4px" }}>
+                  <FileText size={13} color={C.label3} strokeWidth={2} />
+                  <span style={{ fontSize:11, fontWeight:700, color:C.label3, textTransform:"uppercase", letterSpacing:"0.06em" }}>Recent expenses</span>
+                  {expenseIdx > 0 && (
+                    <motion.span initial={{ opacity:0 }} animate={{ opacity:1 }} style={{ fontSize:11, fontWeight:700, color:swGreen, marginLeft:"auto" }}>
+                      {expenseIdx >= SW_IMPORTED_EXPENSES.length ? SW_TOTAL_EXPENSES : expenseIdx}/{SW_TOTAL_EXPENSES}
+                    </motion.span>
+                  )}
+                </div>
+                <div style={{ background:C.card, border:`${C.borderW} solid ${C.stroke}`, borderRadius:C.radius, overflow:"hidden", boxShadow:C.shSm }}>
+                  {SW_IMPORTED_EXPENSES.slice(0, expenseIdx).map((e, i) => (
+                    <motion.div
+                      key={e.name}
+                      initial={{ opacity:0, x:-16 }}
+                      animate={{ opacity:1, x:0 }}
+                      transition={{ duration:0.25 }}
+                      style={{
+                        display:"flex", alignItems:"center", gap:12, padding:"11px 14px",
+                        borderTop: i > 0 ? `1px solid ${C.stroke}` : "none",
+                      }}
+                    >
+                      <div style={{ flex:1 }}>
+                        <p style={{ fontSize:13, fontWeight:700, color:C.label, letterSpacing:"-0.2px" }}>{e.name}</p>
+                        <p style={{ fontSize:11, color:C.label3, marginTop:1 }}>{e.date} · {e.who}</p>
+                      </div>
+                      <span style={{ fontSize:13, fontWeight:800, color:C.label, letterSpacing:"-0.3px" }}>${e.amount.toFixed(2)}</span>
+                    </motion.div>
+                  ))}
+                  {expenseIdx >= SW_IMPORTED_EXPENSES.length && (
+                    <motion.div
+                      initial={{ opacity:0 }}
+                      animate={{ opacity:1 }}
+                      transition={{ delay:0.2 }}
+                      style={{ padding:"10px 14px", borderTop:`1px solid ${C.stroke}`, textAlign:"center" }}
+                    >
+                      <p style={{ fontSize:12, fontWeight:600, color:C.label3 }}>+ {SW_TOTAL_EXPENSES - SW_IMPORTED_EXPENSES.length} more expenses imported</p>
+                    </motion.div>
+                  )}
+                </div>
               </div>
-            </>
-          )}
-          {importing === "loading" && (
-            <p style={{ fontSize:13, fontWeight:700, color:C.label3, width:"100%", textAlign:"center" }}>Connecting to Splitwise…</p>
-          )}
-          {importing === "done" && (
-            <div style={{ width:"100%", textAlign:"center" }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-                <Check size={15} color={C.green} strokeWidth={2.5} />
-                <p style={{ fontSize:13, fontWeight:800, color:C.green, letterSpacing:"-0.2px" }}>History imported!</p>
-              </div>
-              <p style={{ fontSize:12, color:C.green, marginTop:3, opacity:0.8 }}>Your Splitwise expenses are ready to split.</p>
-            </div>
-          )}
-        </button>
+            )}
+
+            {/* Progress indicator */}
+            {phase !== "done" && (
+              <motion.p
+                animate={{ opacity:[0.4, 1, 0.4] }}
+                transition={{ duration:1.5, repeat:Infinity }}
+                style={{ fontSize:12, color:C.label3, textAlign:"center", marginTop:4 }}
+              >
+                {phase === "friends" ? "Importing friends…" : phase === "groups" ? "Importing groups…" : "Importing expenses…"}
+              </motion.p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+function wait(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PHONE FRAME
@@ -2901,7 +3038,7 @@ export function CoconutMobileMarketingPage() {
   const [prefill, setPrefill] = useState<DemoPrefill | undefined>();
   const [settleTarget, setSettleTarget] = useState<{ personId: PersonId; amount: number }|null>(null);
   const [selectedTx, setSelectedTx] = useState<BankTx|null>(null);
-  const [activeFeature, setActiveFeature] = useState<number | null>(0);
+  const [activeFeature, setActiveFeature] = useState<number | null>(null);
   const [tapToPayDemoState, setTapToPayDemoState] = useState<"idle" | "processing" | "accepted">("idle");
   const tapToPayDemoTimerRef = useRef<number | null>(null);
 
@@ -2992,14 +3129,12 @@ export function CoconutMobileMarketingPage() {
     Icon: LucideIcon;
     label: string;
     tag: string;
-    splitwiseNote: string;
     demo: () => void;
   }> = [
     {
-      Icon: Zap,
+      Icon: Nfc,
       label: "Collect in person, instantly",
       tag: "Tap to Pay",
-      splitwiseNote: "Splitwise can't collect payments",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => handleSettle("alex", 86.0));
@@ -3009,7 +3144,6 @@ export function CoconutMobileMarketingPage() {
       Icon: Landmark,
       label: "Every charge, auto-imported",
       tag: "Bank connection",
-      splitwiseNote: "Splitwise requires manual entry",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => {
@@ -3021,7 +3155,6 @@ export function CoconutMobileMarketingPage() {
       Icon: Mail,
       label: "Itemized splits, zero effort",
       tag: "Email receipts",
-      splitwiseNote: "Splitwise can't read your receipts",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => {
@@ -3034,7 +3167,6 @@ export function CoconutMobileMarketingPage() {
       Icon: ScanLine,
       label: "Snap a photo, split the bill",
       tag: "Receipt scan",
-      splitwiseNote: "Splitwise has no line-item splits",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => setShowReceiptScan(true));
@@ -3221,51 +3353,56 @@ export function CoconutMobileMarketingPage() {
                       </motion.button>
                     );
                   })}
-                  <motion.button
-                    type="button"
-                    initial={{ opacity:0, y:10 }}
-                    animate={{ opacity:1, y:0 }}
-                    transition={{ duration:0.45, delay:0.14 }}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => { resetPhoneDemo(); setScreen("splitwise"); }}
-                    style={{
-                      display:"flex",
-                      alignItems:"center",
-                      gap: 9,
-                      padding: "12px 22px",
-                      borderRadius: 999,
-                      cursor:"pointer",
-                      background: screen === "splitwise" ? LP.text : LP.bgCard,
-                      border: `1.5px solid ${screen === "splitwise" ? LP.text : LP.border}`,
-                      boxShadow: screen === "splitwise" ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
-                      transition:"all 0.2s ease",
-                    }}
-                  >
-                    <Equal size={17} color={screen === "splitwise" ? LP.bg : LP.textMuted} strokeWidth={2} />
-                    <span style={{ fontSize:15, fontWeight: screen === "splitwise" ? 700 : 500, color: screen === "splitwise" ? LP.bg : LP.textSoft, letterSpacing:"-0.01em" }}>
-                      vs Splitwise
-                    </span>
-                  </motion.button>
                 </motion.div>
 
                 <AnimatePresence mode="wait">
-                  <motion.p
+                  <motion.div
                     key={screen === "splitwise" ? "splitwise" : activeFeature}
                     initial={{ opacity:0, y:6 }}
                     animate={{ opacity:1, y:0 }}
                     exit={{ opacity:0, y:-6 }}
                     transition={{ duration:0.2 }}
-                    style={{
-                      fontSize: 15,
-                      color: LP.textMuted,
-                      marginTop: 14,
-                      fontWeight: 500,
-                      letterSpacing: "-0.01em",
-                    }}
+                    style={{ marginTop: 14 }}
                   >
-                    {screen === "splitwise" ? "See how Coconut stacks up" : activeFeature != null ? features[activeFeature]?.label : null}
-                  </motion.p>
+                    {screen === "splitwise" ? (
+                      <p style={{ fontSize:15, color:LP.textMuted, fontWeight:500, letterSpacing:"-0.01em" }}>Bring your Splitwise history with you</p>
+                    ) : activeFeature != null && features[activeFeature] ? (
+                      <p style={{ fontSize:15, color:LP.textSoft, fontWeight:500, letterSpacing:"-0.01em" }}>
+                        {features[activeFeature].label}
+                      </p>
+                    ) : null}
+                  </motion.div>
                 </AnimatePresence>
+
+                <motion.button
+                  type="button"
+                  initial={{ opacity:0, y:10 }}
+                  animate={{ opacity:1, y:0 }}
+                  transition={{ duration:0.45, delay:0.22 }}
+                  whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(43,42,41,0.12)" }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => { resetPhoneDemo(); setScreen("splitwise"); }}
+                  style={{
+                    display:"flex",
+                    alignItems:"center",
+                    justifyContent:"center",
+                    gap: 10,
+                    marginTop: 24,
+                    padding: "14px 32px",
+                    borderRadius: 14,
+                    cursor:"pointer",
+                    background: "#ffffff",
+                    border: "2.5px solid #2b2a29",
+                    boxShadow: "4px 4px 0px #2b2a29",
+                    transition:"all 0.2s ease",
+                  }}
+                >
+                  <ArrowDownLeft size={17} color={LP.text} strokeWidth={2.2} />
+                  <span style={{ fontSize:16, fontWeight:700, color:LP.text, letterSpacing:"-0.02em" }}>
+                    Import from Splitwise
+                  </span>
+                  <ChevronRight size={16} color={LP.text} strokeWidth={2} />
+                </motion.button>
               </>
             )}
           </div>
@@ -3450,44 +3587,53 @@ export function CoconutMobileMarketingPage() {
                     </div>
                   );
                 })}
-                <motion.button
-                  type="button"
-                  initial={{ opacity:0, y:10 }}
-                  animate={{ opacity:1, y:0 }}
-                  transition={{ duration:0.45, delay:0.14 }}
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => { resetPhoneDemo(); setScreen("splitwise"); }}
-                  style={{
-                    display:"flex",
-                    alignItems:"center",
-                    gap: 6,
-                    padding: isNarrowMobile ? "8px 12px" : "9px 14px",
-                    borderRadius: 999,
-                    cursor:"pointer",
-                    background: screen === "splitwise" ? LP.text : LP.bgCard,
-                    border: `1.5px solid ${screen === "splitwise" ? LP.text : LP.border}`,
-                    boxShadow: screen === "splitwise" ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
-                    transition:"all 0.2s ease",
-                  }}
-                >
-                  <Equal size={13} color={screen === "splitwise" ? LP.bg : LP.textMuted} strokeWidth={2} />
-                  <span style={{ fontSize: isNarrowMobile ? 12 : 13, fontWeight: screen === "splitwise" ? 700 : 500, color: screen === "splitwise" ? LP.bg : LP.textSoft, letterSpacing:"-0.01em" }}>
-                    vs Splitwise
-                  </span>
-                </motion.button>
               </motion.div>
               <AnimatePresence mode="wait">
-                <motion.p
+                <motion.div
                   key={screen === "splitwise" ? "splitwise" : activeFeature}
                   initial={{ opacity:0, y:6 }}
                   animate={{ opacity:1, y:0 }}
                   exit={{ opacity:0, y:-6 }}
                   transition={{ duration:0.2 }}
-                  style={{ fontSize:13, color:LP.textMuted, marginTop:10, fontWeight:500, letterSpacing:"-0.01em" }}
+                  style={{ marginTop:10, textAlign:"center" }}
                 >
-                  {screen === "splitwise" ? "See how Coconut stacks up" : activeFeature != null ? features[activeFeature]?.label : null}
-                </motion.p>
+                  {screen === "splitwise" ? (
+                    <p style={{ fontSize:13, color:LP.textMuted, fontWeight:500, letterSpacing:"-0.01em" }}>Bring your Splitwise history with you</p>
+                  ) : activeFeature != null && features[activeFeature] ? (
+                    <p style={{ fontSize:13, color:LP.textSoft, fontWeight:500, letterSpacing:"-0.01em" }}>
+                      {features[activeFeature].label}
+                    </p>
+                  ) : null}
+                </motion.div>
               </AnimatePresence>
+              <motion.button
+                type="button"
+                initial={{ opacity:0, y:10 }}
+                animate={{ opacity:1, y:0 }}
+                transition={{ duration:0.45, delay:0.22 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => { resetPhoneDemo(); setScreen("splitwise"); }}
+                style={{
+                  display:"flex",
+                  alignItems:"center",
+                  justifyContent:"center",
+                  gap: 8,
+                  marginTop: 18,
+                  padding: isNarrowMobile ? "11px 22px" : "12px 26px",
+                  borderRadius: 12,
+                  cursor:"pointer",
+                  background: "#ffffff",
+                  border: "2.5px solid #2b2a29",
+                  boxShadow: "4px 4px 0px #2b2a29",
+                  transition:"all 0.2s ease",
+                }}
+              >
+                <ArrowDownLeft size={14} color={LP.text} strokeWidth={2.2} />
+                <span style={{ fontSize: isNarrowMobile ? 13 : 14, fontWeight:700, color:LP.text, letterSpacing:"-0.02em" }}>
+                  Import from Splitwise
+                </span>
+                <ChevronRight size={14} color={LP.text} strokeWidth={2} />
+              </motion.button>
             </div>
           )}
         </div>
