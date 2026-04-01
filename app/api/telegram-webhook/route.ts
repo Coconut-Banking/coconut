@@ -301,12 +301,19 @@ async function getMultiRepoStatus(): Promise<string> {
 async function getRepoStatus(repo: string): Promise<string> {
   const headers = { Authorization: `Bearer ${GITHUB_TOKEN}` };
 
-  // Fetch both labeled and unlabeled bug issues (coconut-app may lack ai-fix label)
+  // Fetch ai-fix labeled issues
   const labeledRes = await fetch(
     `https://api.github.com/repos/${repo}/issues?labels=ai-fix&state=open&sort=created&direction=desc&per_page=20`,
     { headers }
   );
   const labeledIssues = labeledRes.ok ? await labeledRes.json() : [];
+
+  // Fetch user-reported issues (in-app shake-to-report)
+  const userReportedRes = await fetch(
+    `https://api.github.com/repos/${repo}/issues?labels=user-reported&state=open&sort=created&direction=desc&per_page=20`,
+    { headers }
+  );
+  const userReportedIssues = userReportedRes.ok ? await userReportedRes.json() : [];
 
   // Also fetch recent open issues and include any with "Bug:" title prefix
   const allRes = await fetch(
@@ -320,7 +327,7 @@ async function getRepoStatus(repo: string): Promise<string> {
 
   // Merge and deduplicate by issue number
   const seen = new Set<number>();
-  const openIssues = [...labeledIssues, ...bugIssues].filter(
+  const openIssues = [...labeledIssues, ...userReportedIssues, ...bugIssues].filter(
     (i: { number: number }) => {
       if (seen.has(i.number)) return false;
       seen.add(i.number);
@@ -341,15 +348,19 @@ async function getRepoStatus(repo: string): Promise<string> {
   const lines: string[] = [];
 
   if (openIssues.length > 0) {
-    lines.push(`Open ai-fix issues: ${openIssues.length}`);
+    const urCount = userReportedIssues.length;
+    lines.push(`Open issues to fix: ${openIssues.length}${urCount > 0 ? ` (${urCount} user-reported)` : ""}`);
     for (const issue of openIssues.slice(0, 5)) {
-      lines.push(`  #${issue.number}: ${issue.title}`);
+      const isUserReport = (issue as { labels?: { name: string }[] }).labels?.some(
+        (l: { name: string }) => l.name === "user-reported"
+      );
+      lines.push(`  #${issue.number}: ${issue.title}${isUserReport ? " 📱" : ""}`);
     }
     if (openIssues.length > 5) {
       lines.push(`  ... and ${openIssues.length - 5} more`);
     }
   } else {
-    lines.push("Open ai-fix issues: 0 (all clear!)");
+    lines.push("Open issues to fix: 0 (all clear!)");
   }
 
   if (fixPRs.length > 0) {
@@ -423,15 +434,18 @@ async function uploadMedia(message: TelegramUpdate["message"], repo: RepoKey): P
 // ── GitHub helpers ────────────────────────────────────────────────────────────
 
 async function getLatestAiFixIssue(repo: RepoKey): Promise<{ number: number } | null> {
-  const res = await fetch(
-    `https://api.github.com/repos/${REPOS[repo]}/issues?labels=ai-fix&state=open&sort=created&direction=desc&per_page=1`,
-    {
-      headers: { Authorization: `Bearer ${GITHUB_TOKEN}` },
-    }
-  );
-  if (!res.ok) return null;
-  const issues = await res.json();
-  return issues.length > 0 ? { number: issues[0].number } : null;
+  const headers = { Authorization: `Bearer ${GITHUB_TOKEN}` };
+  // Try ai-fix label first, then fall back to user-reported
+  for (const label of ["ai-fix", "user-reported"]) {
+    const res = await fetch(
+      `https://api.github.com/repos/${REPOS[repo]}/issues?labels=${label}&state=open&sort=created&direction=desc&per_page=1`,
+      { headers }
+    );
+    if (!res.ok) continue;
+    const issues = await res.json();
+    if (issues.length > 0) return { number: issues[0].number };
+  }
+  return null;
 }
 
 async function addCommentToIssue(repo: RepoKey, issueNumber: number, body: string) {

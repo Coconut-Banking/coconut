@@ -102,12 +102,19 @@ run_for_repo() {
   git reset --hard origin/main
   npm install --prefer-offline --no-audit 2>/dev/null || npm ci
 
-  # Fetch ai-fix issues for this repo (labeled + title fallback for repos without the label)
-  echo "Fetching ai-fix issues for $name..."
-  local labeled_json unlabeled_json issues_json
+  # Fetch ai-fix + user-reported issues for this repo (+ title fallback)
+  echo "Fetching ai-fix and user-reported issues for $name..."
+  local labeled_json user_reported_json unlabeled_json issues_json
   labeled_json=$(gh issue list \
     --repo "$full_repo" \
     --label "ai-fix" \
+    --state open \
+    --json number,title,body,labels,comments \
+    --limit 50 2>/dev/null || echo "[]")
+
+  user_reported_json=$(gh issue list \
+    --repo "$full_repo" \
+    --label "user-reported" \
     --state open \
     --json number,title,body,labels,comments \
     --limit 50 2>/dev/null || echo "[]")
@@ -125,12 +132,13 @@ run_for_repo() {
 import sys, json
 
 labeled = json.loads('''$labeled_json''')
+user_reported = json.loads('''$user_reported_json''')
 unlabeled = json.loads('''$unlabeled_json''')
 
 # Merge and deduplicate
 seen = set()
 merged = []
-for issue in labeled + unlabeled:
+for issue in labeled + user_reported + unlabeled:
     if issue['number'] not in seen:
         seen.add(issue['number'])
         merged.append(issue)
@@ -183,7 +191,7 @@ print(json.dumps(data['real']))
   issue_count=$(echo "$issues_json" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
   if [ "$issue_count" -eq 0 ]; then
-    echo "No ai-fix issues found for $name."
+    echo "No ai-fix or user-reported issues found for $name."
     RESULTS+=("$name ($label): no issues to fix")
     return
   fi
@@ -241,7 +249,8 @@ print(', '.join([f'Fixes #{i[\"number\"]}' for i in issues]))
   prompt_file=$(mktemp)
   cat > "$prompt_file" <<PROMPT_EOF
 You are the AI Fix Bot for $app_description.
-You have $issue_count GitHub issue(s) labeled "ai-fix" to resolve.
+You have $issue_count GitHub issue(s) labeled "ai-fix" or "user-reported" to resolve.
+Issues labeled "user-reported" were filed by real users via the in-app shake-to-report feature — treat them with the same priority as ai-fix issues.
 
 ## Context
 - These issues come from user bug reports via Telegram. They may include screenshots (as markdown image links to bug-screenshots/ in the repo) or videos.

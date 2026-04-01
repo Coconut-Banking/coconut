@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
 
   const issueTitle = `[User Report] ${title}`;
   const issueBody = buildIssueBody(body, clerkAuth.userId);
-  const labels = ["user-reported", "bug"];
+  const labels = ["user-reported", "ai-fix", "bug"];
 
   const ghRes = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/issues`, {
     method: "POST",
