@@ -2,17 +2,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { exchangeCode, saveGmailTokens, getOAuth2Client } from "@/lib/google-auth";
+import { verifyOAuthState } from "@/lib/paypal-auth";
 import { google } from "googleapis";
-
-function parseOAuthState(raw: string): { userId: string; redirect?: string } {
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed.userId) return parsed;
-  } catch {
-    // Legacy format: state is just the clerkUserId string
-  }
-  return { userId: raw };
-}
 
 const ALLOWED_DEEP_LINKS = ["coconut://connected", "coconut://settings"];
 
@@ -41,11 +32,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/app/email-receipts?error=missing_params", request.url));
   }
 
-  const { userId: clerkUserId, redirect: mobileRedirect } = parseOAuthState(rawState);
+  // Split off the optional mobile redirect suffix (appended after a pipe separator in getAuthUrl).
+  const pipeIdx = rawState.indexOf("|");
+  const signedPart = pipeIdx === -1 ? rawState : rawState.slice(0, pipeIdx);
+  const encodedRedirect = pipeIdx === -1 ? undefined : rawState.slice(pipeIdx + 1);
 
+  // Verify HMAC-signed state (BUG-AUTH-1 fix). Reject tampered or expired states.
+  const stateResult = verifyOAuthState(signedPart);
+  if (!stateResult.valid) {
+    console.error("[Gmail Callback] Invalid or expired OAuth state");
+    return NextResponse.redirect(new URL("/app/email-receipts?error=invalid_state", request.url));
+  }
+  const clerkUserId = stateResult.userId;
+
+  // Decode the mobile redirect URL if present.
+  let mobileRedirect: string | undefined;
+  if (encodedRedirect) {
+    try {
+      mobileRedirect = Buffer.from(encodedRedirect, "base64url").toString("utf8");
+    } catch {
+      mobileRedirect = undefined;
+    }
+  }
+
+  // Session check (BUG-AUTH-2 fix):
+  // - Web: an active Clerk session must belong to the same user.
+  // - Mobile (Safari redirect): no Clerk session cookie is present; the HMAC-signed state is
+  //   sufficient proof of identity, so we allow requests where authedUserId is null.
   const { userId: authedUserId } = await auth();
-  if (!authedUserId || authedUserId !== clerkUserId) {
-    console.error("[Gmail Callback] Auth mismatch: state userId does not match authenticated user", {
+  if (authedUserId && authedUserId !== clerkUserId) {
+    console.error("[Gmail Callback] Auth mismatch: session userId does not match state userId", {
       stateUserId: clerkUserId,
       authedUserId,
     });
