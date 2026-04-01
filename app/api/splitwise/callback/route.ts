@@ -87,7 +87,6 @@ function appSettingsDeepLink(req: NextRequest, query: Record<string, string>): N
 }
 
 export async function GET(req: NextRequest) {
-  const sessionUserId = await getUserId();
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state") ?? "";
   const verified = verifyOAuthState(state);
@@ -118,18 +117,17 @@ export async function GET(req: NextRequest) {
 
   if (!verified.returnToApp) {
     // Web flow: Clerk session must be present and match the userId in the signed state.
+    // Only call getUserId() here — mobile flows have no Clerk session on this domain
+    // and CLERK_DISABLED=true would return a bypass ID that would cause a false mismatch.
+    const sessionUserId = await getUserId();
     if (!sessionUserId || sessionUserId !== verified.userId) {
       return NextResponse.redirect(
         new URL("/app/settings?splitwise_error=invalid_state", req.url)
       );
     }
-  } else {
-    // Mobile app flow (returnToApp=true): Mobile Safari has no Clerk session on this domain;
-    // rely on HMAC-signed state exclusively.
-    if (sessionUserId && sessionUserId !== verified.userId) {
-      return appSettingsDeepLink(req, { splitwise_error: "invalid_state" });
-    }
   }
+  // Mobile app flow (returnToApp=true): Mobile Safari has no Clerk session on this domain;
+  // rely on HMAC-signed state exclusively. Do not call getUserId() here.
 
   const clerkUserId = verified.userId;
 
