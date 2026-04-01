@@ -2,7 +2,10 @@ import { currentUser } from "@clerk/nextjs/server";
 import { getSupabase } from "./supabase";
 
 /**
- * Link group members by email when user signs in (owner invited them by email).
+ * Link group members by email when user signs in.
+ * When a user logs in, find ALL group_members rows that match their email
+ * but have no user_id yet, and link them. This is how User B gains access
+ * to a group that User A created and added them to by email.
  */
 async function linkMemberByEmail(userId: string) {
   const user = await currentUser();
@@ -11,39 +14,24 @@ async function linkMemberByEmail(userId: string) {
 
   const db = getSupabase();
 
-  // Only link member rows in NON-Splitwise groups that this user owns.
-  // Splitwise-sourced groups handle their own member linking during import.
-  // This prevents cross-user data leaks entirely.
-  const { data: ownedGroups } = await db
-    .from("groups")
-    .select("id, source")
-    .eq("owner_id", userId);
-
-  const safeGroupIds = new Set(
-    (ownedGroups ?? [])
-      .filter((g) => (g as { source?: string | null }).source !== "splitwise")
-      .map((g) => g.id)
-  );
-  if (safeGroupIds.size === 0) return;
-
   const { data: candidates } = await db
     .from("group_members")
     .select("id, group_id")
-    .eq("email", email)
+    .eq("email", email.toLowerCase())
     .is("user_id", null);
 
-  const idsToLink = (candidates ?? [])
-    .filter((m) => m.group_id && safeGroupIds.has(m.group_id))
-    .map((m) => m.id);
+  if (!candidates || candidates.length === 0) return;
 
-  if (idsToLink.length === 0) return;
-
-  for (const mid of idsToLink) {
+  for (const member of candidates) {
     await db
       .from("group_members")
       .update({ user_id: userId })
-      .eq("id", mid);
+      .eq("id", member.id);
   }
+
+  console.log(
+    `[group-access] linked ${candidates.length} member row(s) for ${email}`
+  );
 }
 
 /**

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
+import { findClerkUserIdByEmail } from "@/lib/clerk-user-lookup";
 
 export async function POST(
   req: NextRequest,
@@ -18,7 +19,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const displayName = (body.displayName ?? body.display_name ?? "").trim().slice(0, 100);
-  const email = (body.email as string)?.trim() || null;
+  const email = (body.email as string)?.trim()?.toLowerCase() || null;
 
   if (!displayName) return NextResponse.json({ error: "displayName required" }, { status: 400 });
 
@@ -33,11 +34,17 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // If the member has an email, check if they already have a Coconut account
+  let linkedUserId: string | null = null;
+  if (email) {
+    linkedUserId = await findClerkUserIdByEmail(email);
+  }
+
   const { data: member, error } = await db
     .from("group_members")
     .insert({
       group_id: id,
-      user_id: null,
+      user_id: linkedUserId,
       email,
       display_name: displayName,
     })
