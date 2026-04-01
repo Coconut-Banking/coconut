@@ -9,6 +9,7 @@ import { getUserId } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { decryptToken } from "@/lib/encryption";
 import { CACHE_TAGS } from "@/lib/cached-queries";
+import { findClerkUserIdsByEmails } from "@/lib/clerk-user-lookup";
 import {
   getGroups,
   getExpenses,
@@ -102,9 +103,26 @@ export async function POST(req: NextRequest) {
       : swGroups;
     console.log(`[splitwise-import] found ${swGroups.length} groups for user ${swUser.id}`);
 
+    // Batch look up all member emails to link existing Coconut users
+    const allMemberEmails = new Set<string>();
+    for (const g of filteredGroups) {
+      for (const m of g.members) {
+        const email = (m.email ?? "").trim().toLowerCase();
+        if (email && email !== (myEmail ?? "").toLowerCase()) {
+          allMemberEmails.add(email);
+        }
+      }
+    }
+    const emailToClerkId = dryRun
+      ? new Map<string, string>()
+      : await findClerkUserIdsByEmails([...allMemberEmails]);
+    if (emailToClerkId.size > 0) {
+      console.log(`[splitwise-import] found ${emailToClerkId.size} existing Coconut user(s) among Splitwise members`);
+    }
+
     for (const swGroup of filteredGroups) {
       try {
-        await importGroup(db, userId, token, swGroup, swUser.id, myEmail, stats, {
+        await importGroup(db, userId, token, swGroup, swUser.id, myEmail, emailToClerkId, stats, {
           dryRun,
           expenseOptions,
         });
@@ -169,11 +187,52 @@ export async function POST(req: NextRequest) {
     if (!dryRun && (stats.expenses + stats.settlements) > 0) {
       revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
     }
+
+    // Collect uninvited members (no user_id) for the invite prompt
+    let uninvitedMembers: { displayName: string; email: string | null; groupName: string }[] = [];
+    if (!dryRun) {
+      try {
+        const importedGroupIds = filteredGroups.map((g) => String(g.id));
+        const { data: coconutGroups } = await db
+          .from("groups")
+          .select("id, name")
+          .eq("owner_id", userId)
+          .eq("source", "splitwise")
+          .in("external_id", importedGroupIds);
+
+        if (coconutGroups && coconutGroups.length > 0) {
+          const gids = coconutGroups.map((g) => g.id);
+          const gMap = new Map(coconutGroups.map((g) => [g.id, g.name]));
+          const { data: nullMembers } = await db
+            .from("group_members")
+            .select("display_name, email, group_id")
+            .in("group_id", gids)
+            .is("user_id", null);
+
+          const seen = new Set<string>();
+          for (const m of nullMembers ?? []) {
+            const key = m.email?.toLowerCase() ?? `${m.group_id}-${m.display_name}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            uninvitedMembers.push({
+              displayName: m.display_name,
+              email: m.email ?? null,
+              groupName: gMap.get(m.group_id) ?? "Unknown",
+            });
+          }
+          uninvitedMembers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+        }
+      } catch (e) {
+        console.warn("[splitwise-import] failed to collect uninvited members:", e);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       dryRun,
       importedGroupCount: filteredGroups.length,
       stats,
+      uninvitedMembers,
     });
   } catch (err) {
     console.error("[splitwise-import] fatal error:", err);
@@ -210,6 +269,7 @@ async function importGroup(
   swGroup: SplitwiseGroup,
   swUserId: number,
   myEmail: string | null,
+  emailToClerkId: Map<string, string>,
   stats: ImportStats,
   opts: { dryRun: boolean; expenseOptions: GetExpensesOptions }
 ) {
@@ -278,7 +338,8 @@ async function importGroup(
 
   for (const swMember of swGroup.members) {
     const isMe = swMember.id === swUserId;
-    const email = isMe ? (myEmail ?? swMember.email) : swMember.email;
+    const rawEmail = isMe ? (myEmail ?? swMember.email) : swMember.email;
+    const email = rawEmail?.trim().toLowerCase() || null;
     const displayName = splitwiseMemberDisplayName(swMember);
 
     // Check if member already exists in this group (by email)
@@ -291,14 +352,32 @@ async function importGroup(
 
     if (existingMember) {
       swMemberIdToCoconutId.set(swMember.id, existingMember.id);
+      // Backfill user_id on existing rows that were previously unlinked
+      if (!isMe && email) {
+        const linkedId = emailToClerkId.get(email.toLowerCase());
+        if (linkedId) {
+          await db
+            .from("group_members")
+            .update({ user_id: linkedId })
+            .eq("id", existingMember.id)
+            .is("user_id", null);
+        }
+      }
       continue;
+    }
+
+    let memberUserId: string | null = null;
+    if (isMe) {
+      memberUserId = userId;
+    } else if (email) {
+      memberUserId = emailToClerkId.get(email.toLowerCase()) ?? null;
     }
 
     const { data: newMember, error } = await db
       .from("group_members")
       .insert({
         group_id: groupId,
-        user_id: isMe ? userId : null,
+        user_id: memberUserId,
         email,
         display_name: displayName,
       })

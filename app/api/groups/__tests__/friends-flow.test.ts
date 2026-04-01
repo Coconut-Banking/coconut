@@ -174,6 +174,11 @@ vi.mock("@/lib/cached-queries", () => ({
 
 vi.mock("next/cache", () => ({ revalidateTag: vi.fn() }));
 
+vi.mock("@/lib/clerk-user-lookup", () => ({
+  findClerkUserIdByEmail: vi.fn().mockResolvedValue(null),
+  findClerkUserIdsByEmails: vi.fn().mockResolvedValue(new Map()),
+}));
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("add friend → summary flow", () => {
