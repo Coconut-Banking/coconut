@@ -186,6 +186,7 @@ export async function POST(req: NextRequest) {
     console.log("[splitwise-import] done", stats);
     if (!dryRun && (stats.expenses + stats.settlements) > 0) {
       revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+      revalidateTag(CACHE_TAGS.transactions(userId), "max");
     }
 
     // Collect uninvited members (no user_id) for the invite prompt
