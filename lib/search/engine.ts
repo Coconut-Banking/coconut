@@ -25,12 +25,19 @@ function generateAnswer(
   query: string,
   parsed: ParsedQuery,
   transactions: SearchTransaction[],
+  locationFallback?: boolean,
 ): { answer: string; total: number | null; count: number } {
   const count = transactions.length;
 
   if (parsed.intent === "aggregate") {
     if (count === 0) {
-      return { answer: "No matching transactions found.", total: 0, count: 0 };
+      return {
+        answer: locationFallback
+          ? "No transactions found. Your bank likely doesn't provide location data for these transactions — try searching by merchant name instead."
+          : "No matching transactions found.",
+        total: 0,
+        count: 0,
+      };
     }
     const txType = parsed.structured_filters.transaction_type;
     if (txType === "income" || txType === "refund") {
@@ -64,7 +71,13 @@ function generateAnswer(
 
   // search
   if (count === 0) {
-    return { answer: "No matching transactions found.", total: null, count: 0 };
+    return {
+      answer: locationFallback
+        ? "No transactions found. Your bank likely doesn't provide location data for these transactions — try searching by merchant name instead."
+        : "No matching transactions found.",
+      total: null,
+      count: 0,
+    };
   }
   return {
     answer: `Found ${count} matching transaction${count === 1 ? "" : "s"}.`,
@@ -117,22 +130,34 @@ export async function searchV2(
     reranked = await expandByMerchants(clerkUserId, [], parsed, opts?.accountId);
     reranked.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
     console.log(`[search-v2] location query — ${reranked.length} transactions`);
-    const { answer, total, count } = generateAnswer(query, parsed, reranked);
-    const dates = reranked.map((t) => t.date).filter(Boolean).sort();
-    return {
-      intent: parsed.intent,
-      transactions: reranked,
-      total,
-      count,
-      answer,
-      date_range: dates.length > 0 ? { earliest: dates[0], latest: dates[dates.length - 1] } : null,
-      applied_filters: {
-        date_start: parsed.structured_filters.date_range?.start ?? null,
-        date_end: parsed.structured_filters.date_range?.end ?? null,
-        account_id: opts?.accountId ?? null,
-        location: parsed.structured_filters.location ?? null,
-      },
-    };
+
+    if (reranked.length > 0) {
+      const { answer, total, count } = generateAnswer(query, parsed, reranked);
+      const dates = reranked.map((t) => t.date).filter(Boolean).sort();
+      return {
+        intent: parsed.intent,
+        transactions: reranked,
+        total,
+        count,
+        answer,
+        date_range: dates.length > 0 ? { earliest: dates[0], latest: dates[dates.length - 1] } : null,
+        applied_filters: {
+          date_start: parsed.structured_filters.date_range?.start ?? null,
+          date_end: parsed.structured_filters.date_range?.end ?? null,
+          account_id: opts?.accountId ?? null,
+          location: parsed.structured_filters.location ?? null,
+        },
+      };
+    }
+
+    // No structured location data found — fall through to semantic pipeline.
+    // Most credit card transactions don't have city/region populated by Plaid.
+    // Use the full query as semantic terms so vector search can still surface
+    // relevant results (e.g. merchants the user visited in that location).
+    console.log(`[search-v2] location query returned 0 — falling back to semantic pipeline`);
+    parsed.semantic_terms = query;
+    // Keep the date range filter but drop the location requirement
+    parsed.structured_filters.location = undefined;
   }
 
   // ── Step 2: Fetch the user's distinct merchant list ──────────────────
