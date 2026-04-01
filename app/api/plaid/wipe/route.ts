@@ -52,6 +52,24 @@ export async function POST() {
     // Delete subscriptions
     await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
 
+    // Clear any remaining subscription_transactions rows referencing this user's transactions
+    // by transaction_id FK (may exist if subscription_id was null or belonged to a different
+    // subscription record). Must happen before deleting transactions to avoid FK violations.
+    const { data: userTxForWipe } = await db
+      .from("transactions")
+      .select("id")
+      .eq("clerk_user_id", effectiveUserId);
+    const wipeUserTxIds = (userTxForWipe ?? []).map((r) => r.id as string);
+    if (wipeUserTxIds.length > 0) {
+      const CHUNK = 100;
+      for (let i = 0; i < wipeUserTxIds.length; i += CHUNK) {
+        await db
+          .from("subscription_transactions")
+          .delete()
+          .in("transaction_id", wipeUserTxIds.slice(i, i + CHUNK));
+      }
+    }
+
     // Delete ALL transactions (manual + bank)
     const { error: txErr } = await db
     .from("transactions")
