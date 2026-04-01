@@ -2648,6 +2648,144 @@ function AccountScreen() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SPLITWISE COMPARISON SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+function SplitwiseScreen({ onBack }: { onBack: () => void }) {
+  const C = React.useContext(ThemeCtx);
+  const [importing, setImporting] = React.useState<"idle"|"loading"|"done">("idle");
+
+  function handleImport() {
+    setImporting("loading");
+    setTimeout(() => setImporting("done"), 1800);
+  }
+
+  const rows: Array<{ feature: string; coconut: string; splitwise: string; Icon: LucideIcon }> = [
+    { feature: "Bank connection", coconut: "Auto-import via Plaid", splitwise: "Manual entry only", Icon: Landmark },
+    { feature: "Tap to Pay", coconut: "Collect in person instantly", splitwise: "No in-person payments", Icon: Zap },
+    { feature: "Email receipts", coconut: "Auto-parsed, itemized splits", splitwise: "Not supported", Icon: Mail },
+    { feature: "Receipt scan", coconut: "Line-item splits from photo", splitwise: "Basic photo, no line items", Icon: ScanLine },
+  ];
+
+  return (
+    <div style={{ height:"100%", overflowY:"auto", background:C.bg, scrollbarWidth:"none" }}>
+      {/* Header */}
+      <div style={{ padding:"16px 20px 12px", display:"flex", alignItems:"center", gap:12 }}>
+        <button
+          onClick={onBack}
+          style={{ border:"none", background:"none", cursor:"pointer", color:C.accent, padding:0, display:"flex", alignItems:"center" }}
+        >
+          <ChevronLeft size={22} strokeWidth={2.5} />
+        </button>
+        <p style={{ fontSize:20, letterSpacing:"-0.7px", margin:0 }}>
+          <span style={{ fontWeight:900, color:C.label }}>Coconut</span>
+          <span style={{ fontWeight:400, color:C.label3 }}> vs Splitwise</span>
+        </p>
+      </div>
+
+      {/* Subtitle */}
+      <div style={{ padding:"0 20px 16px" }}>
+        <p style={{ fontSize:13, color:C.label3, lineHeight:1.5 }}>
+          All the splitting. None of the manual entry.
+        </p>
+      </div>
+
+      {/* Column headers */}
+      <div style={{ padding:"0 16px 8px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginLeft:48 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:C.green }} />
+          <span style={{ fontSize:11, fontWeight:800, color:C.green, textTransform:"uppercase", letterSpacing:"0.06em" }}>Coconut</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:C.label3 }} />
+          <span style={{ fontSize:11, fontWeight:700, color:C.label3, textTransform:"uppercase", letterSpacing:"0.06em" }}>Splitwise</span>
+        </div>
+      </div>
+
+      {/* Comparison rows */}
+      <div style={{ padding:"0 16px 36px", display:"flex", flexDirection:"column", gap:10 }}>
+        {rows.map((r) => {
+          const RowIcon = r.Icon;
+          return (
+            <div
+              key={r.feature}
+              style={{
+                background:C.card,
+                border:`${C.borderW} solid ${C.stroke}`,
+                borderRadius:C.radius,
+                padding:"14px 16px",
+                boxShadow:C.shSm,
+              }}
+            >
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                <div style={{ width:30, height:30, borderRadius:9, background:C.card2, border:`${C.borderW} solid ${C.stroke}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <RowIcon size={14} color={C.label2} />
+                </div>
+                <p style={{ fontSize:13, fontWeight:800, color:C.label, letterSpacing:"-0.2px" }}>{r.feature}</p>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                {/* Coconut */}
+                <div style={{ background:C.greenBg, border:`1px solid ${C.greenMid}`, borderRadius:10, padding:"8px 10px" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:3 }}>
+                    <Check size={11} color={C.green} strokeWidth={3} />
+                    <span style={{ fontSize:10, fontWeight:800, color:C.green, textTransform:"uppercase", letterSpacing:"0.05em" }}>Yes</span>
+                  </div>
+                  <p style={{ fontSize:11, color:C.green, fontWeight:600, lineHeight:1.4 }}>{r.coconut}</p>
+                </div>
+                {/* Splitwise */}
+                <div style={{ background:C.redBg, border:`1px solid ${C.red}22`, borderRadius:10, padding:"8px 10px" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:3 }}>
+                    <X size={11} color={C.red} strokeWidth={3} />
+                    <span style={{ fontSize:10, fontWeight:800, color:C.red, textTransform:"uppercase", letterSpacing:"0.05em" }}>No</span>
+                  </div>
+                  <p style={{ fontSize:11, color:C.red, fontWeight:600, lineHeight:1.4 }}>{r.splitwise}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Switch CTA */}
+        <button
+          onClick={importing === "idle" ? handleImport : undefined}
+          style={{
+            marginTop:4, width:"100%", cursor: importing === "idle" ? "pointer" : "default",
+            background: importing === "done" ? C.greenBg : C.card,
+            border: `1.5px solid ${importing === "done" ? C.green : C.green}`,
+            borderRadius:C.radius, padding:"14px 16px",
+            boxShadow: importing === "idle" ? "0 2px 12px rgba(58,125,68,0.12)" : "none",
+            textAlign:"left", display:"flex", alignItems:"center", justifyContent:"space-between",
+          }}
+        >
+          {importing === "idle" && (
+            <>
+              <div>
+                <p style={{ fontSize:13, fontWeight:800, color:C.label, letterSpacing:"-0.2px" }}>Already on Splitwise?</p>
+                <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>Import your history in one tap.</p>
+              </div>
+              <div style={{ width:32, height:32, borderRadius:10, background:C.green, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <ChevronRight size={16} color="#fff" strokeWidth={2.5} />
+              </div>
+            </>
+          )}
+          {importing === "loading" && (
+            <p style={{ fontSize:13, fontWeight:700, color:C.label3, width:"100%", textAlign:"center" }}>Connecting to Splitwise…</p>
+          )}
+          {importing === "done" && (
+            <div style={{ width:"100%", textAlign:"center" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                <Check size={15} color={C.green} strokeWidth={2.5} />
+                <p style={{ fontSize:13, fontWeight:800, color:C.green, letterSpacing:"-0.2px" }}>History imported!</p>
+              </div>
+              <p style={{ fontSize:12, color:C.green, marginTop:3, opacity:0.8 }}>Your Splitwise expenses are ready to split.</p>
+            </div>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PHONE FRAME
 // ─────────────────────────────────────────────────────────────────────────────
 function PhoneFrame({ children }: { children: React.ReactNode }) {
@@ -2752,7 +2890,7 @@ export function CoconutMobileMarketingPage() {
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  const [screen, setScreen] = useState<"home"|"friends"|"activity"|"account">("home");
+  const [screen, setScreen] = useState<"home"|"friends"|"activity"|"account"|"splitwise">("home");
   const [friendDetail, setFriendDetail] = useState<FriendBalance|null>(null);
   const [groupDetail, setGroupDetail] = useState<GroupData|null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -2854,12 +2992,14 @@ export function CoconutMobileMarketingPage() {
     Icon: LucideIcon;
     label: string;
     tag: string;
+    splitwiseNote: string;
     demo: () => void;
   }> = [
     {
       Icon: Zap,
       label: "Collect in person, instantly",
       tag: "Tap to Pay",
+      splitwiseNote: "Splitwise can't collect payments",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => handleSettle("alex", 86.0));
@@ -2869,6 +3009,7 @@ export function CoconutMobileMarketingPage() {
       Icon: Landmark,
       label: "Every charge, auto-imported",
       tag: "Bank connection",
+      splitwiseNote: "Splitwise requires manual entry",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => {
@@ -2880,6 +3021,7 @@ export function CoconutMobileMarketingPage() {
       Icon: Mail,
       label: "Itemized splits, zero effort",
       tag: "Email receipts",
+      splitwiseNote: "Splitwise can't read your receipts",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => {
@@ -2892,6 +3034,7 @@ export function CoconutMobileMarketingPage() {
       Icon: ScanLine,
       label: "Snap a photo, split the bill",
       tag: "Receipt scan",
+      splitwiseNote: "Splitwise has no line-item splits",
       demo: () => {
         resetPhoneDemo();
         scheduleDemoOpen(() => setShowReceiptScan(true));
@@ -3040,7 +3183,7 @@ export function CoconutMobileMarketingPage() {
                   }}
                 >
                   {features.map((f, i) => {
-                    const active = activeFeature === i;
+                    const active = activeFeature === i && screen !== "splitwise";
                     return (
                       <motion.button
                         key={f.tag}
@@ -3078,11 +3221,36 @@ export function CoconutMobileMarketingPage() {
                       </motion.button>
                     );
                   })}
+                  <motion.button
+                    type="button"
+                    initial={{ opacity:0, y:10 }}
+                    animate={{ opacity:1, y:0 }}
+                    transition={{ duration:0.45, delay:0.14 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => { resetPhoneDemo(); setScreen("splitwise"); }}
+                    style={{
+                      display:"flex",
+                      alignItems:"center",
+                      gap: 9,
+                      padding: "12px 22px",
+                      borderRadius: 999,
+                      cursor:"pointer",
+                      background: screen === "splitwise" ? LP.text : LP.bgCard,
+                      border: `1.5px solid ${screen === "splitwise" ? LP.text : LP.border}`,
+                      boxShadow: screen === "splitwise" ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
+                      transition:"all 0.2s ease",
+                    }}
+                  >
+                    <Equal size={17} color={screen === "splitwise" ? LP.bg : LP.textMuted} strokeWidth={2} />
+                    <span style={{ fontSize:15, fontWeight: screen === "splitwise" ? 700 : 500, color: screen === "splitwise" ? LP.bg : LP.textSoft, letterSpacing:"-0.01em" }}>
+                      vs Splitwise
+                    </span>
+                  </motion.button>
                 </motion.div>
 
                 <AnimatePresence mode="wait">
                   <motion.p
-                    key={activeFeature}
+                    key={screen === "splitwise" ? "splitwise" : activeFeature}
                     initial={{ opacity:0, y:6 }}
                     animate={{ opacity:1, y:0 }}
                     exit={{ opacity:0, y:-6 }}
@@ -3095,7 +3263,7 @@ export function CoconutMobileMarketingPage() {
                       letterSpacing: "-0.01em",
                     }}
                   >
-                    {activeFeature != null ? features[activeFeature]?.label : null}
+                    {screen === "splitwise" ? "See how Coconut stacks up" : activeFeature != null ? features[activeFeature]?.label : null}
                   </motion.p>
                 </AnimatePresence>
               </>
@@ -3165,6 +3333,7 @@ export function CoconutMobileMarketingPage() {
                         {screen === "friends" && <FriendsScreen onFriend={f => setFriendDetail(f)} onAddGroup={() => setShowAddFriend(true)} onGroup={g => setGroupDetail(g)} />}
                         {screen === "activity" && <ActivityScreen onAdd={() => handleAdd()} />}
                         {screen === "account" && <AccountScreen />}
+                        {screen === "splitwise" && <SplitwiseScreen onBack={() => setScreen("home")} />}
                       </motion.div>
                     </AnimatePresence>
 
@@ -3242,55 +3411,81 @@ export function CoconutMobileMarketingPage() {
                 }}
               >
                 {features.map((f, i) => {
-                  const active = activeFeature === i;
+                  const active = activeFeature === i && screen !== "splitwise";
                   return (
-                    <motion.button
-                      key={f.tag}
-                      type="button"
-                      aria-current={active ? "true" : undefined}
-                      aria-label={`${f.tag}: ${f.label}.`}
-                      whileTap={{ scale: 0.96 }}
-                      onClick={() => {
-                        setActiveFeature(i);
-                        f.demo();
-                      }}
-                      style={{
-                        display:"flex",
-                        alignItems:"center",
-                        gap: 6,
-                        padding: isNarrowMobile ? "8px 12px" : "9px 14px",
-                        borderRadius: 999,
-                        cursor:"pointer",
-                        background: active ? LP.text : LP.bgCard,
-                        border: `1.5px solid ${active ? LP.text : LP.border}`,
-                        boxShadow: active ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
-                        transition:"all 0.2s ease",
-                      }}
-                    >
-                      <f.Icon size={13} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
-                      <span style={{
-                        fontSize: isNarrowMobile ? 12 : 13,
-                        fontWeight: active ? 700 : 500,
-                        color: active ? LP.bg : LP.textSoft,
-                        letterSpacing:"-0.01em",
-                        transition:"all 0.2s ease",
-                      }}>
-                        {f.tag}
-                      </span>
-                    </motion.button>
+                    <div key={f.tag} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5 }}>
+                      <motion.button
+                        type="button"
+                        aria-current={active ? "true" : undefined}
+                        aria-label={`${f.tag}: ${f.label}.`}
+                        whileTap={{ scale: 0.96 }}
+                        onClick={() => {
+                          setActiveFeature(i);
+                          f.demo();
+                        }}
+                        style={{
+                          display:"flex",
+                          alignItems:"center",
+                          gap: 6,
+                          padding: isNarrowMobile ? "8px 12px" : "9px 14px",
+                          borderRadius: 999,
+                          cursor:"pointer",
+                          background: active ? LP.text : LP.bgCard,
+                          border: `1.5px solid ${active ? LP.text : LP.border}`,
+                          boxShadow: active ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
+                          transition:"all 0.2s ease",
+                        }}
+                      >
+                        <f.Icon size={13} color={active ? LP.bg : LP.textMuted} strokeWidth={2} />
+                        <span style={{
+                          fontSize: isNarrowMobile ? 12 : 13,
+                          fontWeight: active ? 700 : 500,
+                          color: active ? LP.bg : LP.textSoft,
+                          letterSpacing:"-0.01em",
+                          transition:"all 0.2s ease",
+                        }}>
+                          {f.tag}
+                        </span>
+                      </motion.button>
+                    </div>
                   );
                 })}
+                <motion.button
+                  type="button"
+                  initial={{ opacity:0, y:10 }}
+                  animate={{ opacity:1, y:0 }}
+                  transition={{ duration:0.45, delay:0.14 }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => { resetPhoneDemo(); setScreen("splitwise"); }}
+                  style={{
+                    display:"flex",
+                    alignItems:"center",
+                    gap: 6,
+                    padding: isNarrowMobile ? "8px 12px" : "9px 14px",
+                    borderRadius: 999,
+                    cursor:"pointer",
+                    background: screen === "splitwise" ? LP.text : LP.bgCard,
+                    border: `1.5px solid ${screen === "splitwise" ? LP.text : LP.border}`,
+                    boxShadow: screen === "splitwise" ? "0 4px 16px rgba(43,42,41,0.15)" : "0 1px 4px rgba(43,42,41,0.06)",
+                    transition:"all 0.2s ease",
+                  }}
+                >
+                  <Equal size={13} color={screen === "splitwise" ? LP.bg : LP.textMuted} strokeWidth={2} />
+                  <span style={{ fontSize: isNarrowMobile ? 12 : 13, fontWeight: screen === "splitwise" ? 700 : 500, color: screen === "splitwise" ? LP.bg : LP.textSoft, letterSpacing:"-0.01em" }}>
+                    vs Splitwise
+                  </span>
+                </motion.button>
               </motion.div>
               <AnimatePresence mode="wait">
                 <motion.p
-                  key={activeFeature}
+                  key={screen === "splitwise" ? "splitwise" : activeFeature}
                   initial={{ opacity:0, y:6 }}
                   animate={{ opacity:1, y:0 }}
                   exit={{ opacity:0, y:-6 }}
                   transition={{ duration:0.2 }}
                   style={{ fontSize:13, color:LP.textMuted, marginTop:10, fontWeight:500, letterSpacing:"-0.01em" }}
                 >
-                  {activeFeature != null ? features[activeFeature]?.label : null}
+                  {screen === "splitwise" ? "See how Coconut stacks up" : activeFeature != null ? features[activeFeature]?.label : null}
                 </motion.p>
               </AnimatePresence>
             </div>

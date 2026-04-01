@@ -505,13 +505,18 @@ export async function scanGmailForReceipts(
 
   // Persist scan logs in batches (best-effort, don't fail the scan)
   if (scanLogs.length > 0) {
-    try {
-      await db.from("gmail_scan_log").upsert(
-        scanLogs.map((l) => ({ ...l, created_at: new Date().toISOString() })),
-        { onConflict: "clerk_user_id,gmail_message_id" }
-      );
-    } catch (e) {
-      console.warn("[receipt-parser] Failed to persist scan logs:", e);
+    const rows = scanLogs.map((l) => ({ ...l, created_at: new Date().toISOString() }));
+    const { error: upsertErr } = await db.from("gmail_scan_log").upsert(
+      rows,
+      { onConflict: "clerk_user_id,gmail_message_id", ignoreDuplicates: true }
+    );
+    if (upsertErr) {
+      // Fallback: plain insert ignoring duplicates (handles missing unique constraint)
+      try {
+        await db.from("gmail_scan_log").insert(rows);
+      } catch (e) {
+        console.warn("[receipt-parser] Failed to persist scan logs:", upsertErr.message);
+      }
     }
   }
 
