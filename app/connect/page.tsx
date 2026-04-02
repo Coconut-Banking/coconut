@@ -246,10 +246,22 @@ function ConnectBankContent() {
   }, [searchParams, traceId, logPlaidEvent]);
 
   const isUpdateMode = searchParams.get("update") === "1";
+
+  const redirectToApp = useCallback(() => {
+    const deepLink = `${getAppDeepLink()}connected`;
+    sessionStorage.removeItem("connect_from_app");
+    sessionStorage.removeItem(SCHEME_STORAGE_KEY);
+    window.location.href = deepLink;
+    setTimeout(() => { window.location.replace(deepLink); }, 400);
+  }, []);
+
   const onSuccess = useCallback(
     async (publicToken: string, metadata?: unknown) => {
       setIsExchanging(true);
       setError(null);
+      const isFromApp =
+        typeof window !== "undefined" &&
+        (sessionStorage.getItem("connect_from_app") === "1");
       try {
         const meta = metadata as {
           linkSessionId?: string;
@@ -265,9 +277,7 @@ function ConnectBankContent() {
           metadata: { ...(metadata as object), plaid_ids: plaidIds },
         });
         if (isUpdateMode) {
-          // Update mode: access_token unchanged, no exchange needed. Dismiss prompts.
           fetch("/api/plaid/clear-alerts", { method: "POST", credentials: "include" }).catch(() => {});
-          setStep("connected");
           logPlaidEvent({
             type: "update_mode_ok",
             metadata: {
@@ -275,6 +285,8 @@ function ConnectBankContent() {
               plaid_ids: plaidIds,
             },
           });
+          if (isFromApp) { redirectToApp(); return; }
+          setStep("connected");
         } else {
           const res = await fetch("/api/plaid/exchange-token", {
             method: "POST",
@@ -284,7 +296,7 @@ function ConnectBankContent() {
           });
           const data = await res.json().catch(() => ({}));
           if (res.status === 409 && data.code === "DUPLICATE_INSTITUTION") {
-            // Bank is already linked — treat as success
+            if (isFromApp) { redirectToApp(); return; }
             setStep("connected");
             return;
           }
@@ -296,7 +308,6 @@ function ConnectBankContent() {
             });
             return;
           }
-          setStep("connected");
           logPlaidEvent({
             type: "exchange_token_ok",
             metadata: {
@@ -305,6 +316,8 @@ function ConnectBankContent() {
               plaid_ids: plaidIds,
             },
           });
+          if (isFromApp) { redirectToApp(); return; }
+          setStep("connected");
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to connect";
@@ -317,7 +330,7 @@ function ConnectBankContent() {
         setIsExchanging(false);
       }
     },
-    [logPlaidEvent, traceId, isUpdateMode]
+    [logPlaidEvent, traceId, isUpdateMode, redirectToApp]
   );
 
   const { open, ready } = usePlaidLink({
@@ -379,17 +392,33 @@ function ConnectBankContent() {
     );
   }, [searchParams]);
 
+  const fromApp =
+    typeof window !== "undefined" &&
+    (searchParams.get("from_app") === "1" || sessionStorage.getItem("connect_from_app") === "1");
+
   const hasAutoOpened = useRef(false);
   useEffect(() => {
-    if (receivedRedirectUri && linkToken && ready && !hasAutoOpened.current) {
+    if (!linkToken || !ready || hasAutoOpened.current) return;
+    if (receivedRedirectUri || fromApp) {
       hasAutoOpened.current = true;
       logPlaidEvent({
-        type: "link_auto_open_after_oauth",
-        metadata: { receivedRedirectUri },
+        type: receivedRedirectUri ? "link_auto_open_after_oauth" : "link_auto_open_from_app",
+        metadata: { receivedRedirectUri: receivedRedirectUri ?? null },
       });
       open();
     }
-  }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent]);
+  }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent, fromApp]);
+
+  if (fromApp && step === "link") {
+    return (
+      <div className="min-h-screen bg-[#F5F3F2] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-gray-500">Connecting to your bank…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F5F3F2] flex flex-col">
