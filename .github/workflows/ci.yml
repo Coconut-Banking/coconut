@@ -26,6 +26,8 @@ jobs:
   ci:
     name: Build + E2E Tests
     runs-on: ubuntu-latest
+    # Bug council and AI fix branches validate locally (typecheck + lint + vitest) before pushing.
+    # CI is skipped to save minutes — these PRs are small targeted fixes, not feature work.
     if: ${{ !startsWith(github.head_ref, 'fix/bug-council-') && !startsWith(github.head_ref, 'fix/ai-fix-') }}
 
     steps:

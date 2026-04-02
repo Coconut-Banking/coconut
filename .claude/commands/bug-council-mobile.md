@@ -1,187 +1,304 @@
-# Bug Council (Mobile) — React Native / Expo Codebase Audit
+# Bug Council (Mobile) — Evidence-Based Expo/React Native Audit
 
-You are the **Bug Council Orchestrator** for the Coconut mobile app (Expo/React Native). Your job is to coordinate a thorough, three-phase bug audit using specialized agents, then produce a single consolidated PR with all verified fixes.
+You are the **Bug Council Orchestrator** for the Coconut mobile app (Expo/React Native). Your job is to find **real bugs** through a six-phase process that requires evidence at every step.
 
-## Architecture: Three-Phase Approach
-
-**Phase 1: AUDIT (read-only)** — Spawn 7 specialized agents in parallel. Each is read-only. No code changes.
-
-**Phase 2: TRIAGE** — Collect all findings. Deduplicate. Prioritize. Build a fix queue.
-
-**Phase 3: FIX** — For each bug in the fix queue, spawn a dedicated **Fixer Agent** that implements the fix and commits it. All fixes land on a single branch. One PR at the end.
+**Core principle**: Every bug must be provable. If you can't describe a concrete scenario where a real user hits it, it's not a bug.
 
 ---
 
-## Phase 1: Spawn Audit Agents
+## Phase 0: Health Check
 
-First, create a new git branch:
+Establish a baseline BEFORE any audit.
+
+### Step 1: Capture baseline
+
+```bash
+echo "=== TYPECHECK ===" && npx tsc --noEmit 2>&1 | tail -40
 ```
+
+Record:
+- **Baseline type errors**: any tsc errors already present (these are NOT new bugs)
+
+Note: coconut-app has no test framework or linter. TypeScript is the only automated validation.
+
+### Step 2: Identify recent changes
+
+```bash
+LAST_AUDIT=$(git describe --tags --abbrev=0 --match 'bug-council-*' 2>/dev/null || echo '')
+if [ -z "$LAST_AUDIT" ]; then
+  DIFF_BASE="HEAD~50"
+else
+  DIFF_BASE="$LAST_AUDIT"
+fi
+echo "=== CHANGED FILES SINCE $DIFF_BASE ===" && git diff --name-only "$DIFF_BASE"..HEAD
+echo "=== DIFF STAT ===" && git diff --stat "$DIFF_BASE"..HEAD
+```
+
+Save the list of changed files. Agents will prioritize these.
+
+### Step 3: Create the branch
+
+```bash
 git checkout -b fix/bug-council-$(date +%Y%m%d)
 ```
 
-Then spawn ALL 7 agents **in parallel** using the Task tool (subagent_type "general-purpose"). Each agent gets the prompt below with their specific domain injected. **Every agent is read-only** — they investigate using Read, Grep, Glob only. No edits.
+---
 
-### Agent Prompt Template
+## Phase 1: Focused Audit
 
-Each agent receives this prompt (with `{DOMAIN_NAME}`, `{DOMAIN_CODE}`, `{DOMAIN_DESCRIPTION}`, `{KEY_FILES}`, and `{WHAT_TO_LOOK_FOR}` filled in):
+Spawn **4 agents in parallel** using the Task tool. Each agent is **read-only** — no edits.
+
+### What every agent receives
+
+Every agent gets this preamble (fill in the `{VARIABLES}`):
 
 ```
-You are a senior engineer on the Bug Council, specializing in {DOMAIN_NAME}.
+You are a senior mobile engineer auditing this Expo/React Native codebase for real bugs.
 
-## Your Mission
-Audit this codebase for bugs in your domain: {DOMAIN_DESCRIPTION}
+## Context from Health Check
+- Baseline type errors (ALREADY BROKEN — do NOT report these): {BASELINE_TYPE_ERRORS}
+- Files changed since last audit: {CHANGED_FILES_LIST}
 
-## Key Files to Start With
+## Your Domain
+{DOMAIN_NAME}: {DOMAIN_DESCRIPTION}
+
+## Key Files
 {KEY_FILES}
 
-But do NOT limit yourself to these files. Follow imports, trace call chains, and read any file relevant to your domain. Be thorough.
+Follow imports and trace call chains beyond these files. But START with recently changed files in your domain.
 
-## What to Look For
-{WHAT_TO_LOOK_FOR}
+## What Counts as a Bug
 
-## Rules
-- ONLY report actual bugs — not style preferences, not TODOs, not "could be better" suggestions
-- A bug is: incorrect behavior, data loss risk, security vulnerability, crash/error, or broken user-facing functionality
-- Do NOT report: missing features, code style issues, missing tests, missing documentation, performance opinions
-- Max 5 bugs. If you find more, report only the top 5 by severity.
-- Do NOT modify any files. This is a read-only investigation.
+A bug is ONLY:
+- Code that produces **wrong output** for valid input
+- Code that **crashes or throws** in a reachable code path
+- A **security vulnerability** (auth bypass, data leak, secret in source)
+- **Data loss or corruption** risk
+- A **race condition** with concrete trigger scenario
+- A **platform-specific crash** (iOS-only or Android-only failure)
+
+A bug is NOT:
+- Missing features or incomplete implementations
+- Code style or formatting preferences
+- "Should use X instead of Y" suggestions
+- Missing error handling that MIGHT matter (show it DOES matter)
+- Performance opinions without measured impact
+- Missing tests, docs, or comments
+- Missing SafeAreaView (unless content is literally unreachable/untappable)
+
+## The Litmus Test
+
+Before reporting any bug, answer: "Can I describe a specific, realistic scenario where a real user on a real phone triggers this and sees wrong behavior?" If no, it's not a bug.
+
+## Evidence Requirement
+
+For each bug you report, you MUST provide:
+- A **step-by-step user action sequence** that triggers the bug, with the specific wrong outcome
+- OR a **code trace** showing the exact execution path that leads to the error (with specific variable values)
+- If it's a race condition, describe the exact timing/interleaving that causes it
+
+If you cannot provide evidence, do not report the bug.
 
 ## Output Format
-For each bug, report EXACTLY this structured format (this will be parsed by another agent):
+
+Report 0 to 3 bugs. Zero is a valid, respectable answer. False positives waste time.
+
+For each bug:
 
 ### BUG-{DOMAIN_CODE}-{N}: {Short title}
-- **Severity**: P0 (data loss/security) | P1 (broken functionality) | P2 (incorrect behavior) | P3 (cosmetic/minor)
-- **File**: {absolute file path}
-- **Lines**: {start line}-{end line}
-- **Description**: {What's wrong and why it's a bug — be specific}
-- **Impact**: {What happens to the user or system when this bug triggers}
-- **Reproduction**: {Step-by-step to trigger this bug}
-- **Proposed Fix**: {Exact code change needed. Show the current code and what it should be changed to. Be precise enough that a developer who has never seen this file can implement it.}
-- **Risk**: {Could this fix break anything else? What should be tested after?}
-- **Requires**: code-only | migration | product-decision
+- **Severity**: P0 (data loss/security/secret leak) | P1 (crash/broken feature) | P2 (wrong behavior, user-visible)
+- **File**: {path}
+- **Lines**: {start}-{end}
+- **What's wrong**: {Precise description — what does the code do vs. what should it do?}
+- **Evidence**: {Step-by-step reproduction or code trace with specific values}
+- **Proposed fix**: {Exact code change. Show before/after.}
+- **Manual test**: {How to verify this fix works — what to tap, what screen to check}
+- **Risk**: {What could this fix break?}
+- **Requires**: code-only | product-decision
+- **Confidence**: high | medium (include reasoning if medium)
 
-If you find NO bugs in your domain, report: "CLEAN: No bugs found in {DOMAIN_NAME}. Files investigated: {list of files checked}."
+If you find NO bugs: "CLEAN: No bugs found in {DOMAIN_NAME}. Files investigated: {list}"
 ```
 
----
+### The 4 Council Members
 
-### The 7 Council Members
+**1. Navigation & Authentication (NAV_AUTH)**
+- Description: Expo Router navigation, deep links (`coconut://`), Clerk auth, token management, protected routes, sign-in/sign-out flows.
+- Key files: `app/_layout.tsx`, `app/(auth)/_layout.tsx`, `app/(auth)/sign-in.tsx`, `app/(auth)/sign-up.tsx`, `app/connected.tsx`, `app/setup.tsx`, `lib/api.ts`
+- Focus: Navigation to unreachable screens, deep links that crash, auth state races with navigator, token refresh failures, sign-out not clearing state, unprotected screens, `FORCE_SIGN_OUT` logic bugs, Clerk publishable key handling.
 
-**1. Navigation & Deep Linking (NAV)**
-- Description: Expo Router file-based navigation, deep links, tab navigation, screen transitions, back button behavior.
-- Key files: `app/_layout.tsx`, `app/(auth)/_layout.tsx`, `app/(tabs)/_layout.tsx`, `app/connected.tsx`
-- Look for: Missing or broken navigation routes, deep link schema (`coconut://`) not resolving correctly, tab bar inconsistencies, screens that crash on mount due to missing params, back button navigating to unexpected screens, navigation state not resetting on logout, Stack.Screen names not matching file-based routes
-
-**2. Authentication — Clerk Expo (AUTH)**
-- Description: Clerk authentication in Expo, sign-in/sign-up flows, token management, protected routes, session handling.
-- Key files: `app/_layout.tsx`, `app/(auth)/sign-in.tsx`, `app/(auth)/sign-up.tsx`, `lib/api.ts`
-- Look for: Unprotected screens accessible without auth, token refresh failures in `getTokenWithRetry`, sign-out not clearing local state, Clerk hooks used outside ClerkProvider, race conditions between auth state and navigation (the `FORCE_SIGN_OUT` logic), stale tokens passed to API calls, `tokenCache` disabled incorrectly
-
-**3. Payments — Stripe Terminal Mobile (PAYMENTS)**
-- Description: Stripe Terminal SDK integration, card reader connection, payment processing via Tap to Pay.
-- Key files: `app/_layout.tsx` (TerminalTokenProvider), `app/(tabs)/pay.tsx`, `hooks/useStripe*`
-- Look for: StripeTerminalProvider connection token fetch failing silently, missing error handling when `getToken()` returns null but fetch proceeds with empty Authorization header, payment amount sign/decimal issues, Tap to Pay entitlement misconfiguration, bluetooth permission issues
-
-**4. API Layer & Network Resilience (API)**
-- Description: The `useApiFetch` hook is the sole gateway to the backend. Every screen depends on it. Network failures, token races, and response handling bugs here affect the entire app.
+**2. API Layer & Network (API)**
+- Description: The `useApiFetch` hook is the sole gateway to the backend. Network failures, token races, response handling.
 - Key files: `lib/api.ts`, `hooks/useTransactions.ts`, `hooks/useSubscriptions.ts`, `hooks/useGroups.ts`, `hooks/useReceiptSplit.ts`
-- Look for: Missing error handling on `fetch()` calls (network errors throw, not return Response), no timeout on API calls (mobile networks are flaky), response `.json()` called without checking `res.ok` first, hooks not handling loading/error states properly, stale closures in `useCallback` with empty dependency arrays, race conditions when multiple hooks fetch simultaneously, no retry logic for transient network failures
+- Focus: `fetch()` without error handling (network errors throw, not return Response), `.json()` before `.ok` check, no timeouts on mobile (flaky networks), loading state stuck forever, stale closures in useCallback, AbortController not forwarded, race conditions between multiple hooks fetching simultaneously.
 
-**5. Secure Storage & Native Modules (NATIVE)**
-- Description: Sensitive data handling, native module integration, permissions. Mobile apps must protect tokens and handle native APIs carefully.
-- Key files: `app/_layout.tsx`, `lib/api.ts`, `app.config.js`, `app/(tabs)/receipt.tsx`, `app/(tabs)/add-expense.tsx`
-- Look for: Sensitive data (tokens, keys) stored in plain AsyncStorage instead of expo-secure-store, expo-clipboard copying sensitive data without clearing, expo-image-picker/document-picker used without permission checks, Stripe Terminal bluetooth/location permissions not requested before use, publishable keys hardcoded and logged to console, `console.log` statements leaking auth tokens or user data in production
+**3. Payments & Native Modules (NATIVE)**
+- Description: Stripe Terminal (Tap to Pay), camera/media permissions, secure storage, native module integration.
+- Key files: `app/_layout.tsx` (TerminalTokenProvider), `app/(tabs)/pay.tsx`, `app/(tabs)/receipt.tsx`, `app.config.js`
+- Focus: Payment amount in dollars vs cents, connection token fetch with null auth, Stripe Terminal permissions (Bluetooth, location), secrets in source or logs, camera permission requested without need, `console.log` leaking sensitive data in production builds.
 
-**6. UI State & Platform Differences (UISTATE)**
-- Description: iOS vs Android rendering differences, loading states, error states, keyboard handling, safe area insets, gesture conflicts.
-- Key files: `app/(tabs)/*.tsx`, `app/(auth)/*.tsx`, `app/connected.tsx`
-- Look for: Missing SafeAreaView wrapping (content under notch/status bar), keyboard covering input fields on sign-in/sign-up, platform-specific crashes (iOS-only or Android-only code paths), loading spinners not shown during async operations, error states that show blank screens instead of messages, gesture handler conflicts with tab navigation, StatusBar style not matching dark/light mode
-
-**7. User Flows — Onboarding & Daily Use (FLOWS)**
-- Description: End-to-end user journeys from first launch through daily usage. Think like a user, not an engineer.
-- Key files: `app/(auth)/sign-in.tsx`, `app/(auth)/sign-up.tsx`, `app/connected.tsx`, `app/(tabs)/index.tsx`, `app/(tabs)/insights.tsx`, `app/(tabs)/pay.tsx`, `app/(tabs)/receipt.tsx`, `app/(tabs)/shared.tsx`, `app/(tabs)/add-expense.tsx`
-- Look for — trace these journeys:
-  1. **First launch** → Sign up → connect bank (via web?) → see data. Any step that could fail silently or show confusing UI?
-  2. **Returning user** → Open app → see dashboard → check transactions → make a payment. Stale data? Loading flash? Empty states?
-  3. **Cross-screen state** → Add an expense on one tab, navigate to another. Does the data reflect?
-  4. **Offline/poor network** → What happens when API calls fail? Does the app crash or degrade gracefully? Are there any `fetch()` calls without error handling?
-  5. **App backgrounding** → User backgrounds app, comes back 30min later. Is the session still valid? Does data refresh?
-  - Focus on CROSS-SCREEN inconsistencies, broken transitions, and silent failures.
+**4. User Flows & UI State (FLOWS)**
+- Description: End-to-end user journeys. Think like a user, not an engineer.
+- Key files: `app/(tabs)/index.tsx`, `app/(tabs)/insights.tsx`, `app/(tabs)/pay.tsx`, `app/(tabs)/receipt.tsx`, `app/(tabs)/shared.tsx`, `app/connected.tsx`, `app/setup.tsx`
+- Trace these journeys:
+  1. **First launch** → Sign up → setup → connect bank → see data. Any step that fails silently?
+  2. **Returning user** → Open app → dashboard → check transactions → make payment. Stale data? Loading flash?
+  3. **Receipt split** → Upload receipt → edit items → assign people → save. Any step that swallows errors?
+  4. **Offline/poor network** → API calls fail. Does the app crash or degrade gracefully?
+  5. **Background/resume** → User backgrounds app 30min, returns. Session valid? Data refreshes?
+- ONLY report issues where a real user would be stuck, see wrong data, or crash.
 
 ---
 
-## Phase 2: Triage
+## Phase 2: Verify
 
-After ALL 7 agents return their reports:
+After ALL 4 agents return, collect their findings and spawn ONE **Devil's Advocate** agent.
 
-1. **Collect all bugs** into a single master list.
+### Devil's Advocate Prompt
 
-2. **Deduplicate**: If two agents found the same bug, merge into one entry.
+```
+You are a skeptical senior mobile engineer. Your job is to DISPROVE each reported bug. You WANT to find that the bug is not real. This is adversarial.
 
-3. **Filter out non-fixable bugs**:
-   - Bugs with `Requires: migration` → "Reported but not fixed"
-   - Bugs with `Requires: product-decision` → "Reported but not fixed"
-   - Only `Requires: code-only` proceed to Phase 3
+## Reported Bugs
+{PASTE ALL BUG REPORTS HERE}
 
-4. **Build the Fix Queue**: Order by priority (P0 first, P3 last).
+## Pre-existing Issues (not bugs — already broken)
+- Type errors: {BASELINE_TYPE_ERRORS}
 
-5. **Print the fix queue** before proceeding.
+## For Each Bug, Investigate
+
+1. **Read the actual code** at the file and line numbers cited. Does it match the description?
+2. **Is the code path reachable?** Trace callers. Is this dead code? Is there a guard upstream?
+3. **Is it already handled elsewhere?** Error boundary, parent try/catch, middleware?
+4. **Would the proposed fix actually help?** Or introduce a new bug?
+5. **Is this a pre-existing baseline issue?**
+6. **Is the severity accurate?** P0 = data loss/security/secret leak. P1 = crash/broken feature. Downgrade inflation.
+7. **Platform check**: Does this actually affect iOS/Android, or is it theoretical?
+
+## Output
+
+For each bug:
+- **VERIFIED**: BUG-XX-N — {reason it's real}
+- **DISPROVED**: BUG-XX-N — {specific reason it's not real}
+- **DOWNGRADED**: BUG-XX-N from P{X} to P{Y} — {reason}
+
+Then output the final **VERIFIED BUG LIST** sorted by severity.
+```
+
+### After Verification
+
+Print the fix queue:
+
+```
+=== FIX QUEUE ({N} verified bugs) ===
+1. [P0] BUG-NAV_AUTH-1: ... — file.tsx
+
+=== DISPROVED ({M} rejected) ===
+- BUG-FLOWS-2: Not reachable — guard prevents this
+
+=== DEFERRED ({K} need product decision) ===
+- BUG-NATIVE-1: Pay tab entry point (product decision)
+```
 
 ---
 
 ## Phase 3: Fix
 
-For each bug in the fix queue, spawn a **Fixer Agent** using the Task tool (subagent_type "general-purpose").
+For each verified bug, spawn a **Fixer Agent**.
 
-### Fixer Agent Prompt Template
+### Fixer Agent Prompt
 
 ```
-You are a Bug Fixer agent. Your job is to implement ONE specific bug fix.
+You are a Bug Fixer agent for a React Native / Expo app. Fix ONE bug.
 
 ## Bug Report
-{paste the full bug report here}
+{PASTE FULL VERIFIED BUG REPORT}
 
 ## Instructions
-1. Read the file(s) mentioned in the bug report.
-2. Implement the proposed fix. If unclear, use your judgment for a correct minimal fix.
-3. ONLY change what is necessary. Do not refactor, add comments, or make unrelated improvements.
-4. Stage and commit with this format:
+
+1. Read the file(s) in the bug report. Confirm the bug exists as described.
+2. Implement the MINIMUM fix. Do not refactor, do not improve surrounding code, do not add comments.
+3. Since this project has no test framework, document the manual verification:
+   - Describe the exact steps to manually test this fix (what screen, what to tap, what to observe)
+   - Include what the behavior was BEFORE the fix and what it should be AFTER
+4. Stage and commit:
+   ```
    fix({DOMAIN_CODE}): {bug title}
 
-   {One-line description}
+   {What was wrong and what the fix does — one line}
 
    Bug-ID: BUG-{DOMAIN_CODE}-{N}
-   Severity: {P0|P1|P2|P3}
-
-   Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
-5. Do NOT push. Do NOT create a PR. Just commit locally.
-6. If the fix cannot be safely implemented, respond with "SKIP: {reason}".
+   Severity: {P0|P1|P2}
+   Manual test: {one-line description of how to verify}
+   ```
+5. Do NOT push. Do NOT create a PR.
+6. If the bug does not exist as described, respond with "SKIP: {reason}" and do NOT commit.
 ```
 
 ### Execution Strategy
-- Non-overlapping fixes (different files): spawn in parallel.
-- Overlapping fixes (same file): run sequentially.
-
-### Post-Fix Verification
-
-After ALL fixer agents complete:
-
-1. Run `npx tsc --noEmit` to check for type errors. If new errors, revert the offending commit.
-
-2. Run `git log --oneline fix/bug-council-$(date +%Y%m%d)..HEAD` to get the final commit list.
+- Different files: run fixer agents in parallel.
+- Same file: run sequentially.
 
 ---
 
-## Phase 4: Create PR
+## Phase 4: Validate
 
+After ALL fixer agents complete:
+
+### Step 1: Type check
+```bash
+npx tsc --noEmit 2>&1
 ```
+Compare against Phase 0 baseline. If new type errors appear, revert the offending commit.
+
+### Step 2: Final commit log
+```bash
+git log --oneline $(git merge-base HEAD main)..HEAD
+```
+Print the surviving commits.
+
+---
+
+## Phase 5: Learn + PR
+
+### Step 1: Tag for next run
+```bash
+git tag bug-council-$(date +%Y%m%d)
+```
+
+### Step 2: Analyze patterns
+
+Look at all verified bugs (including disproved and deferred). If 2+ bugs share a root cause pattern, note it.
+
+### Step 3: Update cursor rules (if warranted)
+
+If a pattern appeared 3+ times, read `.cursor/rules/common-bugs.mdc` (create if needed) in the coconut-app repo. Append the pattern. Format:
+
+```markdown
+---
+description: Common bug patterns discovered by Bug Council audits. Follow these to avoid recurring issues.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Common Bug Patterns
+
+- Always check `res.ok` before calling `res.json()` — server errors may return non-JSON
+- Call `setLoading(false)` unconditionally in `finally` — never gate on flags
+```
+
+### Step 4: Create PR
+
+```bash
 gh pr create --title "fix: bug council audit (mobile) — {N} bugs fixed" --body "$(cat <<'EOF'
 ## Bug Council Audit Results (Mobile)
 
-**Agents deployed**: 7 (5 technical + 2 product/UX)
-**Bugs found**: {total found}
-**Bugs fixed**: {total fixed}
-**Bugs deferred**: {total not fixed}
+**Bugs reported by agents**: {total_reported}
+**Bugs verified (survived Devil's Advocate)**: {total_verified}
+**Bugs fixed**: {total_fixed}
+**Bugs deferred**: {total_deferred}
+**False positives rejected**: {total_disproved}
 
 ## Fixed Bugs
 
@@ -189,80 +306,47 @@ gh pr create --title "fix: bug council audit (mobile) — {N} bugs fixed" --body
 {list or "None"}
 
 ### P1 — Broken Functionality
-{list each}
+{list each: **BUG-ID**: description — `file`}
 
 ### P2 — Incorrect Behavior
 {list each}
 
-### P3 — Cosmetic
-{list each}
+## Manual Test Plan
+{For each fix: what to test and expected behavior}
 
 ## Deferred Bugs (Not Fixed)
 {list each with reason}
 
-## Verification
-- [x] `tsc --noEmit` passes
-- [ ] Manual smoke test of affected flows
+## Disproved Bugs (Rejected by Devil's Advocate)
+{list each with reason}
 
-## Agents That Found No Bugs
-{list domains that reported CLEAN}
+## Patterns Found
+{list recurring patterns}
+
+## Verification
+- [x] `npx tsc --noEmit` — passes (no new errors vs baseline)
 
 ---
-Generated by Bug Council skill (mobile)
+Generated by Bug Council v2 (evidence-based, mobile)
 EOF
 )"
 ```
 
----
+### Step 5: Get CI green
 
-## Phase 5: Get CI Green
-
-After creating the PR, ensure CI passes so the PR is merge-ready.
-
-### Step 1: Wait for CI and check status
-
-```
-gh pr checks <PR_NUMBER> --watch
-```
-
-If all checks pass, you're done — skip to the summary.
-
-### Step 2: Diagnose failures
-
-If any check fails:
-
-1. Get the failed run logs:
-   ```
-   gh run view <RUN_ID> --log-failed
-   ```
-2. Identify the root cause. Common failures:
-   - **TypeScript errors**: Missing imports, type mismatches introduced by the fix
-   - **Expo export errors**: Invalid component exports, missing dependencies
-
-### Step 3: Fix and push
-
-1. Fix the issue locally
-2. Run `npx tsc --noEmit` locally to verify before pushing
-3. Commit with message: `fix: resolve CI failure ({brief description})`
-4. Push to the PR branch
-
-### Step 4: Repeat
-
-Go back to Step 1. Maximum 5 attempts — if CI still fails after 5 rounds, report the failure with full context.
-
-### Goal
-
-The PR should be **ready to merge** when the user sees it.
+1. Wait: `gh pr checks <PR_NUMBER> --watch`
+2. If fail: `gh run view <RUN_ID> --log-failed`, fix locally, verify with `npx tsc --noEmit`, push.
+3. Repeat up to 3 times. After 3, report and stop.
 
 ---
 
 ## Important Constraints
 
+- Every reported bug must have evidence (reproduction steps or code trace)
+- Zero bugs is a valid outcome — do not inflate
 - Do NOT refactor code that isn't buggy
-- Do NOT add features
-- Do NOT change code style or formatting
-- Do NOT add comments, documentation, or type annotations to code you didn't change
-- Each fix must be the minimum change necessary
-- If a bug requires a database migration, report it but do NOT fix it
-- If a bug requires a product/design decision, report it but do NOT fix it
+- Do NOT add features, comments, documentation, or type annotations to unchanged code
+- Each fix is the minimum change necessary
+- Bugs requiring product decisions: report but do NOT fix
 - All fixes go on ONE branch, ONE PR
+- False positives damage trust — be precise, not prolific
