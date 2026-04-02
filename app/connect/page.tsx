@@ -160,26 +160,11 @@ function ConnectBankContent() {
     }
   }, [searchParams]);
 
-  // When from_app=1: always go through login first so both simulator and phone get same flow.
-  // Safari on phone may have stale session from a different account; login ensures correct account.
-  // Redirect URL includes via_login=1 so we don't redirect again when they return.
   useEffect(() => {
     const fromApp = searchParams.get("from_app") === "1";
-    const viaLogin = searchParams.get("via_login") === "1";
-    if (fromApp && !viaLogin) {
-      const redirectBack = "/connect?from_app=1&via_login=1";
-      window.location.href = `/login?redirect_url=${encodeURIComponent(redirectBack)}`;
-      return;
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    const fromApp = searchParams.get("from_app") === "1";
-    const viaLogin = searchParams.get("via_login") === "1";
-    if (fromApp && !viaLogin) return; // Redirect handled above, don't fetch
 
     let cancelled = false;
-    const redirectBack = `/connect${fromApp ? "?from_app=1&via_login=1" : ""}`;
+    const redirectBack = `/connect${fromApp ? "?from_app=1" : ""}`;
     setLoginRedirectUrl(`/login?redirect_url=${encodeURIComponent(redirectBack)}`);
     setShowLoginRetry(false);
 
@@ -199,14 +184,18 @@ function ConnectBankContent() {
     })
       .then((res) => {
         if (res.status === 401) {
-          // Avoid infinite login bounce loops on iOS webviews/session races.
-          setError("Your session isn't ready yet. Please sign in again.");
-          setDebugInfo("create-link-token returned 401");
-          setShowLoginRetry(true);
           logPlaidEvent({
             type: "create_link_token_unauthorized",
             error: { message: "401 Unauthorized" },
           });
+          const loginUrl = `/login?redirect_url=${encodeURIComponent(redirectBack)}`;
+          if (fromApp) {
+            window.location.href = loginUrl;
+            return null;
+          }
+          setError("Your session isn't ready yet. Please sign in again.");
+          setDebugInfo("create-link-token returned 401");
+          setShowLoginRetry(true);
           return null;
         }
         return res.json();
