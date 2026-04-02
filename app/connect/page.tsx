@@ -183,6 +183,7 @@ function ConnectBankContent() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (!traceId) return;
     const fromApp = searchParams.get("from_app") === "1";
 
     let cancelled = false;

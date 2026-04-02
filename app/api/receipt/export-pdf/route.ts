@@ -100,11 +100,13 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(doc.output("arraybuffer"));
 
+  const safeName = merchant.replace(/[^a-z0-9\-_]/gi, "-").toLowerCase().slice(0, 100) || "receipt";
+
   return new NextResponse(buffer, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="receipt-split-${merchant.replace(/\s+/g, "-").toLowerCase()}.pdf"`,
+      "Content-Disposition": `attachment; filename="receipt-split-${safeName}.pdf"`,
     },
   });
 }

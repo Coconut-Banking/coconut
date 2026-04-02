@@ -127,12 +127,20 @@ async function fetchTransactionWindow(
       page: String(page),
     });
 
-    const res = await fetch(`${PAYPAL_BASE}/v1/reporting/transactions?${params}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+    let res: Response;
+    try {
+      res = await fetch(`${PAYPAL_BASE}/v1/reporting/transactions?${params}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
       if (res.status === 429) {

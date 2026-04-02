@@ -187,7 +187,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user } = useUser();
   const { transactions, linked, loading } = useTransactions();
-  const { summary: groupsSummary, loading: groupsLoading } = useGroupsSummary();
+  const { summary: groupsSummary, loading: groupsLoading, error: groupsError } = useGroupsSummary();
   const { currencyCode, format: fc } = useCurrency();
   const { manualMonthlyIncome } = useManualMonthlyIncome();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -254,7 +254,7 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [linked]);
 
-  if (loading || groupsLoading) {
+  if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
         <div className="flex flex-col items-center gap-4">
@@ -331,7 +331,7 @@ export default function DashboardPage() {
             <RefreshCw size={15} className="text-purple-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            {!linked ? "—" : subData ? fc(subData.totalMonthly) : "…"}
+            {!linked ? "—" : subData ? formatCurrency(subData.totalMonthly, "USD") : "…"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Subscriptions/mo</div>
           {!linked ? (
@@ -370,6 +370,8 @@ export default function DashboardPage() {
                     ? "You owe →"
                     : "All settled →"}
             </a>
+          ) : groupsError ? (
+            <div className="text-xs text-red-400">Failed to load</div>
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}
@@ -381,13 +383,13 @@ export default function DashboardPage() {
             <Wallet size={15} className="text-blue-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            {!linked ? "—" : netWorth != null ? fc(netWorth.total) : "…"}
+            {!linked ? "—" : netWorth != null ? formatCurrency(netWorth.total, "USD") : "…"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Net Worth</div>
           {!linked ? (
             <div className="text-xs text-gray-400">Connect a bank to see</div>
           ) : netWorth != null ? (
-            <div className="text-xs text-gray-400">{fc(netWorth.assets)} assets</div>
+            <div className="text-xs text-gray-400">{formatCurrency(netWorth.assets, "USD")} assets</div>
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}

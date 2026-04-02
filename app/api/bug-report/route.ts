@@ -16,6 +16,7 @@ interface BugReportBody {
 }
 
 function buildIssueBody(body: BugReportBody, userId: string | null): string {
+  const escMd = (s: unknown) => String(s ?? "").replace(/\|/g, "\\|").replace(/`/g, "'").slice(0, 200);
   const lines: string[] = [];
 
   lines.push(body.description.trim());
@@ -24,11 +25,11 @@ function buildIssueBody(body: BugReportBody, userId: string | null): string {
   lines.push("**Device Info**");
   lines.push(`| Field | Value |`);
   lines.push(`|---|---|`);
-  if (body.appVersion) lines.push(`| App version | \`${body.appVersion}\` |`);
-  if (body.deviceModel) lines.push(`| Device | ${body.deviceModel} |`);
-  if (body.osVersion) lines.push(`| OS | ${body.osVersion} |`);
-  if (body.currentRoute) lines.push(`| Screen | \`${body.currentRoute}\` |`);
-  if (body.severity) lines.push(`| Severity | ${body.severity} |`);
+  if (body.appVersion) lines.push(`| App version | \`${escMd(body.appVersion)}\` |`);
+  if (body.deviceModel) lines.push(`| Device | ${escMd(body.deviceModel)} |`);
+  if (body.osVersion) lines.push(`| OS | ${escMd(body.osVersion)} |`);
+  if (body.currentRoute) lines.push(`| Screen | \`${escMd(body.currentRoute)}\` |`);
+  if (body.severity) lines.push(`| Severity | ${escMd(body.severity)} |`);
   lines.push(`| Reporter | ${userId ? `clerk:${userId.slice(0, 12)}…` : "anonymous"} |`);
   lines.push(`| Source | in-app shake-to-report |`);
 

@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { clerkClient } from "@clerk/nextjs/server";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
+import { createOAuthState } from "./paypal-auth";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 
@@ -19,9 +20,13 @@ export function getOAuth2Client() {
 
 export function getAuthUrl(clerkUserId: string, mobileRedirect?: string): string {
   const client = getOAuth2Client();
+  // Use HMAC-signed state to prevent userId forgery (BUG-AUTH-1).
+  // If a mobile deep-link redirect is present, append it after a pipe separator so
+  // it travels with the signed state without affecting the HMAC-protected payload.
+  const signedState = createOAuthState(clerkUserId);
   const state = mobileRedirect
-    ? JSON.stringify({ userId: clerkUserId, redirect: mobileRedirect })
-    : clerkUserId;
+    ? `${signedState}|${Buffer.from(mobileRedirect).toString("base64url")}`
+    : signedState;
   return client.generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,

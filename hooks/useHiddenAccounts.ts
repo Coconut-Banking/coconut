@@ -7,7 +7,8 @@ const STORAGE_KEY = "coconut_hidden_account_ids";
 function readHidden(): string[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }

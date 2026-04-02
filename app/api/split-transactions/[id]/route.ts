@@ -18,7 +18,7 @@ export async function DELETE(
 
   const { data: split, error: splitError } = await db
     .from("split_transactions")
-    .select("id, group_id")
+    .select("id, group_id, transaction_id")
     .eq("id", id)
     .single();
 
@@ -29,6 +29,18 @@ export async function DELETE(
 
   await db.from("split_transactions").delete().eq("id", id);
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+
+  if (split.transaction_id) {
+    const { data: tx } = await db
+      .from("transactions")
+      .select("clerk_user_id")
+      .eq("id", split.transaction_id)
+      .maybeSingle();
+    if (tx?.clerk_user_id && tx.clerk_user_id !== userId) {
+      revalidateTag(CACHE_TAGS.splitTransactions(tx.clerk_user_id as string), "max");
+      revalidateTag(CACHE_TAGS.transactions(tx.clerk_user_id as string), "max");
+    }
+  }
 
   const { count } = await db
     .from("split_transactions")
