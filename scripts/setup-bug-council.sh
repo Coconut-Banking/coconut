@@ -1,22 +1,25 @@
 #!/bin/bash
-# Bug Council — Local Cron Setup
-# Runs the bug council audit every weekday at 9 AM Pacific.
+# Bug Council v2 — Local Cron Setup
+# Runs the bug council audit every weekday at 9 AM local time.
 # Requires: Claude Code CLI installed and authenticated (claude login).
 #
 # Usage:
-#   ./scripts/setup-bug-council.sh          # Install the cron job
-#   ./scripts/setup-bug-council.sh remove   # Uninstall the cron job
-#   ./scripts/setup-bug-council.sh run      # Run it right now (manual trigger)
-#   ./scripts/setup-bug-council.sh status   # Check if it's installed
-#   ./scripts/setup-bug-council.sh logs     # Tail the latest log output
+#   ./scripts/setup-bug-council.sh              # Install the cron job
+#   ./scripts/setup-bug-council.sh remove       # Uninstall the cron job
+#   ./scripts/setup-bug-council.sh run          # Run full audit now (both repos)
+#   ./scripts/setup-bug-council.sh reactive "description of issue"
+#   ./scripts/setup-bug-council.sh reactive-mobile "description of issue"
+#   ./scripts/setup-bug-council.sh status       # Check if installed
+#   ./scripts/setup-bug-council.sh logs         # Tail the latest log output
 
 set -e
 
 LABEL="com.coconut.bug-council"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RUNNER="$REPO_DIR/scripts/.bug-council-runner.sh"
 LOG_DIR="$REPO_DIR/.bug-council-logs"
-CLAUDE_PATH="$(which claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+CLAUDE_PATH="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
 
 mkdir -p "$LOG_DIR"
 
@@ -32,23 +35,30 @@ case "${1:-install}" in
     ;;
 
   run)
-    echo "Running bug council now..."
+    echo "Running bug council v2 (full audit, both repos)..."
     cd "$REPO_DIR"
     git fetch origin main && git checkout main && git pull origin main
-    "$CLAUDE_PATH" -p "$(cat .claude/commands/bug-council.md)
+    exec "$RUNNER"
+    ;;
 
-Execute the Bug Council skill exactly as described above. This is a manual run. Do not ask for confirmation — proceed through all phases automatically." \
-      --dangerously-skip-permissions \
-      --max-turns 200 \
-      --verbose
-    exit 0
+  reactive)
+    echo "Running bug council v2 (reactive, web)..."
+    cd "$REPO_DIR"
+    exec "$RUNNER" --reactive "${2:?Usage: $0 reactive \"description of the issue\"}"
+    ;;
+
+  reactive-mobile)
+    echo "Running bug council v2 (reactive, mobile)..."
+    cd "$REPO_DIR"
+    exec "$RUNNER" --reactive-repo coconut-app "${2:?Usage: $0 reactive-mobile \"description of the issue\"}"
     ;;
 
   status)
     if launchctl list | grep -q "$LABEL"; then
-      echo "Bug council is INSTALLED and scheduled."
-      echo "Plist: $PLIST"
-      echo "Logs:  $LOG_DIR/"
+      echo "Bug council v2 is INSTALLED and scheduled."
+      echo "Plist:  $PLIST"
+      echo "Runner: $RUNNER"
+      echo "Logs:   $LOG_DIR/"
     else
       echo "Bug council is NOT installed. Run: ./scripts/setup-bug-council.sh"
     fi
@@ -70,7 +80,7 @@ Execute the Bug Council skill exactly as described above. This is a manual run. 
     ;;
 
   *)
-    echo "Usage: $0 [install|remove|run|status|logs]"
+    echo "Usage: $0 [install|remove|run|reactive|reactive-mobile|status|logs]"
     exit 1
     ;;
 esac
@@ -91,33 +101,19 @@ if ! "$CLAUDE_PATH" -p "respond with OK" --max-turns 1 2>/dev/null | grep -qi "o
   echo "Warning: Claude CLI may not be authenticated. Run 'claude login' if the job fails."
 fi
 
+# Verify runner exists
+if [ ! -x "$RUNNER" ]; then
+  echo "Error: Runner script not found at $RUNNER"
+  echo "Make sure you're running this from the coconut repo root."
+  exit 1
+fi
+
 # Unload existing if present
 if launchctl list | grep -q "$LABEL"; then
   launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null
 fi
 
-# Write the runner script (launchd needs a simple executable)
-RUNNER="$REPO_DIR/scripts/.bug-council-runner.sh"
-cat > "$RUNNER" << SCRIPT
-#!/bin/bash
-export PATH="/usr/local/bin:/opt/homebrew/bin:\$HOME/.local/bin:\$PATH"
-TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
-cd "$REPO_DIR"
-git fetch origin main && git checkout main && git pull origin main
-"$CLAUDE_PATH" -p "\$(cat .claude/commands/bug-council.md)
-
-Execute the Bug Council skill exactly as described above. This is an automated daily run. Do not ask for confirmation — proceed through all phases automatically." \\
-  --dangerously-skip-permissions \\
-  --max-turns 200 \\
-  --verbose \\
-  > "$LOG_DIR/stdout-\$TIMESTAMP.log" 2> "$LOG_DIR/stderr-\$TIMESTAMP.log"
-
-# Clean up logs older than 14 days
-find "$LOG_DIR" -name "*.log" -mtime +14 -delete 2>/dev/null
-SCRIPT
-chmod +x "$RUNNER"
-
-# Write the launchd plist
+# Write the launchd plist (points to the runner script in the repo)
 cat > "$PLIST" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -153,14 +149,22 @@ PLIST
 launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST"
 
 echo ""
-echo "Bug Council cron job installed."
+echo "Bug Council v2 cron job installed."
 echo ""
 echo "  Schedule:  Weekdays at 9:00 AM (local time)"
+echo "  Runner:    $RUNNER"
 echo "  Logs:      $LOG_DIR/"
 echo ""
 echo "  Commands:"
-echo "    ./scripts/setup-bug-council.sh run      # Run it now"
-echo "    ./scripts/setup-bug-council.sh logs     # View latest output"
-echo "    ./scripts/setup-bug-council.sh status   # Check if installed"
-echo "    ./scripts/setup-bug-council.sh remove   # Uninstall"
+echo "    ./scripts/setup-bug-council.sh run                          # Full audit now"
+echo "    ./scripts/setup-bug-council.sh reactive \"issue desc\"        # Quick fix (web)"
+echo "    ./scripts/setup-bug-council.sh reactive-mobile \"issue desc\" # Quick fix (mobile)"
+echo "    ./scripts/setup-bug-council.sh logs                         # View latest output"
+echo "    ./scripts/setup-bug-council.sh status                       # Check if installed"
+echo "    ./scripts/setup-bug-council.sh remove                       # Uninstall"
+echo ""
+echo "  Environment variables (set in ~/.zshrc or similar):"
+echo "    TELEGRAM_BOT_TOKEN  — Telegram bot token for notifications"
+echo "    TELEGRAM_CHAT_ID    — Telegram chat ID for notifications"
+echo "    COCONUT_APP_REPO    — Path to coconut-app repo (default: sibling dir)"
 echo ""

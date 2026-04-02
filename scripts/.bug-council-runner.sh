@@ -2,44 +2,71 @@
 # Bug Council Runner — Runs the daily bug council audit for BOTH repos (coconut + coconut-app),
 # polls CI, and sends ONE consolidated Telegram notification.
 # Uses dedicated git worktrees so it never touches your main checkouts.
+#
+# Usage:
+#   .bug-council-runner.sh                              # Full scheduled audit (both repos)
+#   .bug-council-runner.sh --reactive "error desc"      # Quick fix for a specific issue
+#   .bug-council-runner.sh --reactive-repo coconut "CI failed: tsc error in lib/foo.ts"
 
 set -euo pipefail
 
-export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:/Users/koushik/.nvm/versions/node/v24.12.0/bin:/usr/bin:/bin:$PATH"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+COCONUT_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# ── Config ──────────────────────────────────────────────────────────────────
+export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+
+# ── Config (override via environment) ────────────────────────────────────────
 LOCKFILE="/tmp/coconut-bug-council.lock"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 DATE_TAG=$(date +%Y%m%d)
-TELEGRAM_BOT_TOKEN="8763230267:AAEz3-3Y6nNE7QZRCdYKobUSFVO3JiAwVmk"
-TELEGRAM_CHAT_ID="1728663117"
-GH_USER="KoushikP04"
-CLAUDE="$HOME/.nvm/versions/node/v24.12.0/bin/claude"
 
-# Log to the main coconut repo's log dir
-LOG_DIR="/Users/koushik/github/coconut/.bug-council-logs"
+: "${TELEGRAM_BOT_TOKEN:=""}"
+: "${TELEGRAM_CHAT_ID:=""}"
+: "${GH_USER:="KoushikP04"}"
+: "${CLAUDE:="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"}"
 
-# Repo configs: name|full_repo|main_repo_path|worktree_path|has_ci|claude_command
+: "${COCONUT_APP_REPO:="$(dirname "$COCONUT_REPO")/coconut-app"}"
+
+LOG_DIR="$COCONUT_REPO/.bug-council-logs"
+
+# Repo configs: name|full_repo|main_repo_path|worktree_parent|has_ci|claude_command
+WORKTREE_BASE="$(dirname "$COCONUT_REPO")"
 REPO_CONFIGS=(
-  "coconut|Coconut-Banking/coconut|/Users/koushik/github/coconut|/Users/koushik/github/coconut-worktrees/bug-council|yes|bug-council.md"
-  "coconut-app|Coconut-Banking/coconut-app|/Users/koushik/github/coconut-app|/Users/koushik/github/coconut-app-worktrees/bug-council|yes|bug-council-mobile.md"
+  "coconut|Coconut-Banking/coconut|$COCONUT_REPO|$WORKTREE_BASE/coconut-worktrees/bug-council|yes|bug-council.md"
+  "coconut-app|Coconut-Banking/coconut-app|$COCONUT_APP_REPO|$WORKTREE_BASE/coconut-app-worktrees/bug-council|yes|bug-council-mobile.md"
 )
 
-# Results array — populated per repo
 declare -a RESULTS=()
 
-# ── Prevent concurrent runs ─────────────────────────────────────────────────
-if [ -f "$LOCKFILE" ]; then
-  LOCK_PID=$(cat "$LOCKFILE" 2>/dev/null)
-  if kill -0 "$LOCK_PID" 2>/dev/null; then
-    echo "Another bug council run is still active (PID $LOCK_PID). Skipping."
-    exit 0
-  fi
-  rm -f "$LOCKFILE"
-fi
-echo $$ > "$LOCKFILE"
+# ── Helpers ──────────────────────────────────────────────────────────────────
+notify_macos() {
+  osascript -e "display notification \"$1\" with title \"Coconut Bug Council\" sound name \"Glass\"" 2>/dev/null || true
+}
 
-# ── Cleanup trap: kill entire process tree + remove lockfile ─────────────────
+notify_telegram() {
+  [ -z "$TELEGRAM_BOT_TOKEN" ] && return 0
+  [ -z "$TELEGRAM_CHAT_ID" ] && return 0
+  curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id="$TELEGRAM_CHAT_ID" \
+    -d parse_mode="Markdown" \
+    -d text="$1" > /dev/null 2>&1 || true
+}
+
+# ── Prevent concurrent runs ──────────────────────────────────────────────────
+acquire_lock() {
+  if [ -f "$LOCKFILE" ]; then
+    local lock_pid
+    lock_pid=$(cat "$LOCKFILE" 2>/dev/null)
+    if kill -0 "$lock_pid" 2>/dev/null; then
+      echo "Another bug council run is still active (PID $lock_pid). Skipping."
+      exit 0
+    fi
+    rm -f "$LOCKFILE"
+  fi
+  echo $$ > "$LOCKFILE"
+}
+
+# ── Cleanup trap ─────────────────────────────────────────────────────────────
 cleanup() {
   echo "Cleaning up..."
   pkill -TERM -P $$ 2>/dev/null || true
@@ -48,29 +75,76 @@ cleanup() {
   pgrep -f "claude.*bug-council" | xargs kill -9 2>/dev/null || true
   jobs -p 2>/dev/null | xargs kill -9 2>/dev/null || true
   rm -f "$LOCKFILE"
-  # Clean up build artifacts
-  rm -rf "/Users/koushik/github/coconut-worktrees/bug-council/.next" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-# ── Max runtime: 3 hours then self-kill (two repos sequentially) ─────────────
-MAX_RUNTIME=10800
-(sleep $MAX_RUNTIME && echo "TIMEOUT: Bug council exceeded ${MAX_RUNTIME}s, killing..." && kill -TERM $$ 2>/dev/null) &
-WATCHDOG_PID=$!
+# ── Reactive mode: fix a specific issue quickly ──────────────────────────────
+run_reactive() {
+  local target_repo="${1:-coconut}"
+  local error_description="$2"
 
-mkdir -p "$LOG_DIR"
-exec > >(tee "$LOG_DIR/stdout-$TIMESTAMP.log") 2> >(tee "$LOG_DIR/stderr-$TIMESTAMP.log" >&2)
+  local repo_path repo_name full_repo
+  if [ "$target_repo" = "coconut" ] || [ "$target_repo" = "web" ]; then
+    repo_path="$COCONUT_REPO"
+    repo_name="coconut"
+    full_repo="Coconut-Banking/coconut"
+  else
+    repo_path="$COCONUT_APP_REPO"
+    repo_name="coconut-app"
+    full_repo="Coconut-Banking/coconut-app"
+  fi
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
-notify_macos() {
-  osascript -e "display notification \"$1\" with title \"Coconut Bug Council\" sound name \"Glass\"" 2>/dev/null || true
-}
+  echo "Reactive mode: investigating issue in $repo_name"
+  echo "Issue: $error_description"
 
-notify_telegram() {
-  curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-    -d chat_id="$TELEGRAM_CHAT_ID" \
-    -d parse_mode="Markdown" \
-    -d text="$1" > /dev/null 2>&1 || true
+  cd "$repo_path"
+  git fetch origin main
+  git checkout main
+  git pull origin main
+
+  local branch="fix/reactive-$(date +%Y%m%d-%H%M%S)"
+  git checkout -b "$branch"
+
+  local claude_output
+  claude_output=$("$CLAUDE" -p "You are a senior engineer investigating a specific bug/issue in the $repo_name codebase ($full_repo).
+
+## The Issue
+$error_description
+
+## Instructions
+
+1. Investigate the issue. Read the relevant files, trace the code path, understand what's wrong.
+2. If you can confirm the issue is real:
+   a. Implement the minimum fix
+   b. If this is the coconut (web) repo, write a vitest test for the fix
+   c. Run validation: $([ "$repo_name" = "coconut" ] && echo "npm run typecheck && npm run lint && npm run test" || echo "npx tsc --noEmit")
+   d. Commit with message: fix: {description of what was fixed}
+   e. Push: git push -u origin $branch
+   f. Create a PR: gh pr create --title 'fix: {title}' --body '{description of the issue and fix}'
+   g. Output the PR URL on its own line like: PR_URL={url}
+3. If the issue is NOT real or already fixed, explain why and do NOT create a PR.
+
+Be precise. Fix only what's broken. Do not refactor or improve other code." \
+    --dangerously-skip-permissions \
+    --max-turns 80 \
+    --verbose 2>&1) || true
+
+  echo "$claude_output" > "$LOG_DIR/reactive-$repo_name-$TIMESTAMP.log"
+
+  local pr_url
+  pr_url=$(echo "$claude_output" | grep -oE 'PR_URL=https://[^ ]+' | tail -1 | cut -d= -f2-)
+
+  if [ -n "$pr_url" ]; then
+    notify_macos "Reactive fix: PR created for $repo_name"
+    notify_telegram "*Bug Council (reactive)*
+$repo_name: $pr_url
+Issue: $error_description"
+  else
+    notify_macos "Reactive fix: no PR needed for $repo_name"
+    notify_telegram "*Bug Council (reactive)*
+$repo_name: no fix needed
+Issue: $error_description"
+  fi
 }
 
 # ── Run bug council for a single repo ────────────────────────────────────────
@@ -87,7 +161,7 @@ run_for_repo() {
 
   echo ""
   echo "================================================================"
-  echo "  Bug Council: $name ($label)"
+  echo "  Bug Council v2: $name ($label)"
   echo "================================================================"
 
   # Ensure worktree parent dir exists
@@ -105,26 +179,24 @@ run_for_repo() {
   git checkout main 2>/dev/null || git checkout --detach origin/main
   git reset --hard origin/main
 
-  # Install deps (coconut uses npm, coconut-app uses npm too)
   npm install --prefer-offline --no-audit 2>/dev/null || npm ci
 
-  # Run Claude with the appropriate command file
-  # For coconut-app, the command file is in the coconut repo, so we need to provide it inline
+  # Load the command file — for coconut-app, it lives in the coconut repo
   local claude_prompt
   if [ "$name" = "coconut" ]; then
     claude_prompt=$(cat "$work_dir/.claude/commands/$claude_cmd")
   else
-    # coconut-app uses the command from the main coconut repo
-    claude_prompt=$(cat "/Users/koushik/github/coconut/.claude/commands/$claude_cmd")
+    claude_prompt=$(cat "$COCONUT_REPO/.claude/commands/$claude_cmd")
   fi
 
-  echo "Starting Bug Council audit for $name..."
+  echo "Starting Bug Council v2 audit for $name..."
   local claude_output
   claude_output=$("$CLAUDE" -p "$claude_prompt
 
-Execute the Bug Council skill exactly as described above. This is an automated daily run. Do not ask for confirmation — proceed through all phases automatically.
+Execute the Bug Council exactly as described above. This is an automated run. Do not ask for confirmation — proceed through all phases automatically.
 
-IMPORTANT: After creating the PR, output the PR number on its own line like: PR_NUMBER=<number>" \
+IMPORTANT: After creating the PR, output the PR number on its own line like: PR_NUMBER=<number>
+If no bugs were found and no PR was created, output: PR_NUMBER=none" \
     --dangerously-skip-permissions \
     --max-turns 200 \
     --verbose 2>&1) || true
@@ -140,18 +212,19 @@ IMPORTANT: After creating the PR, output the PR number on its own line like: PR_
   fi
 
   if [ -z "$pr_number" ]; then
-    pr_number=$(gh pr list --repo "$full_repo" --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("fix/bug-council")) | .number' 2>/dev/null | head -1 || true)
+    pr_number=$(gh pr list --repo "$full_repo" --state open --json number,headRefName \
+      --jq '.[] | select(.headRefName | startswith("fix/bug-council")) | .number' 2>/dev/null | head -1 || true)
   fi
 
   if [ -z "$pr_number" ]; then
-    echo "No PR found for $name. May have found no bugs or failed."
-    RESULTS+=("$name ($label): no issues found")
+    echo "No PR found for $name. Clean audit or failure — check logs."
+    RESULTS+=("$name ($label): clean (no bugs found)")
     return
   fi
 
   echo "PR #$pr_number created for $name."
 
-  # ── Auto-resolve merge conflicts ──────────────────────────────────────────
+  # ── Auto-resolve merge conflicts ───────────────────────────────────────────
   local mergeable
   mergeable=$(gh pr view "$pr_number" --repo "$full_repo" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
 
@@ -164,10 +237,10 @@ IMPORTANT: After creating the PR, output the PR number on its own line like: PR_
     "$CLAUDE" -p "You are on branch $current_branch in the $name repo ($full_repo). PR #$pr_number has merge conflicts with main.
 
 Resolve the merge conflicts:
-1. git fetch origin main (or upstream main)
-2. git merge origin/main (or upstream/main depending on remote setup)
-3. For each conflict: prefer upstream/main for structural changes (deleted files, refactors). Keep our bug fixes only where they don't conflict with main's direction. When in doubt, take theirs.
-4. Make sure there are NO conflict markers (<<<<<<, ======, >>>>>>) left in any file
+1. git fetch origin main
+2. git merge origin/main
+3. For each conflict: prefer main for structural changes (deleted files, refactors). Keep our bug fixes only where they don't conflict with main's direction. When in doubt, take theirs.
+4. Ensure NO conflict markers (<<<<<<, ======, >>>>>>) remain
 5. git add all resolved files
 6. git commit -m 'merge: resolve conflicts with main'
 7. git push origin $current_branch
@@ -177,7 +250,6 @@ Do NOT create a new PR. Just resolve conflicts and push." \
       --max-turns 50 \
       --verbose > "$LOG_DIR/merge-fix-$name-$TIMESTAMP.log" 2>&1 || true
 
-    # Re-check mergeable status
     sleep 10
     mergeable=$(gh pr view "$pr_number" --repo "$full_repo" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
     if [ "$mergeable" = "CONFLICTING" ]; then
@@ -187,9 +259,9 @@ Do NOT create a new PR. Just resolve conflicts and push." \
     fi
   fi
 
+  # ── Poll CI ────────────────────────────────────────────────────────────────
   echo "Polling CI for PR #$pr_number..."
 
-  # Poll CI (skip for repos without CI)
   if [ "$has_ci" = "no" ]; then
     echo "$name has no CI — PR ready for review."
     RESULTS+=("$name ($label): PR #$pr_number — no CI (ready for review)
@@ -208,11 +280,9 @@ https://github.com/$full_repo/pull/$pr_number")
     if gh pr checks "$pr_number" --repo "$full_repo" > /dev/null 2>&1; then
       echo "CI passed for $name!"
       gh pr comment "$pr_number" --repo "$full_repo" --body "$(cat <<EOF
-**Bug Council audit complete — all CI checks passed!**
+**Bug Council v2 audit complete — all CI checks passed!**
 
 @$GH_USER — This PR is ready for your review.
-
-Please review and merge when ready.
 EOF
 )"
       ci_result="passed"
@@ -233,13 +303,13 @@ EOF
 $ci_status
 
 Fix the CI failures:
-1. Make sure you are on the correct branch: git checkout $current_branch
+1. git checkout $current_branch
 2. Run the failing checks locally to reproduce
-3. Fix the issues
+3. Fix the issues (do NOT revert bug fixes unless they caused the failure)
 4. Commit with message: fix: resolve CI failures
 5. Push: git push origin $current_branch
 
-Do NOT create a new PR. Just fix and push." \
+Do NOT create a new PR." \
           --dangerously-skip-permissions \
           --max-turns 50 \
           --verbose > "$LOG_DIR/ci-fix-$name-$TIMESTAMP-$ci_fix_attempted.log" 2>&1 || true
@@ -284,14 +354,40 @@ https://github.com/$full_repo/pull/$pr_number")
   esac
 }
 
-# ── Main: Process repos sequentially ─────────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+mkdir -p "$LOG_DIR"
+
+# Handle --reactive mode
+if [ "${1:-}" = "--reactive" ] || [ "${1:-}" = "--reactive-repo" ]; then
+  acquire_lock
+  exec > >(tee "$LOG_DIR/stdout-reactive-$TIMESTAMP.log") 2> >(tee "$LOG_DIR/stderr-reactive-$TIMESTAMP.log" >&2)
+
+  if [ "$1" = "--reactive-repo" ]; then
+    run_reactive "${2:-coconut}" "${3:?Usage: $0 --reactive-repo <coconut|coconut-app> \"error description\"}"
+  else
+    run_reactive "coconut" "${2:?Usage: $0 --reactive \"error description\"}"
+  fi
+  exit 0
+fi
+
+# Full audit mode
+acquire_lock
+
+# Max runtime: 3 hours then self-kill
+MAX_RUNTIME=10800
+(sleep $MAX_RUNTIME && echo "TIMEOUT: Bug council exceeded ${MAX_RUNTIME}s, killing..." && kill -TERM $$ 2>/dev/null) &
+WATCHDOG_PID=$!
+
+exec > >(tee "$LOG_DIR/stdout-$TIMESTAMP.log") 2> >(tee "$LOG_DIR/stderr-$TIMESTAMP.log" >&2)
+
 for config in "${REPO_CONFIGS[@]}"; do
   IFS='|' read -r name full_repo main_repo work_dir has_ci claude_cmd <<< "$config"
   run_for_repo "$name" "$full_repo" "$main_repo" "$work_dir" "$has_ci" "$claude_cmd" || true
 done
 
-# ── Send ONE consolidated notification ───────────────────────────────────────
-TELEGRAM_MSG="*Bug Council Complete*"
+# ── Consolidated notification ────────────────────────────────────────────────
+TELEGRAM_MSG="*Bug Council v2 Complete*"
 for result in "${RESULTS[@]}"; do
   TELEGRAM_MSG="$TELEGRAM_MSG
 
@@ -307,5 +403,4 @@ fi
 notify_macos "Bug Council finished — ${#RESULTS[@]} repo(s) processed"
 notify_telegram "$TELEGRAM_MSG"
 
-# Clean up logs older than 14 days
 find "$LOG_DIR" -name "*.log" -mtime +14 -delete 2>/dev/null
