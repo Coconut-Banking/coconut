@@ -38,14 +38,46 @@ function ConnectedStep() {
 
   useEffect(() => {
     if (!fromApp) return;
-    // Fire immediately — ASWebAuthenticationSession needs to see the scheme redirect ASAP.
-    // Also retry after a short delay in case the first attempt is swallowed.
     sessionStorage.removeItem("connect_from_app");
     sessionStorage.removeItem(SCHEME_STORAGE_KEY);
+    // Try JS redirect — works on some iOS versions. The app's connected.tsx
+    // will dismiss this browser and navigate back, so BankStep resumes.
     window.location.href = deepLink;
-    const retry = setTimeout(() => { window.location.replace(deepLink); }, 500);
-    return () => clearTimeout(retry);
+    const t1 = setTimeout(() => { window.location.replace(deepLink); }, 500);
+    // If all JS redirects fail, try invisible iframe (works in some SFSafariVC versions)
+    const t2 = setTimeout(() => {
+      try {
+        const f = document.createElement("iframe");
+        f.style.display = "none";
+        f.src = deepLink;
+        document.body.appendChild(f);
+        setTimeout(() => { try { document.body.removeChild(f); } catch {} }, 2000);
+      } catch {}
+    }, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [fromApp, deepLink]);
+
+  if (fromApp) {
+    return (
+      <div className="min-h-screen bg-[#F5F3F2] flex items-center justify-center">
+        <div className="text-center">
+          <CheckCircle2 size={40} className="text-[#1e2021] mx-auto mb-4" />
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Bank connected!</h2>
+          <p className="text-sm text-gray-500 mb-6">Returning to the app…</p>
+          <a
+            href={deepLink}
+            className="inline-flex items-center gap-2 bg-[#1e2021] hover:bg-[#161819] text-white py-2.5 px-6 rounded-xl text-sm font-medium transition-colors"
+          >
+            Return to app
+            <ChevronRight size={15} />
+          </a>
+          <p className="text-xs text-gray-400 mt-4">
+            If nothing happens, tap the button above or swipe down to close.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -67,23 +99,13 @@ function ConnectedStep() {
         <p className="text-sm text-gray-500 mb-6">
           We&apos;re importing your transactions. This usually takes under a minute.
         </p>
-        {fromApp ? (
-          <a
-            href={deepLink}
-            className="block w-full bg-[#1e2021] hover:bg-[#161819] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
-          >
-            Return to app
-            <ChevronRight size={15} />
-          </a>
-        ) : (
-          <button
-            onClick={() => router.push("/app/dashboard")}
-            className="w-full bg-[#1e2021] hover:bg-[#161819] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
-          >
-            View your dashboard
-            <ChevronRight size={15} />
-          </button>
-        )}
+        <button
+          onClick={() => router.push("/app/dashboard")}
+          className="w-full bg-[#1e2021] hover:bg-[#161819] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+        >
+          View your dashboard
+          <ChevronRight size={15} />
+        </button>
       </div>
     </motion.div>
   );
@@ -247,21 +269,10 @@ function ConnectBankContent() {
 
   const isUpdateMode = searchParams.get("update") === "1";
 
-  const redirectToApp = useCallback(() => {
-    const deepLink = `${getAppDeepLink()}connected`;
-    sessionStorage.removeItem("connect_from_app");
-    sessionStorage.removeItem(SCHEME_STORAGE_KEY);
-    window.location.href = deepLink;
-    setTimeout(() => { window.location.replace(deepLink); }, 400);
-  }, []);
-
   const onSuccess = useCallback(
     async (publicToken: string, metadata?: unknown) => {
       setIsExchanging(true);
       setError(null);
-      const isFromApp =
-        typeof window !== "undefined" &&
-        (sessionStorage.getItem("connect_from_app") === "1");
       try {
         const meta = metadata as {
           linkSessionId?: string;
@@ -278,6 +289,7 @@ function ConnectBankContent() {
         });
         if (isUpdateMode) {
           fetch("/api/plaid/clear-alerts", { method: "POST", credentials: "include" }).catch(() => {});
+          setStep("connected");
           logPlaidEvent({
             type: "update_mode_ok",
             metadata: {
@@ -285,8 +297,6 @@ function ConnectBankContent() {
               plaid_ids: plaidIds,
             },
           });
-          if (isFromApp) { redirectToApp(); return; }
-          setStep("connected");
         } else {
           const res = await fetch("/api/plaid/exchange-token", {
             method: "POST",
@@ -296,7 +306,6 @@ function ConnectBankContent() {
           });
           const data = await res.json().catch(() => ({}));
           if (res.status === 409 && data.code === "DUPLICATE_INSTITUTION") {
-            if (isFromApp) { redirectToApp(); return; }
             setStep("connected");
             return;
           }
@@ -308,6 +317,7 @@ function ConnectBankContent() {
             });
             return;
           }
+          setStep("connected");
           logPlaidEvent({
             type: "exchange_token_ok",
             metadata: {
@@ -316,8 +326,6 @@ function ConnectBankContent() {
               plaid_ids: plaidIds,
             },
           });
-          if (isFromApp) { redirectToApp(); return; }
-          setStep("connected");
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to connect";
@@ -330,7 +338,7 @@ function ConnectBankContent() {
         setIsExchanging(false);
       }
     },
-    [logPlaidEvent, traceId, isUpdateMode, redirectToApp]
+    [logPlaidEvent, traceId, isUpdateMode]
   );
 
   const { open, ready } = usePlaidLink({
@@ -409,7 +417,10 @@ function ConnectBankContent() {
     }
   }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent, fromApp]);
 
-  if (fromApp && step === "link") {
+  if (fromApp) {
+    if (step === "connected") {
+      return <ConnectedStep />;
+    }
     return (
       <div className="min-h-screen bg-[#F5F3F2] flex items-center justify-center">
         <div className="text-center">
