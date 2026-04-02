@@ -32,15 +32,15 @@ Use conventional commits: `feat:`, `fix:`, `refactor:`, etc. For issue-driven wo
 
 All new or modified UI must match the existing theme. Keep it **modern and polished**.
 
-- **Primary color**: `#3D8E62` (buttons, links, accents, active states)
-- **Hover**: `#2D7A52` (darker green for buttons)
-- **Light green**: `#EEF7F2` (backgrounds), `#C3E0D3` (borders)
+- **Primary color**: `#1e2021` (buttons, links, accents, active states)
+- **Hover**: `#161819` (darker primary for buttons)
+- **Light surfaces**: `#F5F3F2` (backgrounds), `#E3DBD8` (borders)
 - **Cards**: `bg-white rounded-2xl border border-gray-100`, generous padding
-- **Inputs**: `rounded-xl border border-gray-200`, focus `ring-2 ring-[#3D8E62]/20`
-- **Buttons (primary)**: `bg-[#3D8E62] hover:bg-[#2D7A52] text-white rounded-xl px-5 py-2.5`
+- **Inputs**: `rounded-xl border border-gray-200`, focus `ring-2 ring-[#1e2021]/20`
+- **Buttons (primary)**: `bg-[#1e2021] hover:bg-[#161819] text-white rounded-xl px-5 py-2.5`
 - **Rounded corners**: `rounded-xl` (medium), `rounded-2xl` (cards/containers)
 - **Font**: Inter (system default)
-- **Typography**: Clean hierarchy; avoid generic gray-on-white. Use the green accent for interactive elements.
+- **Typography**: Clean hierarchy; avoid generic gray-on-white. Use the primary accent for interactive elements.
 - **Spacing**: Consistent gaps (`gap-4`, `gap-6`), padding (`p-4`, `p-6`)
 - **Motion**: Use `motion/react` for subtle animations (e.g. `motion.div` with `initial`/`animate`) where it improves UX — but don't overdo it.
 

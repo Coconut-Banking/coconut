@@ -17,7 +17,7 @@ const config: Config = {
           bg: "#0a0a0a",
           surface: "#111111",
           border: "rgba(255,255,255,0.06)",
-          green: "#3D8E62",
+          green: "#1e2021",
           mint: "#6DD9A4",
         },
       },

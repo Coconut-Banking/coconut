@@ -3433,11 +3433,11 @@ export function CoconutMobileMarketingPage() {
                   <motion.div
                     animate={{ scale:[1, 2, 1], opacity:[0.5, 0, 0.5] }}
                     transition={{ duration:2, repeat:Infinity, ease:"easeInOut" }}
-                    style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#3D8E62" }}
+                    style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#1e2021" }}
                   />
-                  <div style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#3D8E62" }} />
+                  <div style={{ position:"absolute", inset:0, borderRadius:"50%", background:"#1e2021" }} />
                 </div>
-                <span style={{ fontSize:13, fontWeight:700, color:"#3D8E62", letterSpacing:"-0.01em" }}>Live Demo</span>
+                <span style={{ fontSize:13, fontWeight:700, color:"#1e2021", letterSpacing:"-0.01em" }}>Live Demo</span>
               </div>
               <span style={{ fontSize:13, color:LP.textMuted }}>· Tap anything</span>
             </motion.div>

@@ -25,7 +25,7 @@ test.describe("Navigation — sidebar", () => {
   test("sidebar highlights active route", async ({ page }) => {
     const overviewLink = page.locator("aside").getByText("Overview");
     const classes = await overviewLink.getAttribute("class");
-    expect(classes).toContain("text-[#3D8E62]");
+    expect(classes).toContain("text-[#1e2021]");
   });
 
   test("sidebar shows Coconut branding", async ({ page }) => {

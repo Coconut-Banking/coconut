@@ -251,7 +251,7 @@ function SettingsContent() {
       id: (a as { id?: string }).id ?? a.account_id,
       name: displayName,
       accounts: `${(a.subtype ?? a.type ?? "account").replace(/_/g, " ")} ••••${a.mask ?? "****"}`,
-      color: "#3D8E62",
+      color: "#1e2021",
       connected: "Connected",
       subtype: a.subtype ?? a.type ?? "account",
       mask: a.mask ?? null,
@@ -309,11 +309,11 @@ function SettingsContent() {
                 onClick={() => setActiveSection(id)}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-all text-left whitespace-nowrap ${
                   activeSection === id
-                    ? "bg-[#EEF7F2] text-[#3D8E62] font-medium"
+                    ? "bg-[#F5F3F2] text-[#1e2021] font-medium"
                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                 }`}
               >
-                <Icon size={14} className={activeSection === id ? "text-[#3D8E62]" : "text-gray-400"} />
+                <Icon size={14} className={activeSection === id ? "text-[#1e2021]" : "text-gray-400"} />
                 {label}
               </button>
             ))}
@@ -335,12 +335,12 @@ function SettingsContent() {
                     {user?.imageUrl ? (
                       <img src={user.imageUrl} alt="Profile" className="w-16 h-16 rounded-full object-cover" />
                     ) : (
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#3D8E62] to-[#5BAE82] flex items-center justify-center text-white text-xl font-bold">
+                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#1e2021] to-[#494a4b] flex items-center justify-center text-white text-xl font-bold">
                         {(user?.firstName?.[0] ?? "").toUpperCase()}{(user?.lastName?.[0] ?? "").toUpperCase() || ""}
                       </div>
                     )}
                     <div>
-                      <label className="text-sm font-medium text-[#3D8E62] hover:text-[#2D7A52] cursor-pointer">
+                      <label className="text-sm font-medium text-[#1e2021] hover:text-[#161819] cursor-pointer">
                         Change photo
                         <input
                           type="file"
@@ -367,7 +367,7 @@ function SettingsContent() {
                       <input
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021] transition-all"
                       />
                     </div>
                     <div>
@@ -385,7 +385,7 @@ function SettingsContent() {
                       <select
                         value={currency}
                         onChange={(e) => setCurrency(e.target.value as typeof currency)}
-                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none bg-white focus:ring-2 focus:ring-[#3D8E62]/20"
+                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none bg-white focus:ring-2 focus:ring-[#1e2021]/20"
                       >
                         {SUPPORTED_CURRENCIES.map((c) => (
                           <option key={c.code} value={c.code}>
@@ -412,7 +412,7 @@ function SettingsContent() {
                             setIncomeInput(manualMonthlyIncome > 0 ? String(manualMonthlyIncome) : "");
                           }
                         }}
-                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+                        className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021] transition-all"
                       />
                       <p className="text-xs text-gray-400 mt-0.5">Add if your bank doesn&apos;t sync payroll (Rippling, People Center, etc.) — improves cash flow accuracy</p>
                     </div>
@@ -428,13 +428,13 @@ function SettingsContent() {
                           onChange={(e) => setCompactView(e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#3D8E62] rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                        <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#1e2021] rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
                       </label>
                     </div>
                     <button
                       onClick={handleSave}
                       disabled={saving}
-                      className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
+                      className="flex items-center gap-2 bg-[#1e2021] hover:bg-[#161819] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60"
                     >
                       {saving ? (
                         <>
@@ -469,7 +469,7 @@ function SettingsContent() {
                         </div>
                         <label className="relative inline-flex cursor-pointer">
                           <input type="checkbox" defaultChecked className="sr-only peer" />
-                          <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#3D8E62] rounded-full transition-colors peer-focus:outline-none after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                          <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#1e2021] rounded-full transition-colors peer-focus:outline-none after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
                         </label>
                       </div>
                     ))}
@@ -483,7 +483,7 @@ function SettingsContent() {
                 <div className="bg-white rounded-2xl border border-gray-100 p-6">
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-sm font-semibold text-gray-900">Connected banks</h2>
-                    <a href="/connect" className="text-sm text-[#3D8E62] font-medium hover:underline">
+                    <a href="/connect" className="text-sm text-[#1e2021] font-medium hover:underline">
                       {linked ? "+ Add account" : "Connect bank"}
                     </a>
                   </div>
@@ -503,7 +503,7 @@ function SettingsContent() {
                         <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
                           <a
                             href="/connect"
-                            className="text-sm font-medium text-white bg-[#3D8E62] hover:bg-[#2D7A52] px-4 py-2 rounded-xl transition-colors"
+                            className="text-sm font-medium text-white bg-[#1e2021] hover:bg-[#161819] px-4 py-2 rounded-xl transition-colors"
                           >
                             Connect bank
                           </a>
@@ -511,7 +511,7 @@ function SettingsContent() {
                             <button
                               onClick={refreshAccounts}
                               disabled={accountsRefreshing}
-                              className="text-sm text-[#3D8E62] font-medium hover:underline disabled:opacity-50"
+                              className="text-sm text-[#1e2021] font-medium hover:underline disabled:opacity-50"
                             >
                               {accountsRefreshing ? "Refreshing…" : "Refresh accounts"}
                             </button>
@@ -538,10 +538,10 @@ function SettingsContent() {
                       <>
                         {visibleBanks.map((bank) => (
                           <div key={bank.id} className="flex items-center gap-3 p-4 border border-gray-100 rounded-xl">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bank.isLiability ? "bg-red-50" : "bg-[#EEF7F2]"}`}>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bank.isLiability ? "bg-red-50" : "bg-[#F5F3F2]"}`}>
                               {bank.isLiability
                                 ? <CreditCard size={15} className="text-red-400" />
-                                : <Building2 size={15} className="text-[#3D8E62]" />
+                                : <Building2 size={15} className="text-[#1e2021]" />
                               }
                             </div>
                             <div className="flex-1 min-w-0">
@@ -591,7 +591,7 @@ function SettingsContent() {
                                 </div>
                                 <button
                                   onClick={() => unhide(bank.id)}
-                                  className="text-xs text-[#3D8E62] hover:text-[#2D7A52] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#EEF7F2] transition-colors"
+                                  className="text-xs text-[#1e2021] hover:text-[#161819] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#F5F3F2] transition-colors"
                                 >
                                   <Eye size={14} />
                                   Show again
@@ -604,7 +604,7 @@ function SettingsContent() {
                           {newAccountsAvailable && (
                             <Link
                               href="/connect?update=1&new_accounts=1"
-                              className="block w-full text-sm text-[#3D8E62] hover:text-[#2D7A52] px-4 py-3 border border-[#C3E0D3] rounded-xl hover:bg-[#EEF7F2] transition-colors text-center"
+                              className="block w-full text-sm text-[#1e2021] hover:text-[#161819] px-4 py-3 border border-[#E3DBD8] rounded-xl hover:bg-[#F5F3F2] transition-colors text-center"
                               onClick={() => refetchAlerts()}
                             >
                               Add new accounts from your bank
@@ -615,7 +615,7 @@ function SettingsContent() {
                             className={`block w-full text-sm px-4 py-3 border rounded-xl transition-colors text-center ${
                               needsReauth
                                 ? "font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-200"
-                                : "text-[#3D8E62] hover:text-[#2D7A52] border-[#C3E0D3] hover:bg-[#EEF7F2]"
+                                : "text-[#1e2021] hover:text-[#161819] border-[#E3DBD8] hover:bg-[#F5F3F2]"
                             }`}
                           >
                             {needsReauth ? "Fix connection (re-auth at bank) — required" : "Fix connection (re-auth at bank)"}
@@ -639,8 +639,8 @@ function SettingsContent() {
                     )}
                   </div>
                 </div>
-                <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-2xl px-5 py-4 flex items-start gap-3">
-                  <Shield size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                <div className="bg-[#F5F3F2] border border-[#E3DBD8] rounded-2xl px-5 py-4 flex items-start gap-3">
+                  <Shield size={16} className="text-[#1e2021] shrink-0 mt-0.5" />
                   <p className="text-sm text-[#2D5A44]">
                     Coconut connects via read-only access. We never store your banking credentials, and cannot initiate any transactions.
                   </p>
@@ -653,11 +653,11 @@ function SettingsContent() {
                 {paypalBanner && (
                   <div className={`rounded-2xl px-5 py-4 flex items-start gap-3 ${
                     paypalBanner.type === "success"
-                      ? "bg-[#EEF7F2] border border-[#C3E0D3]"
+                      ? "bg-[#F5F3F2] border border-[#E3DBD8]"
                       : "bg-red-50 border border-red-100"
                   }`}>
                     {paypalBanner.type === "success" ? (
-                      <CheckCircle2 size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                      <CheckCircle2 size={16} className="text-[#1e2021] shrink-0 mt-0.5" />
                     ) : (
                       <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
                     )}
@@ -687,7 +687,7 @@ function SettingsContent() {
                       </p>
                       <button
                         onClick={paypal.connect}
-                        className="bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        className="bg-[#1e2021] hover:bg-[#161819] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
                       >
                         Connect PayPal
                       </button>
@@ -695,8 +695,8 @@ function SettingsContent() {
                   ) : (
                     <div className="space-y-4">
                       <div className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl">
-                        <div className="w-10 h-10 rounded-xl bg-[#EEF7F2] flex items-center justify-center shrink-0">
-                          <Wallet size={16} className="text-[#3D8E62]" />
+                        <div className="w-10 h-10 rounded-xl bg-[#F5F3F2] flex items-center justify-center shrink-0">
+                          <Wallet size={16} className="text-[#1e2021]" />
                         </div>
                         <div className="flex-1">
                           <div className="text-sm font-semibold text-gray-900">{paypal.email || "PayPal"}</div>
@@ -707,7 +707,7 @@ function SettingsContent() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <div className="flex items-center gap-1 text-xs text-[#3D8E62]">
+                          <div className="flex items-center gap-1 text-xs text-[#1e2021]">
                             <CheckCircle2 size={12} />
                             Connected
                           </div>
@@ -727,7 +727,7 @@ function SettingsContent() {
                       <button
                         onClick={paypal.sync}
                         disabled={paypal.syncing}
-                        className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        className="flex items-center gap-2 bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
                       >
                         {paypal.syncing ? (
                           <>
@@ -740,7 +740,7 @@ function SettingsContent() {
                       </button>
 
                       {paypal.syncResult && (
-                        <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3">
+                        <div className="bg-[#F5F3F2] border border-[#E3DBD8] rounded-xl px-4 py-3">
                           <p className="text-sm text-[#2D5A44]">
                             Synced <span className="font-semibold">{paypal.syncResult.synced}</span> transaction{paypal.syncResult.synced !== 1 ? "s" : ""}.
                           </p>
@@ -767,7 +767,7 @@ function SettingsContent() {
                     </div>
                     <button
                       onClick={() => setCsvModalOpen(true)}
-                      className="bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                      className="bg-[#1e2021] hover:bg-[#161819] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
                     >
                       Import CSV
                     </button>
@@ -794,7 +794,7 @@ function SettingsContent() {
                           }}
                           className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                             walletPlatform === "venmo"
-                              ? "bg-[#3D8E62] text-white"
+                              ? "bg-[#1e2021] text-white"
                               : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                           }`}
                         >
@@ -809,7 +809,7 @@ function SettingsContent() {
                           }}
                           className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                             walletPlatform === "cashapp"
-                              ? "bg-[#3D8E62] text-white"
+                              ? "bg-[#1e2021] text-white"
                               : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                           }`}
                         >
@@ -825,13 +825,13 @@ function SettingsContent() {
                         placeholder="0.00"
                         value={walletBalance}
                         onChange={(e) => setWalletBalance(e.target.value)}
-                        className="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62]"
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/30 focus:border-[#1e2021]"
                       />
                     </div>
                     <button
                       onClick={saveWalletBalance}
                       disabled={walletSaving || !walletBalance}
-                      className="bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white px-5 py-2 rounded-xl text-sm font-medium transition-colors"
+                      className="bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white px-5 py-2 rounded-xl text-sm font-medium transition-colors"
                     >
                       {walletSaving ? "Saving..." : "Save"}
                     </button>
@@ -841,8 +841,8 @@ function SettingsContent() {
                     <div className="space-y-2">
                       {manualWallets.map((w) => (
                         <div key={w.id} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl">
-                          <div className="w-8 h-8 rounded-lg bg-[#EEF7F2] flex items-center justify-center shrink-0">
-                            <Wallet size={14} className="text-[#3D8E62]" />
+                          <div className="w-8 h-8 rounded-lg bg-[#F5F3F2] flex items-center justify-center shrink-0">
+                            <Wallet size={14} className="text-[#1e2021]" />
                           </div>
                           <div className="flex-1">
                             <div className="text-sm font-medium text-gray-900">{w.name}</div>
@@ -862,8 +862,8 @@ function SettingsContent() {
                   )}
                 </div>
 
-                <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-2xl px-5 py-4 flex items-start gap-3">
-                  <Shield size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                <div className="bg-[#F5F3F2] border border-[#E3DBD8] rounded-2xl px-5 py-4 flex items-start gap-3">
+                  <Shield size={16} className="text-[#1e2021] shrink-0 mt-0.5" />
                   <p className="text-sm text-[#2D5A44]">
                     Coconut connects via read-only OAuth access. We never store your PayPal password.
                   </p>
@@ -901,7 +901,7 @@ function SettingsContent() {
                       </p>
                       <button
                         onClick={gmail.connect}
-                        className="bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        className="bg-[#1e2021] hover:bg-[#161819] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
                       >
                         Connect Gmail
                       </button>
@@ -909,8 +909,8 @@ function SettingsContent() {
                   ) : (
                     <div className="space-y-4">
                       <div className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl">
-                        <div className="w-10 h-10 rounded-xl bg-[#EEF7F2] flex items-center justify-center shrink-0">
-                          <Mail size={16} className="text-[#3D8E62]" />
+                        <div className="w-10 h-10 rounded-xl bg-[#F5F3F2] flex items-center justify-center shrink-0">
+                          <Mail size={16} className="text-[#1e2021]" />
                         </div>
                         <div className="flex-1">
                           <div className="text-sm font-semibold text-gray-900">{gmail.email || "Gmail"}</div>
@@ -921,7 +921,7 @@ function SettingsContent() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <div className="flex items-center gap-1 text-xs text-[#3D8E62]">
+                          <div className="flex items-center gap-1 text-xs text-[#1e2021]">
                             <CheckCircle2 size={12} />
                             Connected
                           </div>
@@ -937,7 +937,7 @@ function SettingsContent() {
                       <button
                         onClick={gmail.scan}
                         disabled={gmail.scanning}
-                        className="flex items-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        className="flex items-center gap-2 bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
                       >
                         {gmail.scanning ? (
                           <>
@@ -964,7 +964,7 @@ function SettingsContent() {
                       )}
 
                       {gmail.scanResult && (
-                        <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3">
+                        <div className="bg-[#F5F3F2] border border-[#E3DBD8] rounded-xl px-4 py-3">
                           <p className="text-sm text-[#2D5A44]">
                             Scanned <span className="font-semibold">{gmail.scanResult.emailsFetched}</span> email{gmail.scanResult.emailsFetched !== 1 ? "s" : ""},
                             saved <span className="font-semibold">{gmail.scanResult.inserted}</span> receipt{gmail.scanResult.inserted !== 1 ? "s" : ""},
@@ -975,8 +975,8 @@ function SettingsContent() {
                     </div>
                   )}
                 </div>
-                <div className="bg-[#EEF7F2] border border-[#C3E0D3] rounded-2xl px-5 py-4 flex items-start gap-3">
-                  <Shield size={16} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                <div className="bg-[#F5F3F2] border border-[#E3DBD8] rounded-2xl px-5 py-4 flex items-start gap-3">
+                  <Shield size={16} className="text-[#1e2021] shrink-0 mt-0.5" />
                   <p className="text-sm text-[#2D5A44]">
                     Coconut only reads receipt emails from known retailers. We never access personal messages, drafts, or sent mail.
                   </p>
@@ -1001,7 +1001,7 @@ function SettingsContent() {
                           onChange={(e) => setTwoFA(e.target.checked)}
                           className="sr-only peer"
                         />
-                        <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#3D8E62] rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                        <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#1e2021] rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
                       </label>
                     </div>
                     <button className="flex items-center justify-between w-full py-3 border-b border-gray-100 text-left hover:bg-gray-50 -mx-2 px-2 rounded-lg transition-colors">
@@ -1025,7 +1025,7 @@ function SettingsContent() {
                       </div>
                       <label className="relative inline-flex cursor-pointer">
                         <input type="checkbox" checked={notifications} onChange={(e) => setNotifications(e.target.checked)} className="sr-only peer" />
-                        <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#3D8E62] rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                        <div className="w-9 h-5 bg-gray-200 peer-checked:bg-[#1e2021] rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
                       </label>
                     </div>
                   </div>
@@ -1055,7 +1055,7 @@ function SettingsContent() {
                   {splitwiseResult && (
                     <div className={`rounded-xl px-4 py-3 mb-4 text-sm ${
                       splitwiseResult.ok
-                        ? "bg-[#EEF7F2] border border-[#C3E0D3] text-[#2D5A44]"
+                        ? "bg-[#F5F3F2] border border-[#E3DBD8] text-[#2D5A44]"
                         : "bg-red-50 border border-red-100 text-red-700"
                     }`}>
                       {splitwiseResult.ok && splitwiseResult.stats ? (
@@ -1078,14 +1078,14 @@ function SettingsContent() {
                   ) : !splitwiseStatus?.connected ? (
                     <a
                       href="/api/splitwise/auth"
-                      className="inline-flex items-center gap-2 text-sm font-medium text-white bg-[#3D8E62] hover:bg-[#2D7A52] px-4 py-2.5 rounded-xl transition-colors"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-white bg-[#1e2021] hover:bg-[#161819] px-4 py-2.5 rounded-xl transition-colors"
                     >
                       <ArrowDownToLine size={15} />
                       Connect Splitwise
                     </a>
                   ) : (
                     <div className="space-y-3">
-                      <div className="flex items-center gap-2 text-sm text-[#3D8E62]">
+                      <div className="flex items-center gap-2 text-sm text-[#1e2021]">
                         <CheckCircle2 size={14} />
                         <span className="font-medium">Splitwise connected</span>
                       </div>
@@ -1093,7 +1093,7 @@ function SettingsContent() {
                         <button
                           onClick={startSplitwiseImport}
                           disabled={splitwiseImporting}
-                          className="inline-flex items-center gap-2 text-sm font-medium text-white bg-[#3D8E62] hover:bg-[#2D7A52] px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                          className="inline-flex items-center gap-2 text-sm font-medium text-white bg-[#1e2021] hover:bg-[#161819] px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
                         >
                           {splitwiseImporting ? (
                             <><Loader2 size={14} className="animate-spin" /> Importing…</>
@@ -1164,12 +1164,12 @@ function SettingsContent() {
                       "You can delete your account and all data at any time.",
                     ].map((item) => (
                       <div key={item} className="flex items-start gap-2.5">
-                        <CheckCircle2 size={14} className="text-[#3D8E62] shrink-0 mt-0.5" />
+                        <CheckCircle2 size={14} className="text-[#1e2021] shrink-0 mt-0.5" />
                         <span>{item}</span>
                       </div>
                     ))}
                   </div>
-                  <button className="flex items-center gap-1.5 mt-4 text-sm text-[#3D8E62] font-medium hover:underline">
+                  <button className="flex items-center gap-1.5 mt-4 text-sm text-[#1e2021] font-medium hover:underline">
                     Read our full privacy policy <ChevronRight size={13} />
                   </button>
                 </div>

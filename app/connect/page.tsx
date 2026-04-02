@@ -59,9 +59,9 @@ function ConnectedStep() {
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ type: "spring", delay: 0.1, stiffness: 200 }}
-          className="w-16 h-16 rounded-full bg-[#EEF7F2] flex items-center justify-center mx-auto mb-4"
+          className="w-16 h-16 rounded-full bg-[#F5F3F2] flex items-center justify-center mx-auto mb-4"
         >
-          <CheckCircle2 size={32} className="text-[#3D8E62]" />
+          <CheckCircle2 size={32} className="text-[#1e2021]" />
         </motion.div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Bank connected!</h2>
         <p className="text-sm text-gray-500 mb-6">
@@ -70,7 +70,7 @@ function ConnectedStep() {
         {fromApp ? (
           <a
             href={deepLink}
-            className="block w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            className="block w-full bg-[#1e2021] hover:bg-[#161819] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
             Return to app
             <ChevronRight size={15} />
@@ -78,7 +78,7 @@ function ConnectedStep() {
         ) : (
           <button
             onClick={() => router.push("/app/dashboard")}
-            className="w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-[#1e2021] hover:bg-[#161819] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
             View your dashboard
             <ChevronRight size={15} />
@@ -403,7 +403,7 @@ function ConnectBankContent() {
   }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent]);
 
   return (
-    <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
+    <div className="min-h-screen bg-[#F5F3F2] flex flex-col">
       <div className="px-8 py-5 flex items-center gap-4 border-b border-gray-100 bg-white">
         <button
           type="button"
@@ -420,7 +420,7 @@ function ConnectBankContent() {
           Back
         </button>
         <div className="flex items-center gap-2.5 mx-auto">
-          <div className="w-6 h-6 rounded-md bg-[#3D8E62] flex items-center justify-center">
+          <div className="w-6 h-6 rounded-md bg-[#1e2021] flex items-center justify-center">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
               <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white"/>
             </svg>
@@ -482,7 +482,7 @@ function ConnectBankContent() {
                         {typeof window !== "undefined" && sessionStorage.getItem("connect_from_app") === "1" && (
                           <a
                             href={`${getAppDeepLink()}settings`}
-                            className="mt-3 inline-flex items-center rounded-lg bg-[#3D8E62] px-3 py-2 text-xs font-medium text-white hover:bg-[#2D7A52] ml-2"
+                            className="mt-3 inline-flex items-center rounded-lg bg-[#1e2021] px-3 py-2 text-xs font-medium text-white hover:bg-[#161819] ml-2"
                           >
                             Return to app
                           </a>
@@ -498,7 +498,7 @@ function ConnectBankContent() {
                             open();
                           }}
                           disabled={!ready || isExchanging}
-                          className="w-full bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-70 text-white py-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                          className="w-full bg-[#1e2021] hover:bg-[#161819] disabled:opacity-70 text-white py-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                         >
                           {isExchanging ? (
                             <>
@@ -523,17 +523,17 @@ function ConnectBankContent() {
                         {error ? (
                           <p className="text-sm text-gray-500">Could not load Plaid. Check your env and try again.</p>
                         ) : (
-                          <div className="w-6 h-6 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin mx-auto" />
+                          <div className="w-6 h-6 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin mx-auto" />
                         )}
                       </div>
                     )}
                   </div>
                   <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-center gap-4">
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                      <Shield size={12} className="text-[#3D8E62]" /> 256-bit encryption
+                      <Shield size={12} className="text-[#1e2021]" /> 256-bit encryption
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                      <Lock size={12} className="text-[#3D8E62]" /> Read-only access
+                      <Lock size={12} className="text-[#1e2021]" /> Read-only access
                     </div>
                   </div>
                 </div>
@@ -553,7 +553,7 @@ function ConnectBankContent() {
 function ConnectFallback() {
   const router = useRouter();
   return (
-    <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
+    <div className="min-h-screen bg-[#F5F3F2] flex flex-col">
       <div className="px-8 py-5 flex items-center gap-4 border-b border-gray-100 bg-white">
         <button
           type="button"
@@ -571,7 +571,7 @@ function ConnectFallback() {
         <div className="flex-1" />
       </div>
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
       </div>
     </div>
   );

@@ -71,12 +71,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen bg-[#F7FAF8] overflow-hidden">
+    <div className="flex h-screen bg-[#F5F3F2] overflow-hidden">
       {/* Sidebar — hidden on small screens for responsive layout */}
       <aside className="hidden md:flex w-56 flex-col bg-white border-r border-[#E8EAEC] shrink-0">
         <div className="px-5 py-5 border-b border-[#E8EAEC]">
           <Link href="/" className="flex items-center gap-2.5 group cursor-pointer">
-            <div className="w-7 h-7 rounded-lg bg-[#3D8E62] flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-[#1e2021] flex items-center justify-center shrink-0">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
                 <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
@@ -95,11 +95,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 href={href}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150 ${
                   isActive
-                    ? "bg-[#EEF7F2] text-[#3D8E62] font-medium"
+                    ? "bg-[#F5F3F2] text-[#1e2021] font-medium"
                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                 }`}
               >
-                <Icon size={16} className={isActive ? "text-[#3D8E62]" : "text-gray-400"} />
+                <Icon size={16} className={isActive ? "text-[#1e2021]" : "text-gray-400"} />
                 {label}
               </Link>
             );
@@ -114,7 +114,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {user?.imageUrl ? (
               <img src={user.imageUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#3D8E62] to-[#5BAE82] flex items-center justify-center text-white text-xs font-semibold shrink-0">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#1e2021] to-[#494a4b] flex items-center justify-center text-white text-xs font-semibold shrink-0">
                 {initials}
               </div>
             )}
@@ -170,7 +170,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search your money. Try: dinner with Alex in January"
                   aria-label="Search transactions"
-                  className="w-full pl-9 pr-4 py-2 text-sm bg-[#F7FAF8] border border-[#E8EAEC] rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-[#F5F3F2] border border-[#E8EAEC] rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021] transition-all"
                 />
               </div>
             </form>
@@ -178,14 +178,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <a
               href="/auth/return-to-app"
-              className="md:hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-[#EEF7F2] text-[#3D8E62] hover:bg-[#E0F0E8] text-sm font-medium transition-colors shrink-0"
+              className="md:hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-[#F5F3F2] text-[#1e2021] hover:bg-[#EEE8E4] text-sm font-medium transition-colors shrink-0"
             >
               <Smartphone size={16} />
               <span>Open in app</span>
             </a>
             <button aria-label="Notifications" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-50 text-gray-500 transition-colors relative">
               <Bell size={16} />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#3D8E62]" />
+              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#1e2021]" />
             </button>
           </div>
         </header>
@@ -210,15 +210,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               {newAccountsAvailable && !needsReauth && (
                 <Link
                   href="/connect?update=1&new_accounts=1"
-                  className="flex items-center gap-3 p-3 bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl hover:bg-[#E0F0E8] transition-colors"
+                  className="flex items-center gap-3 p-3 bg-[#F5F3F2] border border-[#E3DBD8] rounded-xl hover:bg-[#EEE8E4] transition-colors"
                   onClick={() => refetchAlerts()}
                 >
-                  <CreditCard size={18} className="text-[#3D8E62] shrink-0" />
+                  <CreditCard size={18} className="text-[#1e2021] shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[#2D5A44]">New accounts detected</p>
-                    <p className="text-xs text-[#3D8E62]">Add them to Coconut</p>
+                    <p className="text-xs text-[#1e2021]">Add them to Coconut</p>
                   </div>
-                  <ChevronDown size={16} className="text-[#3D8E62] shrink-0 rotate-[-90deg]" />
+                  <ChevronDown size={16} className="text-[#1e2021] shrink-0 rotate-[-90deg]" />
                 </Link>
               )}
             </div>
@@ -238,7 +238,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <aside className="md:hidden fixed inset-y-0 left-0 w-64 bg-white border-r border-[#E8EAEC] z-50 flex flex-col shadow-xl">
             <div className="px-5 py-5 border-b border-[#E8EAEC] flex items-center justify-between">
               <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileNavOpen(false)}>
-                <div className="w-7 h-7 rounded-lg bg-[#3D8E62] flex items-center justify-center shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-[#1e2021] flex items-center justify-center shrink-0">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                     <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
                     <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
@@ -264,11 +264,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => setMobileNavOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
                       isActive
-                        ? "bg-[#EEF7F2] text-[#3D8E62] font-medium"
+                        ? "bg-[#F5F3F2] text-[#1e2021] font-medium"
                         : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                     }`}
                   >
-                    <Icon size={18} className={isActive ? "text-[#3D8E62]" : "text-gray-400"} />
+                    <Icon size={18} className={isActive ? "text-[#1e2021]" : "text-gray-400"} />
                     {label}
                   </Link>
                 );
@@ -276,7 +276,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <a
                 href="/auth/return-to-app"
                 onClick={() => setMobileNavOpen(false)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#3D8E62] font-medium bg-[#EEF7F2] hover:bg-[#E0F0E8] transition-colors mt-4"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#1e2021] font-medium bg-[#F5F3F2] hover:bg-[#EEE8E4] transition-colors mt-4"
               >
                 <Smartphone size={18} />
                 Open in Coconut App

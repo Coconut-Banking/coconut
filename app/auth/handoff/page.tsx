@@ -44,7 +44,7 @@ export default function AuthHandoffPage() {
   }, [signIn, setActive, isLoaded]);
 
   return (
-    <div className="min-h-screen bg-[#F7FAF8] flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-[#F5F3F2] flex flex-col items-center justify-center p-6">
       {status === "loading" && (
         <p className="text-gray-600">Signing you in...</p>
       )}
@@ -53,7 +53,7 @@ export default function AuthHandoffPage() {
           <p className="text-gray-600 mb-4">Could not sign in automatically.</p>
           <a
             href={`/login?redirect_url=${encodeURIComponent(redirectUrl)}`}
-            className="text-[#3D8E62] font-medium underline"
+            className="text-[#1e2021] font-medium underline"
           >
             Sign in manually
           </a>

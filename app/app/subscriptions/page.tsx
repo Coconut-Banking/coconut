@@ -53,7 +53,7 @@ export default function SubscriptionsPage() {
       <button
         onClick={detect}
         disabled={detecting || loading}
-        className="mb-6 px-4 py-2.5 bg-[#3D8E62] text-white rounded-xl text-sm font-medium hover:bg-[#2d7a4a] disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+        className="mb-6 px-4 py-2.5 bg-[#1e2021] text-white rounded-xl text-sm font-medium hover:bg-[#161819] disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
       >
         <RefreshCw size={16} className={detecting ? "animate-spin" : ""} />
         {detecting ? "Detecting…" : "Detect subscriptions"}
@@ -166,7 +166,7 @@ export default function SubscriptionsPage() {
                           initial={{ width: 0 }}
                           animate={{ width: `${pct}%` }}
                           transition={{ duration: 0.8, delay: 0.2 }}
-                          className="h-full rounded-full bg-[#3D8E62]"
+                          className="h-full rounded-full bg-[#1e2021]"
                         />
                       </div>
                     </div>

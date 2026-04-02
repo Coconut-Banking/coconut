@@ -4,9 +4,9 @@
  */
 export default function ConnectFromAppPage() {
   return (
-    <div className="min-h-screen bg-[#F7FAF8] flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-[#F5F3F2] flex flex-col items-center justify-center p-6">
       <p className="text-gray-600 text-center text-sm">
-        Redirect failed. <a href="/login?redirect_url=%2Fconnect%3Ffrom_app%3D1%26via_login%3D1" className="text-[#3D8E62] font-medium underline">Sign in</a>
+        Redirect failed. <a href="/login?redirect_url=%2Fconnect%3Ffrom_app%3D1%26via_login%3D1" className="text-[#1e2021] font-medium underline">Sign in</a>
       </p>
     </div>
   );

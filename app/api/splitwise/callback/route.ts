@@ -52,7 +52,7 @@ function splitwiseMobileReturnPage(deepLink: string, bodyText: string): NextResp
     "</head>",
     '<body style="font-family:system-ui,-apple-system,sans-serif;padding:28px 20px;text-align:center;background:#f8fafc;color:#111">',
     `<p style="font-size:17px;line-height:1.45;margin:0 0 12px">${bodyText}</p>`,
-    `<p style="margin:20px 0 0"><a id="open" href="${href}" style="display:inline-block;padding:14px 22px;background:#3D8E62;color:#fff;border-radius:12px;text-decoration:none;font-weight:600">Open Coconut</a></p>`,
+    `<p style="margin:20px 0 0"><a id="open" href="${href}" style="display:inline-block;padding:14px 22px;background:#1e2021;color:#fff;border-radius:12px;text-decoration:none;font-weight:600">Open Coconut</a></p>`,
     '<p style="font-size:14px;color:#64748b;margin-top:24px">If the app didn&#39;t open, tap the button above.</p>',
     "</body></html>",
   ].join("\n");

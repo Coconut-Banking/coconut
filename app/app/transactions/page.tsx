@@ -303,7 +303,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
             {tx.hasSplitSuggestion && (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Split suggestion</span>
-                <span className="flex items-center gap-1 text-[#3D8E62] text-xs bg-[#EEF7F2] px-2.5 py-1 rounded-full">
+                <span className="flex items-center gap-1 text-[#1e2021] text-xs bg-[#F5F3F2] px-2.5 py-1 rounded-full">
                   <Users size={11} /> With {tx.splitWith}
                 </span>
               </div>
@@ -565,16 +565,16 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
             </div>
           )}
           {tx.location && (
-            <div className="mx-6 my-4 rounded-xl overflow-hidden border border-gray-100 h-28 bg-gradient-to-br from-[#EEF7F2] to-[#E8F0EC] flex items-center justify-center">
+            <div className="mx-6 my-4 rounded-xl overflow-hidden border border-gray-100 h-28 bg-gradient-to-br from-[#F5F3F2] to-[#E8F0EC] flex items-center justify-center">
               <div className="text-center">
-                <MapPin size={20} className="text-[#3D8E62] mx-auto mb-1" />
+                <MapPin size={20} className="text-[#1e2021] mx-auto mb-1" />
                 <div className="text-xs text-gray-500">{tx.location}</div>
               </div>
             </div>
           )}
           <div className="px-6 py-4">
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <Zap size={12} className="text-[#3D8E62]" />
+              <Zap size={12} className="text-[#1e2021]" />
               Smart Actions
             </h4>
             <div className="space-y-2">
@@ -589,10 +589,10 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                       loadGroupMembers(match.groupId);
                     }
                   }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#E3DBD8] bg-[#F5F3F2] hover:bg-[#E0F2EA] text-[#161819] transition-colors text-left"
                 >
                   <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
-                    <Users size={15} className="text-[#3D8E62]" />
+                    <Users size={15} className="text-[#1e2021]" />
                   </div>
                   <div>
                     <div className="text-sm font-medium">Split with {tx.splitWith}</div>
@@ -606,10 +606,10 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                     setShowAddToShared(true);
                     loadPeopleAndGroups();
                   }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#E3DBD8] bg-[#F5F3F2] hover:bg-[#E0F2EA] text-[#161819] transition-colors text-left"
                 >
                   <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
-                    <Share2 size={15} className="text-[#3D8E62]" />
+                    <Share2 size={15} className="text-[#1e2021]" />
                   </div>
                   <div>
                     <div className="text-sm font-medium">Add to shared</div>
@@ -621,10 +621,10 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                 <button
                   onClick={handleMarkAsSubscription}
                   disabled={markingSubscription}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#C3E0D3] bg-[#EEF7F2] hover:bg-[#E0F2EA] text-[#2D7A52] transition-colors text-left disabled:opacity-60"
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[#E3DBD8] bg-[#F5F3F2] hover:bg-[#E0F2EA] text-[#161819] transition-colors text-left disabled:opacity-60"
                 >
                   <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
-                    <RefreshCw size={15} className={markingSubscription ? "animate-spin" : "text-[#3D8E62]"} />
+                    <RefreshCw size={15} className={markingSubscription ? "animate-spin" : "text-[#1e2021]"} />
                   </div>
                   <div>
                     <div className="text-sm font-medium">Mark as subscription</div>
@@ -651,7 +651,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="Write a note..."
                     aria-label="Transaction note"
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
                     rows={3}
                     autoFocus
                   />
@@ -700,7 +700,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                         setSelectedGroupId(null);
                         setMembers([]);
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "person" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "person" ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
                     >
                       Person
                     </button>
@@ -712,7 +712,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                         setSelectedGroupId(null);
                         setMembers([]);
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "group" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "group" ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
                     >
                       Group
                     </button>
@@ -735,7 +735,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                             loadGroupMembers(p.groupId);
                           }
                         }}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
                       >
                         <option value="">Choose a person...</option>
                         {people.map((p) => (
@@ -778,7 +778,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                           if (id) loadGroupMembers(id);
                           else setMembers([]);
                         }}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
                       >
                         <option value="">Choose a group...</option>
                         {groups.map((g) => (
@@ -810,7 +810,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                     <ul className="space-y-1">
                       {members.map((m) => (
                         <li key={m.id} className="text-sm text-gray-600 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#3D8E62]" />
+                          <span className="w-2 h-2 rounded-full bg-[#1e2021]" />
                           {m.display_name}
                         </li>
                       ))}
@@ -828,7 +828,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                 <button
                   onClick={handleAddToShared}
                   disabled={!canSubmit || submitting}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#3D8E62] rounded-xl hover:bg-[#2D7A52] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#1e2021] rounded-xl hover:bg-[#161819] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? "Adding…" : "Add to group"}
                 </button>
@@ -875,7 +875,7 @@ function TxRow({
             {tx.isRecurring && <RefreshCw size={11} className="text-gray-300" />}
             {tx.hasReceipt && <FileText size={11} className="text-amber-500" />}
             {tx.hasSplitSuggestion && (
-              <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-2 py-0.5 rounded-full">
+              <div className="flex items-center gap-1 bg-[#F5F3F2] text-[#1e2021] text-xs px-2 py-0.5 rounded-full">
                 <Users size={9} />
                 <span>Split</span>
               </div>
@@ -951,7 +951,7 @@ function TxRow({
               {tx.hasSplitSuggestion && (
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Split suggestion</div>
-                  <div className="text-xs text-[#3D8E62] font-medium">
+                  <div className="text-xs text-[#1e2021] font-medium">
                     Split with {tx.splitWith} — {formatCurrencyAbs(Math.round(Math.round(Math.abs(tx.amount) * 100) / 2) / 100, currencyCode)} each
                   </div>
                 </div>
@@ -1088,7 +1088,7 @@ function TransactionsPageContent() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
           <p className="text-sm text-gray-500">Fetching your transactions...</p>
         </div>
       </div>
@@ -1179,19 +1179,19 @@ function TransactionsPageContent() {
   const thisMonthCount = filtered.filter((tx) => tx.date.startsWith(thisMonthKey)).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#F7FAF8] to-white">
+    <div className="min-h-screen bg-gradient-to-b from-[#F5F3F2] to-white">
       <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
         {/* Header */}
         <div className="mb-6">
           {linked && (
             <div className="mb-4 flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#F5F3F2] border border-[#D1EAE0] text-[#161819] text-xs font-medium px-2.5 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#1e2021] animate-pulse" />
                 Live from linked account
               </span>
               <Link
                 href="/app/settings"
-                className="text-xs text-[#3D8E62] hover:underline"
+                className="text-xs text-[#1e2021] hover:underline"
               >
                 Seeing old or duplicate transactions? Disconnect & reconnect in Settings.
               </Link>
@@ -1214,7 +1214,7 @@ function TransactionsPageContent() {
               </div>
               <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 shadow-sm min-w-[100px]">
                 <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Showing</div>
-                <div className="text-lg font-bold text-[#3D8E62] mt-0.5">{filtered.length}</div>
+                <div className="text-lg font-bold text-[#1e2021] mt-0.5">{filtered.length}</div>
               </div>
             </div>
           </div>
@@ -1238,11 +1238,11 @@ function TransactionsPageContent() {
                         onClick={() => { setSelectedAccountId(isSelected ? null : acc.id); setAccountFilter("all"); }}
                         className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
                           isSelected
-                            ? "border-[#3D8E62] bg-[#EEF7F2] ring-1 ring-[#3D8E62]"
+                            ? "border-[#1e2021] bg-[#F5F3F2] ring-1 ring-[#1e2021]"
                             : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
                         }`}
                       >
-                        <div className="w-9 h-9 rounded-lg bg-[#3D8E62]/10 flex items-center justify-center text-[#3D8E62] font-semibold text-sm">
+                        <div className="w-9 h-9 rounded-lg bg-[#1e2021]/10 flex items-center justify-center text-[#1e2021] font-semibold text-sm">
                           {(acc.name?.[0] ?? "?").toUpperCase()}
                         </div>
                         <div>
@@ -1264,7 +1264,7 @@ function TransactionsPageContent() {
                         onClick={() => { setSelectedAccountId(isSelected ? null : acc.id); setAccountFilter("all"); }}
                         className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
                           isSelected
-                            ? "border-[#3D8E62] bg-[#EEF7F2] ring-1 ring-[#3D8E62]"
+                            ? "border-[#1e2021] bg-[#F5F3F2] ring-1 ring-[#1e2021]"
                             : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
                         }`}
                       >
@@ -1289,7 +1289,7 @@ function TransactionsPageContent() {
                         key={acc.account_id}
                         onClick={() => { setSelectedAccountId(isSelected ? null : acc.id); setAccountFilter("all"); }}
                         className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
-                          isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200"
+                          isSelected ? "border-[#1e2021] bg-[#F5F3F2]" : "border-gray-100 hover:border-gray-200"
                         }`}
                       >
                         <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 font-semibold text-sm">
@@ -1315,7 +1315,7 @@ function TransactionsPageContent() {
               <button
                 onClick={() => { setSelectedAccountId(null); setAccountFilter("all"); }}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                  !selectedAccountId ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  !selectedAccountId ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
                 All
@@ -1328,7 +1328,7 @@ function TransactionsPageContent() {
                   key={acc.account_id}
                   onClick={() => { setSelectedAccountId(isSelected ? null : acc.id); setAccountFilter("all"); }}
                   className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                    isSelected ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    isSelected ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                   }`}
                 >
                   {acc.name?.slice(0, 12)}{acc.name && acc.name.length > 12 ? "…" : ""} ••••{acc.mask ?? "****"}
@@ -1346,7 +1346,7 @@ function TransactionsPageContent() {
             type="button"
             onClick={() => { setSearchMode("filter"); if (searchMode === "ask") setSearchInput(""); router.push("/app/transactions"); }}
             className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
-              searchMode === "filter" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              searchMode === "filter" ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
             Filter
@@ -1355,21 +1355,21 @@ function TransactionsPageContent() {
             type="button"
             onClick={() => setSearchMode("ask")}
             className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
-              searchMode === "ask" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              searchMode === "ask" ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
             Ask
           </button>
         </div>
         <form onSubmit={handleSearchSubmit} className="relative">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#3D8E62]" />
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#1e2021]" />
           <input
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder={searchMode === "filter" ? "Filter by name, category, amount..." : "Ask in plain English. e.g. how much on Uber last month"}
             aria-label={searchMode === "filter" ? "Filter transactions" : "Search transactions"}
-            className="w-full pl-11 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] transition-all"
+            className="w-full pl-11 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021] transition-all"
           />
           {(searchInput || semanticQuery) && (
             <button
@@ -1396,7 +1396,7 @@ function TransactionsPageContent() {
                 onClick={() => setSelectedCategory(cat)}
                 className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
                   selectedCategory === cat
-                    ? "bg-[#3D8E62] text-white"
+                    ? "bg-[#1e2021] text-white"
                     : "bg-white border border-gray-200 text-gray-600 hover:border-gray-300"
                 }`}
               >
@@ -1407,7 +1407,7 @@ function TransactionsPageContent() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {semanticQuery && nlLoading ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <div className="w-7 h-7 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+                <div className="w-7 h-7 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
                 <p className="text-sm text-gray-400">Searching your transactions...</p>
               </div>
             ) : filtered.length === 0 ? (
@@ -1418,7 +1418,7 @@ function TransactionsPageContent() {
                     <>
                       <p>
                         This account has no transactions. You have <strong>{transactions.filter((t) => !t.accountId || !hiddenSet.has(t.accountId)).length} total</strong> —{" "}
-                        <button onClick={() => setSelectedAccountId(null)} className="text-[#3D8E62] font-semibold underline">View all transactions</button>
+                        <button onClick={() => setSelectedAccountId(null)} className="text-[#1e2021] font-semibold underline">View all transactions</button>
                       </p>
                       <p className="text-gray-400 mt-1">Investment accounts (TFSA, brokerage) often have few day-to-day transactions.</p>
                       {hasUnlinkedTx && (
@@ -1427,9 +1427,9 @@ function TransactionsPageContent() {
                     </>
                   ) : (
                     <>
-                      <p>Try a different filter or <button onClick={clearSearch} className="text-[#3D8E62] underline">clear the search</button>.</p>
-                      <p>Or change the date to <button onClick={() => setDateFilter("Last 3 months")} className="text-[#3D8E62] font-medium underline">Last 3 months</button> or <button onClick={() => setDateFilter("All time")} className="text-[#3D8E62] font-medium underline">All time</button>.</p>
-                      {semanticQuery && <p><button onClick={clearSearch} className="text-[#3D8E62] underline">Clear search</button></p>}
+                      <p>Try a different filter or <button onClick={clearSearch} className="text-[#1e2021] underline">clear the search</button>.</p>
+                      <p>Or change the date to <button onClick={() => setDateFilter("Last 3 months")} className="text-[#1e2021] font-medium underline">Last 3 months</button> or <button onClick={() => setDateFilter("All time")} className="text-[#1e2021] font-medium underline">All time</button>.</p>
+                      {semanticQuery && <p><button onClick={clearSearch} className="text-[#1e2021] underline">Clear search</button></p>}
                     </>
                   )}
                 </div>
@@ -1490,7 +1490,7 @@ function TransactionsPageContent() {
                 <select
                   value={dateFilter}
                   onChange={(e) => setDateFilter(e.target.value)}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#1e2021]"
                 >
                   <option>Last 3 months</option>
                   <option>This month</option>
@@ -1504,7 +1504,7 @@ function TransactionsPageContent() {
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#1e2021]"
                 >
                   {categoryTabs.map((c) => (
                     <option key={c} value={c}>{c === "All" ? "All" : (CATEGORY_LABEL[c] ?? c)}</option>
@@ -1518,13 +1518,13 @@ function TransactionsPageContent() {
                     type="number"
                     placeholder="Min $"
                     aria-label="Minimum amount"
-                    className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
+                    className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1e2021]"
                   />
                   <input
                     type="number"
                     placeholder="Max $"
                     aria-label="Maximum amount"
-                    className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#3D8E62]"
+                    className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1e2021]"
                   />
                 </div>
               </div>
@@ -1538,7 +1538,7 @@ function TransactionsPageContent() {
                         name="type"
                         checked={typeFilter === type}
                         onChange={() => setTypeFilter(type)}
-                        className="accent-[#3D8E62]"
+                        className="accent-[#1e2021]"
                       />
                       <span className="text-xs text-gray-600">{type}</span>
                     </label>
@@ -1575,7 +1575,7 @@ export default function TransactionsPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
       </div>
     }>
       <TransactionsPageContent />

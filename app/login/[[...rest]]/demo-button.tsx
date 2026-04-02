@@ -11,7 +11,7 @@ export function DemoButton() {
         await fetch("/api/demo", { method: "POST" });
         router.push("/app/dashboard");
       }}
-      className="text-sm text-gray-500 hover:text-[#3D8E62] font-medium transition-colors"
+      className="text-sm text-gray-500 hover:text-[#1e2021] font-medium transition-colors"
     >
       Or try the demo account →
     </button>

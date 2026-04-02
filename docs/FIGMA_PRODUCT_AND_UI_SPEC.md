@@ -73,7 +73,7 @@
 **Global chrome behaviors**
 
 - **Plaid alerts strip** below header when `needs_reauth` or `new_accounts_available` (amber / CTA to `/connect?update=1`).
-- **Sidebar active state:** green tint bg `#EEF7F2`, green text `#3D8E62`.
+- **Sidebar active state:** green tint bg `#F5F3F2`, green text `#1e2021`.
 - **Top search:** jumps to transactions with query (hidden on transactions page when that page owns search UI).
 
 ### 3.3 Mobile app (`coconut-app`, Expo Router)
@@ -153,10 +153,10 @@ Design for **iOS safe areas**, **dark/light** if theme toggle exists (`theme-con
 
 | Token | Hex | Usage |
 |-------|-----|--------|
-| Primary | `#3D8E62` | Buttons, links, active nav, positive money cues. |
-| Primary hover | `#2D7A52` | Button hover. |
-| Primary light bg | `#EEF7F2` | Selected row, soft highlights, “Open in app” chip. |
-| Primary border | `#C3E0D3` | Outlines, badges. |
+| Primary | `#1e2021` | Buttons, links, active nav, positive money cues. |
+| Primary hover | `#161819` | Button hover. |
+| Primary light bg | `#F5F3F2` | Selected row, soft highlights, “Open in app” chip. |
+| Primary border | `#E3DBD8` | Outlines, badges. |
 | Mint accent | `#6DD9A4` | Landing accents, icons on dark. |
 | Page bg (web app) | `#F7FAF8` | Main app background behind content. |
 | Surface | `#FFFFFF` | Cards, sidebar, header. |
@@ -181,7 +181,7 @@ Design for **iOS safe areas**, **dark/light** if theme toggle exists (`theme-con
 
 - Web cards: `rounded-2xl`, `border border-gray-100`, generous padding `p-6`.
 - Buttons: `rounded-xl`, `px-5 py-2.5` primary.
-- Inputs: `rounded-xl`, `focus:ring-2 ring-[#3D8E62]/20`.
+- Inputs: `rounded-xl`, `focus:ring-2 ring-[#1e2021]/20`.
 - Mobile: `radii` sm 8 → 2xl 20 (`lib/theme.ts`).
 
 ### 5.5 Spacing

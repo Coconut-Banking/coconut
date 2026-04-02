@@ -69,11 +69,11 @@ export function AppGate({ children }: { children: React.ReactNode }) {
 
   if (!BYPASS_AUTH && !isLoaded) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
+      <div className="flex h-screen items-center justify-center bg-[#F5F3F2]">
         <div className="flex flex-col items-center gap-4">
           {!authLoadTimeout ? (
             <>
-              <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
               <p className="text-sm text-gray-500">Loading...</p>
             </>
           ) : (
@@ -85,13 +85,13 @@ export function AppGate({ children }: { children: React.ReactNode }) {
               <div className="mt-4 flex flex-col gap-2">
                 <a
                   href="/login"
-                  className="inline-flex items-center justify-center px-5 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors"
+                  className="inline-flex items-center justify-center px-5 py-2.5 bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium rounded-xl transition-colors"
                 >
                   Go to Login
                 </a>
                 <button
                   onClick={() => window.location.reload()}
-                  className="text-sm text-[#3D8E62] hover:text-[#2D7A52] font-medium"
+                  className="text-sm text-[#1e2021] hover:text-[#161819] font-medium"
                 >
                   Reload
                 </button>
@@ -114,14 +114,14 @@ export function AppGate({ children }: { children: React.ReactNode }) {
 
   if (plaidStatus === "checking") {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#F7FAF8]">
+      <div className="flex h-screen items-center justify-center bg-[#F5F3F2]">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
           <p className="text-sm text-gray-500">Loading your data...</p>
           {plaidCheckSlow && (
             <a
               href="/login"
-              className="mt-2 text-sm text-[#3D8E62] hover:text-[#2D7A52] font-medium underline"
+              className="mt-2 text-sm text-[#1e2021] hover:text-[#161819] font-medium underline"
             >
               Having trouble? Go to Login
             </a>

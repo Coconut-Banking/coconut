@@ -129,7 +129,7 @@ function deriveFromTransactions(transactions: { amount: number; date: string; ca
     }
   }
 
-  const colors = ["#3D8E62", "#4A6CF7", "#9B59B6", "#E8507A", "#F59E0B", "#CBD5E1"];
+  const colors = ["#1e2021", "#4A6CF7", "#9B59B6", "#E8507A", "#F59E0B", "#CBD5E1"];
   const total = Object.values(spendByCategory).reduce((a, b) => a + b, 0);
   const categoryData = Object.entries(spendByCategory)
     .sort(([, a], [, b]) => b - a)
@@ -258,7 +258,7 @@ export default function DashboardPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
           <p className="text-sm text-gray-500">Loading your data...</p>
         </div>
       </div>
@@ -282,8 +282,8 @@ export default function DashboardPage() {
     <div className="px-8 py-8 max-w-5xl mx-auto">
       {linked && (
         <div className="mb-4 flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EEF7F2] border border-[#D1EAE0] text-[#2D7A52] text-xs font-medium px-2.5 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3D8E62] animate-pulse" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#F5F3F2] border border-[#D1EAE0] text-[#161819] text-xs font-medium px-2.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1e2021] animate-pulse" />
             Live from linked account
           </span>
         </div>
@@ -293,7 +293,7 @@ export default function DashboardPage() {
           {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {displayName}
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#3D8E62] font-medium">{(() => { const now = new Date(); const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`; return transactions.filter(tx => tx.date?.startsWith(thisMonthKey)).length; })()} transactions</span>
+          {new Date().toLocaleString("en", { month: "long", year: "numeric" })} · <span className="text-[#1e2021] font-medium">{(() => { const now = new Date(); const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`; return transactions.filter(tx => tx.date?.startsWith(thisMonthKey)).length; })()} transactions</span>
         </p>
       </div>
 
@@ -313,10 +313,10 @@ export default function DashboardPage() {
 
         {/* Net Cash Flow */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-white rounded-2xl border border-gray-100 p-4">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#EEF7F2] mb-3">
-            <DollarSign size={15} className="text-[#3D8E62]" />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#F5F3F2] mb-3">
+            <DollarSign size={15} className="text-[#1e2021]" />
           </div>
-          <div className={`text-xl font-bold mb-0.5 ${cashFlow.net >= 0 ? "text-[#3D8E62]" : "text-red-500"}`}>
+          <div className={`text-xl font-bold mb-0.5 ${cashFlow.net >= 0 ? "text-[#1e2021]" : "text-red-500"}`}>
             {linked ? `${cashFlow.net >= 0 ? "+" : ""}${fc(cashFlow.net)}` : "—"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Net Cash Flow</div>
@@ -337,7 +337,7 @@ export default function DashboardPage() {
           {!linked ? (
             <div className="text-xs text-gray-400">Connect a bank to see</div>
           ) : subData ? (
-            <a href="/app/subscriptions" className="text-xs text-[#3D8E62] hover:underline">
+            <a href="/app/subscriptions" className="text-xs text-[#1e2021] hover:underline">
               {subData.count === 0 ? "No subscriptions detected yet" : `${subData.count} active`} →
             </a>
           ) : (
@@ -361,7 +361,7 @@ export default function DashboardPage() {
           </div>
           <div className="text-xs text-gray-500 mb-2">Shared</div>
           {groupsSummary ? (
-            <a href="/app/shared" className="text-xs text-[#3D8E62] hover:underline">
+            <a href="/app/shared" className="text-xs text-[#1e2021] hover:underline">
               {(groupsSummary.groups?.length ?? 0) === 0
                 ? "Create a group →"
                 : groupsSummary.totalOwedToMe > 0
@@ -407,7 +407,7 @@ export default function DashboardPage() {
               <div className="text-sm font-semibold text-gray-900">Accounts</div>
               <div className="text-xs text-gray-400 mt-0.5">Live balances from your bank</div>
             </div>
-            <a href="/app/settings" className="text-xs text-[#3D8E62] font-medium hover:underline">Manage →</a>
+            <a href="/app/settings" className="text-xs text-[#1e2021] font-medium hover:underline">Manage →</a>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {dashboard.accounts.map((acct, i) => {
@@ -423,10 +423,10 @@ export default function DashboardPage() {
                   transition={{ delay: 0.3 + i * 0.04 }}
                   className="flex items-start gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/60"
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isCredit ? "bg-red-50" : "bg-[#EEF7F2]"}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isCredit ? "bg-red-50" : "bg-[#F5F3F2]"}`}>
                     {isCredit
                       ? <CreditCard size={14} className="text-red-400" />
-                      : <Building2 size={14} className="text-[#3D8E62]" />
+                      : <Building2 size={14} className="text-[#1e2021]" />
                     }
                   </div>
                   <div className="min-w-0">
@@ -459,7 +459,7 @@ export default function DashboardPage() {
               <div className="text-sm font-semibold text-gray-900">Digital Wallets</div>
               <div className="text-xs text-gray-400 mt-0.5">PayPal, Venmo & Cash App balances</div>
             </div>
-            <a href="/app/settings" className="text-xs text-[#3D8E62] font-medium hover:underline">Manage →</a>
+            <a href="/app/settings" className="text-xs text-[#1e2021] font-medium hover:underline">Manage →</a>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {dashboard.wallets.map((wallet, i) => (
@@ -498,7 +498,7 @@ export default function DashboardPage() {
               <div className="text-xs text-gray-400 mt-0.5">Last 6 months</div>
             </div>
             <div className="flex items-center gap-1 text-xs text-gray-400">
-              <div className="w-2 h-2 rounded-full bg-[#3D8E62]" />
+              <div className="w-2 h-2 rounded-full bg-[#1e2021]" />
               Spend
             </div>
           </div>
@@ -507,22 +507,22 @@ export default function DashboardPage() {
             <AreaChart data={spendingData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
               <defs>
                 <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3D8E62" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#3D8E62" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#1e2021" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#1e2021" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} tickFormatter={(v) => `${getCurrencySymbol(currencyCode)}${(v / 1000).toFixed(1)}k`} />
-              <Tooltip content={<CustomTooltip currencyCode={currencyCode} />} cursor={{ stroke: "#3D8E62", strokeWidth: 1, strokeDasharray: "4 4" }} />
+              <Tooltip content={<CustomTooltip currencyCode={currencyCode} />} cursor={{ stroke: "#1e2021", strokeWidth: 1, strokeDasharray: "4 4" }} />
               <Area
                 type="monotone"
                 dataKey="amount"
-                stroke="#3D8E62"
+                stroke="#1e2021"
                 strokeWidth={2}
                 fill="url(#spendGrad)"
-                dot={{ fill: "#3D8E62", strokeWidth: 0, r: 3 }}
-                activeDot={{ r: 5, fill: "#3D8E62" }}
+                dot={{ fill: "#1e2021", strokeWidth: 0, r: 3 }}
+                activeDot={{ r: 5, fill: "#1e2021" }}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -569,7 +569,7 @@ export default function DashboardPage() {
             </div>
             <button
               onClick={() => router.push("/app/transactions")}
-              className="flex items-center gap-1 text-xs text-[#3D8E62] font-medium hover:underline"
+              className="flex items-center gap-1 text-xs text-[#1e2021] font-medium hover:underline"
             >
               View all <ArrowRight size={11} />
             </button>
@@ -581,7 +581,7 @@ export default function DashboardPage() {
               </p>
               <button
                 onClick={() => router.push(linked ? "/app/transactions" : "/app/settings")}
-                className="text-sm text-[#3D8E62] font-medium hover:underline"
+                className="text-sm text-[#1e2021] font-medium hover:underline"
               >
                 {linked ? "View transactions" : "Connect bank in Settings"}
               </button>
@@ -601,7 +601,7 @@ export default function DashboardPage() {
                   <span className="text-sm font-medium text-gray-900">{tx.merchant}</span>
                   {tx.isRecurring && <RefreshCw size={10} className="text-purple-400" />}
                   {tx.hasSplitSuggestion && (
-                    <div className="flex items-center gap-1 bg-[#EEF7F2] text-[#3D8E62] text-xs px-1.5 py-0.5 rounded-full">
+                    <div className="flex items-center gap-1 bg-[#F5F3F2] text-[#1e2021] text-xs px-1.5 py-0.5 rounded-full">
                       <Users size={8} />
                       <span>Split</span>
                     </div>
@@ -630,7 +630,7 @@ export default function DashboardPage() {
           {/* Smart Insights (1–2 real insights or fallback) */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
             <div className="flex items-center gap-2 mb-3">
-              <Sparkles size={14} className="text-[#3D8E62]" />
+              <Sparkles size={14} className="text-[#1e2021]" />
               <div className="text-sm font-semibold text-gray-900">Smart Insights</div>
             </div>
             <div className="space-y-2">
@@ -638,7 +638,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-700">
                   <span className="font-medium">{categoryDeltas[0].name}</span>{" "}
                   {categoryDeltas[0].delta > 0 ? "up" : "down"}{" "}
-                  <span className={categoryDeltas[0].delta > 0 ? "text-red-500" : "text-[#3D8E62]"}>
+                  <span className={categoryDeltas[0].delta > 0 ? "text-red-500" : "text-[#1e2021]"}>
                     {Math.abs(categoryDeltas[0].pct)}%
                   </span>{" "}
                   vs last month
@@ -647,7 +647,7 @@ export default function DashboardPage() {
               {groupsSummary?.friends?.some((f) => f.balance > 0) && (
                 <p className="text-sm text-gray-700">
                   <span className="font-medium">{groupsSummary.friends.find((f) => f.balance > 0)?.displayName}</span> owes you{" "}
-                  <span className="text-[#3D8E62] font-medium">
+                  <span className="text-[#1e2021] font-medium">
                     {fc(groupsSummary.friends.find((f) => f.balance > 0)?.balance ?? 0)}
                   </span>
                 </p>
@@ -698,14 +698,14 @@ export default function DashboardPage() {
           {categoryDeltas.length > 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <div className="flex items-center gap-2 mb-3">
-                <TrendingUp size={14} className="text-[#3D8E62]" />
+                <TrendingUp size={14} className="text-[#1e2021]" />
                 <div className="text-sm font-semibold text-gray-900">vs. Last Month</div>
               </div>
               <div className="space-y-2.5">
                 {categoryDeltas.map((d) => (
                   <div key={d.name} className="flex items-center justify-between">
                     <div className="text-sm text-gray-700">{d.name}</div>
-                    <div className={`flex items-center gap-1 text-xs font-medium ${d.delta > 0 ? "text-red-500" : d.delta < 0 ? "text-[#3D8E62]" : "text-gray-400"}`}>
+                    <div className={`flex items-center gap-1 text-xs font-medium ${d.delta > 0 ? "text-red-500" : d.delta < 0 ? "text-[#1e2021]" : "text-gray-400"}`}>
                       {d.delta > 0 ? <ArrowUpRight size={12} /> : d.delta < 0 ? <ArrowDownRight size={12} /> : null}
                       {d.pct !== 0 ? `${d.pct > 0 ? "+" : ""}${d.pct}%` : "same"}
                     </div>

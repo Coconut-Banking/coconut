@@ -20,10 +20,10 @@ export default async function LoginPage({
   const forceRedirect = returnToApp ? "/auth/return-to-app" : undefined;
 
   return (
-    <div className="min-h-screen bg-[#F7FAF8] flex flex-col">
+    <div className="min-h-screen bg-[#F5F3F2] flex flex-col">
       <div className="px-8 py-6 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#3D8E62] flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-[#1e2021] flex items-center justify-center">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
               <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
@@ -48,7 +48,7 @@ export default async function LoginPage({
           signUpFallbackRedirectUrl="/connect"
           appearance={{
             variables: {
-              colorPrimary: "#3D8E62",
+              colorPrimary: "#1e2021",
               colorBackground: "#ffffff",
               colorInputBackground: "#ffffff",
               borderRadius: "0.75rem",
@@ -58,21 +58,21 @@ export default async function LoginPage({
               headerTitle: "text-gray-900 font-bold tracking-tight",
               headerSubtitle: "text-gray-500",
               formButtonPrimary:
-                "bg-[#3D8E62] hover:bg-[#2D7A52] text-white rounded-xl text-sm font-medium",
-              footerActionLink: "text-[#3D8E62] hover:underline font-medium",
+                "bg-[#1e2021] hover:bg-[#161819] text-white rounded-xl text-sm font-medium",
+              footerActionLink: "text-[#1e2021] hover:underline font-medium",
               formFieldInput:
-                "border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]",
+                "border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]",
             },
           }}
         />
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <Shield size={12} className="text-[#3D8E62]" />
+            <Shield size={12} className="text-[#1e2021]" />
             Bank-level encryption
           </div>
           <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <Lock size={12} className="text-[#3D8E62]" />
+            <Lock size={12} className="text-[#1e2021]" />
             Read-only access
           </div>
         </div>

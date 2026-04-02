@@ -142,7 +142,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                           onClick={() => setPlatform(p.id)}
                           className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                             platform === p.id
-                              ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52]"
+                              ? "border-[#1e2021] bg-[#F5F3F2] text-[#161819]"
                               : "border-gray-200 text-gray-600 hover:bg-gray-50"
                           }`}
                         >
@@ -157,7 +157,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
-                      file ? "border-[#3D8E62] bg-[#EEF7F2]/50" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                      file ? "border-[#1e2021] bg-[#F5F3F2]/50" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                     }`}
                   >
                     <input
@@ -169,8 +169,8 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                     />
                     {file ? (
                       <div className="flex items-center justify-center gap-2">
-                        <FileText size={18} className="text-[#3D8E62]" />
-                        <span className="text-sm font-medium text-[#2D7A52]">{file.name}</span>
+                        <FileText size={18} className="text-[#1e2021]" />
+                        <span className="text-sm font-medium text-[#161819]">{file.name}</span>
                       </div>
                     ) : (
                       <>
@@ -193,7 +193,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                   <button
                     onClick={handleImport}
                     disabled={!file}
-                    className="w-full py-3 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                    className="w-full py-3 rounded-2xl bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white text-sm font-semibold transition-colors"
                   >
                     Import
                   </button>
@@ -208,7 +208,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                   exit={{ opacity: 0 }}
                   className="py-8 text-center"
                 >
-                  <Loader2 size={32} className="text-[#3D8E62] animate-spin mx-auto mb-4" />
+                  <Loader2 size={32} className="text-[#1e2021] animate-spin mx-auto mb-4" />
                   <p className="text-sm text-gray-600 font-medium">Importing transactions...</p>
                   <p className="text-xs text-gray-400 mt-1">Parsing and matching to bank records</p>
                 </motion.div>
@@ -223,7 +223,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                   className="space-y-4"
                 >
                   <div className="text-center py-4">
-                    <CheckCircle2 size={32} className="text-[#3D8E62] mx-auto mb-3" />
+                    <CheckCircle2 size={32} className="text-[#1e2021] mx-auto mb-3" />
                     <p className="text-lg font-bold text-gray-900 mb-1">Import complete</p>
                     <p className="text-sm text-gray-500">
                       {PLATFORM_LABELS[result.platform] ?? result.platform} transactions imported
@@ -240,7 +240,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
                       <div className="text-xs text-gray-500">Imported</div>
                     </div>
                     <div className="p-3 rounded-xl bg-gray-50 text-center">
-                      <div className="text-xl font-bold text-[#3D8E62]">{result.enriched}</div>
+                      <div className="text-xl font-bold text-[#1e2021]">{result.enriched}</div>
                       <div className="text-xs text-gray-500">Enriched</div>
                     </div>
                   </div>
@@ -264,7 +264,7 @@ export function CSVImportModal({ onClose, onSuccess }: CSVImportModalProps) {
 
                   <button
                     onClick={onClose}
-                    className="w-full py-3 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-semibold transition-colors"
+                    className="w-full py-3 rounded-2xl bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-semibold transition-colors"
                   >
                     Done
                   </button>

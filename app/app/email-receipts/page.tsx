@@ -326,7 +326,7 @@ function EmailReceiptsContent() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
           <p className="text-sm text-gray-500">Checking Gmail connection...</p>
         </div>
       </div>
@@ -338,8 +338,8 @@ function EmailReceiptsContent() {
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-[#EEF7F2] flex items-center justify-center mx-auto mb-4">
-              <Mail className="w-8 h-8 text-[#3D8E62]" />
+            <div className="w-16 h-16 rounded-2xl bg-[#F5F3F2] flex items-center justify-center mx-auto mb-4">
+              <Mail className="w-8 h-8 text-[#1e2021]" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Connect Gmail to Get Started</h2>
             <p className="text-sm text-gray-500 mb-6">
@@ -347,7 +347,7 @@ function EmailReceiptsContent() {
             </p>
             <button
               onClick={gmail.connect}
-              className="px-6 py-3 bg-[#3D8E62] text-white rounded-xl text-sm font-medium hover:bg-[#2D7A52] transition-colors"
+              className="px-6 py-3 bg-[#1e2021] text-white rounded-xl text-sm font-medium hover:bg-[#161819] transition-colors"
             >
               Connect Gmail
             </button>
@@ -373,7 +373,7 @@ function EmailReceiptsContent() {
               <button
                 onClick={() => handleScan(false)}
                 disabled={isScanning}
-                className="px-4 py-2 bg-[#3D8E62] text-white rounded-xl text-sm font-medium hover:bg-[#2D7A52] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-[#1e2021] text-white rounded-xl text-sm font-medium hover:bg-[#161819] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
               >
                 {isScanning ? (
                   <>
@@ -412,9 +412,9 @@ function EmailReceiptsContent() {
 
       {/* Scan Results Banner */}
       {scanResults && !scanResults.error && (
-        <div className="bg-[#EEF7F2] border-b border-[#C3E0D3]">
+        <div className="bg-[#F5F3F2] border-b border-[#E3DBD8]">
           <div className="max-w-6xl mx-auto px-4 py-3">
-            <div className="flex items-center gap-2 text-sm text-[#3D8E62]">
+            <div className="flex items-center gap-2 text-sm text-[#1e2021]">
               <CheckCircle2 className="w-4 h-4" />
               <span>
                 Scanned {scanResults.emailsFetched} emails
@@ -452,7 +452,7 @@ function EmailReceiptsContent() {
                 className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition-colors min-w-[170px] justify-between"
               >
                 <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-[#3D8E62]" />
+                  <Calendar className="w-4 h-4 text-[#1e2021]" />
                   <span>{activePresetLabel}</span>
                 </div>
                 <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
@@ -474,7 +474,7 @@ function EmailReceiptsContent() {
                         }}
                         className={`w-full text-left px-4 py-2 text-sm transition-colors ${
                           datePreset === p.value
-                            ? "bg-[#EEF7F2] text-[#3D8E62] font-medium"
+                            ? "bg-[#F5F3F2] text-[#1e2021] font-medium"
                             : "text-gray-700 hover:bg-gray-50"
                         }`}
                       >
@@ -493,14 +493,14 @@ function EmailReceiptsContent() {
                   type="date"
                   value={customStart}
                   onChange={(e) => setCustomStart(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
                 />
                 <span className="text-xs text-gray-400">to</span>
                 <input
                   type="date"
                   value={customEnd}
                   onChange={(e) => setCustomEnd(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
                 />
                 {(customStart || customEnd) && (
                   <button
@@ -517,7 +517,7 @@ function EmailReceiptsContent() {
             {datePreset !== "all" && (
               <button
                 onClick={() => { setDatePreset("all"); setCustomStart(""); setCustomEnd(""); }}
-                className="text-xs text-[#3D8E62] hover:underline self-center whitespace-nowrap"
+                className="text-xs text-[#1e2021] hover:underline self-center whitespace-nowrap"
               >
                 Show all
               </button>
@@ -531,7 +531,7 @@ function EmailReceiptsContent() {
                 placeholder="Search by merchant or subject..."
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               />
             </div>
           </div>
@@ -576,7 +576,7 @@ function EmailReceiptsContent() {
             onClick={() => setShowReview((v) => !v)}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
-            <Link2 className="w-4 h-4 text-[#3D8E62]" />
+            <Link2 className="w-4 h-4 text-[#1e2021]" />
             Review Matches
             {unmatchedReceipts.length > 0 && (
               <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">
@@ -602,7 +602,7 @@ function EmailReceiptsContent() {
                       onClick={() => setReviewTab("unmatched")}
                       className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                         reviewTab === "unmatched"
-                          ? "text-[#3D8E62] border-b-2 border-[#3D8E62] bg-[#EEF7F2]/30"
+                          ? "text-[#1e2021] border-b-2 border-[#1e2021] bg-[#F5F3F2]/30"
                           : "text-gray-500 hover:text-gray-700"
                       }`}
                     >
@@ -612,7 +612,7 @@ function EmailReceiptsContent() {
                       onClick={() => setReviewTab("matched")}
                       className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                         reviewTab === "matched"
-                          ? "text-[#3D8E62] border-b-2 border-[#3D8E62] bg-[#EEF7F2]/30"
+                          ? "text-[#1e2021] border-b-2 border-[#1e2021] bg-[#F5F3F2]/30"
                           : "text-gray-500 hover:text-gray-700"
                       }`}
                     >
@@ -626,7 +626,7 @@ function EmailReceiptsContent() {
                       <>
                         {unmatchedReceipts.length === 0 ? (
                           <div className="p-8 text-center">
-                            <CheckCircle2 className="w-8 h-8 text-[#3D8E62] mx-auto mb-2" />
+                            <CheckCircle2 className="w-8 h-8 text-[#1e2021] mx-auto mb-2" />
                             <p className="text-sm text-gray-500">All receipts are matched!</p>
                           </div>
                         ) : (
@@ -660,7 +660,7 @@ function EmailReceiptsContent() {
                                       findCandidates(receipt);
                                     }
                                   }}
-                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#EEF7F2] text-[#3D8E62] hover:bg-[#D1EAE0] transition-colors flex items-center gap-1.5 shrink-0"
+                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#F5F3F2] text-[#1e2021] hover:bg-[#D1EAE0] transition-colors flex items-center gap-1.5 shrink-0"
                                 >
                                   <Search className="w-3 h-3" />
                                   {findingMatchFor === receipt.id ? "Cancel" : "Find Match"}
@@ -693,7 +693,7 @@ function EmailReceiptsContent() {
                                           {candidates.map((tx) => (
                                             <div
                                               key={tx.dbId}
-                                              className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-gray-100 hover:border-[#3D8E62]/30 transition-colors"
+                                              className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-gray-100 hover:border-[#1e2021]/30 transition-colors"
                                             >
                                               <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-medium text-gray-900 truncate">{tx.merchant}</p>
@@ -711,7 +711,7 @@ function EmailReceiptsContent() {
                                                   matchReceipt(receipt.id, tx.dbId);
                                                 }}
                                                 disabled={matchingReceipt === receipt.id}
-                                                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#3D8E62] text-white hover:bg-[#2D7A52] disabled:opacity-50 transition-colors flex items-center gap-1 shrink-0"
+                                                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#1e2021] text-white hover:bg-[#161819] disabled:opacity-50 transition-colors flex items-center gap-1 shrink-0"
                                               >
                                                 {matchingReceipt === receipt.id ? (
                                                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -747,7 +747,7 @@ function EmailReceiptsContent() {
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
                                     <h4 className="text-sm font-semibold text-gray-900 truncate">{receipt.merchant}</h4>
-                                    <span className="px-2 py-0.5 bg-[#EEF7F2] text-[#3D8E62] text-xs rounded-full font-medium shrink-0">
+                                    <span className="px-2 py-0.5 bg-[#F5F3F2] text-[#1e2021] text-xs rounded-full font-medium shrink-0">
                                       Matched
                                     </span>
                                   </div>
@@ -808,7 +808,7 @@ function EmailReceiptsContent() {
                     onClick={() => setSelectedReceipt(receipt)}
                     className={`bg-white rounded-xl border ${
                       selectedReceipt?.id === receipt.id
-                        ? "border-[#3D8E62] ring-2 ring-[#3D8E62]/20"
+                        ? "border-[#1e2021] ring-2 ring-[#1e2021]/20"
                         : "border-gray-100 hover:border-gray-200"
                     } cursor-pointer transition-all ${compactView ? "p-3" : "p-4"}`}
                     whileHover={{ scale: 1.01 }}
@@ -825,7 +825,7 @@ function EmailReceiptsContent() {
                             </span>
                           ) : null}
                           {receipt.transaction_id && (
-                            <span className="px-2 py-0.5 bg-[#EEF7F2] text-[#3D8E62] text-xs rounded-full font-medium">
+                            <span className="px-2 py-0.5 bg-[#F5F3F2] text-[#1e2021] text-xs rounded-full font-medium">
                               Matched
                             </span>
                           )}
@@ -911,7 +911,7 @@ function EmailReceiptsContent() {
                         href={`https://mail.google.com/mail/u/${gmail.email ? encodeURIComponent(gmail.email) : "0"}/#all/${selectedReceipt.gmail_message_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[#EEF7F2] text-[#3D8E62] text-xs font-medium rounded-lg hover:bg-[#D1EAE0] transition-colors"
+                        className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[#F5F3F2] text-[#1e2021] text-xs font-medium rounded-lg hover:bg-[#D1EAE0] transition-colors"
                       >
                         <ExternalLink className="w-3 h-3" />
                         View in Gmail

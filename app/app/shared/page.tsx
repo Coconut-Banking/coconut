@@ -25,7 +25,7 @@ import { useTransactions } from "@/hooks/useTransactions";
 import { useCurrency } from "@/hooks/useCurrency";
 import { getP2PDeepLinks } from "@/lib/p2p-deeplinks";
 
-const MEMBER_COLORS = ["#3D8E62", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F"];
+const MEMBER_COLORS = ["#1e2021", "#4A6CF7", "#E8507A", "#F59E0B", "#10A37F", "#FF5A5F"];
 const ACTIVITY_ICONS: Record<string, string> = {
   "Food & Drink": "🍽️",
   "Travel": "✈️",
@@ -63,7 +63,7 @@ function GroupIcon({ emoji, size = "md" }: { emoji: string; size?: "sm" | "md" }
   const cls = size === "sm" ? "w-8 h-8 text-base rounded-xl" : "w-10 h-10 text-xl rounded-xl";
   return (
     <div
-      className={`${cls} bg-[#F0F9F4] border border-[#C3E0D3] flex items-center justify-center shrink-0`}
+      className={`${cls} bg-[#F0F9F4] border border-[#E3DBD8] flex items-center justify-center shrink-0`}
     >
       {emoji}
     </div>
@@ -221,7 +221,7 @@ function AddExpenseModal({
                   type="number"
                   step="0.01"
                   autoFocus
-                  className="w-full pl-9 pr-4 py-3.5 text-lg font-semibold border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
+                  className="w-full pl-9 pr-4 py-3.5 text-lg font-semibold border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/30 focus:border-[#1e2021] bg-gray-50/50"
                 />
               </div>
             </div>
@@ -233,7 +233,7 @@ function AddExpenseModal({
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
                 placeholder="Dinner, groceries, rent…"
-                className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
+                className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/30 focus:border-[#1e2021] bg-gray-50/50"
               />
             </div>
             <div>
@@ -252,7 +252,7 @@ function AddExpenseModal({
                     setPersonKey(null);
                     setCustomShares({});
                   }}
-                  className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30 focus:border-[#3D8E62] bg-gray-50/50"
+                  className="w-full px-4 py-3 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/30 focus:border-[#1e2021] bg-gray-50/50"
                 >
                   <option value="">Select a group</option>
                   {groups.map((g) => (
@@ -279,7 +279,7 @@ function AddExpenseModal({
                           onClick={() => setPayerMemberId(m.id)}
                           className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
                             isPayer
-                              ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52]"
+                              ? "border-[#1e2021] bg-[#F5F3F2] text-[#161819]"
                               : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-600"
                           }`}
                         >
@@ -298,12 +298,12 @@ function AddExpenseModal({
                     <button
                       onClick={() => { setSplitMode("equal"); setPersonKey(null); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                        splitMode === "equal" ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
+                        splitMode === "equal" ? "border-[#1e2021] bg-[#F5F3F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
                       }`}
                     >
                       <Users size={18} className="text-gray-500 shrink-0" />
                       <span className="text-sm font-medium">Split equally</span>
-                      {splitMode === "equal" && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
+                      {splitMode === "equal" && <div className="ml-auto w-2 h-2 rounded-full bg-[#1e2021]" />}
                     </button>
                     {members.filter((m) => m.user_id !== user?.id).map((m) => {
                       const key = m.user_id ?? m.email ?? `${groupId}-${m.id}`;
@@ -313,12 +313,12 @@ function AddExpenseModal({
                           key={m.id}
                           onClick={() => { setSplitMode("person"); setPersonKey(isSelected ? null : key); }}
                           className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                            isSelected ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
+                            isSelected ? "border-[#1e2021] bg-[#F5F3F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
                           }`}
                         >
                           <Avatar initials={m.display_name.slice(0, 2).toUpperCase()} color={MEMBER_COLORS[members.indexOf(m) % MEMBER_COLORS.length]} size="sm" />
                           <span className="text-sm font-medium">Split with {m.display_name}</span>
-                          {isSelected && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
+                          {isSelected && <div className="ml-auto w-2 h-2 rounded-full bg-[#1e2021]" />}
                         </button>
                       );
                     })}
@@ -329,12 +329,12 @@ function AddExpenseModal({
                         initCustomShares();
                       }}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                        splitMode === "custom" ? "border-[#3D8E62] bg-[#EEF7F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
+                        splitMode === "custom" ? "border-[#1e2021] bg-[#F5F3F2]" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/50"
                       }`}
                     >
                       <span className="text-base">✏️</span>
                       <span className="text-sm font-medium">Custom amounts</span>
-                      {splitMode === "custom" && <div className="ml-auto w-2 h-2 rounded-full bg-[#3D8E62]" />}
+                      {splitMode === "custom" && <div className="ml-auto w-2 h-2 rounded-full bg-[#1e2021]" />}
                     </button>
                   </div>
                 </div>
@@ -354,7 +354,7 @@ function AddExpenseModal({
                             type="number"
                             step="0.01"
                             aria-label={`Share for ${m.user_id === user?.id ? "You" : m.display_name}`}
-                            className="w-full pl-7 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20"
+                            className="w-full pl-7 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20"
                           />
                         </div>
                       </div>
@@ -382,7 +382,7 @@ function AddExpenseModal({
                 saving ||
                 (splitMode === "custom" && !customSharesValid)
               }
-              className="flex-1 py-3 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
+              className="flex-1 py-3 rounded-2xl bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-lg shadow-[#1e2021]/20"
             >
               {saving ? "Saving…" : "Add expense"}
             </button>
@@ -462,7 +462,7 @@ function SettleModal({
             </div>
             <div
               className={`text-4xl font-bold tracking-tight ${
-                direction === "owes_you" ? "text-[#3D8E62]" : "text-red-500"
+                direction === "owes_you" ? "text-[#1e2021]" : "text-red-500"
               }`}
             >
               {fc(amount)}
@@ -471,7 +471,7 @@ function SettleModal({
               <motion.div
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-6 flex items-center justify-center gap-2 text-[#3D8E62] font-semibold"
+                className="mt-6 flex items-center justify-center gap-2 text-[#1e2021] font-semibold"
               >
                 <CheckCircle2 size={20} /> All settled!
               </motion.div>
@@ -483,7 +483,7 @@ function SettleModal({
                       onRequestPayment();
                       onClose();
                     }}
-                    className="w-full py-3.5 rounded-2xl border-2 border-[#3D8E62] text-[#3D8E62] font-semibold hover:bg-[#EEF7F2] transition-colors"
+                    className="w-full py-3.5 rounded-2xl border-2 border-[#1e2021] text-[#1e2021] font-semibold hover:bg-[#F5F3F2] transition-colors"
                   >
                     Request payment
                   </button>
@@ -501,7 +501,7 @@ function SettleModal({
                       href={link.webUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full py-3.5 rounded-2xl border-2 border-[#3D8E62] text-[#3D8E62] font-semibold hover:bg-[#EEF7F2] transition-colors text-center block"
+                      className="w-full py-3.5 rounded-2xl border-2 border-[#1e2021] text-[#1e2021] font-semibold hover:bg-[#F5F3F2] transition-colors text-center block"
                     >
                       {link.label}
                     </a>
@@ -509,7 +509,7 @@ function SettleModal({
                 <button
                   onClick={handleRecord}
                   disabled={recording}
-                  className="w-full py-3.5 rounded-2xl bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white font-semibold transition-colors shadow-lg shadow-[#3D8E62]/20"
+                  className="w-full py-3.5 rounded-2xl bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white font-semibold transition-colors shadow-lg shadow-[#1e2021]/20"
                 >
                   {recording
                     ? "Recording…"
@@ -832,7 +832,7 @@ function SharedPageContent() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-8 py-8">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
           <p className="text-sm text-gray-500">Loading group...</p>
         </div>
       </div>
@@ -896,7 +896,7 @@ function SharedPageContent() {
                     <span className="text-sm">
                       <strong>{s.fromMember?.display_name ?? "?"}</strong> →{" "}
                       <strong>{s.toMember?.display_name ?? "?"}</strong>{" "}
-                      <strong className="text-[#3D8E62]">{fc(s.amount)}</strong>
+                      <strong className="text-[#1e2021]">{fc(s.amount)}</strong>
                     </span>
                     <button
                       onClick={() => {
@@ -938,7 +938,7 @@ function SharedPageContent() {
               <button
                 onClick={addMember}
                 disabled={!newMemberName.trim()}
-                className="px-4 py-2.5 rounded-lg bg-[#3D8E62] text-white text-sm font-medium disabled:opacity-50 min-h-[44px] shrink-0"
+                className="px-4 py-2.5 rounded-lg bg-[#1e2021] text-white text-sm font-medium disabled:opacity-50 min-h-[44px] shrink-0"
               >
                 Add
               </button>
@@ -965,7 +965,7 @@ function SharedPageContent() {
                         )}
                       </div>
                       {justSaved ? (
-                        <span className="flex items-center gap-1 text-xs text-[#3D8E62] font-medium">
+                        <span className="flex items-center gap-1 text-xs text-[#1e2021] font-medium">
                           <CheckCircle2 size={14} /> Saved
                         </span>
                       ) : (
@@ -987,7 +987,7 @@ function SharedPageContent() {
                               value={handlesDraft.venmo}
                               onChange={(e) => setHandlesDraft((d) => ({ ...d, venmo: e.target.value }))}
                               placeholder="@username"
-                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] bg-white"
+                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021] bg-white"
                             />
                           </div>
                           <div>
@@ -996,7 +996,7 @@ function SharedPageContent() {
                               value={handlesDraft.cashapp}
                               onChange={(e) => setHandlesDraft((d) => ({ ...d, cashapp: e.target.value }))}
                               placeholder="$cashtag"
-                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] bg-white"
+                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021] bg-white"
                             />
                           </div>
                           <div>
@@ -1005,14 +1005,14 @@ function SharedPageContent() {
                               value={handlesDraft.paypal}
                               onChange={(e) => setHandlesDraft((d) => ({ ...d, paypal: e.target.value }))}
                               placeholder="username"
-                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62] bg-white"
+                              className="w-full mt-0.5 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021] bg-white"
                             />
                           </div>
                         </div>
                         <button
                           onClick={() => saveHandles(m.id)}
                           disabled={savingHandles}
-                          className="mt-3 w-full py-2 rounded-lg bg-[#3D8E62] hover:bg-[#2D7A52] disabled:opacity-50 text-white text-sm font-medium transition-colors"
+                          className="mt-3 w-full py-2 rounded-lg bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white text-sm font-medium transition-colors"
                         >
                           {savingHandles ? "Saving\u2026" : "Save handles"}
                         </button>
@@ -1088,7 +1088,7 @@ function SharedPageContent() {
                     <div className="text-xs text-gray-500">
                       {fc(a.amount)} · {a.groupName}
                       {a.effectOnBalance !== 0 && (
-                        <span className={a.effectOnBalance > 0 ? "text-[#2D7A52]" : "text-amber-600"}>
+                        <span className={a.effectOnBalance > 0 ? "text-[#161819]" : "text-amber-600"}>
                           {" "}
                           {a.effectOnBalance > 0 ? "they owe you" : "you owe"} $
                           {Math.abs(a.effectOnBalance).toFixed(2)}
@@ -1116,7 +1116,7 @@ function SharedPageContent() {
                   );
                 }}
                 disabled={requestingPayment}
-                className="px-4 py-2 rounded-lg bg-[#3D8E62] text-white text-sm font-medium min-h-[44px] disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-[#1e2021] text-white text-sm font-medium min-h-[44px] disabled:opacity-50"
               >
                 {requestingPayment ? "Creating…" : "Request"}
               </button>
@@ -1189,7 +1189,7 @@ function SharedPageContent() {
             <button
               onClick={() => setShowAdd(true)}
               disabled={loading}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white px-5 py-3.5 rounded-2xl text-sm font-semibold transition-all shadow-lg shadow-[#3D8E62]/25 hover:shadow-[#3D8E62]/30 hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-[#1e2021] hover:bg-[#161819] text-white px-5 py-3.5 rounded-2xl text-sm font-semibold transition-all shadow-lg shadow-[#1e2021]/25 hover:shadow-[#1e2021]/30 hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Plus size={18} strokeWidth={2.5} />
               Add expense
@@ -1219,7 +1219,7 @@ function SharedPageContent() {
                 value={newGroupName}
                 onChange={(e) => { setNewGroupName(e.target.value); setCreateError(null); }}
                 placeholder="e.g. Apartment, Vegas Trip"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/30"
               />
             </div>
             <div>
@@ -1235,7 +1235,7 @@ function SharedPageContent() {
                     key={t.id}
                     onClick={() => setNewGroupType(t.id)}
                     className={`px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                      newGroupType === t.id ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52]" : "border-gray-200 hover:bg-gray-50"
+                      newGroupType === t.id ? "border-[#1e2021] bg-[#F5F3F2] text-[#161819]" : "border-gray-200 hover:bg-gray-50"
                     }`}
                   >
                     {t.label}
@@ -1271,15 +1271,15 @@ function SharedPageContent() {
                           }}
                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-all ${
                             already
-                              ? "border-[#3D8E62] bg-[#EEF7F2] text-[#2D7A52] font-medium"
+                              ? "border-[#1e2021] bg-[#F5F3F2] text-[#161819] font-medium"
                               : "border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
                           }`}
                         >
-                          <span className="w-5 h-5 rounded-full bg-[#3D8E62]/10 flex items-center justify-center text-[10px] font-bold text-[#3D8E62]">
+                          <span className="w-5 h-5 rounded-full bg-[#1e2021]/10 flex items-center justify-center text-[10px] font-bold text-[#1e2021]">
                             {c.displayName[0]?.toUpperCase()}
                           </span>
                           {c.displayName}
-                          {already && <CheckCircle2 size={12} className="text-[#3D8E62]" />}
+                          {already && <CheckCircle2 size={12} className="text-[#1e2021]" />}
                         </button>
                       );
                     })}
@@ -1299,7 +1299,7 @@ function SharedPageContent() {
                     }
                   }}
                   placeholder="Add someone new…"
-                  className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/30"
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/30"
                 />
                 <button
                   onClick={() => {
@@ -1320,7 +1320,7 @@ function SharedPageContent() {
                   {pendingMembers.map((m, i) => (
                     <span
                       key={i}
-                      className="flex items-center gap-1 bg-[#EEF7F2] text-[#2D7A52] text-xs px-2.5 py-1 rounded-full border border-[#C3E0D3]"
+                      className="flex items-center gap-1 bg-[#F5F3F2] text-[#161819] text-xs px-2.5 py-1 rounded-full border border-[#E3DBD8]"
                     >
                       {m.displayName}
                       <button
@@ -1339,7 +1339,7 @@ function SharedPageContent() {
               <button
                 onClick={createGroup}
                 disabled={!newGroupName.trim() || creating}
-                className="flex-1 py-3 rounded-xl bg-[#3D8E62] text-white text-sm font-semibold disabled:opacity-50 hover:bg-[#2D7A52] transition-colors"
+                className="flex-1 py-3 rounded-xl bg-[#1e2021] text-white text-sm font-semibold disabled:opacity-50 hover:bg-[#161819] transition-colors"
               >
                 {creating ? "Creating…" : `Create${pendingMembers.length > 0 ? ` with ${pendingMembers.length} member${pendingMembers.length > 1 ? "s" : ""}` : ""}`}
               </button>
@@ -1357,10 +1357,10 @@ function SharedPageContent() {
       )}
 
       {!linked && (
-        <div className="flex items-center gap-3 bg-[#EEF7F2] border border-[#C3E0D3] rounded-xl px-4 py-3 mb-4 text-sm">
-          <span className="text-[#3D8E62]">💡</span>
+        <div className="flex items-center gap-3 bg-[#F5F3F2] border border-[#E3DBD8] rounded-xl px-4 py-3 mb-4 text-sm">
+          <span className="text-[#1e2021]">💡</span>
           <span className="text-[#2D5A44] flex-1">Connect your bank to attach real transactions when splitting expenses.</span>
-          <a href="/connect" className="text-[#3D8E62] font-medium hover:underline shrink-0">Connect →</a>
+          <a href="/connect" className="text-[#1e2021] font-medium hover:underline shrink-0">Connect →</a>
         </div>
       )}
 
@@ -1369,7 +1369,7 @@ function SharedPageContent() {
           <p className="text-sm font-medium text-red-700 mb-3">{summaryError}</p>
           <button
             onClick={() => refetchSummary()}
-            className="px-4 py-2 rounded-xl bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium transition-colors"
+            className="px-4 py-2 rounded-xl bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium transition-colors"
           >
             Try again
           </button>
@@ -1383,7 +1383,7 @@ function SharedPageContent() {
             animate={{ opacity: 1, y: 0 }}
             className={`rounded-2xl border px-6 py-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${
               netBalance > 0
-                ? "bg-[#F0F9F4] border-[#C3E0D3]"
+                ? "bg-[#F0F9F4] border-[#E3DBD8]"
                 : netBalance < 0
                   ? "bg-red-50 border-red-100"
                   : "bg-gray-50 border-gray-200"
@@ -1394,7 +1394,7 @@ function SharedPageContent() {
               <p className="text-base text-gray-800">
                 {netBalance > 0 ? (
                   <>
-                    You are owed <span className="text-xl font-bold text-[#3D8E62]">{fc(netBalance)}</span>
+                    You are owed <span className="text-xl font-bold text-[#1e2021]">{fc(netBalance)}</span>
                   </>
                 ) : netBalance < 0 ? (
                   <>
@@ -1408,7 +1408,7 @@ function SharedPageContent() {
             <div className="flex items-center gap-6 text-sm">
               <div className="text-right">
                 <p className="text-xs text-gray-400 mb-0.5">Owed to you</p>
-                <p className="font-bold text-[#3D8E62]">{fc(netOwed)}</p>
+                <p className="font-bold text-[#1e2021]">{fc(netOwed)}</p>
               </div>
               <div className="w-px h-8 bg-gray-200 hidden sm:block" />
               <div className="text-right">
@@ -1487,7 +1487,7 @@ function SharedPageContent() {
                         {group.direction === "owed" && (
                           <div className="text-right">
                             <p className="text-xs text-gray-400">owed</p>
-                            <p className="text-sm font-bold text-[#3D8E62]">{fc(group.amount)}</p>
+                            <p className="text-sm font-bold text-[#1e2021]">{fc(group.amount)}</p>
                           </div>
                         )}
                         {group.direction === "you_owe" && (
@@ -1532,8 +1532,8 @@ function SharedPageContent() {
                         className={`flex items-start gap-3.5 px-4 py-4 ${i < activity.length - 1 ? "border-b border-gray-50" : ""}`}
                       >
                         <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 bg-[#EEF7F2]"
-                          style={{ color: item.direction === "get_back" ? "#3D8E62" : item.direction === "owe" ? "#DC2626" : "#6B7280" }}
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 bg-[#F5F3F2]"
+                          style={{ color: item.direction === "get_back" ? "#1e2021" : item.direction === "owe" ? "#DC2626" : "#6B7280" }}
                         >
                           {ACTIVITY_ICONS.default}
                         </div>
@@ -1547,7 +1547,7 @@ function SharedPageContent() {
                           {item.direction !== "settled" && (
                             <p
                               className={`text-xs font-semibold mt-0.5 ${
-                                item.direction === "get_back" ? "text-[#3D8E62]" : "text-red-500"
+                                item.direction === "get_back" ? "text-[#1e2021]" : "text-red-500"
                               }`}
                             >
                               {item.direction === "get_back"
@@ -1697,7 +1697,7 @@ function PersonRow({
           {person.direction === "owes_you" && (
             <div className="text-right">
               <p className="text-xs text-gray-400">owes you</p>
-              <p className="text-sm font-bold text-[#3D8E62]">{fc(person.amount)}</p>
+              <p className="text-sm font-bold text-[#1e2021]">{fc(person.amount)}</p>
             </div>
           )}
           {person.direction === "you_owe" && (
@@ -1736,7 +1736,7 @@ function PersonRow({
                     {person.direction === "owes_you" && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onRemind(); }}
-                        className="text-xs font-semibold text-[#3D8E62] hover:underline"
+                        className="text-xs font-semibold text-[#1e2021] hover:underline"
                       >
                         Remind →
                       </button>
@@ -1744,7 +1744,7 @@ function PersonRow({
                     {person.direction === "you_owe" && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onSettleUp(); }}
-                        className="text-xs font-semibold text-[#3D8E62] hover:underline"
+                        className="text-xs font-semibold text-[#1e2021] hover:underline"
                       >
                         Pay →
                       </button>
@@ -1752,7 +1752,7 @@ function PersonRow({
                     {(person.direction === "owes_you" || person.direction === "you_owe") && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onSettleUp(); }}
-                        className="text-xs font-semibold text-[#3D8E62] hover:underline"
+                        className="text-xs font-semibold text-[#1e2021] hover:underline"
                       >
                         Settle up →
                       </button>

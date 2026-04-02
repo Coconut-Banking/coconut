@@ -33,7 +33,7 @@ const STEPS: { key: Step; label: string }[] = [
 ];
 
 const PERSON_COLORS = [
-  "#3D8E62",
+  "#1e2021",
   "#4A6CF7",
   "#E8507A",
   "#F59E0B",
@@ -54,8 +54,8 @@ export default function ReceiptPage() {
   return (
     <div className="px-4 sm:px-8 py-8 max-w-3xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-[#EEF7F2] flex items-center justify-center">
-          <Receipt size={20} className="text-[#3D8E62]" />
+        <div className="w-10 h-10 rounded-xl bg-[#F5F3F2] flex items-center justify-center">
+          <Receipt size={20} className="text-[#1e2021]" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
@@ -74,9 +74,9 @@ export default function ReceiptPage() {
             <div
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                 i < currentStepIndex
-                  ? "bg-[#EEF7F2] text-[#3D8E62]"
+                  ? "bg-[#F5F3F2] text-[#1e2021]"
                   : i === currentStepIndex
-                  ? "bg-[#3D8E62] text-white"
+                  ? "bg-[#1e2021] text-white"
                   : "bg-gray-100 text-gray-400"
               }`}
             >
@@ -90,7 +90,7 @@ export default function ReceiptPage() {
             {i < STEPS.length - 1 && (
               <div
                 className={`h-px flex-1 ${
-                  i < currentStepIndex ? "bg-[#3D8E62]" : "bg-gray-200"
+                  i < currentStepIndex ? "bg-[#1e2021]" : "bg-gray-200"
                 }`}
               />
             )}
@@ -156,13 +156,13 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fileRef.current?.click(); }}
         className={`relative border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
           dragOver
-            ? "border-[#3D8E62] bg-[#EEF7F2]"
-            : "border-gray-200 hover:border-[#3D8E62]/50 hover:bg-[#F7FAF8]"
+            ? "border-[#1e2021] bg-[#F5F3F2]"
+            : "border-gray-200 hover:border-[#1e2021]/50 hover:bg-[#F5F3F2]"
         }`}
       >
         {rs.uploading ? (
           <div className="flex flex-col items-center gap-3">
-            <Loader2 size={32} className="text-[#3D8E62] animate-spin" />
+            <Loader2 size={32} className="text-[#1e2021] animate-spin" />
             <p className="text-sm font-medium text-gray-700">
               {rs.uploadStage === "uploading"
                 ? "Uploading image..."
@@ -175,8 +175,8 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-[#EEF7F2] flex items-center justify-center">
-              <Upload size={24} className="text-[#3D8E62]" />
+            <div className="w-14 h-14 rounded-2xl bg-[#F5F3F2] flex items-center justify-center">
+              <Upload size={24} className="text-[#1e2021]" />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-700">
@@ -309,7 +309,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         <input
           value={rs.editMerchant}
           onChange={(e) => rs.setEditMerchant(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
           placeholder="Restaurant name"
         />
       </div>
@@ -322,7 +322,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           </label>
           <button
             onClick={addItem}
-            className="flex items-center gap-1 text-xs font-medium text-[#3D8E62] hover:text-[#2D7A52] transition-colors"
+            className="flex items-center gap-1 text-xs font-medium text-[#1e2021] hover:text-[#161819] transition-colors"
           >
             <Plus size={12} />
             Add Item
@@ -387,7 +387,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
         <button
           onClick={recalcSubtotal}
-          className="mt-2 text-xs text-[#3D8E62] hover:text-[#2D7A52] font-medium transition-colors"
+          className="mt-2 text-xs text-[#1e2021] hover:text-[#161819] font-medium transition-colors"
         >
           ↻ Recalculate subtotal from items
         </button>
@@ -409,7 +409,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                 rs.setEditSubtotal(v);
                 rs.setEditTotal(Math.round((v + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
               }}
-              className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+              className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               step={0.01}
             />
           </div>
@@ -428,7 +428,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                 rs.setEditTax(v);
                 rs.setEditTotal(Math.round((rs.editSubtotal + v + rs.editTip + otherFeesSum) * 100) / 100);
               }}
-              className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+              className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               step={0.01}
             />
           </div>
@@ -447,7 +447,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                 rs.setEditTip(v);
                 rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + v + otherFeesSum) * 100) / 100);
               }}
-              className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+              className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               step={0.01}
             />
           </div>
@@ -457,7 +457,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Other fees</span>
             <button
               onClick={() => rs.setEditOtherFees((prev) => [...prev, { name: "", amount: 0 }])}
-              className="text-xs font-medium text-[#3D8E62] hover:text-[#2D7A52]"
+              className="text-xs font-medium text-[#1e2021] hover:text-[#161819]"
             >
               + Add
             </button>
@@ -473,7 +473,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                       return next;
                     });
                   }}
-                  className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 min-w-0"
+                  className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 min-w-0"
                   placeholder="Fee name"
                 />
                 <div className="relative w-24 flex items-center gap-1">
@@ -490,7 +490,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                       });
                       rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount + v) * 100) / 100);
                     }}
-                    className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20"
+                    className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20"
                     step={0.01}
                   />
                   <button
@@ -527,7 +527,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
         <button
           onClick={rs.confirmItems}
           disabled={rs.saving || rs.editItems.length === 0}
-          className="flex items-center gap-1.5 px-6 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-6 py-2.5 bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
         >
           {rs.saving ? (
             <Loader2 size={14} className="animate-spin" />
@@ -594,7 +594,7 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
             placeholder="Type a name and press Enter"
             aria-label="Person name"
           />
@@ -602,7 +602,7 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             type="submit"
             disabled={!newName.trim()}
             aria-label="Add person"
-            className="px-4 py-2 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
           >
             <Plus size={16} />
           </button>
@@ -638,7 +638,7 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                   </div>
                   <button
                     onClick={() => rs.assignAll(item.id)}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-[#3D8E62] hover:bg-[#EEF7F2] rounded-lg transition-colors"
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-[#1e2021] hover:bg-[#F5F3F2] rounded-lg transition-colors"
                   >
                     <Users size={12} />
                     Everyone
@@ -698,7 +698,7 @@ function AssignStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             rs.computeSummary();
           }}
           disabled={!allAssigned || rs.people.length === 0}
-          className="flex items-center gap-1.5 px-6 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-6 py-2.5 bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
         >
           View Summary
           <ChevronRight size={14} />
@@ -913,7 +913,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           </p>
           <button
             onClick={() => router.push("/app/shared")}
-            className="w-full px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+            className="w-full px-4 py-2.5 bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             <Users size={14} />
             Go to Shared Expenses
@@ -923,7 +923,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
       {/* Save to Group */}
       {groups.length > 0 && !finished && (
-        <div className="bg-[#EEF7F2] border border-[#3D8E62]/20 rounded-2xl p-4">
+        <div className="bg-[#F5F3F2] border border-[#1e2021]/20 rounded-2xl p-4">
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-medium text-gray-900">
@@ -933,7 +933,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                 Add this receipt split to your group expenses
               </p>
             </div>
-            <Users size={16} className="text-[#3D8E62] mt-0.5" />
+            <Users size={16} className="text-[#1e2021] mt-0.5" />
           </div>
 
           <div className="space-y-3">
@@ -942,7 +942,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                 value={selectedGroupId}
                 onChange={(e) => setSelectedGroupId(e.target.value)}
                 aria-label="Select group"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               >
                 <option value="">Select a group...</option>
                 {groups.map((g) => (
@@ -960,7 +960,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
             <button
               onClick={handleFinish}
               disabled={!selectedGroupId || finishing}
-              className="w-full px-4 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full px-4 py-2.5 bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {finishing ? (
                 <>
@@ -1040,7 +1040,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                       <button
                         onClick={() => handleRequestPayment(s)}
                         disabled={requestingPayment !== null}
-                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-[#3D8E62] hover:bg-[#EEF7F2] rounded-lg transition-colors disabled:opacity-50 shrink-0"
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-[#1e2021] hover:bg-[#F5F3F2] rounded-lg transition-colors disabled:opacity-50 shrink-0"
                       >
                         {requestingPayment === `${s.fromMemberId}-${s.toMemberId}` ? (
                           <Loader2 size={12} className="animate-spin" />
@@ -1055,7 +1055,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                   ))}
                 </div>
                 {paymentLinkCopied && (
-                  <p className="text-xs text-[#3D8E62] mt-2">Payment link copied!</p>
+                  <p className="text-xs text-[#1e2021] mt-2">Payment link copied!</p>
                 )}
               </div>
             )}
@@ -1065,7 +1065,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
           <div className="flex items-center justify-center gap-3">
             <button
               onClick={() => router.push("/app/shared")}
-              className="px-6 py-2.5 bg-[#3D8E62] hover:bg-[#2D7A52] text-white text-sm font-medium rounded-xl transition-colors"
+              className="px-6 py-2.5 bg-[#1e2021] hover:bg-[#161819] text-white text-sm font-medium rounded-xl transition-colors"
             >
               View All Expenses
             </button>

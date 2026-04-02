@@ -202,7 +202,7 @@ function ReviewQueue() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-7 h-7 border-2 border-[#3D8E62]/30 border-t-[#3D8E62] rounded-full animate-spin" />
+        <div className="w-7 h-7 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
       </div>
     );
   }
@@ -210,8 +210,8 @@ function ReviewQueue() {
   if (queue.length === 0) {
     return (
       <div className="max-w-lg mx-auto px-6 py-16 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-[#EEF7F2] flex items-center justify-center mx-auto mb-4">
-          <Inbox size={28} className="text-[#3D8E62]" />
+        <div className="w-16 h-16 rounded-2xl bg-[#F5F3F2] flex items-center justify-center mx-auto mb-4">
+          <Inbox size={28} className="text-[#1e2021]" />
         </div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">All caught up</h2>
         <p className="text-sm text-gray-500 mb-6">No transactions to review right now. New ones will appear here as they come in.</p>
@@ -220,7 +220,7 @@ function ReviewQueue() {
             saveReviewed(new Set());
             setCurrentIndex(0);
           }}
-          className="text-sm text-[#3D8E62] font-medium hover:underline"
+          className="text-sm text-[#1e2021] font-medium hover:underline"
         >
           Reset and review all again
         </button>
@@ -260,7 +260,7 @@ function ReviewQueue() {
                     <X size={14} />
                     Skip
                   </motion.div>
-                  <motion.div style={{ opacity: splitOpacity }} className="flex items-center gap-1.5 text-[#3D8E62] text-xs font-medium">
+                  <motion.div style={{ opacity: splitOpacity }} className="flex items-center gap-1.5 text-[#1e2021] text-xs font-medium">
                     Split
                     <Share2 size={14} />
                   </motion.div>
@@ -281,7 +281,7 @@ function ReviewQueue() {
                     <p className="text-xs text-gray-400 mt-2">{currentTx.location}</p>
                   )}
                   {currentTx.splitWith && (
-                    <div className="mt-3 flex items-center gap-1.5 text-xs text-[#3D8E62] bg-[#EEF7F2] px-3 py-1.5 rounded-full">
+                    <div className="mt-3 flex items-center gap-1.5 text-xs text-[#1e2021] bg-[#F5F3F2] px-3 py-1.5 rounded-full">
                       <Users size={11} />
                       Previously split with {currentTx.splitWith}
                     </div>
@@ -314,7 +314,7 @@ function ReviewQueue() {
         </button>
         <button
           onClick={handleSplit}
-          className="w-20 h-20 rounded-full bg-[#3D8E62] hover:bg-[#2D7A52] flex items-center justify-center transition-colors shadow-lg shadow-[#3D8E62]/20 group"
+          className="w-20 h-20 rounded-full bg-[#1e2021] hover:bg-[#161819] flex items-center justify-center transition-colors shadow-lg shadow-[#1e2021]/20 group"
           title="Split (→)"
         >
           <Share2 size={28} className="text-white" />
@@ -322,7 +322,7 @@ function ReviewQueue() {
       </div>
       <div className="flex items-center justify-center gap-12 mt-3">
         <span className="text-xs text-gray-400">Skip</span>
-        <span className="text-xs text-[#3D8E62] font-medium">Split</span>
+        <span className="text-xs text-[#1e2021] font-medium">Split</span>
       </div>
 
       {/* Keyboard hint */}
@@ -370,14 +370,14 @@ function ReviewQueue() {
                     <button
                       type="button"
                       onClick={() => { setSplitMode("person"); setSelectedPerson(null); setSelectedGroupId(null); setMembers([]); }}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "person" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "person" ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
                     >
                       Person
                     </button>
                     <button
                       type="button"
                       onClick={() => { setSplitMode("group"); setSelectedPerson(null); setSelectedGroupId(null); setMembers([]); }}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "group" ? "bg-[#3D8E62] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${splitMode === "group" ? "bg-[#1e2021] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
                     >
                       Group
                     </button>
@@ -397,7 +397,7 @@ function ReviewQueue() {
                             loadGroupMembers(p.groupId);
                           }
                         }}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
                       >
                         <option value="">Choose a person...</option>
                         {people.map((p) => (
@@ -438,7 +438,7 @@ function ReviewQueue() {
                           if (id) loadGroupMembers(id);
                           else setMembers([]);
                         }}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#3D8E62]/20 focus:border-[#3D8E62]"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
                       >
                         <option value="">Choose a group...</option>
                         {groups.map((g) => (
@@ -466,7 +466,7 @@ function ReviewQueue() {
                     <ul className="space-y-1">
                       {members.map((m) => (
                         <li key={m.id} className="text-sm text-gray-600 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#3D8E62]" />
+                          <span className="w-2 h-2 rounded-full bg-[#1e2021]" />
                           {m.display_name}
                         </li>
                       ))}
@@ -484,7 +484,7 @@ function ReviewQueue() {
                 <button
                   onClick={handleAddToShared}
                   disabled={!canSubmit || submitting}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#3D8E62] rounded-xl hover:bg-[#2D7A52] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#1e2021] rounded-xl hover:bg-[#161819] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? "Adding…" : "Split & next"}
                 </button>

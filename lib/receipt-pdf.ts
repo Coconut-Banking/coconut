@@ -38,7 +38,7 @@ export function exportReceiptSplitPdf(
 
   // Per-person sections (RGB for jsPDF)
   const colors: [number, number, number][] = [
-    [61, 142, 98],   // #3D8E62
+    [30, 32, 33],   // #1e2021
     [74, 108, 247],  // #4A6CF7
     [232, 80, 122],  // #E8507A
     [245, 158, 11],  // #F59E0B
