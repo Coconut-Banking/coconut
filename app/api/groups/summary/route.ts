@@ -512,6 +512,31 @@ async function handleSummary(req: NextRequest, userId: string) {
     }
   }
 
+  // Deduplicate person entries that share the same display name but ended up
+  // with different keys (e.g., one group member has email, another doesn't).
+  // Merge their per-currency balances and keep the first key encountered.
+  {
+    const byName = new Map<string, { canonicalKey: string; agg: PersonAgg }>();
+    for (const [key, agg] of personBalances) {
+      const normName = agg.displayName.trim().toLowerCase();
+      const existing = byName.get(normName);
+      if (!existing) {
+        byName.set(normName, { canonicalKey: key, agg: { displayName: agg.displayName, byCurrency: new Map(agg.byCurrency) } });
+      } else {
+        for (const [cur, amt] of agg.byCurrency) {
+          const prev = existing.agg.byCurrency.get(cur) ?? 0;
+          const merged = Math.round((prev + amt) * 100) / 100;
+          if (Math.abs(merged) < BALANCE_EPS) existing.agg.byCurrency.delete(cur);
+          else existing.agg.byCurrency.set(cur, merged);
+        }
+      }
+    }
+    personBalances.clear();
+    for (const { canonicalKey, agg } of byName.values()) {
+      personBalances.set(canonicalKey, agg);
+    }
+  }
+
   let friends = Array.from(personBalances.entries())
     .map(([key, v]) => friendRowFromAgg(key, v))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
