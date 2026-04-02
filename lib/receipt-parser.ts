@@ -1,5 +1,10 @@
 import OpenAI from "openai";
-import { getGmailClient } from "./google-auth";
+import {
+  getGmailClient,
+  archiveGmailReceipt,
+  getAutoArchivePreference,
+  hasGmailModifyScope,
+} from "./google-auth";
 import { getSupabase } from "./supabase";
 import { matchReceiptsToTransactions } from "./receipt-matcher";
 import { GMAIL, AI } from "./config";
@@ -296,6 +301,7 @@ export interface ScanStats {
   insertErrors: number;
   inserted: number;
   matched: number;
+  needsReauth: boolean;
   receipts?: unknown[];
   error?: string;
 }
@@ -311,7 +317,7 @@ export async function scanGmailForReceipts(
   if (!openai) {
     return {
       emailsFetched: 0, alreadyProcessed: 0, parsed: 0, notReceipt: 0,
-      noBody: 0, parseErrors: 0, insertErrors: 0, inserted: 0, matched: 0,
+      noBody: 0, parseErrors: 0, insertErrors: 0, inserted: 0, matched: 0, needsReauth: false,
       error: "OpenAI API key not configured. Add OPENAI_API_KEY to .env.local to enable receipt parsing.",
     };
   }
@@ -337,7 +343,7 @@ export async function scanGmailForReceipts(
   if (messageIds.length === 0) {
     return {
       emailsFetched: 0, alreadyProcessed: 0, parsed: 0, notReceipt: 0,
-      noBody: 0, parseErrors: 0, insertErrors: 0, inserted: 0, matched: 0,
+      noBody: 0, parseErrors: 0, insertErrors: 0, inserted: 0, matched: 0, needsReauth: false,
     };
   }
 
@@ -522,8 +528,31 @@ export async function scanGmailForReceipts(
 
   // Match receipts to transactions
   let matched = 0;
+  let needsReauth = false;
   if (insertedReceiptIds.length > 0) {
-    matched = await matchReceiptsToTransactions(clerkUserId, insertedReceiptIds);
+    const matchResult = await matchReceiptsToTransactions(clerkUserId, insertedReceiptIds);
+    matched = matchResult.count;
+
+    // Auto-archive matched emails if the user has the feature enabled
+    if (matchResult.matched.length > 0) {
+      const [autoArchive, hasModify] = await Promise.all([
+        getAutoArchivePreference(clerkUserId),
+        hasGmailModifyScope(clerkUserId),
+      ]);
+
+      if (autoArchive) {
+        if (!hasModify) {
+          needsReauth = true;
+          console.warn("[receipt-parser] auto_archive_receipts enabled but user lacks gmail.modify scope");
+        } else {
+          // gmail client is already set up above — reuse it
+          const archivePromises = matchResult.matched
+            .filter((m) => m.gmailMessageId)
+            .map((m) => archiveGmailReceipt(gmail, m.gmailMessageId!));
+          await Promise.allSettled(archivePromises);
+        }
+      }
+    }
   }
 
   // Update last scan timestamp
@@ -552,6 +581,7 @@ export async function scanGmailForReceipts(
     insertErrors,
     inserted: insertedReceiptIds.length,
     matched,
+    needsReauth,
     ...(detailed && { receipts }),
   };
 }

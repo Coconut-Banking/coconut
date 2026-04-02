@@ -642,7 +642,7 @@ export async function syncTransactionsForUser(
           .is("transaction_id", null)
           .gte("parsed_at", thirtyDaysAgo.toISOString());
         if (unmatched && unmatched.length > 0) {
-          const matched = await matchReceiptsToTransactions(clerkUserId, unmatched.map((r) => r.id));
+          const { count: matched } = await matchReceiptsToTransactions(clerkUserId, unmatched.map((r) => r.id));
           if (matched > 0) console.log(`[sync] auto-matched ${matched} receipts for user ${clerkUserId}`);
         }
       }

@@ -2,7 +2,10 @@ import { google } from "googleapis";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
 
-const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+export const SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
+];
 
 export function getOAuth2Client() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -38,7 +41,8 @@ export async function exchangeCode(code: string) {
 export async function saveGmailTokens(
   clerkUserId: string,
   tokens: { access_token?: string | null; refresh_token?: string | null; expiry_date?: number | null },
-  email?: string
+  email?: string,
+  scopes?: string[]
 ) {
   console.log("[saveGmailTokens] Saving tokens for user:", clerkUserId, "email:", email);
 
@@ -50,6 +54,7 @@ export async function saveGmailTokens(
       refresh_token: tokens.refresh_token ? encryptToken(tokens.refresh_token) : "",
       token_expiry: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
       email: email ?? null,
+      ...(scopes ? { scopes: scopes.join(" ") } : {}),
     },
     { onConflict: "clerk_user_id" }
   ).select().single();
@@ -124,4 +129,86 @@ export async function removeGmailConnection(clerkUserId: string) {
   await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", clerkUserId);
   await db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId);
   await db.from("email_receipts").delete().eq("clerk_user_id", clerkUserId);
+}
+
+/** Returns true if the user's stored Gmail token includes gmail.modify scope. */
+export async function hasGmailModifyScope(clerkUserId: string): Promise<boolean> {
+  const db = getSupabase();
+  const { data } = await db
+    .from("gmail_connections")
+    .select("scopes")
+    .eq("clerk_user_id", clerkUserId)
+    .single();
+  if (!data?.scopes) return false;
+  return data.scopes.includes("gmail.modify");
+}
+
+/** Gets the user's auto-archive preference. */
+export async function getAutoArchivePreference(clerkUserId: string): Promise<boolean> {
+  const db = getSupabase();
+  const { data } = await db
+    .from("gmail_connections")
+    .select("auto_archive_receipts")
+    .eq("clerk_user_id", clerkUserId)
+    .single();
+  return data?.auto_archive_receipts ?? false;
+}
+
+/** Sets the user's auto-archive preference. */
+export async function setAutoArchivePreference(clerkUserId: string, enabled: boolean): Promise<void> {
+  const db = getSupabase();
+  await db
+    .from("gmail_connections")
+    .update({ auto_archive_receipts: enabled })
+    .eq("clerk_user_id", clerkUserId);
+}
+
+const RECEIPTS_LABEL_NAME = "Receipts";
+
+/** Ensures a "Receipts" label exists in the user's Gmail, returns its ID. */
+async function ensureReceiptsLabel(gmail: ReturnType<typeof google.gmail>): Promise<string | null> {
+  try {
+    const { data } = await gmail.users.labels.list({ userId: "me" });
+    const existing = (data.labels ?? []).find((l) => l.name === RECEIPTS_LABEL_NAME);
+    if (existing?.id) return existing.id;
+
+    const { data: created } = await gmail.users.labels.create({
+      userId: "me",
+      requestBody: { name: RECEIPTS_LABEL_NAME, labelListVisibility: "labelShow", messageListVisibility: "show" },
+    });
+    return created.id ?? null;
+  } catch (e) {
+    console.warn("[gmail] Failed to ensure Receipts label:", e);
+    return null;
+  }
+}
+
+/**
+ * Archives a Gmail message: removes from Inbox, marks as read, adds "Receipts" label.
+ * Returns true on success, false if scope is insufficient or any error occurs.
+ */
+export async function archiveGmailReceipt(
+  gmail: ReturnType<typeof google.gmail>,
+  messageId: string
+): Promise<boolean> {
+  try {
+    const labelId = await ensureReceiptsLabel(gmail);
+    await gmail.users.messages.modify({
+      userId: "me",
+      id: messageId,
+      requestBody: {
+        removeLabelIds: ["INBOX", "UNREAD"],
+        addLabelIds: labelId ? [labelId] : [],
+      },
+    });
+    return true;
+  } catch (e: unknown) {
+    const status = (e as { status?: number; code?: number }).status ?? (e as { status?: number; code?: number }).code;
+    if (status === 403 || status === 401) {
+      console.warn(`[gmail] Insufficient scope to archive message ${messageId} — user needs to re-auth`);
+    } else {
+      console.warn(`[gmail] Failed to archive message ${messageId}:`, e);
+    }
+    return false;
+  }
 }

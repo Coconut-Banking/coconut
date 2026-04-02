@@ -86,21 +86,27 @@ export function scoreCandidates(
  * Uses multiple keywords for merchant matching and wider tolerances.
  * Falls back to amount+date matching WITH merchant validation if keyword matching fails.
  */
+export interface MatchResult {
+  count: number;
+  matched: Array<{ receiptId: string; gmailMessageId: string | null }>;
+}
+
 export async function matchReceiptsToTransactions(
   clerkUserId: string,
   receiptIds: string[]
-): Promise<number> {
+): Promise<MatchResult> {
   const db = getSupabase();
 
   const { data: receipts } = await db
     .from("email_receipts")
-    .select("id, merchant, amount, date")
+    .select("id, merchant, amount, date, gmail_message_id")
     .in("id", receiptIds)
     .is("transaction_id", null);
 
-  if (!receipts || receipts.length === 0) return 0;
+  if (!receipts || receipts.length === 0) return { count: 0, matched: [] };
 
   let matched = 0;
+  const matchedItems: Array<{ receiptId: string; gmailMessageId: string | null }> = [];
   const windowDays = RECEIPT_MATCH.DATE_WINDOW_DAYS;
 
   for (const receipt of receipts) {
@@ -199,9 +205,13 @@ export async function matchReceiptsToTransactions(
       .eq("id", receipt.id);
 
     matched++;
+    matchedItems.push({
+      receiptId: receipt.id,
+      gmailMessageId: (receipt.gmail_message_id as string | null) ?? null,
+    });
   }
 
-  return matched;
+  return { count: matched, matched: matchedItems };
 }
 
 /**
@@ -254,10 +264,11 @@ export async function auditAndRematchAllReceipts(
 
   let rematched = 0;
   if (unmatched && unmatched.length > 0) {
-    rematched = await matchReceiptsToTransactions(
+    const result = await matchReceiptsToTransactions(
       clerkUserId,
       unmatched.map((r) => r.id)
     );
+    rematched = result.count;
   }
 
   return { cleared, rematched };

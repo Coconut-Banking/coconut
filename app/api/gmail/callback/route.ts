@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { exchangeCode, saveGmailTokens, getOAuth2Client } from "@/lib/google-auth";
+import { exchangeCode, saveGmailTokens, getOAuth2Client, SCOPES } from "@/lib/google-auth";
 import { google } from "googleapis";
 
 function parseOAuthState(raw: string): { userId: string; redirect?: string } {
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("[Gmail Callback] Saving tokens to database...");
-    await saveGmailTokens(clerkUserId, tokens, email);
+    await saveGmailTokens(clerkUserId, tokens, email, SCOPES);
     console.log("[Gmail Callback] Tokens saved successfully");
 
     // Fire-and-forget: scan last 90 days of receipts on first connect
