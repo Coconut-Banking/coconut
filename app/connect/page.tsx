@@ -420,11 +420,7 @@ function ConnectBankContent() {
           Back
         </button>
         <div className="flex items-center gap-2.5 mx-auto">
-          <div className="w-6 h-6 rounded-md bg-[#1e2021] flex items-center justify-center">
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-              <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white"/>
-            </svg>
-          </div>
+          <img src="/brand/coconut-mark.jpg" alt="Coconut" className="w-6 h-6 rounded-md" />
           <span className="text-sm font-semibold text-gray-700">Coconut</span>
         </div>
         <div className="w-12" />

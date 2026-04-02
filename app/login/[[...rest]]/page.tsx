@@ -23,12 +23,7 @@ export default async function LoginPage({
     <div className="min-h-screen bg-[#F5F3F2] flex flex-col">
       <div className="px-8 py-6 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#1e2021] flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
-              <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
-            </svg>
-          </div>
+          <img src="/brand/coconut-mark.jpg" alt="Coconut" className="w-7 h-7 rounded-lg" />
           <span className="text-[15px] font-semibold text-gray-900 tracking-tight">Coconut</span>
         </Link>
       </div>

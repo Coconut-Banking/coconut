@@ -76,12 +76,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <aside className="hidden md:flex w-56 flex-col bg-white border-r border-[#E8EAEC] shrink-0">
         <div className="px-5 py-5 border-b border-[#E8EAEC]">
           <Link href="/" className="flex items-center gap-2.5 group cursor-pointer">
-            <div className="w-7 h-7 rounded-lg bg-[#1e2021] flex items-center justify-center shrink-0">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
-                <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
-              </svg>
-            </div>
+            <img src="/brand/coconut-mark.jpg" alt="Coconut" className="w-7 h-7 rounded-lg shrink-0" />
             <span className="text-[15px] font-semibold text-gray-900 tracking-tight">Coconut</span>
           </Link>
         </div>
@@ -238,12 +233,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <aside className="md:hidden fixed inset-y-0 left-0 w-64 bg-white border-r border-[#E8EAEC] z-50 flex flex-col shadow-xl">
             <div className="px-5 py-5 border-b border-[#E8EAEC] flex items-center justify-between">
               <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileNavOpen(false)}>
-                <div className="w-7 h-7 rounded-lg bg-[#1e2021] flex items-center justify-center shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <path d="M7 2C7 2 3 4.5 3 8C3 10.2 4.8 12 7 12C9.2 12 11 10.2 11 8C11 4.5 7 2 7 2Z" fill="white" fillOpacity="0.9"/>
-                    <path d="M7 5C7 5 5 6.5 5 8.5C5 9.6 5.9 10.5 7 10.5" stroke="white" strokeWidth="0.8" strokeLinecap="round"/>
-                  </svg>
-                </div>
+                <img src="/brand/coconut-mark.jpg" alt="Coconut" className="w-7 h-7 rounded-lg shrink-0" />
                 <span className="text-[15px] font-semibold text-gray-900 tracking-tight">Coconut</span>
               </Link>
               <button
