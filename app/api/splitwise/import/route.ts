@@ -26,6 +26,7 @@ interface ImportStats {
   expenses: number;
   settlements: number;
   skipped: number;
+  totalExpenses: number;
 }
 
 interface ImportRequestBody {
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
   }
 
   const token = decryptToken(tokenRow.access_token);
-  const stats: ImportStats = { groups: 0, members: 0, expenses: 0, settlements: 0, skipped: 0 };
+  const stats: ImportStats = { groups: 0, members: 0, expenses: 0, settlements: 0, skipped: 0, totalExpenses: 0 };
 
   try {
     // 2. Get current Splitwise user (to know who "me" is)
@@ -228,11 +229,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const uniqueFriendIds = new Set<number>();
+    for (const g of filteredGroups) {
+      for (const m of g.members) {
+        if (m.id !== swUser.id) uniqueFriendIds.add(m.id);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       dryRun,
       importedGroupCount: filteredGroups.length,
       stats,
+      totals: {
+        groups: filteredGroups.length,
+        friends: uniqueFriendIds.size,
+        expenses: stats.totalExpenses,
+      },
       uninvitedMembers,
     });
   } catch (err) {
@@ -403,6 +416,7 @@ async function importGroup(
     (Array.isArray(e.repayments) && e.repayments.length > 0 && (e.description ?? "").toLowerCase().includes("settle"));
   const regularExpenses = expenses.filter((e) => !isSettlement(e));
   const settlements = expenses.filter((e) => isSettlement(e));
+  stats.totalExpenses += regularExpenses.length;
 
   // Batch-check which expenses already exist FOR THIS USER'S GROUPS ONLY
   const allExtIds = regularExpenses.map((e) => String(e.id));

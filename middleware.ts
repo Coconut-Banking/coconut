@@ -17,6 +17,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/telegram-webhook",
   // Splitwise redirects here from their site — Safari has no Clerk cookie; user id comes from signed OAuth state.
   "/api/splitwise/callback",
+  // Mobile app handoff — returns HTML that meta-refreshes to the custom scheme deep link.
+  "/api/connect/app-done",
 ]);
 
 function isClerkRateLimitError(e: unknown): e is { status: number; retryAfter?: number } {
@@ -47,7 +49,9 @@ const clerkHandler = clerkMiddleware(async (auth, req) => {
   const fromApp = req.nextUrl.searchParams.get("from_app") === "1";
   const viaLogin = req.nextUrl.searchParams.get("via_login") === "1";
   if (path === "/connect" && fromApp && !viaLogin) {
-    const redirectBack = "/connect?from_app=1&via_login=1";
+    const scheme = req.nextUrl.searchParams.get("scheme");
+    let redirectBack = "/connect?from_app=1&via_login=1";
+    if (scheme) redirectBack += `&scheme=${encodeURIComponent(scheme)}`;
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("redirect_url", redirectBack);
     return NextResponse.redirect(loginUrl, 307);

@@ -29,33 +29,42 @@ function detectLikelyInAppBrowser(): boolean {
   return /Telegram|Instagram|FBAN|FBAV|FB_IAB|Line\/|MicroMessenger|wv\)|; wv\)/i.test(ua);
 }
 
+function isFromApp(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem("connect_from_app") === "1";
+}
+
+function getAppScheme(): string {
+  if (typeof window === "undefined") return DEFAULT_APP_SCHEME;
+  return sessionStorage.getItem(SCHEME_STORAGE_KEY) || DEFAULT_APP_SCHEME;
+}
+
 function ConnectedStep() {
   const router = useRouter();
-  const fromApp =
-    (typeof window !== "undefined" && sessionStorage.getItem("connect_from_app") === "1") ||
-    false;
-  const deepLink = `${getAppDeepLink()}connected`;
+  const fromApp = isFromApp();
+  const scheme = getAppScheme();
+  const deepLink = `${scheme}://connected`;
 
   useEffect(() => {
     if (!fromApp) return;
-    sessionStorage.removeItem("connect_from_app");
-    sessionStorage.removeItem(SCHEME_STORAGE_KEY);
-    // Try JS redirect — works on some iOS versions. The app's connected.tsx
-    // will dismiss this browser and navigate back, so BankStep resumes.
+
+    // 1) Direct custom-scheme navigation — ASWebAuthenticationSession detects
+    //    URL loads matching the callback scheme and auto-dismisses.
     window.location.href = deepLink;
-    const t1 = setTimeout(() => { window.location.replace(deepLink); }, 500);
-    // If all JS redirects fail, try invisible iframe (works in some SFSafariVC versions)
+
+    // 2) Backup: server-side 302 redirect (more reliable on older iOS).
+    //    Only fires if the direct deep link didn't dismiss the browser.
+    const t1 = setTimeout(() => {
+      window.location.href = `/api/connect/app-done?scheme=${encodeURIComponent(scheme)}`;
+    }, 700);
+
+    // 3) Last resort: try location.replace in case href was swallowed.
     const t2 = setTimeout(() => {
-      try {
-        const f = document.createElement("iframe");
-        f.style.display = "none";
-        f.src = deepLink;
-        document.body.appendChild(f);
-        setTimeout(() => { try { document.body.removeChild(f); } catch {} }, 2000);
-      } catch {}
-    }, 1000);
+      window.location.replace(deepLink);
+    }, 1500);
+
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [fromApp, deepLink]);
+  }, [fromApp, deepLink, scheme]);
 
   if (fromApp) {
     return (
@@ -290,7 +299,6 @@ function ConnectBankContent() {
         });
         if (isUpdateMode) {
           fetch("/api/plaid/clear-alerts", { method: "POST", credentials: "include" }).catch(() => {});
-          setStep("connected");
           logPlaidEvent({
             type: "update_mode_ok",
             metadata: {
@@ -298,6 +306,7 @@ function ConnectBankContent() {
               plaid_ids: plaidIds,
             },
           });
+          setStep("connected");
         } else {
           const res = await fetch("/api/plaid/exchange-token", {
             method: "POST",
@@ -318,7 +327,6 @@ function ConnectBankContent() {
             });
             return;
           }
-          setStep("connected");
           logPlaidEvent({
             type: "exchange_token_ok",
             metadata: {
@@ -327,6 +335,7 @@ function ConnectBankContent() {
               plaid_ids: plaidIds,
             },
           });
+          setStep("connected");
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to connect";
