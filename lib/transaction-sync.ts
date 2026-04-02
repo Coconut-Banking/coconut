@@ -613,10 +613,10 @@ export async function syncTransactionsForUser(
     try {
       const { data: gmailConn } = await db
         .from("gmail_connections")
-        .select("id, last_scan_at")
+        .select("id, last_scan_at, email_scan_enabled")
         .eq("clerk_user_id", clerkUserId)
         .maybeSingle();
-      if (gmailConn) {
+      if (gmailConn && (gmailConn as { email_scan_enabled?: boolean }).email_scan_enabled) {
         // Scan Gmail if last scan was > 5 minutes ago (avoids redundant scans on rapid refreshes)
         const lastScan = (gmailConn as { last_scan_at?: string | null }).last_scan_at;
         const minsSinceScan = lastScan

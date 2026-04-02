@@ -4,6 +4,7 @@ import { scanGmailForReceipts } from "@/lib/receipt-parser";
 import { GMAIL } from "@/lib/config";
 import { rateLimit } from "@/lib/rate-limit";
 import { getEffectiveUserId } from "@/lib/demo";
+import { getSupabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   const userId = await getEffectiveUserId();
@@ -11,6 +12,16 @@ export async function POST(request: Request) {
 
   const rl = rateLimit(`gmail-scan:${userId}`, 20, 60_000);
   if (!rl.success) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+
+  const db = getSupabase();
+  const { data: conn } = await db
+    .from("gmail_connections")
+    .select("email_scan_enabled")
+    .eq("clerk_user_id", userId)
+    .maybeSingle();
+  if (!(conn as { email_scan_enabled?: boolean } | null)?.email_scan_enabled) {
+    return NextResponse.json({ error: "Email scanning is not enabled" }, { status: 400 });
+  }
 
   try {
     // Parse request body for options

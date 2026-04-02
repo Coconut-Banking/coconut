@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { clerkClient } from "@clerk/nextjs/server";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
 
@@ -62,7 +63,36 @@ export async function saveGmailTokens(
   console.log("[saveGmailTokens] Successfully saved:", data);
 }
 
+/**
+ * Get a Gmail client using the Google OAuth token stored in Clerk.
+ * Returns null if the user has no Google external account or the token lacks Gmail scopes.
+ */
+async function getGmailClientViaClerk(clerkUserId: string) {
+  try {
+    const client = await clerkClient();
+    const tokens = await client.users.getUserOauthAccessToken(clerkUserId, "oauth_google");
+    const accessToken = tokens.data?.[0]?.token;
+    if (!accessToken) return null;
+    const oauth2 = new google.auth.OAuth2();
+    oauth2.setCredentials({ access_token: accessToken });
+    return google.gmail({ version: "v1", auth: oauth2 });
+  } catch (e) {
+    if (__DEV__) console.warn("[getGmailClientViaClerk] failed:", e);
+    return null;
+  }
+}
+
+const __DEV__ = process.env.NODE_ENV !== "production";
+
+/**
+ * Get a Gmail API client for the given user.
+ * Tries Clerk's stored Google OAuth token first (2-in-1 flow),
+ * then falls back to legacy tokens in gmail_connections.
+ */
 export async function getGmailClient(clerkUserId: string) {
+  const viaClerk = await getGmailClientViaClerk(clerkUserId);
+  if (viaClerk) return viaClerk;
+
   const db = getSupabase();
   const { data, error } = await db
     .from("gmail_connections")
@@ -71,6 +101,7 @@ export async function getGmailClient(clerkUserId: string) {
     .single();
 
   if (error || !data) return null;
+  if (!data.access_token && !data.refresh_token) return null;
 
   const client = getOAuth2Client();
   client.setCredentials({
@@ -79,7 +110,6 @@ export async function getGmailClient(clerkUserId: string) {
     expiry_date: data.token_expiry ? new Date(data.token_expiry).getTime() : undefined,
   });
 
-  // Auto-refresh: when tokens refresh, persist them
   client.on("tokens", async (tokens) => {
     const updates: Record<string, string> = {};
     if (tokens.access_token) updates.access_token = encryptToken(tokens.access_token);
@@ -97,25 +127,38 @@ export async function getGmailClient(clerkUserId: string) {
   return google.gmail({ version: "v1", auth: client });
 }
 
-export async function getGmailStatus(clerkUserId: string) {
-  console.log("[getGmailStatus] Checking for user:", clerkUserId);
-
-  const db = getSupabase();
-  const { data, error } = await db
-    .from("gmail_connections")
-    .select("email, last_scan_at")
-    .eq("clerk_user_id", clerkUserId)
-    .single();
-
-  console.log("[getGmailStatus] Database result:", { data, error });
-
-  if (!data) {
-    console.log("[getGmailStatus] No connection found");
-    return { connected: false, email: null, lastScanAt: null };
+/**
+ * Check whether the user has a Google OAuth account linked via Clerk
+ * (i.e. they signed in with Google and we can use the token for Gmail).
+ */
+export async function hasClerkGoogleOAuth(clerkUserId: string): Promise<boolean> {
+  try {
+    const client = await clerkClient();
+    const tokens = await client.users.getUserOauthAccessToken(clerkUserId, "oauth_google");
+    return Boolean(tokens.data?.[0]?.token);
+  } catch {
+    return false;
   }
+}
 
-  console.log("[getGmailStatus] Connection found:", data);
-  return { connected: true, email: data.email, lastScanAt: data.last_scan_at };
+export async function getGmailStatus(clerkUserId: string) {
+  const db = getSupabase();
+  const { data } = await db
+    .from("gmail_connections")
+    .select("email, last_scan_at, email_scan_enabled")
+    .eq("clerk_user_id", clerkUserId)
+    .maybeSingle();
+
+  const hasGoogleOAuth = await hasClerkGoogleOAuth(clerkUserId);
+  const hasLegacyTokens = Boolean(data?.email);
+
+  return {
+    connected: hasGoogleOAuth || hasLegacyTokens,
+    hasGoogleOAuth,
+    email: data?.email ?? null,
+    lastScanAt: (data as { last_scan_at?: string | null } | null)?.last_scan_at ?? null,
+    emailScanEnabled: (data as { email_scan_enabled?: boolean } | null)?.email_scan_enabled ?? false,
+  };
 }
 
 export async function removeGmailConnection(clerkUserId: string) {
