@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { Shield, Lock, CheckCircle2, ArrowLeft, ChevronRight } from "lucide-react";
@@ -9,8 +8,15 @@ import { usePlaidLink } from "react-plaid-link";
 
 type Step = "link" | "connected";
 
-const APP_DEEP_LINK = "coconut://";
+const DEFAULT_APP_SCHEME = "coconut";
 const TRACE_STORAGE_KEY = "plaid_connect_trace_id";
+const SCHEME_STORAGE_KEY = "connect_app_scheme";
+
+function getAppDeepLink(): string {
+  if (typeof window === "undefined") return `${DEFAULT_APP_SCHEME}://`;
+  const stored = sessionStorage.getItem(SCHEME_STORAGE_KEY);
+  return `${stored || DEFAULT_APP_SCHEME}://`;
+}
 
 function makeTraceId(): string {
   return `plaid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -28,16 +34,18 @@ function ConnectedStep() {
   const fromApp =
     (typeof window !== "undefined" && sessionStorage.getItem("connect_from_app") === "1") ||
     false;
+  const deepLink = `${getAppDeepLink()}connected`;
 
   useEffect(() => {
-    if (fromApp) {
-      const t = setTimeout(() => {
-        sessionStorage.removeItem("connect_from_app");
-        window.location.href = `${APP_DEEP_LINK}connected`;
-      }, 1500);
-      return () => clearTimeout(t);
-    }
-  }, [fromApp]);
+    if (!fromApp) return;
+    // Fire immediately — ASWebAuthenticationSession needs to see the scheme redirect ASAP.
+    // Also retry after a short delay in case the first attempt is swallowed.
+    sessionStorage.removeItem("connect_from_app");
+    sessionStorage.removeItem(SCHEME_STORAGE_KEY);
+    window.location.href = deepLink;
+    const retry = setTimeout(() => { window.location.replace(deepLink); }, 500);
+    return () => clearTimeout(retry);
+  }, [fromApp, deepLink]);
 
   return (
     <motion.div
@@ -61,7 +69,7 @@ function ConnectedStep() {
         </p>
         {fromApp ? (
           <a
-            href={`${APP_DEEP_LINK}connected`}
+            href={deepLink}
             className="block w-full bg-[#3D8E62] hover:bg-[#2D7A52] text-white py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
             Return to app
@@ -140,10 +148,15 @@ function ConnectBankContent() {
       ? window.location.href
       : undefined;
 
-  // Preserve from_app across OAuth redirect (Plaid redirect drops query params)
+  // Preserve from_app and scheme across OAuth redirect (Plaid redirect drops query params)
   useEffect(() => {
-    if (typeof window !== "undefined" && searchParams.get("from_app") === "1") {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("from_app") === "1") {
       sessionStorage.setItem("connect_from_app", "1");
+    }
+    const scheme = searchParams.get("scheme");
+    if (scheme) {
+      sessionStorage.setItem(SCHEME_STORAGE_KEY, scheme);
     }
   }, [searchParams]);
 
@@ -468,7 +481,7 @@ function ConnectBankContent() {
                         ) : null}
                         {typeof window !== "undefined" && sessionStorage.getItem("connect_from_app") === "1" && (
                           <a
-                            href={`${APP_DEEP_LINK}settings`}
+                            href={`${getAppDeepLink()}settings`}
                             className="mt-3 inline-flex items-center rounded-lg bg-[#3D8E62] px-3 py-2 text-xs font-medium text-white hover:bg-[#2D7A52] ml-2"
                           >
                             Return to app
