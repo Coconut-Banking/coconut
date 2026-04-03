@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { Users, ArrowRight } from "lucide-react";
 import { getSupabase } from "@/lib/supabase";
 import { clerkClient } from "@clerk/nextjs/server";
@@ -11,7 +12,7 @@ async function getInviteData(token: string) {
   const db = getSupabase();
   const { data: group } = await db
     .from("groups")
-    .select("id, name, owner_id")
+    .select("id, name, owner_id, image_url")
     .eq("invite_token", token)
     .maybeSingle();
 
@@ -33,8 +34,40 @@ async function getInviteData(token: string) {
 
   return {
     groupName: group.name,
+    imageUrl: (group as { image_url?: string | null }).image_url ?? null,
     memberCount: count ?? 0,
     inviterName,
+  };
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  const data = await getInviteData(token);
+  if (!data) return { title: "Coconut" };
+
+  const title = `Join ${data.groupName} on Coconut`;
+  const description = `${data.inviterName} invited you to ${data.groupName} — ${data.memberCount} member${data.memberCount !== 1 ? "s" : ""}. Split expenses the easy way.`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      siteName: "Coconut",
+      type: "website",
+      images: [{ url: "https://coconut-app.dev/brand/coconut-mark.jpg", alt: "Coconut" }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ["https://coconut-app.dev/brand/coconut-mark.jpg"],
+    },
   };
 }
 
@@ -54,9 +87,14 @@ export default async function JoinPage({
     <div className="min-h-screen bg-[#F5F3F2] flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
-          <div className="w-14 h-14 bg-[#1e2021] rounded-2xl flex items-center justify-center mx-auto mb-5">
-            <Users size={24} className="text-white" />
-          </div>
+          {data.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={data.imageUrl} alt="" className="w-16 h-16 rounded-full mx-auto mb-5 object-cover" />
+          ) : (
+            <div className="w-14 h-14 bg-[#1e2021] rounded-2xl flex items-center justify-center mx-auto mb-5">
+              <Users size={24} className="text-white" />
+            </div>
+          )}
 
           <p className="text-sm text-gray-500 mb-1">
             {data.inviterName} invited you to
