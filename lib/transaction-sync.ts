@@ -635,8 +635,12 @@ export async function syncTransactionsForUser(
           }
         }
 
-        // Also match any older unmatched receipts against the new transactions
-        const { matchReceiptsToTransactions } = await import("./receipt-matcher");
+        // Clear stale receipt matches (pointing to deleted/deduped transactions)
+        // then re-match any unmatched receipts against current transactions
+        const { matchReceiptsToTransactions, clearStaleReceiptMatches } = await import("./receipt-matcher");
+        const staleCleared = await clearStaleReceiptMatches(clerkUserId);
+        if (staleCleared > 0) console.log(`[sync] cleared ${staleCleared} stale receipt matches for user ${clerkUserId}`);
+
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const { data: unmatched } = await db

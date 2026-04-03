@@ -36,6 +36,24 @@ export async function GET() {
       (r) => !isExcludedReceipt(r.raw_from, r.merchant)
     );
 
+    // Validate that matched transaction_ids still exist so stale matches
+    // (pointing at deleted/deduped transactions) don't show as "Matched"
+    const linkedTxIds = filtered
+      .map((r) => r.transaction_id)
+      .filter(Boolean) as string[];
+    if (linkedTxIds.length > 0) {
+      const { data: validTxRows } = await db
+        .from("transactions")
+        .select("id")
+        .in("id", linkedTxIds);
+      const validTxIds = new Set((validTxRows ?? []).map((t) => t.id as string));
+      for (const r of filtered) {
+        if (r.transaction_id && !validTxIds.has(r.transaction_id)) {
+          r.transaction_id = null;
+        }
+      }
+    }
+
     return NextResponse.json({
       receipts: filtered,
       count: filtered.length,

@@ -100,6 +100,17 @@ export async function matchReceiptsToTransactions(
 
   if (!receipts || receipts.length === 0) return 0;
 
+  // Collect transaction IDs that already have a receipt linked so we
+  // don't double-match (e.g. two Lyft rides with the same amount).
+  const { data: alreadyLinked } = await db
+    .from("email_receipts")
+    .select("transaction_id")
+    .eq("clerk_user_id", clerkUserId)
+    .not("transaction_id", "is", null);
+  const alreadyMatchedTxIds = new Set(
+    (alreadyLinked ?? []).map((r) => r.transaction_id as string).filter(Boolean)
+  );
+
   let matched = 0;
   const windowDays = RECEIPT_MATCH.DATE_WINDOW_DAYS;
 
@@ -140,8 +151,10 @@ export async function matchReceiptsToTransactions(
 
         const { data: candidates } = await query;
         if (candidates && candidates.length > 0) {
+          const available = (candidates as Array<{ id: string; amount: number; date: string; normalized_merchant?: string }>)
+            .filter((tx) => !alreadyMatchedTxIds.has(tx.id));
           bestMatchId = scoreCandidates(
-            candidates as Array<{ id: string; amount: number; date: string; normalized_merchant?: string }>,
+            available,
             receiptAmount,
             receiptDate,
             receipt.merchant
@@ -167,7 +180,7 @@ export async function matchReceiptsToTransactions(
         const tight = fallbackCandidates
           .filter((tx) => {
             if (tx.date == null) return false;
-            // Must have merchant similarity
+            if (alreadyMatchedTxIds.has(tx.id as string)) return false;
             const txMerchant = (tx.normalized_merchant as string) || "";
             return merchantsMatch(receipt.merchant, txMerchant);
           })
@@ -198,6 +211,7 @@ export async function matchReceiptsToTransactions(
       .update({ transaction_id: bestMatchId })
       .eq("id", receipt.id);
 
+    alreadyMatchedTxIds.add(bestMatchId);
     matched++;
   }
 
@@ -205,23 +219,62 @@ export async function matchReceiptsToTransactions(
 }
 
 /**
+ * Clear receipt matches whose transaction_id points to a deleted/deduped transaction.
+ * Returns the number of stale matches cleared.
+ */
+export async function clearStaleReceiptMatches(clerkUserId: string): Promise<number> {
+  const db = getSupabase();
+
+  const { data: matchedReceipts } = await db
+    .from("email_receipts")
+    .select("id, transaction_id")
+    .eq("clerk_user_id", clerkUserId)
+    .not("transaction_id", "is", null);
+
+  if (!matchedReceipts || matchedReceipts.length === 0) return 0;
+
+  const txIds = matchedReceipts.map((r) => r.transaction_id).filter(Boolean) as string[];
+  const { data: txRows } = await db
+    .from("transactions")
+    .select("id")
+    .in("id", txIds);
+
+  const validTxIds = new Set((txRows ?? []).map((t) => t.id as string));
+  let cleared = 0;
+
+  for (const receipt of matchedReceipts) {
+    if (!validTxIds.has(receipt.transaction_id as string)) {
+      await db
+        .from("email_receipts")
+        .update({ transaction_id: null })
+        .eq("id", receipt.id);
+      cleared++;
+    }
+  }
+
+  return cleared;
+}
+
+/**
  * Re-match all unmatched receipts and audit existing matches.
- * Clears wrong matches (where merchant names don't align) and
+ * Clears wrong matches (stale FKs or merchant name mismatch) and
  * re-runs matching for all unmatched receipts against full transaction history.
  */
 export async function auditAndRematchAllReceipts(
   clerkUserId: string
-): Promise<{ cleared: number; rematched: number }> {
+): Promise<{ cleared: number; matched: number }> {
   const db = getSupabase();
 
-  // Step 1: Audit existing matches — clear ones where merchant names don't align
+  // Step 1a: Clear stale matches (transaction was deleted/deduped)
+  let cleared = await clearStaleReceiptMatches(clerkUserId);
+
+  // Step 1b: Clear matches where merchant names don't align
   const { data: matchedReceipts } = await db
     .from("email_receipts")
     .select("id, merchant, amount, transaction_id")
     .eq("clerk_user_id", clerkUserId)
     .not("transaction_id", "is", null);
 
-  let cleared = 0;
   if (matchedReceipts && matchedReceipts.length > 0) {
     const txIds = matchedReceipts.map((r) => r.transaction_id).filter(Boolean) as string[];
     const { data: txRows } = await db
@@ -252,13 +305,13 @@ export async function auditAndRematchAllReceipts(
     .eq("clerk_user_id", clerkUserId)
     .is("transaction_id", null);
 
-  let rematched = 0;
+  let matched = 0;
   if (unmatched && unmatched.length > 0) {
-    rematched = await matchReceiptsToTransactions(
+    matched = await matchReceiptsToTransactions(
       clerkUserId,
       unmatched.map((r) => r.id)
     );
   }
 
-  return { cleared, rematched };
+  return { cleared, matched };
 }

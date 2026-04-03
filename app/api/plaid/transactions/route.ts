@@ -161,11 +161,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Parallel lookups: splits, receipts, subscriptions are independent.
+    // Use admin client for email_receipts to avoid RLS mismatch — the email_receipts
+    // API route uses admin, so the transactions route must too for consistency.
+    // Security: we filter by effectiveUserId explicitly.
+    const adminDb = getSupabaseAdmin();
     const txIds = bankOnly.map((tx) => tx.id);
     const [{ data: inSplits }, receiptRows, { data: inSubscriptions }] = await Promise.all([
       db.from("split_transactions").select("transaction_id").in("transaction_id", txIds),
       fetchAllEmailReceiptsLinkedForUser(
-        db,
+        adminDb,
         effectiveUserId,
         "id, transaction_id, merchant, raw_subject, merchant_type, merchant_details"
       ),
@@ -210,9 +214,6 @@ export async function GET(request: NextRequest) {
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
     if (idsToDelete.length > 0) {
-      // Remap + delete must bypass RLS: user JWT clients can fail to update email_receipts
-      // (leaving FKs pointing at duplicate tx rows), then delete hits email_receipts_transaction_id_fkey.
-      const adminDb = getSupabaseAdmin();
       const DEDUPE_BATCH = 100;
       for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
         const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
