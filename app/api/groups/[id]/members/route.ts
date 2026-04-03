@@ -34,7 +34,18 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // If the member has an email, check if they already have a Coconut account
+  // Check for existing member to prevent duplicates
+  let existingQuery = db.from("group_members").select("id, display_name, email").eq("group_id", id);
+  if (email) {
+    existingQuery = existingQuery.eq("email", email);
+  } else {
+    existingQuery = existingQuery.is("email", null).eq("display_name", displayName);
+  }
+  const { data: existingMember } = await existingQuery.maybeSingle();
+  if (existingMember) {
+    return NextResponse.json(existingMember);
+  }
+
   let linkedUserId: string | null = null;
   if (email) {
     linkedUserId = await findClerkUserIdByEmail(email);

@@ -83,6 +83,27 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabase();
 
+  // Prevent duplicate friend groups: if an existing non-Splitwise group with
+  // the same name and <=2 members already exists for this user, return it.
+  const { data: existingGroups } = await db
+    .from("groups")
+    .select("id, name, owner_id, created_at")
+    .eq("owner_id", userId)
+    .eq("name", name)
+    .is("source", null);
+
+  if (existingGroups && existingGroups.length > 0) {
+    for (const eg of existingGroups) {
+      const { count } = await db
+        .from("group_members")
+        .select("id", { count: "exact", head: true })
+        .eq("group_id", eg.id);
+      if (count != null && count <= 2) {
+        return NextResponse.json(eg);
+      }
+    }
+  }
+
   let group: { id: string; name: string; owner_id: string; created_at: string } | null = null;
   let groupErr: { message?: string } | null = null;
 

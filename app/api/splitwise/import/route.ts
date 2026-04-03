@@ -358,17 +358,23 @@ async function importGroup(
     const email = rawEmail?.trim().toLowerCase() || null;
     const displayName = splitwiseMemberDisplayName(swMember);
 
-    // Check if member already exists in this group (by email)
-    const { data: existingMember } = await db
+    // Check if member already exists in this group.
+    // `.eq("email", null)` doesn't match NULL in PostgreSQL — must use `.is()`.
+    let existingMemberQuery = db
       .from("group_members")
       .select("id")
-      .eq("group_id", groupId)
-      .eq("email", email)
-      .maybeSingle();
+      .eq("group_id", groupId);
+
+    if (email) {
+      existingMemberQuery = existingMemberQuery.eq("email", email);
+    } else {
+      existingMemberQuery = existingMemberQuery.is("email", null).eq("display_name", displayName);
+    }
+
+    const { data: existingMember } = await existingMemberQuery.maybeSingle();
 
     if (existingMember) {
       swMemberIdToCoconutId.set(swMember.id, existingMember.id);
-      // Backfill user_id on existing rows that were previously unlinked
       if (!isMe && email) {
         const linkedId = emailToClerkId.get(email.toLowerCase());
         if (linkedId) {
