@@ -113,6 +113,77 @@ export async function GET() {
     userClientError = "getSupabaseForUser returned null (no token)";
   }
 
+  // ─── Deep dive: check each matched receipt's transaction ──────────────
+  const orphanDetails: Array<{
+    receiptId: string;
+    merchant: string;
+    amount: number;
+    date: string;
+    transaction_id: string;
+    txExists: boolean;
+    txBelongsToUser: boolean;
+    txOwner: string | null;
+    txMerchant: string | null;
+    txAmount: number | null;
+    txDate: string | null;
+  }> = [];
+
+  if (matchedTxIds.length > 0) {
+    const { data: txDetails } = await adminDb
+      .from("transactions")
+      .select("id, clerk_user_id, merchant_name, raw_name, normalized_merchant, amount, date, plaid_transaction_id")
+      .in("id", matchedTxIds);
+
+    const txDetailMap = new Map(
+      (txDetails ?? []).map((t) => [t.id as string, t])
+    );
+
+    for (const r of matchedReceipts) {
+      const tx = txDetailMap.get(r.transaction_id as string);
+      const inUserList = txIdSet.has(r.transaction_id as string);
+
+      if (!inUserList) {
+        orphanDetails.push({
+          receiptId: r.id,
+          merchant: r.merchant,
+          amount: r.amount,
+          date: r.date,
+          transaction_id: r.transaction_id,
+          txExists: !!tx,
+          txBelongsToUser: tx ? (tx.clerk_user_id === effectiveUserId) : false,
+          txOwner: tx ? (tx.clerk_user_id as string) : null,
+          txMerchant: tx ? ((tx.merchant_name || tx.raw_name || tx.normalized_merchant) as string) : null,
+          txAmount: tx ? (tx.amount as number) : null,
+          txDate: tx ? (tx.date as string) : null,
+        });
+      }
+    }
+  }
+
+  // ─── Check if orphan txIds were filtered out by manual/pending/dedup ────
+  const orphanTxIds = orphanDetails
+    .filter((o) => o.txExists && o.txBelongsToUser)
+    .map((o) => o.transaction_id);
+  let filteredOutReasons: Record<string, string> = {};
+  if (orphanTxIds.length > 0) {
+    const { data: orphanTxRows } = await adminDb
+      .from("transactions")
+      .select("id, plaid_transaction_id, is_pending, normalized_merchant, amount, date")
+      .in("id", orphanTxIds);
+    for (const tx of orphanTxRows ?? []) {
+      const pid = tx.plaid_transaction_id as string || "";
+      if (pid.startsWith("manual_")) {
+        filteredOutReasons[tx.id as string] = "manual expense (filtered out)";
+      } else if (tx.is_pending) {
+        filteredOutReasons[tx.id as string] = "pending transaction (may be deduped with posted)";
+      } else {
+        const norm = (tx.normalized_merchant as string) || "";
+        const key = `${norm}|${tx.amount}|${tx.date}`;
+        filteredOutReasons[tx.id as string] = `deduped? key=${key}`;
+      }
+    }
+  }
+
   // ─── Comparison ────────────────────────────────────────────────────────
   const result = {
     userId: effectiveUserId,
@@ -139,15 +210,18 @@ export async function GET() {
       emailReceiptsShowsMatched: matchedReceipts.length,
       transactionsShowsReceipt_admin: adminTxWithReceipt,
       transactionsShowsReceipt_userScoped: userTxWithReceipt,
-      adminVsUserGap: adminTxWithReceipt - userTxWithReceipt,
-      diagnosis: adminTxWithReceipt - userTxWithReceipt > 0
-        ? "RLS is blocking the user-scoped client from reading email_receipts"
-        : staleCount > 0
-          ? "Stale matches pointing to deleted transactions"
-          : adminTxWithReceipt === matchedReceipts.length
-            ? "No gap — both sides agree"
-            : "Receipts matched to transactions outside the top 2000",
+      orphanReceipts: orphanDetails.length,
+      orphanBreakdown: {
+        txDeleted: orphanDetails.filter((o) => !o.txExists).length,
+        txWrongUser: orphanDetails.filter((o) => o.txExists && !o.txBelongsToUser).length,
+        txFilteredOut: orphanDetails.filter((o) => o.txExists && o.txBelongsToUser).length,
+      },
     },
+    orphanDetails: orphanDetails.map((o) => ({
+      ...o,
+      filterReason: filteredOutReasons[o.transaction_id] || null,
+      txOwner: o.txOwner ? (o.txOwner === effectiveUserId ? "SAME_USER" : "DIFFERENT_USER") : null,
+    })),
   };
 
   return NextResponse.json(result, {
