@@ -93,6 +93,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       .in("id", ids)
       .order("created_at", { ascending: false });
     if (res.error?.code === "42703") {
+      console.warn("[summary] image_url column not found — falling back. Run: ALTER TABLE groups ADD COLUMN IF NOT EXISTS image_url text;");
       const fallback = await db
         .from("groups")
         .select("id, name, owner_id, created_at, group_type, source, external_id")
