@@ -112,7 +112,10 @@ export async function GET(
 
     if (splits.length === 0) {
       return NextResponse.json({
+        ...maskedGroup,
         group: maskedGroup,
+        isOwner,
+        archivedAt: (group as { archived_at?: string | null }).archived_at ?? null,
         members: members ?? [],
         activity: [],
         balances: (members ?? []).map((m) => ({
