@@ -70,22 +70,69 @@ export async function GET() {
   // ─── Side B: Transactions page receipt lookup (admin client) ────────────
   const { data: allTx } = await adminDb
     .from("transactions")
-    .select("id")
+    .select("id, merchant_name, raw_name, normalized_merchant, amount, date, plaid_transaction_id, is_pending, source")
     .eq("clerk_user_id", effectiveUserId)
     .order("date", { ascending: false })
     .limit(2000);
 
   const txIdSet = new Set((allTx ?? []).map((t) => t.id as string));
 
+  // Apply same dedup the transactions route uses (merchant+amount+date)
+  const bankOnly = (allTx ?? []).filter((tx) => {
+    const pid = (tx.plaid_transaction_id as string) || "";
+    return !pid.startsWith("manual_");
+  });
+  const keptIds = new Set<string>();
+  const duplicateIdToKeptId = new Map<string, string>();
+  const keyToKeptId = new Map<string, string>();
+  const dedupedIds = new Set<string>();
+  for (const tx of bankOnly) {
+    const raw = ((tx.merchant_name || tx.raw_name || "") as string).trim().toLowerCase();
+    const norm = (tx.normalized_merchant as string) ?? raw.replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+    const merchant = norm || raw;
+    const amount = Number(tx.amount);
+    const date = tx.date as string;
+    const key = `${merchant}|${amount}|${date}`;
+    const tid = tx.id as string;
+    const existingKept = keyToKeptId.get(key);
+    if (existingKept !== undefined) {
+      duplicateIdToKeptId.set(tid, existingKept);
+    } else {
+      keyToKeptId.set(key, tid);
+      keptIds.add(tid);
+      dedupedIds.add(tid);
+    }
+  }
+
   const adminReceiptRows = await fetchAllEmailReceiptsLinkedForUser(
     adminDb,
     effectiveUserId,
     "id, transaction_id, merchant"
   );
+
+  // Pre-dedup count: receipt tx_id is in any tx (like old diagnostic)
   let adminTxWithReceipt = 0;
   for (const r of adminReceiptRows) {
     if (r.transaction_id && txIdSet.has(r.transaction_id as string)) {
       adminTxWithReceipt++;
+    }
+  }
+
+  // Post-dedup count: receipt tx_id is in the deduped set (simulates actual API)
+  let adminTxWithReceiptPostDedup = 0;
+  const receiptOnDupTx: Array<{ receiptId: string; merchant: string; dupTxId: string; keptTxId: string }> = [];
+  for (const r of adminReceiptRows) {
+    const tid = r.transaction_id as string;
+    if (!tid) continue;
+    if (dedupedIds.has(tid)) {
+      adminTxWithReceiptPostDedup++;
+    } else if (duplicateIdToKeptId.has(tid)) {
+      receiptOnDupTx.push({
+        receiptId: r.id as string,
+        merchant: r.merchant as string,
+        dupTxId: tid,
+        keptTxId: duplicateIdToKeptId.get(tid)!,
+      });
     }
   }
 
@@ -196,9 +243,14 @@ export async function GET() {
     },
     transactionsPage: {
       totalTransactions: allTx?.length ?? 0,
+      totalAfterDedup: dedupedIds.size,
+      duplicatesRemoved: duplicateIdToKeptId.size,
       adminClient: {
         receiptRowsReturned: adminReceiptRows.length,
         txWithHasReceipt: adminTxWithReceipt,
+        txWithHasReceiptPostDedup: adminTxWithReceiptPostDedup,
+        receiptsOnDuplicateTx: receiptOnDupTx.length,
+        receiptsOnDuplicateTxDetails: receiptOnDupTx,
       },
       userScopedClient: {
         receiptRowsReturned: userReceiptCount,

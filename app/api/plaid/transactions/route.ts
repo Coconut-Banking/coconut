@@ -199,7 +199,7 @@ export async function GET(request: NextRequest) {
       if (line.length > 80) line = line.slice(0, 78) + "…";
       receiptMatchLineByTxId.set(tid, line);
     }
-    const receiptTxIds = new Set(receiptMatchLineByTxId.keys());
+    let receiptTxIds = new Set(receiptMatchLineByTxId.keys());
     const splitTxIds = new Set(
       (inSplits ?? []).map((r) => r.transaction_id as string).filter(Boolean)
     );
@@ -225,6 +225,21 @@ export async function GET(request: NextRequest) {
           .in("id", batch);
         if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
       }
+
+      // DB receipts now point to kept IDs — sync in-memory maps so the
+      // response reflects the remapping done by remapEmailReceiptsBeforeTxDedupeDelete.
+      for (const [dupId, keptId] of duplicateIdToKeptId) {
+        if (receiptMatchLineByTxId.has(dupId)) {
+          receiptMatchLineByTxId.set(keptId, receiptMatchLineByTxId.get(dupId)!);
+          receiptMatchLineByTxId.delete(dupId);
+        }
+        if (receiptIdByTxId.has(dupId)) {
+          receiptIdByTxId.set(keptId, receiptIdByTxId.get(dupId)!);
+          receiptIdByTxId.delete(dupId);
+        }
+      }
+      receiptTxIds = new Set(receiptMatchLineByTxId.keys());
+
       try {
         revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
       } catch (e) {
@@ -351,7 +366,8 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    console.log("[pipeline:tx] GET output", { count: mapped.length });
+    const receiptCount = mapped.filter((t) => t.hasReceipt).length;
+    console.log("[pipeline:tx] GET output", { count: mapped.length, withReceipt: receiptCount, deduped: idsToDelete.length });
     return NextResponse.json(mapped, {
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
