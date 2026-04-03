@@ -173,6 +173,13 @@ async function handleSummary(req: NextRequest, userId: string) {
     splitByGroup.set(s.group_id, list);
   }
 
+  // Fire splitwise_tokens fetch in parallel with balance computation below
+  const splitwiseTokensPromise = db
+    .from("splitwise_tokens")
+    .select("cached_friend_balances, cached_group_balances")
+    .eq("clerk_user_id", userId)
+    .maybeSingle();
+
   const personBalances = new Map<string, PersonAgg>();
 
   const groupsWithBalance = (groups ?? []).map((g) => {
@@ -341,11 +348,8 @@ async function handleSummary(req: NextRequest, userId: string) {
   // Try to use cached Splitwise balances (authoritative) instead of recalculated ones.
   // Splitwise's balance engine handles multi-payer, debt simplification, etc. correctly.
   {
-    const tokenRes = await db
-      .from("splitwise_tokens")
-      .select("cached_friend_balances, cached_group_balances")
-      .eq("clerk_user_id", userId)
-      .maybeSingle();
+    // Await the splitwise_tokens fetch that was fired in parallel above
+    const tokenRes = await splitwiseTokensPromise;
     // Gracefully handle missing column (pre-migration)
     const tokenRow = tokenRes.error?.code === "PGRST204" ? null : tokenRes.data;
 
@@ -599,12 +603,15 @@ async function handleSummary(req: NextRequest, userId: string) {
     totalsByCurrency: totalsByCurrency.length,
   });
 
-  return NextResponse.json({
-    groups: groupsOut,
-    friends,
-    totalOwedToMe,
-    totalIOwe,
-    netBalance,
-    totalsByCurrency,
-  });
+  return NextResponse.json(
+    {
+      groups: groupsOut,
+      friends,
+      totalOwedToMe,
+      totalIOwe,
+      netBalance,
+      totalsByCurrency,
+    },
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+  );
 }

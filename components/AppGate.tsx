@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 
@@ -12,18 +12,24 @@ const CLERK_DISABLED = process.env.NEXT_PUBLIC_CLERK_DISABLED === "true";
 
 const BYPASS_AUTH = SKIP_AUTH || CLERK_DISABLED;
 
+export type PlaidStatus = "checking" | "linked" | "unlinked";
+export const PlaidStatusContext = createContext<PlaidStatus>("checking");
+export const usePlaidStatus = () => useContext(PlaidStatusContext);
+
 export function AppGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
-  const [plaidStatus, setPlaidStatus] = useState<"checking" | "linked" | "unlinked">("checking");
+  const [plaidStatus, setPlaidStatus] = useState<PlaidStatus>("checking");
+  const [authLoadTimeout, setAuthLoadTimeout] = useState(false);
 
-  // Redirect signed-out users to /login (side-effect, not during render)
+  // Redirect signed-out users to /login
   useEffect(() => {
     if (!BYPASS_AUTH && isLoaded && !isSignedIn) {
       router.replace("/login");
     }
   }, [isLoaded, isSignedIn, router]);
 
+  // Check Plaid status in the background — does NOT block rendering
   useEffect(() => {
     if (BYPASS_AUTH || !isLoaded || !isSignedIn) return;
     let cancelled = false;
@@ -45,28 +51,27 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     };
   }, [isLoaded, isSignedIn]);
 
-  const [authLoadTimeout, setAuthLoadTimeout] = useState(false);
-  const [plaidCheckSlow, setPlaidCheckSlow] = useState(false);
+  // Redirect unlinked users to /connect (effect, not blocking render)
+  useEffect(() => {
+    if (plaidStatus === "unlinked") {
+      router.replace("/connect");
+    }
+  }, [plaidStatus, router]);
+
+  // Auth timeout — redirect to login if Clerk never resolves
   useEffect(() => {
     if (BYPASS_AUTH || isLoaded) return;
     const t = setTimeout(() => setAuthLoadTimeout(true), 8000);
     return () => clearTimeout(t);
   }, [isLoaded]);
 
-  // Show escape hatch if plaid check takes > 4 seconds
-  useEffect(() => {
-    if (plaidStatus !== "checking") return;
-    const t = setTimeout(() => setPlaidCheckSlow(true), 4000);
-    return () => clearTimeout(t);
-  }, [plaidStatus]);
-
-  // When auth times out, redirect to login so user isn't stuck on spinner
   useEffect(() => {
     if (authLoadTimeout && !BYPASS_AUTH && !isLoaded) {
       router.replace("/login");
     }
   }, [authLoadTimeout, BYPASS_AUTH, isLoaded, router]);
 
+  // Only block on Clerk auth loading — not on Plaid status
   if (!BYPASS_AUTH && !isLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F5F3F2]">
@@ -103,42 +108,13 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // We already scheduled the redirect in the effect above; just render nothing
   if (!BYPASS_AUTH && isLoaded && !isSignedIn) {
     return null;
   }
 
-  if (BYPASS_AUTH) {
-    return <>{children}</>;
-  }
-
-  if (plaidStatus === "checking") {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[#F5F3F2]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Loading your data...</p>
-          {plaidCheckSlow && (
-            <a
-              href="/login"
-              className="mt-2 text-sm text-[#1e2021] hover:text-[#161819] font-medium underline"
-            >
-              Having trouble? Go to Login
-            </a>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (plaidStatus === "unlinked") {
-    // We still want new users to go through connect, but to avoid React warnings
-    // we navigate from a microtask instead of during render.
-    Promise.resolve().then(() => {
-      router.replace("/connect");
-    });
-    return null;
-  }
-
-  return <>{children}</>;
+  return (
+    <PlaidStatusContext.Provider value={plaidStatus}>
+      {children}
+    </PlaidStatusContext.Provider>
+  );
 }

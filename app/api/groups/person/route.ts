@@ -103,7 +103,8 @@ export async function GET(req: NextRequest) {
       transactions(merchant_name, raw_name, amount, date)
     `)
       .in("group_id", sharedGroupIds)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(500);
 
     const seenByGroup = new Map<string, Set<string>>();
     const splits = (splitsRaw ?? []).filter((s) => {

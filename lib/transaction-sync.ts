@@ -336,9 +336,9 @@ async function syncSingleToken(
   }
   if (acctResp?.accounts && Array.isArray(acctResp.accounts)) {
     try {
-      for (const acct of acctResp.accounts) {
+      const rows = acctResp.accounts.map((acct) => {
         const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-        const row: Record<string, unknown> = {
+        return {
           clerk_user_id: clerkUserId,
           plaid_account_id: acct.account_id,
           plaid_item_id: plaidItemId,
@@ -346,26 +346,29 @@ async function syncSingleToken(
           type: acct.type,
           subtype: acct.subtype ?? null,
           mask: acct.mask ?? null,
+          balance_current: bal?.current ?? null,
+          balance_available: bal?.available ?? null,
+          iso_currency_code: bal?.iso_currency_code ?? "USD",
         };
-        try {
-          await db.from("accounts").upsert(
-            { ...row, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
-            { onConflict: "plaid_account_id" }
-          );
-        } catch (e) {
-          const errMsg = e instanceof Error ? e.message : String(e);
-          if (/column.*plaid_item_id|does not exist/i.test(errMsg)) {
-            const { plaid_item_id: _pid, ...rowWithout } = row;
-            await db.from("accounts").upsert(
-              { ...rowWithout, balance_current: bal?.current ?? null, balance_available: bal?.available ?? null, iso_currency_code: bal?.iso_currency_code ?? "USD" },
-              { onConflict: "plaid_account_id" }
-            );
-          } else {
-            console.error("[sync] account upsert error:", errMsg, {
-              clerkUserId,
-              plaidAccountId: row.plaid_account_id,
-            });
+      });
+
+      // Batch upsert all accounts in one round-trip
+      const { error: batchErr } = await db
+        .from("accounts")
+        .upsert(rows, { onConflict: "plaid_account_id" });
+
+      if (batchErr) {
+        // Fallback: retry without plaid_item_id if column doesn't exist yet
+        if (/column.*plaid_item_id|does not exist/i.test(batchErr.message)) {
+          const rowsWithout = rows.map(({ plaid_item_id: _pid, ...r }) => r);
+          const { error: fallbackErr } = await db
+            .from("accounts")
+            .upsert(rowsWithout, { onConflict: "plaid_account_id" });
+          if (fallbackErr) {
+            console.error("[sync] account batch upsert (fallback) error:", fallbackErr.message);
           }
+        } else {
+          console.error("[sync] account batch upsert error:", batchErr.message, { clerkUserId });
         }
       }
     } catch (e) {

@@ -19,16 +19,35 @@ export async function GET() {
     return NextResponse.json({ activity: [] });
   }
 
-  const { data: groups } = await db
-    .from("groups")
-    .select("id, name")
-    .in("id", ids);
-  const groupNames = new Map((groups ?? []).map((g) => [g.id, g.name]));
+  // Round 1: all independent queries in parallel
+  const [groupsRes, membersRes, splitsRawRes, settlementsRawRes] = await Promise.all([
+    db.from("groups").select("id, name").in("id", ids),
+    db.from("group_members").select("id, group_id, user_id, display_name").in("group_id", ids),
+    db
+      .from("split_transactions")
+      .select(`
+        id, group_id, transaction_id, created_by, created_at, date, description,
+        payer_member_id, amount, iso_currency_code, receipt_url,
+        transactions(merchant_name, raw_name, amount, date)
+      `)
+      .in("group_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(500),
+    db
+      .from("settlements")
+      .select("id, group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, created_at")
+      .in("group_id", ids)
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ]);
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, group_id, user_id, display_name")
-    .in("group_id", ids);
+  const groups = groupsRes.data;
+  const members = membersRes.data;
+  const splitsRaw = splitsRawRes.data;
+  const settlementsRaw = settlementsRawRes.data;
+
+  const groupNames = new Map((groups ?? []).map((g) => [g.id, g.name]));
 
   const memberByUserId = new Map<string, { id: string; group_id: string; display_name: string }[]>();
   for (const m of members ?? []) {
@@ -38,17 +57,6 @@ export async function GET() {
       memberByUserId.set(m.user_id, list);
     }
   }
-
-  const { data: splitsRaw } = await db
-    .from("split_transactions")
-    .select(`
-      id, group_id, transaction_id, created_by, created_at, date, description,
-      payer_member_id, amount, iso_currency_code, receipt_url,
-      transactions(merchant_name, raw_name, amount, date)
-    `)
-    .in("group_id", ids)
-    .order("created_at", { ascending: false })
-    .limit(500);
 
   const seenByGroup = new Map<string, Set<string>>();
   const deduped = (splitsRaw ?? []).filter((s) => {
@@ -91,14 +99,6 @@ export async function GET() {
     membersByGroup.set(m.group_id, list);
   }
 
-  // Fetch settlements for the activity feed too
-  const { data: settlementsRaw } = await db
-    .from("settlements")
-    .select("id, group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, created_at")
-    .in("group_id", ids)
-    .eq("status", "completed")
-    .order("created_at", { ascending: false })
-    .limit(200);
 
   const memberById = new Map<string, { id: string; user_id: string | null; display_name: string }>();
   for (const m of members ?? []) {
@@ -224,7 +224,10 @@ export async function GET() {
   activity.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
   const trimmed = activity.slice(0, 200).map(({ sortDate: _, ...rest }) => rest);
 
-  return NextResponse.json({ activity: trimmed });
+  return NextResponse.json(
+    { activity: trimmed },
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+  );
 }
 
 function formatTimeAgo(iso: string): string {

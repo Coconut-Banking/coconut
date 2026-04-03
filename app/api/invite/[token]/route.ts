@@ -24,20 +24,14 @@ export async function GET(
     return NextResponse.json({ error: "Invite not found" }, { status: 404 });
   }
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("display_name, user_id")
-    .eq("group_id", group.id)
-    .order("created_at", { ascending: true });
+  const [membersRes, recentSplitsRes] = await Promise.all([
+    db.from("group_members").select("display_name, user_id").eq("group_id", group.id).order("created_at", { ascending: true }),
+    db.from("split_transactions").select("description, amount").eq("group_id", group.id).order("created_at", { ascending: false }).limit(3),
+  ]);
 
+  const members = membersRes.data;
+  const recentSplits = recentSplitsRes.data;
   const ownerMember = (members ?? []).find((m) => m.user_id === group.owner_id);
-
-  const { data: recentSplits } = await db
-    .from("split_transactions")
-    .select("description, amount")
-    .eq("group_id", group.id)
-    .order("created_at", { ascending: false })
-    .limit(3);
 
   return NextResponse.json({
     groupId: group.id,
