@@ -108,46 +108,49 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   const groupIds = (groups ?? []).map((g) => g.id);
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, group_id, user_id, display_name, email")
-    .in("group_id", groupIds);
-
-  const { data: splits } = await db
-    .from("split_transactions")
-    .select(`
-      id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code,
-      transactions(amount)
-    `)
-    .in("group_id", groupIds)
-    .order("created_at", { ascending: false })
-    .limit(25000);
+  const [membersRes, splitsRes] = await Promise.all([
+    db
+      .from("group_members")
+      .select("id, group_id, user_id, display_name, email")
+      .in("group_id", groupIds),
+    db
+      .from("split_transactions")
+      .select(`
+        id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
+        iso_currency_code,
+        transactions(amount)
+      `)
+      .in("group_id", groupIds)
+      .order("created_at", { ascending: false })
+      .limit(25000),
+  ]);
+  const { data: members } = membersRes;
+  const { data: splits } = splitsRes;
 
   const splitIds = (splits ?? []).map((s) => s.id);
 
   let shares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
   let txRows: { id: string; clerk_user_id: string }[] = [];
 
-  if (splitIds.length > 0) {
-    const { data: sharesData } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splitIds);
-    shares = sharesData ?? [];
-  }
-
   const txIds = (splits ?? []).map((s) => s.transaction_id).filter(Boolean);
-  if (txIds.length > 0) {
-    const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-    txRows = data ?? [];
-  }
 
-  const { data: settlements } = await db
-    .from("settlements")
-    .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-    .in("group_id", groupIds)
-    .eq("status", "completed");
+  const [sharesResult, txResult, settlementsResult] = await Promise.all([
+    splitIds.length > 0
+      ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds)
+      : Promise.resolve({ data: null }),
+    txIds.length > 0
+      ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+      : Promise.resolve({ data: null }),
+    db
+      .from("settlements")
+      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
+      .in("group_id", groupIds)
+      .eq("status", "completed"),
+  ]);
+
+  shares = sharesResult.data ?? [];
+  txRows = txResult.data ?? [];
+  const { data: settlements } = settlementsResult;
 
   const memberByGroup = new Map<string, { id: string; user_id: string | null; display_name: string; email: string | null }[]>();
   for (const m of members ?? []) {

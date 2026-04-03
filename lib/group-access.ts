@@ -1,16 +1,24 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { getSupabase } from "./supabase";
 
+const _linkCache = new Map<string, number>();
+const LINK_CACHE_TTL_MS = 60_000;
+
 /**
  * Link group members by email when user signs in.
- * When a user logs in, find ALL group_members rows that match their email
- * but have no user_id yet, and link them. This is how User B gains access
- * to a group that User A created and added them to by email.
+ * Cached per-user for 60s to avoid redundant Clerk + DB calls on every request.
  */
 async function linkMemberByEmail(userId: string) {
+  const now = Date.now();
+  const lastRun = _linkCache.get(userId);
+  if (lastRun && now - lastRun < LINK_CACHE_TTL_MS) return;
+
   const user = await currentUser();
   const email = user?.emailAddresses?.[0]?.emailAddress;
-  if (!email) return;
+  if (!email) {
+    _linkCache.set(userId, now);
+    return;
+  }
 
   const db = getSupabase();
 
@@ -20,18 +28,21 @@ async function linkMemberByEmail(userId: string) {
     .eq("email", email.toLowerCase())
     .is("user_id", null);
 
-  if (!candidates || candidates.length === 0) return;
-
-  for (const member of candidates) {
-    await db
-      .from("group_members")
-      .update({ user_id: userId })
-      .eq("id", member.id);
+  if (!candidates || candidates.length === 0) {
+    _linkCache.set(userId, now);
+    return;
   }
+
+  await Promise.all(
+    candidates.map((member) =>
+      db.from("group_members").update({ user_id: userId }).eq("id", member.id)
+    )
+  );
 
   console.log(
     `[group-access] linked ${candidates.length} member row(s) for ${email}`
   );
+  _linkCache.set(userId, now);
 }
 
 /**
@@ -61,15 +72,16 @@ export async function canAccessGroup(
  * Links members by email when they sign in (so invited users see groups).
  */
 export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
-  await linkMemberByEmail(userId);
-
   const db = getSupabase();
 
-  const { data: owned, error: ownedErr } = await db.from("groups").select("id").eq("owner_id", userId);
-  const { data: memberRows, error: memberErr } = await db
-    .from("group_members")
-    .select("group_id")
-    .eq("user_id", userId);
+  const [, ownedRes, memberRes] = await Promise.all([
+    linkMemberByEmail(userId),
+    db.from("groups").select("id").eq("owner_id", userId),
+    db.from("group_members").select("group_id").eq("user_id", userId),
+  ]);
+
+  const { data: owned, error: ownedErr } = ownedRes;
+  const { data: memberRows, error: memberErr } = memberRes;
 
   console.log("[group-access] userId:", userId, "owned:", owned?.length ?? 0, "ownedErr:", ownedErr?.message, "memberRows:", memberRows?.length ?? 0, "memberErr:", memberErr?.message);
 
