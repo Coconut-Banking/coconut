@@ -33,7 +33,7 @@ export async function GET(
 
     const isOwner = group.owner_id === userId;
     const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
-    const maskedGroup = { ...groupWithoutToken, invite_token: isOwner ? invite_token : null };
+    const maskedGroup = { ...groupWithoutToken, invite_token: invite_token ?? null };
 
     let { data: members } = await db
       .from("group_members")
