@@ -14,6 +14,7 @@ type CreateLinkBody = {
   new_accounts?: boolean;
   /** Optional client origin (e.g. window.location.origin) for redirect_uri when it differs from APP_URL */
   origin?: string;
+  redirect_path?: string;
 };
 
 function getTraceId(maybeTraceId: unknown): string {
@@ -96,7 +97,11 @@ export async function POST(request: NextRequest) {
   }
 
   const base = baseUrl.replace(/\/$/, "");
-  const redirectUri = `${base}/connect`;
+  const redirectPath =
+    typeof body.redirect_path === "string" && body.redirect_path.startsWith("/")
+      ? body.redirect_path
+      : "/connect";
+  const redirectUri = `${base}${redirectPath}`;
   const webhookUrl = `${base}/api/plaid/webhook`;
   const debug = {
     redirect_uri: redirectUri,
