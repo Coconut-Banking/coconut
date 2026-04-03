@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
   const { data: g1, error: e1 } = await db
     .from("groups")
     .insert({ ...insertPayload, group_type: groupType, invite_token: inviteToken })
-    .select("id, name, owner_id, created_at")
+    .select("id, name, owner_id, created_at, invite_token")
     .single();
   if (e1 && e1.message?.includes("column")) {
     const { data: g2, error: e2 } = await db
