@@ -19,6 +19,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/splitwise/callback",
   // Mobile app handoff — returns HTML that meta-refreshes to the custom scheme deep link.
   "/api/connect/app-done",
+  "/join(.*)",
+  "/api/invite(.*)",
 ]);
 
 function isClerkRateLimitError(e: unknown): e is { status: number; retryAfter?: number } {

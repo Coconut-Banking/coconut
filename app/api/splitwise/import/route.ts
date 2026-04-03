@@ -191,13 +191,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Collect uninvited members (no user_id) for the invite prompt
-    let uninvitedMembers: { displayName: string; email: string | null; groupName: string }[] = [];
+    let uninvitedMembers: { displayName: string; email: string | null; groupName: string; inviteToken: string | null }[] = [];
     if (!dryRun) {
       try {
         const importedGroupIds = filteredGroups.map((g) => String(g.id));
         const { data: coconutGroups } = await db
           .from("groups")
-          .select("id, name")
+          .select("id, name, invite_token")
           .eq("owner_id", userId)
           .eq("source", "splitwise")
           .in("external_id", importedGroupIds);
@@ -205,6 +205,7 @@ export async function POST(req: NextRequest) {
         if (coconutGroups && coconutGroups.length > 0) {
           const gids = coconutGroups.map((g) => g.id);
           const gMap = new Map(coconutGroups.map((g) => [g.id, g.name]));
+          const gTokenMap = new Map(coconutGroups.map((g) => [g.id, (g as { invite_token?: string }).invite_token ?? null]));
           const { data: nullMembers } = await db
             .from("group_members")
             .select("display_name, email, group_id")
@@ -220,6 +221,7 @@ export async function POST(req: NextRequest) {
               displayName: m.display_name,
               email: m.email ?? null,
               groupName: gMap.get(m.group_id) ?? "Unknown",
+              inviteToken: gTokenMap.get(m.group_id) ?? null,
             });
           }
           uninvitedMembers.sort((a, b) => a.displayName.localeCompare(b.displayName));
