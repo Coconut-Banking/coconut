@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
     const { data: members } = await db
       .from("group_members")
-      .select("id, group_id, user_id, email, display_name")
+      .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
       .in("group_id", ids);
 
     const personMembers = (members ?? []).filter((m) => {
@@ -75,6 +75,12 @@ export async function GET(req: NextRequest) {
     const email = personMembers[0].email ?? null;
     const sharedGroupIds = [...new Set(personMembers.map((m) => m.group_id))];
     const personMemberIds = new Set(personMembers.map((m) => m.id));
+
+    const p2pHandles = {
+      venmo_username: personMembers.find((m) => m.venmo_username)?.venmo_username ?? null,
+      cashapp_cashtag: personMembers.find((m) => m.cashapp_cashtag)?.cashapp_cashtag ?? null,
+      paypal_username: personMembers.find((m) => m.paypal_username)?.paypal_username ?? null,
+    };
 
     const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.name as string]));
     const memberCountByGroup = new Map<string, number>();
@@ -120,6 +126,7 @@ export async function GET(req: NextRequest) {
         settlements: [],
         sharedGroupIds,
         sharedGroups,
+        p2pHandles,
       });
     }
 
@@ -405,6 +412,7 @@ export async function GET(req: NextRequest) {
       settlements: personSettlements,
       sharedGroupIds,
       sharedGroups,
+      p2pHandles,
     });
   } catch (err) {
     console.error("[person]", err);
