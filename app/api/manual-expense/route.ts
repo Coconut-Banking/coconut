@@ -148,6 +148,7 @@ export async function POST(req: NextRequest) {
 
   let splitTx: { id: string } | null = null;
   let splitError: { message?: string } | null = null;
+  const expenseDate = clientDate ?? new Date().toISOString().split("T")[0];
   const { data: st1, error: e1 } = await db
     .from("split_transactions")
     .insert({
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
       created_by: userId,
       payer_member_id: effectivePayer,
       iso_currency_code: "USD",
+      date: expenseDate,
     })
     .select("id")
     .single();

@@ -260,7 +260,7 @@ ${body}`;
     ? extractMerchantDetails(merchantType, parsed as Record<string, unknown>)
     : null;
 
-  return {
+  const result = {
     merchant: parsed.merchant,
     order_date: parsed.order_date || new Date().toISOString().split("T")[0],
     total_amount: Number(parsed.total_amount) || 0,
@@ -290,7 +290,6 @@ ${body}`;
     const itemsSum = result.line_items.reduce((sum, it) => sum + it.total, 0);
     const diff = Math.abs(itemsSum - totalAmount);
     if (diff > 0.02 * totalAmount && diff > 1) {
-      // Items don't add up — use a single line item with the correct total
       result.line_items = [{
         name: result.merchant,
         quantity: 1,
