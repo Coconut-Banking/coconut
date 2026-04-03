@@ -85,11 +85,11 @@ async function handleSummary(req: NextRequest, userId: string) {
     });
   }
 
-  let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; source?: string | null; external_id?: string | null; archived_at?: string | null }[] | null;
+  let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; source?: string | null; external_id?: string | null; archived_at?: string | null; image_url?: string | null }[] | null;
   {
     const res = await db
       .from("groups")
-      .select("id, name, owner_id, created_at, group_type, source, external_id, archived_at")
+      .select("id, name, owner_id, created_at, group_type, source, external_id, archived_at, image_url")
       .in("id", ids)
       .order("created_at", { ascending: false });
     if (res.error?.code === "42703") {
@@ -189,6 +189,7 @@ async function handleSummary(req: NextRequest, userId: string) {
         id: g.id,
         name: g.name,
         groupType: (g as { group_type?: string }).group_type ?? "other",
+        imageUrl: g.image_url ?? null,
         memberCount: groupMembers.length,
         myBalance: 0 as number | null,
         myBalances: [] as { currency: string; amount: number }[],
@@ -329,6 +330,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       id: g.id,
       name: g.name,
       groupType: (g as { group_type?: string }).group_type ?? "other",
+      imageUrl: g.image_url ?? null,
       memberCount: groupMembers.length,
       myBalance,
       myBalances,

@@ -7,7 +7,7 @@ import {
   Nfc, Share2, Wallet, Clock, ArrowDownLeft,
   ArrowUpRight, Mail, Package, Lock, Unlock,
   Equal, Sliders, Hash, Landmark, ShieldCheck,
-  Users, User, Camera, ScanLine, FileText,
+  Users, User, Camera, ScanLine, FileText, Upload, Copy,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -2460,38 +2460,92 @@ function ActivityScreen({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function AddFriendModal({ onClose }: { onClose: () => void }) {
+function AddGroupFlow({ onClose, onCreate }: { onClose: () => void; onCreate: (group: { name: string; type: string }) => void }) {
   const C = React.useContext(ThemeCtx);
+  const [name, setName] = useState("");
+  const [groupType, setGroupType] = useState("trip");
+
+  const groupTypes = [
+    { id: "trip", label: "Trip", icon: "✈️" },
+    { id: "home", label: "Home", icon: "🏠" },
+    { id: "couple", label: "Couple", icon: "❤️" },
+    { id: "event", label: "Event", icon: "🎉" },
+    { id: "other", label: "Other", icon: "👥" },
+  ];
+
+  const handleCreate = () => {
+    if (name) {
+      onCreate({ name, type: groupType });
+      onClose();
+    }
+  };
+
   return (
     <>
       <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} onClick={onClose}
         style={{ position:"absolute", inset:0, zIndex:40, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(10px)" }} />
       <motion.div initial={{ y:"100%" }} animate={{ y:0 }} exit={{ y:"100%" }} transition={{ type:"spring", damping:30, stiffness:280 }}
-        style={{ position:"absolute", bottom:0, left:0, right:0, zIndex:50, background:C.bg, borderRadius:`${C.radius + 10}px ${C.radius + 10}px 0 0`, border:`${C.borderW} solid ${C.stroke}`, boxShadow:"0 -12px 60px rgba(0,0,0,0.5)", paddingBottom:32, display:"flex", flexDirection:"column" }}>
+        style={{ position:"absolute", bottom:0, left:0, right:0, zIndex:50, background:C.bg, borderRadius:`${C.radius + 10}px ${C.radius + 10}px 0 0`, border:`${C.borderW} solid ${C.stroke}`, boxShadow:"0 -12px 60px rgba(0,0,0,0.5)", paddingBottom:32, maxHeight:"80%", overflowY:"auto" }}>
         <Handle />
         <div style={{ display:"flex", alignItems:"center", padding:"2px 20px 12px", gap:6 }}>
-          <p style={{ flex:1, fontSize:17, fontWeight:800, color:C.label, letterSpacing:"-0.3px" }}>Add new</p>
+          <p style={{ flex:1, fontSize:17, fontWeight:800, color:C.label, letterSpacing:"-0.3px" }}>Create Group</p>
           <button onClick={onClose} style={{ border:"none", background:"none", cursor:"pointer", padding:6 }}><X size={18} color={C.label3} /></button>
         </div>
-        <div style={{ padding:"10px 20px" }}>
-          <motion.button whileTap={{ scale:0.98 }} onClick={onClose} style={{ width:"100%", padding:"16px", borderRadius:C.radius+2, background:C.card, border:`${C.borderW} solid ${C.stroke}`, display:"flex", alignItems:"center", gap:14, cursor:"pointer", marginBottom:12, boxShadow:C.shSm }}>
-            <div style={{ width:40, height:40, borderRadius:20, background:C.accent+"15", display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <User size={18} color={C.accent} />
+
+        <div style={{ padding:"0 20px 20px" }}>
+          <div style={{ display:"flex", justifyContent:"center", marginBottom:24 }}>
+            <motion.button whileTap={{ scale:0.95 }}
+              style={{ width:80, height:80, borderRadius:40, background:C.card2, border:`2px dashed ${C.stroke}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+              <Upload size={28} color={C.label3} />
+            </motion.button>
+          </div>
+
+          <div style={{ marginBottom:24 }}>
+            <p style={{ fontSize:13, fontWeight:700, color:C.label2, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Group Name</p>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter group name"
+              style={{
+                width:"100%", padding:"14px 16px", borderRadius:C.radius+2, background:C.card, border:`${C.borderW} solid ${C.stroke}`,
+                fontSize:15, fontWeight:600, color:C.label, outline:"none"
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom:24 }}>
+            <p style={{ fontSize:13, fontWeight:700, color:C.label2, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Group Type</p>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:10 }}>
+              {groupTypes.map((type) => (
+                <motion.button
+                  key={type.id}
+                  whileTap={{ scale:0.95 }}
+                  onClick={() => setGroupType(type.id)}
+                  style={{
+                    padding:"14px 12px", borderRadius:C.radius+2, background: groupType === type.id ? C.accent+"15" : C.card,
+                    border: groupType === type.id ? `2px solid ${C.accent}` : `${C.borderW} solid ${C.stroke}`,
+                    cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:6
+                  }}
+                >
+                  <span style={{ fontSize:24 }}>{type.icon}</span>
+                  <span style={{ fontSize:13, fontWeight:700, color: groupType === type.id ? C.accent : C.label }}>{type.label}</span>
+                </motion.button>
+              ))}
             </div>
-            <div style={{ textAlign:"left", flex:1 }}>
-              <p style={{ fontSize:15, fontWeight:700, color:C.label }}>Add a friend</p>
-              <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>Sync contacts or add by phone</p>
-            </div>
-          </motion.button>
-          
-          <motion.button whileTap={{ scale:0.98 }} onClick={onClose} style={{ width:"100%", padding:"16px", borderRadius:C.radius+2, background:C.card, border:`${C.borderW} solid ${C.stroke}`, display:"flex", alignItems:"center", gap:14, cursor:"pointer", boxShadow:C.shSm }}>
-            <div style={{ width:40, height:40, borderRadius:20, background:C.accent+"15", display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <Users size={18} color={C.accent} />
-            </div>
-            <div style={{ textAlign:"left", flex:1 }}>
-              <p style={{ fontSize:15, fontWeight:700, color:C.label }}>Create a group</p>
-              <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>For trips, roommates, or events</p>
-            </div>
+          </div>
+
+          <motion.button
+            whileTap={{ scale:0.98 }}
+            onClick={handleCreate}
+            disabled={!name}
+            style={{
+              width:"100%", padding:"16px", borderRadius:C.radius+4, background: name ? C.accent : C.card2,
+              border:"none", fontSize:15, fontWeight:800, color: name ? "#fff" : C.label3, cursor: name ? "pointer" : "not-allowed",
+              opacity: name ? 1 : 0.5
+            }}
+          >
+            Create Group
           </motion.button>
         </div>
       </motion.div>
@@ -2500,71 +2554,223 @@ function AddFriendModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GROUP DETAIL SCREEN (new group)
+// ─────────────────────────────────────────────────────────────────────────────
+function GroupDetailScreen({ group, onBack }: { group: { name: string; type: string }; onBack: () => void }) {
+  const C = React.useContext(ThemeCtx);
+  const [selectedMembers, setSelectedMembers] = useState<PersonId[]>([]);
+  const [showCopied, setShowCopied] = useState(false);
+  const inviteLink = `coconut.app/join/${group.name.toLowerCase().replace(/\s+/g, '-')}-a3f8`;
+
+  const copyInviteLink = () => {
+    navigator.clipboard.writeText(inviteLink);
+    setShowCopied(true);
+    setTimeout(() => setShowCopied(false), 2000);
+  };
+
+  const toggleMember = (id: PersonId) => {
+    setSelectedMembers(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  return (
+    <motion.div
+      initial={{ x:"100%" }}
+      animate={{ x:0 }}
+      exit={{ x:"100%" }}
+      transition={{ type:"spring", damping:30, stiffness:280 }}
+      style={{ position:"absolute", inset:0, zIndex:30, background:C.bg, display:"flex", flexDirection:"column" }}
+    >
+      <div style={{ display:"flex", alignItems:"center", padding:"16px 20px", borderBottom:`${C.borderW} solid ${C.stroke}` }}>
+        <button onClick={onBack} style={{ border:"none", background:"none", cursor:"pointer", padding:0, marginRight:12 }}>
+          <ChevronLeft size={24} color={C.label} strokeWidth={2.5} />
+        </button>
+        <p style={{ flex:1, fontSize:17, fontWeight:800, color:C.label }}>{group.name}</p>
+      </div>
+
+      <div style={{ flex:1, overflowY:"auto", padding:"20px 16px" }}>
+        <div style={{ marginBottom:24 }}>
+          <p style={{ fontSize:13, fontWeight:700, color:C.label2, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Invite Link</p>
+          <Card>
+            <div style={{ padding:"16px" }}>
+              <p style={{ fontSize:13, color:C.label3, marginBottom:12, fontFamily:"monospace", wordBreak:"break-all" }}>
+                {inviteLink}
+              </p>
+              <motion.button
+                whileTap={{ scale:0.98 }}
+                onClick={copyInviteLink}
+                style={{
+                  width:"100%", padding:"12px", borderRadius:C.radius+2, background:C.accent,
+                  border:"none", fontSize:14, fontWeight:800, color:"#fff", cursor:"pointer",
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:8
+                }}
+              >
+                {showCopied ? (
+                  <>
+                    <Check size={16} />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy size={16} />
+                    Copy Link
+                  </>
+                )}
+              </motion.button>
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <p style={{ fontSize:13, fontWeight:700, color:C.label2, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Add Members</p>
+          <Card>
+            {FRIENDS.map((friend, i) => {
+              const c = getContact(friend.personId);
+              const selected = selectedMembers.includes(friend.personId);
+              return (
+                <div key={friend.personId}>
+                  <motion.button
+                    whileTap={{ scale:0.99 }}
+                    onClick={() => toggleMember(friend.personId)}
+                    style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}
+                  >
+                    <Avatar id={friend.personId} size={44} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:15, fontWeight:700, color:C.label }}>{c.full}</p>
+                    </div>
+                    <div style={{
+                      width:24, height:24, borderRadius:12,
+                      border: selected ? `2px solid ${C.accent}` : `2px solid ${C.stroke}`,
+                      background: selected ? C.accent : "transparent",
+                      display:"flex", alignItems:"center", justifyContent:"center"
+                    }}>
+                      {selected && <Check size={14} color="#fff" strokeWidth={3} />}
+                    </div>
+                  </motion.button>
+                  {i < FRIENDS.length - 1 && <Sep ml={73} />}
+                </div>
+              );
+            })}
+          </Card>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FRIENDS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 function FriendsScreen({ onFriend, onAddGroup, onGroup }: { onFriend: (f: FriendBalance) => void; onAddGroup: () => void; onGroup: (g: GroupData) => void }) {
   const C = React.useContext(ThemeCtx);
+  const [activeTab, setActiveTab] = useState<"friends" | "groups">("friends");
+
+  const handleDragEnd = (_: unknown, info: { offset: { x: number } }) => {
+    const threshold = 80;
+    if (info.offset.x < -threshold && activeTab === "friends") {
+      setActiveTab("groups");
+    } else if (info.offset.x > threshold && activeTab === "groups") {
+      setActiveTab("friends");
+    }
+  };
+
   return (
-    <div style={{ height:"100%", overflowY:"auto", background:C.bg, scrollbarWidth:"none" }}>
-      <div style={{ padding:"16px 20px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <p style={{ fontSize:22, fontWeight:900, color:C.label, letterSpacing:"-0.8px" }}>Friends & Groups</p>
-        <button onClick={onAddGroup} style={{ border:"none", background:"none", cursor:"pointer", color:C.accent, fontSize:14, fontWeight:700 }}>
-          <Plus size={18} strokeWidth={2.5} />
-        </button>
+    <div style={{ height:"100%", display:"flex", flexDirection:"column", background:C.bg, position:"relative" }}>
+      <button onClick={onAddGroup} style={{ position:"absolute", top:16, right:20, zIndex:50, border:"none", background:"none", cursor:"pointer", color:C.accent, fontSize:14, fontWeight:700 }}>
+        <Plus size={20} strokeWidth={2.5} />
+      </button>
+
+      <div style={{ display:"flex", position:"relative", padding:"8px 20px 0", borderBottom:`${C.borderW} solid ${C.stroke}` }}>
+        {(["friends", "groups"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              flex:1, padding:"12px 16px", background:"transparent", border:"none", cursor:"pointer",
+              fontSize:15, fontWeight:700, color: activeTab === tab ? C.label : C.label3,
+              position:"relative", transition:"color 0.2s"
+            }}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+        <motion.div
+          layoutId="friendsTabIndicator"
+          style={{
+            position:"absolute", bottom:0, height:2, background:C.accent,
+            left: activeTab === "friends" ? "0%" : "50%", width:"50%"
+          }}
+          transition={{ type:"spring", stiffness:400, damping:40 }}
+        />
       </div>
 
-      <div style={{ padding:"0 16px 20px" }}>
-        <SectionLabel>Groups</SectionLabel>
-        <Card>
-          {GROUPS.map((g, i) => (
-            <div key={g.id}>
-              <motion.button whileTap={{ scale:0.99 }} onClick={() => onGroup(g)} style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
-                <div style={{ width:44, height:44, borderRadius:14, background:C.accent+"15", border:`1px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <Users size={20} color={C.accent} />
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:15, fontWeight:700, color:C.label }}>{g.name}</p>
-                  <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>{g.members.length} members · {g.expenses.length} expenses</p>
-                </div>
-                <p style={{ fontSize:16, fontWeight:800, color: g.balance >= 0 ? C.green : C.red, fontVariantNumeric:"tabular-nums" }}>
-                  {g.balance >= 0 ? "+" : "−"}${Math.abs(g.balance).toFixed(2)}
-                </p>
-              </motion.button>
-              {i < GROUPS.length - 1 && <Sep ml={73} />}
+      <div style={{ flex:1, position:"relative", overflow:"hidden" }}>
+        <motion.div
+          key={activeTab}
+          drag="x"
+          dragConstraints={{ left:0, right:0 }}
+          dragElastic={0.2}
+          onDragEnd={handleDragEnd}
+          transition={{ duration:0 }}
+          style={{ height:"100%", overflowY:"auto", scrollbarWidth:"none" }}
+        >
+          {activeTab === "friends" && (
+            <div style={{ padding:"20px 16px 36px" }}>
+              <Card>
+                {FRIENDS.map((friend, i) => {
+                  const c = getContact(friend.personId);
+                  const pos = friend.dir === "owes_you";
+                  return (
+                    <div key={friend.personId}>
+                      <motion.button whileTap={{ scale:0.99 }} onClick={() => onFriend(friend)}
+                        style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
+                        <Avatar id={friend.personId} size={44} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ fontSize:15, fontWeight:700, color:C.label }}>{c.full}</p>
+                          <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>
+                            {pos ? "owes you" : "you owe"} · {friend.expenses.length} expense{friend.expenses.length !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                          <p style={{ fontSize:17, fontWeight:900, color: pos ? C.green : C.red, letterSpacing:"-0.6px", fontVariantNumeric:"tabular-nums" }}>
+                            {pos ? "+" : "−"}${friend.amount.toFixed(2)}
+                          </p>
+                          <ChevronRight size={14} color={C.label3} style={{ opacity:0.4, flexShrink:0 }} />
+                        </div>
+                      </motion.button>
+                      {i < FRIENDS.length - 1 && <Sep ml={73} />}
+                    </div>
+                  );
+                })}
+              </Card>
             </div>
-          ))}
-        </Card>
-      </div>
+          )}
 
-      <div style={{ padding:"0 16px 36px" }}>
-        <SectionLabel>All Friends</SectionLabel>
-        <Card>
-          {FRIENDS.map((friend, i) => {
-            const c = getContact(friend.personId);
-            const pos = friend.dir === "owes_you";
-            return (
-              <div key={friend.personId}>
-                <motion.button whileTap={{ scale:0.99 }} onClick={() => onFriend(friend)}
-                  style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
-                  <Avatar id={friend.personId} size={44} />
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ fontSize:15, fontWeight:700, color:C.label }}>{c.full}</p>
-                    <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>
-                      {pos ? "owes you" : "you owe"} · {friend.expenses.length} expense{friend.expenses.length !== 1 ? "s" : ""}
-                    </p>
+          {activeTab === "groups" && (
+            <div style={{ padding:"20px 16px 36px" }}>
+              <Card>
+                {GROUPS.map((g, i) => (
+                  <div key={g.id}>
+                    <motion.button whileTap={{ scale:0.99 }} onClick={() => onGroup(g)} style={{ width:"100%", display:"flex", alignItems:"center", gap:13, padding:"15px 16px", background:"transparent", border:"none", cursor:"pointer", textAlign:"left" }}>
+                      <div style={{ width:44, height:44, borderRadius:14, background:C.accent+"15", border:`1px solid ${C.accent}30`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <Users size={20} color={C.accent} />
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontSize:15, fontWeight:700, color:C.label }}>{g.name}</p>
+                        <p style={{ fontSize:12, color:C.label3, marginTop:2 }}>{g.members.length} members · {g.expenses.length} expense{g.expenses.length !== 1 ? "s" : ""}</p>
+                      </div>
+                      <p style={{ fontSize:16, fontWeight:800, color: g.balance >= 0 ? C.green : C.red, fontVariantNumeric:"tabular-nums" }}>
+                        {g.balance >= 0 ? "+" : "−"}${Math.abs(g.balance).toFixed(2)}
+                      </p>
+                    </motion.button>
+                    {i < GROUPS.length - 1 && <Sep ml={73} />}
                   </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    <p style={{ fontSize:17, fontWeight:900, color: pos ? C.green : C.red, letterSpacing:"-0.6px", fontVariantNumeric:"tabular-nums" }}>
-                      {pos ? "+" : "−"}${friend.amount.toFixed(2)}
-                    </p>
-                    <ChevronRight size={14} color={C.label3} style={{ opacity:0.4, flexShrink:0 }} />
-                  </div>
-                </motion.button>
-                {i < FRIENDS.length - 1 && <Sep ml={73} />}
-              </div>
-            );
-          })}
-        </Card>
+                ))}
+              </Card>
+            </div>
+          )}
+        </motion.div>
       </div>
     </div>
   );
@@ -3034,6 +3240,7 @@ export function CoconutMobileMarketingPage() {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
   const [showAddFriend, setShowAddFriend] = useState(false);
+  const [newGroupDetail, setNewGroupDetail] = useState<{ name: string; type: string }|null>(null);
   const [showAllTx, setShowAllTx] = useState(false);
   const [prefill, setPrefill] = useState<DemoPrefill | undefined>();
   const [settleTarget, setSettleTarget] = useState<{ personId: PersonId; amount: number }|null>(null);
@@ -3066,6 +3273,10 @@ export function CoconutMobileMarketingPage() {
       setShowAddMenu(true);
     }
   };
+  const handleGroupCreate = (group: { name: string; type: string }) => {
+    setNewGroupDetail(group);
+  };
+
   const continueReceiptToSplit = (payload: {
     merchant: string;
     amount: number;
@@ -3499,7 +3710,8 @@ export function CoconutMobileMarketingPage() {
                       )}
                     </AnimatePresence>
                     <AnimatePresence>{showAdd && <AddExpenseModal onClose={() => { setShowAdd(false); setPrefill(undefined); }} onSettle={handleSettle} prefill={prefill} />}</AnimatePresence>
-                    <AnimatePresence>{showAddFriend && <AddFriendModal onClose={() => setShowAddFriend(false)} />}</AnimatePresence>
+                    <AnimatePresence>{newGroupDetail && <GroupDetailScreen group={newGroupDetail} onBack={() => setNewGroupDetail(null)} />}</AnimatePresence>
+                    <AnimatePresence>{showAddFriend && <AddGroupFlow onClose={() => setShowAddFriend(false)} onCreate={handleGroupCreate} />}</AnimatePresence>
                     <AnimatePresence>{settleTarget && <SettleSheet personId={settleTarget.personId} amount={settleTarget.amount} onClose={() => setSettleTarget(null)} onSettled={() => setSettleTarget(null)} />}</AnimatePresence>
                     <AnimatePresence>{selectedTx && <TxDetailSheet tx={selectedTx} onClose={() => setSelectedTx(null)} onSplit={() => { handleAdd({ merchant:selectedTx.merchant, amount:selectedTx.amount }); setSelectedTx(null); }} />}</AnimatePresence>
                   </div>
@@ -3511,8 +3723,8 @@ export function CoconutMobileMarketingPage() {
                       <span style={{ fontSize:10, fontWeight:screen==="home"?700:500, color:screen==="home"?C.accent:C.label3 }}>Home</span>
                     </button>
                     <button onClick={() => { setScreen("friends"); setFriendDetail(null); }} style={{ border:"none", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, minWidth:56 }}>
-                      <Users size={22} color={screen==="friends" ? C.accent : C.label3} strokeWidth={screen==="friends" ? 2 : 1.5} />
-                      <span style={{ fontSize:10, fontWeight:screen==="friends"?700:500, color:screen==="friends"?C.accent:C.label3 }}>Friends</span>
+                      <Share2 size={22} color={screen==="friends" ? C.accent : C.label3} strokeWidth={screen==="friends" ? 2 : 1.5} />
+                      <span style={{ fontSize:10, fontWeight:screen==="friends"?700:500, color:screen==="friends"?C.accent:C.label3 }}>Shared</span>
                     </button>
                     <motion.button whileTap={{ scale:0.86 }} onClick={() => handleAdd()}
                       style={{ width:56, height:56, borderRadius:28, border:"none", background:C.accent, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", marginTop:-18, boxShadow:`0 6px 24px ${C.accent}65, 0 0 0 6px ${C.accent}18` }}>

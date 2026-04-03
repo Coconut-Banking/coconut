@@ -16,12 +16,12 @@ export async function GET(req: NextRequest) {
   const ids = await getAccessibleGroupIds(userId);
   if (ids.length === 0) return NextResponse.json([]);
 
-  type GroupRow = { id: string; name: string; owner_id: string; created_at: string; group_type?: string; invite_token?: string; archived_at?: string | null };
+  type GroupRow = { id: string; name: string; owner_id: string; created_at: string; group_type?: string; invite_token?: string; archived_at?: string | null; image_url?: string | null };
   let groupsRaw: GroupRow[] | null;
   {
     const res = await db
       .from("groups")
-      .select("id, name, owner_id, created_at, group_type, invite_token, archived_at")
+      .select("id, name, owner_id, created_at, group_type, invite_token, archived_at, image_url")
       .in("id", ids)
       .order("created_at", { ascending: false });
     if (res.error?.code === "42703") {
