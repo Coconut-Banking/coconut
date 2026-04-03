@@ -39,19 +39,42 @@ export async function GET() {
     }
   }
 
-  const { data: splitsRaw } = await db
-    .from("split_transactions")
-    .select(`
-      id, group_id, transaction_id, created_by, created_at, date, description,
-      payer_member_id, amount, iso_currency_code, receipt_url,
-      transactions(merchant_name, raw_name, amount, date)
-    `)
-    .in("group_id", ids)
-    .order("created_at", { ascending: false })
-    .limit(500);
+  // Fetch recent expenses — use two queries to ensure manual expenses aren't
+  // pushed out when a Splitwise bulk import fills up the limit with fresh created_at.
+  const [{ data: byDate }, { data: byCreated }] = await Promise.all([
+    db
+      .from("split_transactions")
+      .select(`
+        id, group_id, transaction_id, created_by, created_at, date, description,
+        payer_member_id, amount, iso_currency_code, receipt_url,
+        transactions(merchant_name, raw_name, amount, date)
+      `)
+      .in("group_id", ids)
+      .not("date", "is", null)
+      .order("date", { ascending: false })
+      .limit(500),
+    db
+      .from("split_transactions")
+      .select(`
+        id, group_id, transaction_id, created_by, created_at, date, description,
+        payer_member_id, amount, iso_currency_code, receipt_url,
+        transactions(merchant_name, raw_name, amount, date)
+      `)
+      .in("group_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(500),
+  ]);
+
+  // Merge and deduplicate both result sets
+  const seenIds = new Set<string>();
+  const merged = [...(byDate ?? []), ...(byCreated ?? [])].filter((s) => {
+    if (seenIds.has(s.id)) return false;
+    seenIds.add(s.id);
+    return true;
+  });
 
   const seenByGroup = new Map<string, Set<string>>();
-  const deduped = (splitsRaw ?? []).filter((s) => {
+  const deduped = merged.filter((s) => {
     const seen = seenByGroup.get(s.group_id) ?? new Set();
     const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
     if (seen.has(k)) return false;
@@ -60,7 +83,6 @@ export async function GET() {
     return true;
   });
 
-  // Sort by actual expense date (not insertion time) so imported data shows chronologically
   const splits = deduped.sort((a, b) => {
     const da = (a as { date?: string }).date ?? a.created_at;
     const db_ = (b as { date?: string }).date ?? b.created_at;
