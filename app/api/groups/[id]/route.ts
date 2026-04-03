@@ -4,7 +4,6 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
 import { getSuggestedSettlements } from "@/lib/split-balances";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
-import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { getClerkUserPhotos } from "@/lib/clerk-user-lookup";
 import {
@@ -26,11 +25,14 @@ export async function GET(
   try {
     const db = getSupabase();
 
-    const allowed = await canAccessGroup(userId, id);
-    if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
+    // Fetch group first, then check access inline — avoids canAccessGroup's redundant re-query
     const { data: group, error: groupError } = await db.from("groups").select("*").eq("id", id).single();
     if (groupError || !group) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (group.owner_id !== userId) {
+      const { data: member } = await db.from("group_members").select("id").eq("group_id", id).eq("user_id", userId).maybeSingle();
+      if (!member) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const isOwner = group.owner_id === userId;
     const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
@@ -381,10 +383,8 @@ export async function PATCH(
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const allowed = await canAccessGroup(userId, id);
-  if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
   const db = getSupabase();
+  // Single query — owner check is sufficient for PATCH (members can't archive)
   const { data: row, error: loadErr } = await db.from("groups").select("owner_id").eq("id", id).single();
   if (loadErr || !row || row.owner_id !== userId) {
     return NextResponse.json({ error: "Only the group owner can archive or unarchive" }, { status: 403 });

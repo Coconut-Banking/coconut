@@ -90,8 +90,10 @@ export async function POST(req: Request) {
     } catch (e) {
       console.warn("[subscriptions] pre-detect sync failed:", e instanceof Error ? e.message : e);
     }
-    const removed = await deleteExcludedSubscriptions(userId);
-    const detected = await detectSubscriptionsForUser(userId);
+    const [removed, detected] = await Promise.all([
+      deleteExcludedSubscriptions(userId),
+      detectSubscriptionsForUser(userId),
+    ]);
     await saveDetectedSubscriptions(userId, detected);
     revalidateTag(CACHE_TAGS.transactions(userId), "max");
     return NextResponse.json({ detected: detected.length, removed });

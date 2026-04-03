@@ -64,47 +64,59 @@ export function useTransactions() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/plaid/status")
-      .then((res) => {
-        if (!res.ok) throw new Error("status check failed");
-        return res.json();
-      })
-      .then(async (data) => {
+    // Fire status check and initial transaction fetch in parallel to eliminate waterfall
+    Promise.all([
+      fetch("/api/plaid/status"),
+      fetch("/api/plaid/transactions"),
+    ])
+      .then(async ([statusRes, txRes]) => {
         if (cancelled) return;
-        if (!data.linked) {
+        if (!statusRes.ok) throw new Error("status check failed");
+
+        const status = await statusRes.json();
+        if (cancelled) return;
+
+        if (!status.linked) {
+          setLinked(false);
+          setTransactions([]);
           setLoading(false);
-          return null;
+          return;
         }
+
         setLinked(true);
-        // Sync only on hard refresh (F5 / reload), not on tab return or client nav
+
+        // Show initial data immediately from the parallel fetch
+        if (txRes.ok) {
+          const initialData = await txRes.json().catch(() => null);
+          if (!cancelled && Array.isArray(initialData)) {
+            setTransactions(initialData as UITransaction[]);
+          }
+        }
+
+        setLoading(false);
+
+        // On hard refresh, trigger a background sync then re-fetch fresh data
         const nav = typeof performance !== "undefined" && performance.getEntriesByType?.("navigation")?.[0];
         const isReload = nav && (nav as PerformanceNavigationTiming).type === "reload";
-        if (isReload) {
+        if (isReload && !cancelled) {
           try {
             await fetch("/api/plaid/transactions", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: "{}",
             });
+            if (!cancelled) {
+              const fresh = await fetch("/api/plaid/transactions?refresh=1");
+              if (fresh.ok && !cancelled) {
+                const freshData = await fresh.json().catch(() => null);
+                if (!cancelled && Array.isArray(freshData)) {
+                  setTransactions(freshData as UITransaction[]);
+                }
+              }
+            }
           } catch {
-            // ignore — will still fetch from cache
+            // ignore — already showing initial data
           }
-        }
-        return fetch("/api/plaid/transactions");
-      })
-      .then(async (res) => {
-        if (!res || cancelled) return null;
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (!cancelled) setError((data as { error?: string })?.error ?? "Failed to load transactions");
-          return null;
-        }
-        return data;
-      })
-      .then((data) => {
-        if (cancelled || !data) return;
-        if (Array.isArray(data)) {
-          setTransactions(data as UITransaction[]);
         }
       })
       .catch(() => {
@@ -112,9 +124,6 @@ export function useTransactions() {
           setError("Failed to load transactions");
           setLoading(false);
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
 
     return () => { cancelled = true; };
