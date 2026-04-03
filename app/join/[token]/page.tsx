@@ -41,12 +41,13 @@ async function getInviteData(token: string) {
 export default async function JoinPage({
   params,
 }: {
-  params: { token: string };
+  params: Promise<{ token: string }>;
 }) {
-  const data = await getInviteData(params.token);
+  const { token } = await params;
+  const data = await getInviteData(token);
   if (!data) notFound();
 
-  const deepLink = `coconut://join/${params.token}`;
+  const deepLink = `coconut://join/${token}`;
   const appStoreUrl = "https://apps.apple.com/app/coconut-banking/id6742188498";
 
   return (
