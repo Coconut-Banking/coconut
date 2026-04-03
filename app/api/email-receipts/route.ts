@@ -36,8 +36,8 @@ export async function GET() {
       (r) => !isExcludedReceipt(r.raw_from, r.merchant)
     );
 
-    // Validate that matched transaction_ids still exist so stale matches
-    // (pointing at deleted/deduped transactions) don't show as "Matched"
+    // Validate that matched transaction_ids point to existing transactions
+    // owned by THIS user (catches stale matches AND cross-user matches)
     const linkedTxIds = filtered
       .map((r) => r.transaction_id)
       .filter(Boolean) as string[];
@@ -45,7 +45,8 @@ export async function GET() {
       const { data: validTxRows } = await db
         .from("transactions")
         .select("id")
-        .in("id", linkedTxIds);
+        .in("id", linkedTxIds)
+        .eq("clerk_user_id", userId);
       const validTxIds = new Set((validTxRows ?? []).map((t) => t.id as string));
       for (const r of filtered) {
         if (r.transaction_id && !validTxIds.has(r.transaction_id)) {

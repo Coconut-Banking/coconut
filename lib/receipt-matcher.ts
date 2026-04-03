@@ -219,8 +219,9 @@ export async function matchReceiptsToTransactions(
 }
 
 /**
- * Clear receipt matches whose transaction_id points to a deleted/deduped transaction.
- * Returns the number of stale matches cleared.
+ * Clear invalid receipt matches: deleted transactions OR cross-user matches
+ * (receipt matched to a transaction belonging to a different user).
+ * Returns the number of bad matches cleared.
  */
 export async function clearStaleReceiptMatches(clerkUserId: string): Promise<number> {
   const db = getSupabase();
@@ -234,10 +235,12 @@ export async function clearStaleReceiptMatches(clerkUserId: string): Promise<num
   if (!matchedReceipts || matchedReceipts.length === 0) return 0;
 
   const txIds = matchedReceipts.map((r) => r.transaction_id).filter(Boolean) as string[];
+  // Only accept transactions that exist AND belong to this user
   const { data: txRows } = await db
     .from("transactions")
     .select("id")
-    .in("id", txIds);
+    .in("id", txIds)
+    .eq("clerk_user_id", clerkUserId);
 
   const validTxIds = new Set((txRows ?? []).map((t) => t.id as string));
   let cleared = 0;
