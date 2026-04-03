@@ -59,8 +59,17 @@ function Avatar({
   );
 }
 
-function GroupIcon({ emoji, size = "md" }: { emoji: string; size?: "sm" | "md" }) {
+function GroupIcon({ emoji, imageUrl, size = "md" }: { emoji: string; imageUrl?: string | null; size?: "sm" | "md" }) {
   const cls = size === "sm" ? "w-8 h-8 text-base rounded-xl" : "w-10 h-10 text-xl rounded-xl";
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        className={`${cls} object-cover shrink-0 border border-[#E3DBD8]`}
+      />
+    );
+  }
   return (
     <div
       className={`${cls} bg-[#F0F9F4] border border-[#E3DBD8] flex items-center justify-center shrink-0`}
@@ -847,11 +856,20 @@ function SharedPageContent() {
           <ArrowLeft size={16} /> Back
         </button>
         <div className="flex items-center justify-between gap-4 mb-6">
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{groupDetail.name}</h2>
-            <p className="text-sm text-gray-500">
-              {groupDetail.members.length} members · {fc(groupDetail.totalSpend ?? 0)} total
-            </p>
+          <div className="flex items-center gap-3 min-w-0">
+            {groupDetail.image_url && (
+              <img
+                src={groupDetail.image_url}
+                alt=""
+                className="w-12 h-12 rounded-xl object-cover border border-[#E3DBD8] shrink-0"
+              />
+            )}
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{groupDetail.name}</h2>
+              <p className="text-sm text-gray-500">
+                {groupDetail.members.length} members · {fc(groupDetail.totalSpend ?? 0)} total
+              </p>
+            </div>
           </div>
           <div className="flex -space-x-2 shrink-0">
             {groupDetail.members.slice(0, 4).map((m, i) => (
@@ -1170,6 +1188,7 @@ function SharedPageContent() {
       id: g.id,
       name: g.name,
       emoji: GROUP_EMOJI[(g as { groupType?: string }).groupType ?? "other"] ?? "👥",
+      imageUrl: g.imageUrl ?? null,
       memberCount: g.memberCount,
       direction:
         g.myBalance > 0 ? ("owed" as const) : g.myBalance < 0 ? ("you_owe" as const) : ("settled" as const),
@@ -1476,7 +1495,7 @@ function SharedPageContent() {
                       className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => setSelectedId(group.id)}
                     >
-                      <GroupIcon emoji={group.emoji} />
+                      <GroupIcon emoji={group.emoji} imageUrl={group.imageUrl} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900">{group.name}</p>
                         <p className="text-xs text-gray-400 mt-0.5">

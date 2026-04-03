@@ -23,6 +23,7 @@ export interface GroupMember {
 
 export interface GroupDetail extends Group {
   isOwner?: boolean;
+  image_url?: string | null;
   members: GroupMember[];
   activity: Array<{
     id: string;
@@ -124,6 +125,7 @@ export interface GroupSummary {
   memberCount: number;
   myBalance: number;
   lastActivityAt: string;
+  imageUrl?: string | null;
 }
 
 export interface FriendBalance {
