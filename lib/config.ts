@@ -12,7 +12,7 @@ export const SEARCH = {
 } as const;
 
 export const GMAIL = {
-  DEFAULT_SCAN_DAYS: 7,
+  DEFAULT_SCAN_DAYS: 30,
   MAX_RESULTS: 200,
   EMAIL_MAX_CHARS: 12_000,
   PARSE_CONCURRENCY: 5,

@@ -188,6 +188,7 @@ Rules:
 - Extract merchant name from sender or subject if not in body
 - All numeric values must be numbers, not strings
 - Extract subtotal (pre-tax amount), tax, and order_number if present; use null if not found
+- CRITICAL: line_items totals MUST sum to total_amount. If a fee/add-on is already included in the main charge, do NOT list it as a separate item. If you cannot break down the total into exact line items, use a single line item with the full total.
 - Assign each line item a category from this list of Plaid-compatible categories:
   FOOD_AND_DRINK, GROCERIES, ENTERTAINMENT, SHOPPING, TRANSPORTATION,
   HEALTH_AND_FITNESS, HOUSEHOLD, ELECTRONICS, PERSONAL_CARE, OTHER
@@ -282,6 +283,25 @@ ${body}`;
     merchant_type: merchantType,
     merchant_details: merchantDetails,
   };
+
+  // Sanity check: if line items sum significantly differs from total, collapse to single item
+  const totalAmount = result.total_amount;
+  if (result.line_items.length > 0 && totalAmount > 0) {
+    const itemsSum = result.line_items.reduce((sum, it) => sum + it.total, 0);
+    const diff = Math.abs(itemsSum - totalAmount);
+    if (diff > 0.02 * totalAmount && diff > 1) {
+      // Items don't add up — use a single line item with the correct total
+      result.line_items = [{
+        name: result.merchant,
+        quantity: 1,
+        unit_price: totalAmount,
+        total: totalAmount,
+        category: result.line_items[0]?.category ?? "OTHER",
+      }];
+    }
+  }
+
+  return result;
 }
 
 // ─── Scan stats ──────────────────────────────────────────────────────────────

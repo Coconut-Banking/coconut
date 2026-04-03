@@ -6,6 +6,7 @@ import { getSuggestedSettlements } from "@/lib/split-balances";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
+import { getClerkUserPhotos } from "@/lib/clerk-user-lookup";
 import {
   merchantLabelFromSplitRow,
   paidAmountFromSplitRow,
@@ -82,6 +83,14 @@ export async function GET(
       }
       members = deduped;
     }
+
+    // Batch-fetch Clerk profile photos for members with a linked user_id.
+    const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
+    const photoMap = await getClerkUserPhotos(memberUserIds);
+    members = (members ?? []).map((m) => ({
+      ...m,
+      image_url: (m.user_id && photoMap.get(m.user_id)) || null,
+    }));
 
     const { data: splitsRaw } = await db
       .from("split_transactions")

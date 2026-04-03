@@ -1,4 +1,5 @@
 import { clerkClient } from "@clerk/nextjs/server";
+import { isClerkRateLimitError } from "@/lib/auth";
 
 /**
  * Look up a Clerk user ID by email address.
@@ -62,6 +63,43 @@ export async function findClerkUserIdsByEmails(
     }
   } catch (e) {
     console.warn("[clerk-user-lookup] batch lookup failed:", e);
+  }
+
+  return result;
+}
+
+/**
+ * Batch-fetch Clerk profile photo URLs for a list of Clerk user IDs.
+ * Returns a map of userId -> imageUrl. Handles rate limits gracefully.
+ */
+export async function getClerkUserPhotos(
+  userIds: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (unique.length === 0) return result;
+
+  try {
+    const client = await clerkClient();
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      const batch = unique.slice(i, i + BATCH_SIZE);
+      const res = await client.users.getUserList({
+        userId: batch,
+        limit: BATCH_SIZE,
+      });
+      for (const user of res.data) {
+        if (user.imageUrl) {
+          result.set(user.id, user.imageUrl);
+        }
+      }
+    }
+  } catch (e) {
+    if (isClerkRateLimitError(e)) {
+      console.warn("[clerk-user-lookup] rate limited fetching photos");
+    } else {
+      console.warn("[clerk-user-lookup] photo batch lookup failed:", e);
+    }
   }
 
   return result;

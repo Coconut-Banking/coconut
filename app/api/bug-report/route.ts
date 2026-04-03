@@ -69,6 +69,9 @@ export async function POST(req: NextRequest) {
   if (title.length > 200) {
     return NextResponse.json({ error: "title must be 200 characters or fewer" }, { status: 400 });
   }
+  if (description.length > 2000) {
+    return NextResponse.json({ error: "description must be 2000 characters or fewer" }, { status: 400 });
+  }
 
   const issueTitle = `[User Report] ${title}`;
   const issueBody = buildIssueBody(body, clerkAuth.userId);
