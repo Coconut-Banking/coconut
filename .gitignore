@@ -51,3 +51,6 @@ screenshots/
 # Local TODO (not committed)
 TODO.md
 *.ipa
+
+# Brainstorming artifacts
+.superpowers/
