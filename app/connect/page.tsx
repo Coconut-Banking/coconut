@@ -132,6 +132,7 @@ function ConnectBankContent() {
   const [traceId, setTraceId] = useState("");
   const [loginRedirectUrl, setLoginRedirectUrl] = useState<string | null>(null);
   const [showLoginRetry, setShowLoginRetry] = useState(false);
+  const [oauthInProgress, setOauthInProgress] = useState(false);
 
   const logPlaidEvent = useCallback(
     (payload: Record<string, unknown>) => {
@@ -282,6 +283,7 @@ function ConnectBankContent() {
   const onSuccess = useCallback(
     async (publicToken: string, metadata?: unknown) => {
       setIsExchanging(true);
+      setOauthInProgress(false);
       setError(null);
       try {
         const meta = metadata as {
@@ -356,12 +358,14 @@ function ConnectBankContent() {
     receivedRedirectUri,
     onSuccess,
     onEvent: (eventName, metadata) => {
+      if (eventName === "OPEN_OAUTH") setOauthInProgress(true);
       logPlaidEvent({
         type: "link_event",
         metadata: { eventName, metadata },
       });
     },
     onExit: (err) => {
+      setOauthInProgress(false);
       if (err) {
         const e = err as {
           errorCode?: string;
@@ -431,11 +435,51 @@ function ConnectBankContent() {
     if (step === "connected") {
       return <ConnectedStep />;
     }
+    if (error) {
+      const deepLink = `${getAppScheme()}://connected`;
+      return (
+        <div className="min-h-screen bg-[#F5F3F2] flex items-center justify-center px-6">
+          <div className="text-center max-w-sm">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Connection failed</h2>
+            <p className="text-sm text-gray-500 mb-1">{error}</p>
+            {debugInfo && <p className="text-xs text-gray-400 mb-4 break-all">{debugInfo}</p>}
+            <div className="flex flex-col gap-2 mt-4">
+              <button
+                onClick={() => { setError(null); setStep("link"); }}
+                className="bg-[#1e2021] hover:bg-[#161819] text-white py-2.5 px-6 rounded-xl text-sm font-medium"
+              >
+                Try again
+              </button>
+              <a
+                href={deepLink}
+                className="text-sm text-gray-500 underline"
+              >
+                Return to app
+              </a>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-[#F5F3F2] flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-xs px-4">
           <div className="w-8 h-8 border-2 border-[#1e2021]/30 border-t-[#1e2021] rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-gray-500">Connecting to your bank…</p>
+          <p className="text-sm text-gray-500">
+            {isExchanging
+              ? "Saving your bank connection…"
+              : oauthInProgress
+                ? "Waiting for your bank to redirect…"
+                : "Connecting to your bank…"}
+          </p>
+          {(isExchanging || oauthInProgress) && (
+            <p className="text-xs text-gray-400 mt-2">
+              Please don&apos;t close this window — it will return to the app automatically
+            </p>
+          )}
         </div>
       </div>
     );
