@@ -1,7 +1,7 @@
 # Group Invite Links
 
 **Date:** 2026-04-02
-**Status:** Draft
+**Status:** Ready for planning
 
 ## Problem
 
@@ -65,7 +65,7 @@ ALTER TABLE group_members
 ADD COLUMN joined_via text DEFAULT 'added_by_owner';
 ```
 
-Values: `'added_by_owner'`, `'invite_link'`, `'splitwise_import'`. Tracks how each member joined. Nullable for existing rows.
+Values: `'added_by_owner'`, `'invite_link'`, `'splitwise_import'`. Tracks how each member joined. Existing rows get backfilled to `'added_by_owner'` via the default.
 
 No new tables needed.
 
@@ -165,7 +165,7 @@ Shown when the app opens via an invite link.
 **Unauthenticated user (read-only mode):**
 - Store invite token in AsyncStorage
 - Fetch group preview from `GET /api/groups/invite/[token]` (public endpoint)
-- Show the group in a read-only view: expenses, members, balances are visible but all action buttons are disabled
+- Show the group in a read-only view: the same data as the public preview (member list, recent expense descriptions + amounts) — no per-person balances, no emails, no user IDs. All action buttons are disabled.
 - Persistent banner or floating button: **"Sign up to add expenses"**
 - On sign-up completion → read token from AsyncStorage → `POST /api/groups/join` → navigate to group as full member → clear stored token
 
@@ -189,7 +189,7 @@ On the group detail screen (for any member):
 
 | Scenario | Behavior |
 |----------|----------|
-| Invalid/expired token | Landing page: "This invite link is invalid." App: error screen with back button. |
+| Invalid or unknown token | Landing page: "This invite link is invalid." App: error screen with back button. |
 | Already a member | App: "You're already in this trip" + navigate to group |
 | Network error on join | App: retry prompt |
 | Group deleted after link shared | Same as invalid token |
