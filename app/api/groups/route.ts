@@ -75,8 +75,9 @@ export async function POST(req: NextRequest) {
   const name = (body.name as string)?.trim()?.slice(0, 100);
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
-  const groupType = ["home", "trip", "couple", "other"].includes(body.group_type)
-    ? body.group_type
+  const rawType = body.group_type ?? body.groupType;
+  const groupType = ["home", "trip", "couple", "event", "other"].includes(rawType)
+    ? rawType
     : "other";
   const inviteToken = `inv_${randomUUID().replace(/-/g, "")}`;
 

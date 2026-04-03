@@ -75,7 +75,8 @@ export async function GET() {
   const { data: shares } = await db
     .from("split_shares")
     .select("split_transaction_id, member_id, amount")
-    .in("split_transaction_id", splitIds);
+    .in("split_transaction_id", splitIds)
+    .limit(5000);
 
   const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
   const { data: txRows } = await db

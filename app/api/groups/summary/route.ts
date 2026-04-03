@@ -136,7 +136,7 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   const [sharesResult, txResult, settlementsResult] = await Promise.all([
     splitIds.length > 0
-      ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds)
+      ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds).limit(10000)
       : Promise.resolve({ data: null }),
     txIds.length > 0
       ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)

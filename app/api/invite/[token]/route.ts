@@ -16,7 +16,7 @@ export async function GET(
 
   const { data: group, error } = await db
     .from("groups")
-    .select("id, name, owner_id, group_type")
+    .select("id, name, owner_id, group_type, image_url")
     .eq("invite_token", token)
     .maybeSingle();
 
@@ -43,6 +43,7 @@ export async function GET(
     groupId: group.id,
     groupName: group.name,
     groupType: group.group_type ?? "other",
+    imageUrl: (group as { image_url?: string | null }).image_url ?? null,
     memberCount: (members ?? []).length,
     inviterName: ownerMember?.display_name ?? "Someone",
     members: (members ?? []).map((m) => ({

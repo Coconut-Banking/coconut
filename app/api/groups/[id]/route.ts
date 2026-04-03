@@ -122,7 +122,8 @@ export async function GET(
     const { data: shares } = await db
       .from("split_shares")
       .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splits.map((s) => s.id));
+      .in("split_transaction_id", splits.map((s) => s.id))
+      .limit(5000);
 
     const { data: settlements } = await db
       .from("settlements")
