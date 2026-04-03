@@ -44,13 +44,16 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (e) {
     const rawMessage = e instanceof Error ? e.message : "Scan failed";
-    console.error("[gmail-scan]", rawMessage);
+    console.error("[gmail-scan] error:", rawMessage, e instanceof Error ? e.stack : "");
     // Detect auth/token errors so the UI can prompt reconnection
     const isAuthError = rawMessage.includes("invalid_grant") || rawMessage.includes("Token has been") || rawMessage.includes("401");
-    const status = isAuthError ? 403 : 500;
-    const userMessage = isAuthError
-      ? "Gmail connection expired. Please reconnect in Settings."
+    const isNotConnected = rawMessage.includes("Gmail not connected");
+    const isPermissionError = rawMessage.includes("Insufficient Permission") || rawMessage.includes("403");
+    const needsReconnect = isAuthError || isNotConnected || isPermissionError;
+    const status = needsReconnect ? 403 : 500;
+    const userMessage = needsReconnect
+      ? "Gmail connection expired or missing permissions. Please reconnect Gmail in Settings."
       : "Gmail scan failed. Please try again.";
-    return NextResponse.json({ error: userMessage, authError: isAuthError }, { status });
+    return NextResponse.json({ error: userMessage, authError: needsReconnect }, { status });
   }
 }
