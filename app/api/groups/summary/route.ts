@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
+import { getClerkUserPhotos } from "@/lib/clerk-user-lookup";
 import {
   paidAmountFromSplitRow,
   splitTransactionDedupeKey,
@@ -32,13 +33,13 @@ function addPersonCurrency(
   personBalances.set(key, existing);
 }
 
-function friendRowFromAgg(key: string, v: PersonAgg) {
+function friendRowFromAgg(key: string, v: PersonAgg, imageUrl?: string | null) {
   const balances = [...v.byCurrency.entries()]
     .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
     .filter((b) => Math.abs(b.amount) >= BALANCE_EPS)
     .sort((a, b) => a.currency.localeCompare(b.currency));
   const balance = balances.length === 1 ? balances[0].amount : balances.length === 0 ? 0 : null;
-  return { key, displayName: v.displayName, balance, balances };
+  return { key, displayName: v.displayName, balance, balances, image_url: imageUrl ?? null };
 }
 
 /**
@@ -547,8 +548,25 @@ async function handleSummary(req: NextRequest, userId: string) {
     }
   }
 
+  // Batch-fetch Clerk profile photos for friends with linked user_ids.
+  const friendKeyToUserId = new Map<string, string>();
+  for (const m of members ?? []) {
+    if (m.user_id === userId || !m.user_id) continue;
+    const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
+    if (personBalances.has(key) && !friendKeyToUserId.has(key)) {
+      friendKeyToUserId.set(key, m.user_id);
+    }
+  }
+  const friendUserIds = [...new Set(friendKeyToUserId.values())];
+  const friendPhotoMap = friendUserIds.length > 0 ? await getClerkUserPhotos(friendUserIds) : new Map<string, string>();
+  const friendKeyToPhoto = new Map<string, string>();
+  for (const [key, uid] of friendKeyToUserId) {
+    const url = friendPhotoMap.get(uid);
+    if (url) friendKeyToPhoto.set(key, url);
+  }
+
   let friends = Array.from(personBalances.entries())
-    .map(([key, v]) => friendRowFromAgg(key, v))
+    .map(([key, v]) => friendRowFromAgg(key, v, friendKeyToPhoto.get(key)))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   let groupsOut = groupsWithBalance;

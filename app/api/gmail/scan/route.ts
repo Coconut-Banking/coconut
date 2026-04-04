@@ -44,7 +44,8 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (e) {
     const rawMessage = e instanceof Error ? e.message : "Scan failed";
-    console.error("[gmail-scan] error:", rawMessage, e instanceof Error ? e.stack : "");
+    console.error("[gmail-scan] error:", rawMessage);
+    if (e instanceof Error && e.stack) console.error("[gmail-scan] stack:", e.stack);
     // Detect auth/token errors so the UI can prompt reconnection
     const isAuthError = rawMessage.includes("invalid_grant") || rawMessage.includes("Token has been") || rawMessage.includes("401");
     const isNotConnected = rawMessage.includes("Gmail not connected");

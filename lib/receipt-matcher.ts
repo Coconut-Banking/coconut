@@ -5,46 +5,108 @@ export function normalizeMerchant(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Extract meaningful keywords from a merchant name.
- * Returns up to 3 keywords, filtering out stop words and short tokens.
- */
-/** Escape PostgREST special characters for safe use in ilike patterns. */
 function sanitizeForIlike(s: string): string {
   return s.replace(/[%_\\]/g, "");
 }
 
+const MERCHANT_ALIASES: Record<string, string[]> = {
+  lyft: ["lyft", "lyft ride", "lyft scooter"],
+  uber: ["uber", "uber trip", "uber eats", "uber one"],
+  doordash: ["doordash", "dd doordash"],
+  grubhub: ["grubhub", "seamless"],
+  target: ["target", "target com"],
+  amazon: ["amazon", "amzn", "amazon com", "amazon prime", "amzn mktp"],
+  walmart: ["walmart", "wal mart", "wm supercenter"],
+  costco: ["costco", "costco whse"],
+  airbnb: ["airbnb", "air bnb"],
+  starbucks: ["starbucks", "sbux"],
+  mcdonalds: ["mcdonalds", "mcdonald"],
+  apple: ["apple", "apple com bill", "apple com"],
+  spotify: ["spotify"],
+  netflix: ["netflix"],
+  instacart: ["instacart"],
+  gopuff: ["gopuff", "go puff"],
+  chevron: ["chevron"],
+  shell: ["shell oil", "shell service"],
+  clipper: ["clipper", "clipper card", "bay area toll"],
+  frontier: ["frontier", "frontier airlines"],
+  wise: ["wise", "transferwise"],
+};
+
+function resolveAliases(merchant: string): string[] {
+  const norm = normalizeMerchant(merchant);
+  const extra: string[] = [];
+  for (const [canonical, aliases] of Object.entries(MERCHANT_ALIASES)) {
+    if (aliases.some((a) => norm.includes(a)) || norm.includes(canonical)) {
+      extra.push(canonical);
+      for (const a of aliases) {
+        const kw = a.split(" ")[0];
+        if (kw.length >= 3 && !extra.includes(kw)) extra.push(kw);
+      }
+    }
+  }
+  return extra;
+}
+
 export function extractKeywords(merchant: string): string[] {
   const normalized = normalizeMerchant(merchant);
-  return normalized
+  const words = normalized
     .split(" ")
     .filter(
       (w) => w.length >= RECEIPT_MATCH.MIN_KEYWORD_LENGTH && !RECEIPT_MATCH.STOP_WORDS.has(w)
     )
     .map(sanitizeForIlike)
-    .filter((w) => w.length > 0)
-    .slice(0, 3);
+    .filter((w) => w.length > 0);
+
+  const aliasKeywords = resolveAliases(merchant)
+    .map(sanitizeForIlike)
+    .filter((w) => w.length > 0);
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const w of [...words, ...aliasKeywords]) {
+    if (!seen.has(w)) {
+      seen.add(w);
+      result.push(w);
+    }
+  }
+  return result.slice(0, 5);
 }
 
-/** Check if two merchant names are similar enough to be the same merchant. */
-function merchantsMatch(receiptMerchant: string, txMerchant: string): boolean {
+export function merchantsMatch(receiptMerchant: string, txMerchant: string): boolean {
   const a = normalizeMerchant(receiptMerchant);
   const b = normalizeMerchant(txMerchant);
   if (!a || !b) return false;
 
-  // Direct substring match (either direction)
   if (a.includes(b) || b.includes(a)) return true;
 
-  // Keyword overlap: at least one keyword from receipt appears in transaction merchant
-  const keywords = a.split(" ").filter((w) => w.length >= 3);
-  if (keywords.some((kw) => b.includes(kw))) return true;
+  const aKeywords = a.split(" ").filter((w) => w.length >= 3);
+  if (aKeywords.some((kw) => b.includes(kw))) return true;
+
+  const bKeywords = b.split(" ").filter((w) => w.length >= 3);
+  if (bKeywords.some((kw) => a.includes(kw))) return true;
+
+  const aAliases = resolveAliases(receiptMerchant);
+  const bAliases = resolveAliases(txMerchant);
+  if (aAliases.length > 0 && bAliases.length > 0) {
+    if (aAliases.some((aa) => bAliases.includes(aa))) return true;
+  }
+  if (aAliases.some((aa) => b.includes(aa))) return true;
+  if (bAliases.some((ba) => a.includes(ba))) return true;
 
   return false;
 }
 
-/** Score and rank transaction candidates against a receipt. Returns best match ID or null. */
+function amountWithinTolerance(receiptAmount: number, txAmount: number): boolean {
+  const diff = Math.abs(txAmount - receiptAmount);
+  return (
+    diff <= RECEIPT_MATCH.AMOUNT_TOLERANCE_DOLLARS ||
+    (receiptAmount > 0 && diff / receiptAmount <= RECEIPT_MATCH.AMOUNT_TOLERANCE_PERCENT)
+  );
+}
+
 export function scoreCandidates(
-  candidates: Array<{ id: string; amount: number; date: string; normalized_merchant?: string }>,
+  candidates: Array<{ id: string; amount: number; date: string; normalized_merchant?: string; merchant_name?: string }>,
   receiptAmount: number,
   receiptDate: string | null,
   receiptMerchant?: string
@@ -60,18 +122,15 @@ export function scoreCandidates(
           ? Math.abs(new Date(tx.date).getTime() - new Date(receiptDate).getTime())
           : 0,
         normalized_merchant: tx.normalized_merchant,
+        merchant_name: tx.merchant_name,
       };
     })
     .filter((s) => {
-      // Amount must be close enough
-      const amountOk =
-        s.amountDiff <= RECEIPT_MATCH.AMOUNT_TOLERANCE_DOLLARS ||
-        (receiptAmount > 0 && s.amountDiff / receiptAmount <= RECEIPT_MATCH.AMOUNT_TOLERANCE_PERCENT);
-      if (!amountOk) return false;
+      if (!amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff)) return false;
 
-      // If we have merchant info, validate it matches
-      if (receiptMerchant && s.normalized_merchant) {
-        if (!merchantsMatch(receiptMerchant, s.normalized_merchant)) return false;
+      if (receiptMerchant) {
+        const txMerch = s.normalized_merchant || s.merchant_name || "";
+        if (txMerch && !merchantsMatch(receiptMerchant, txMerch)) return false;
       }
 
       return true;
@@ -82,9 +141,13 @@ export function scoreCandidates(
 }
 
 /**
- * Match unmatched email receipts to Plaid transactions by merchant + amount + date.
- * Uses multiple keywords for merchant matching and wider tolerances.
- * Falls back to amount+date matching WITH merchant validation if keyword matching fails.
+ * Match unmatched email receipts to Plaid transactions.
+ *
+ * Strategy 1: keyword ilike on normalized_merchant (+ merchant_name fallback)
+ * Strategy 2: date-window scan with merchant name validation + full amount tolerance
+ * Strategy 3: date-window scan, amount-only with very tight tolerance ($0.50)
+ *             when merchant can't be validated (covers merchants with very
+ *             different names in email vs bank, e.g. "Mensho Tokyo SF" vs "SQ *MENSHO")
  */
 export async function matchReceiptsToTransactions(
   clerkUserId: string,
@@ -100,8 +163,6 @@ export async function matchReceiptsToTransactions(
 
   if (!receipts || receipts.length === 0) return 0;
 
-  // Collect transaction IDs that already have a receipt linked so we
-  // don't double-match (e.g. two Lyft rides with the same amount).
   const { data: alreadyLinked } = await db
     .from("email_receipts")
     .select("transaction_id")
@@ -120,7 +181,6 @@ export async function matchReceiptsToTransactions(
     const receiptAmount = Math.abs(Number(receipt.amount));
     const receiptDate = receipt.date;
 
-    // Build date window
     let dateStart: string | undefined;
     let dateEnd: string | undefined;
     if (receiptDate) {
@@ -133,73 +193,115 @@ export async function matchReceiptsToTransactions(
       dateEnd = end.toISOString().split("T")[0];
     }
 
-    // Strategy 1: keyword-based merchant matching
+    // ── Strategy 1: keyword ilike on normalized_merchant + merchant_name ──
     const keywords = extractKeywords(receipt.merchant);
     let bestMatchId: string | null = null;
 
     if (keywords.length > 0) {
       for (const keyword of keywords) {
-        let query = db
-          .from("transactions")
-          .select("id, amount, date, normalized_merchant")
-          .eq("clerk_user_id", clerkUserId)
-          .ilike("normalized_merchant", `%${keyword}%`);
+        // Try normalized_merchant first
+        for (const col of ["normalized_merchant", "merchant_name"] as const) {
+          let query = db
+            .from("transactions")
+            .select("id, amount, date, normalized_merchant, merchant_name")
+            .eq("clerk_user_id", clerkUserId)
+            .ilike(col, `%${keyword}%`);
 
-        if (dateStart && dateEnd) {
-          query = query.gte("date", dateStart).lte("date", dateEnd);
-        }
+          if (dateStart && dateEnd) {
+            query = query.gte("date", dateStart).lte("date", dateEnd);
+          }
 
-        const { data: candidates } = await query;
-        if (candidates && candidates.length > 0) {
-          const available = (candidates as Array<{ id: string; amount: number; date: string; normalized_merchant?: string }>)
-            .filter((tx) => !alreadyMatchedTxIds.has(tx.id));
-          bestMatchId = scoreCandidates(
-            available,
-            receiptAmount,
-            receiptDate,
-            receipt.merchant
-          );
-          if (bestMatchId) break;
+          const { data: candidates } = await query;
+          if (candidates && candidates.length > 0) {
+            const available = (candidates as Array<{ id: string; amount: number; date: string; normalized_merchant?: string; merchant_name?: string }>)
+              .filter((tx) => !alreadyMatchedTxIds.has(tx.id));
+            bestMatchId = scoreCandidates(
+              available,
+              receiptAmount,
+              receiptDate,
+              receipt.merchant
+            );
+            if (bestMatchId) break;
+          }
         }
+        if (bestMatchId) break;
       }
     }
 
-    // Strategy 2: fallback — amount + date + merchant name validation
-    // Previously this matched on amount+date alone, causing wrong matches
-    // (e.g. Target receipt → Zelle payment with same amount).
-    // Now requires merchant name similarity.
+    // ── Strategy 2: date-window scan + merchant validation + full tolerance ──
     if (!bestMatchId && dateStart && dateEnd) {
       const { data: fallbackCandidates } = await db
         .from("transactions")
-        .select("id, amount, date, normalized_merchant")
+        .select("id, amount, date, normalized_merchant, merchant_name")
         .eq("clerk_user_id", clerkUserId)
         .gte("date", dateStart)
         .lte("date", dateEnd);
 
       if (fallbackCandidates && fallbackCandidates.length > 0) {
-        const tight = fallbackCandidates
+        const scored = fallbackCandidates
           .filter((tx) => {
             if (tx.date == null) return false;
             if (alreadyMatchedTxIds.has(tx.id as string)) return false;
-            const txMerchant = (tx.normalized_merchant as string) || "";
+            const txMerchant = (tx.normalized_merchant as string) || (tx.merchant_name as string) || "";
             return merchantsMatch(receipt.merchant, txMerchant);
           })
           .map((tx) => {
+            const txAmount = Math.abs(Number(tx.amount));
             const txDate = new Date(tx.date as string);
             const dateDiff = receiptDate && !isNaN(txDate.getTime())
               ? Math.abs(txDate.getTime() - new Date(receiptDate).getTime())
               : Number.MAX_SAFE_INTEGER;
             return {
               id: tx.id as string,
-              amountDiff: Math.abs(Math.abs(Number(tx.amount)) - receiptAmount),
+              amountDiff: Math.abs(txAmount - receiptAmount),
               dateDiff,
+              txAmount,
             };
           })
-          .filter((s) => s.amountDiff <= 1.0 && isFinite(s.dateDiff))
+          .filter((s) => amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff) && isFinite(s.dateDiff))
           .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
 
-        if (tight.length > 0) {
-          bestMatchId = tight[0].id;
+        if (scored.length > 0) {
+          bestMatchId = scored[0].id;
+        }
+      }
+    }
+
+    // ── Strategy 3: tight amount match without merchant validation ──
+    // Only within 3 days and $0.50 — high confidence the amounts are the same charge.
+    if (!bestMatchId && receiptDate) {
+      const tightDateObj = new Date(receiptDate);
+      const tightStart = new Date(tightDateObj);
+      tightStart.setDate(tightStart.getDate() - 3);
+      const tightEnd = new Date(tightDateObj);
+      tightEnd.setDate(tightEnd.getDate() + 3);
+
+      const { data: tightCandidates } = await db
+        .from("transactions")
+        .select("id, amount, date, normalized_merchant, merchant_name")
+        .eq("clerk_user_id", clerkUserId)
+        .gte("date", tightStart.toISOString().split("T")[0])
+        .lte("date", tightEnd.toISOString().split("T")[0]);
+
+      if (tightCandidates && tightCandidates.length > 0) {
+        const scored = tightCandidates
+          .filter((tx) => {
+            if (alreadyMatchedTxIds.has(tx.id as string)) return false;
+            return true;
+          })
+          .map((tx) => {
+            const txAmount = Math.abs(Number(tx.amount));
+            return {
+              id: tx.id as string,
+              amountDiff: Math.abs(txAmount - receiptAmount),
+              dateDiff: Math.abs(new Date(tx.date as string).getTime() - new Date(receiptDate).getTime()),
+            };
+          })
+          .filter((s) => s.amountDiff <= 0.50)
+          .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
+
+        if (scored.length > 0) {
+          bestMatchId = scored[0].id;
         }
       }
     }
@@ -282,7 +384,7 @@ export async function auditAndRematchAllReceipts(
     const txIds = matchedReceipts.map((r) => r.transaction_id).filter(Boolean) as string[];
     const { data: txRows } = await db
       .from("transactions")
-      .select("id, normalized_merchant, merchant_name")
+      .select("id, normalized_merchant, merchant_name, amount")
       .in("id", txIds);
 
     const txMap = new Map((txRows ?? []).map((t) => [t.id as string, t]));
@@ -291,7 +393,13 @@ export async function auditAndRematchAllReceipts(
       const tx = txMap.get(receipt.transaction_id as string);
       if (!tx) continue;
       const txMerchant = (tx.normalized_merchant as string) || (tx.merchant_name as string) || "";
-      if (!merchantsMatch(receipt.merchant, txMerchant)) {
+      const txAmount = Math.abs(Number(tx.amount));
+      const rcptAmount = Math.abs(Number(receipt.amount));
+      // Keep the match if merchant names align, OR if the amount is very close
+      // (within $0.50) — covers cases where bank and email use very different names
+      const nameOk = merchantsMatch(receipt.merchant, txMerchant);
+      const tightAmountOk = Math.abs(txAmount - rcptAmount) <= 0.50;
+      if (!nameOk && !tightAmountOk) {
         await db
           .from("email_receipts")
           .update({ transaction_id: null })
