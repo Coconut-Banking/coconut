@@ -412,6 +412,7 @@ function SettleModal({
   recordSettlement,
   p2pHandles,
   groupName,
+  personEmail,
 }: {
   person: { key: string; displayName: string; balance: number; initials: string; color: string };
   onClose: () => void;
@@ -424,6 +425,7 @@ function SettleModal({
     paypal_username?: string | null;
   };
   groupName?: string;
+  personEmail?: string | null;
 }) {
   const { format: fc } = useCurrency();
   const [done, setDone] = useState(false);
@@ -499,12 +501,11 @@ function SettleModal({
                   </button>
                 )}
                 {direction === "you_owe" &&
-                  p2pHandles &&
-                  (p2pHandles.venmo_username || p2pHandles.cashapp_cashtag || p2pHandles.paypal_username) &&
                   getP2PDeepLinks(
                     amount,
-                    p2pHandles,
-                    groupName || `Settlement with ${person.displayName}`
+                    p2pHandles ?? {},
+                    groupName || `Settlement with ${person.displayName}`,
+                    personEmail
                   ).map((link) => (
                     <a
                       key={link.platform}
@@ -1601,6 +1602,7 @@ function SharedPageContent() {
           <SettleModal
             person={settleTarget}
             p2pHandles={settleHandles}
+            personEmail={(personDetail as PersonDetail | null)?.email}
             onClose={() => setSettleTarget(null)}
             onSuccess={() => {
               refetchSummary();

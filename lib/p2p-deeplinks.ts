@@ -60,6 +60,7 @@ export function getPayPalMeLink(
 
 /**
  * Get all available P2P deep links for a settlement.
+ * Falls back to email for Venmo when no explicit username is set.
  */
 export function getP2PDeepLinks(
   amount: number,
@@ -68,12 +69,14 @@ export function getP2PDeepLinks(
     cashapp_cashtag?: string | null;
     paypal_username?: string | null;
   },
-  note?: string
+  note?: string,
+  email?: string | null
 ): Array<{ platform: string; label: string; url: string; webUrl: string }> {
   const links: Array<{ platform: string; label: string; url: string; webUrl: string }> = [];
 
-  if (handles.venmo_username) {
-    const { url, webUrl } = getVenmoDeepLink(amount, handles.venmo_username, note);
+  const venmoRecipient = handles.venmo_username || email;
+  if (venmoRecipient) {
+    const { url, webUrl } = getVenmoDeepLink(amount, venmoRecipient, note);
     links.push({ platform: "venmo", label: "Pay with Venmo", url, webUrl });
   }
 
