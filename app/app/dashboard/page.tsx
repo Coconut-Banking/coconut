@@ -12,7 +12,7 @@ import dynamic from "next/dynamic";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGroupsSummary } from "@/hooks/useGroups";
 import { AmountDisplay, MerchantLogo } from "@/components/transaction-ui";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrency, convertCurrency } from "@/lib/currency";
 import { useCurrency, useManualMonthlyIncome } from "@/hooks/useCurrency";
 
 const SpendingChart = dynamic(
@@ -429,7 +429,7 @@ export default function DashboardPage() {
                     <div className="text-xs font-medium text-gray-800 truncate leading-tight">{acct.name}</div>
                     <div className="text-xs text-gray-400 capitalize mt-0.5">{subLabel}{acct.mask ? ` ••${acct.mask}` : ""}</div>
                     <div className={`text-sm font-semibold mt-1 ${isCredit ? "text-red-500" : "text-gray-900"}`}>
-                      {isCredit ? "-" : ""}{formatCurrency(acct.balance, acct.iso_currency_code)}
+                      {isCredit ? "-" : ""}{formatCurrency(convertCurrency(acct.balance, acct.iso_currency_code, currencyCode), currencyCode)}
                     </div>
                     {isCredit && (
                       <div className="text-xs text-gray-400 mt-0.5">balance owed</div>
@@ -476,7 +476,7 @@ export default function DashboardPage() {
                     {wallet.updatedAt ? ` · ${new Date(wallet.updatedAt).toLocaleDateString("en", { month: "short", day: "numeric" })}` : ""}
                   </div>
                   <div className="text-sm font-semibold mt-1 text-gray-900">
-                    {formatCurrency(wallet.balance, wallet.iso_currency_code)}
+                    {formatCurrency(convertCurrency(wallet.balance, wallet.iso_currency_code, currencyCode), currencyCode)}
                   </div>
                 </div>
               </motion.div>

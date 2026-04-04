@@ -1023,13 +1023,16 @@ export async function embedRichTransactionsForUser(clerkUserId: string): Promise
     for (let j = 0; j < batch.length; j++) {
       const emb = embeddings[j];
       if (emb) {
-        await db
+        const { error: updateErr } = await db
           .from("transactions")
           .update({
             rich_embedding: JSON.stringify(emb),
             embed_text: texts[j],
           })
           .eq("id", batch[j].id);
+        if (updateErr) {
+          console.warn("[embed-rich] update failed for tx", batch[j].id, ":", updateErr.message);
+        }
       }
     }
   }
@@ -1058,10 +1061,13 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
     for (let j = 0; j < batch.length; j++) {
       const emb = embeddings[j];
       if (emb) {
-        await db
+        const { error: updateErr } = await db
           .from("transactions")
           .update({ embedding: JSON.stringify(emb) })
           .eq("id", batch[j].id);
+        if (updateErr) {
+          console.warn("[embed] update failed for tx", batch[j].id, ":", updateErr.message);
+        }
       }
     }
   }

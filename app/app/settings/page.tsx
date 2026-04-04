@@ -10,7 +10,7 @@ import { useGmail } from "@/hooks/useGmail";
 import { useHiddenAccounts } from "@/hooks/useHiddenAccounts";
 import { useCurrency, useCompactView, useManualMonthlyIncome } from "@/hooks/useCurrency";
 import { SUPPORTED_CURRENCIES } from "@/lib/currency";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrency, convertCurrency } from "@/lib/currency";
 import { usePlaidAlerts } from "@/hooks/usePlaidAlerts";
 import { usePayPal } from "@/hooks/usePayPal";
 import { CSVImportModal } from "@/components/csv-import-modal";
@@ -554,7 +554,7 @@ function SettingsContent() {
                               {bank.balance != null ? (
                                 <>
                                   <div className={`text-sm font-semibold ${bank.isLiability ? "text-red-500" : "text-gray-900"}`}>
-                                    {bank.isLiability ? "-" : ""}{formatCurrency(bank.balance, bank.iso_currency_code)}
+                                    {bank.isLiability ? "-" : ""}{formatCurrency(convertCurrency(bank.balance, bank.iso_currency_code, currency), currency)}
                                   </div>
                                   <div className="text-xs text-gray-400">{bank.isLiability ? "owed" : "available"}</div>
                                 </>
