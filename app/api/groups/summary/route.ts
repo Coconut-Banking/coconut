@@ -1,7 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { CACHE_TAGS } from "@/lib/cached-queries";
+import { processRecurringExpenses } from "@/lib/recurring-expenses";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
@@ -13,6 +16,17 @@ import {
 
 /** Ignore sub–half-cent noise when deciding “settled” vs outstanding (Splitwise-style lists). */
 const BALANCE_EPS = 0.005;
+
+function scheduleProcessRecurringExpenses(userId: string) {
+  void processRecurringExpenses(userId)
+    .then((n) => {
+      if (n > 0) {
+        revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+        revalidateTag(CACHE_TAGS.transactions(userId), "max");
+      }
+    })
+    .catch((err) => console.error("[recurring] background process failed:", err));
+}
 
 type PersonAgg = { displayName: string; byCurrency: Map<string, number> };
 
@@ -75,6 +89,7 @@ async function handleSummary(req: NextRequest, userId: string) {
   const showAll = req.nextUrl.searchParams.get("contacts") === "1";
 
   if (ids.length === 0) {
+    scheduleProcessRecurringExpenses(userId);
     return NextResponse.json({
       groups: [],
       friends: [],
@@ -672,6 +687,8 @@ async function handleSummary(req: NextRequest, userId: string) {
     showAll,
     totalsByCurrency: totalsByCurrency.length,
   });
+
+  scheduleProcessRecurringExpenses(userId);
 
   return NextResponse.json(
     {

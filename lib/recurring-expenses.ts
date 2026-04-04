@@ -6,6 +6,7 @@
 import { getSupabase } from "./supabase";
 import { randomUUID } from "crypto";
 import { computeEqualShares } from "./expense-shares";
+import { normalizeSplitCurrency } from "./split-balances-currency";
 
 interface RecurringRow {
   id: string;
@@ -16,6 +17,7 @@ interface RecurringRow {
   description: string;
   frequency: "weekly" | "biweekly" | "monthly";
   next_due_date: string;
+  iso_currency_code?: string | null;
 }
 
 function addFrequency(date: string, frequency: string): string {
@@ -34,7 +36,7 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
 
   const { data: due } = await db
     .from("recurring_expenses")
-    .select("id, clerk_user_id, group_id, person_key, amount, description, frequency, next_due_date")
+    .select("id, clerk_user_id, group_id, person_key, amount, description, frequency, next_due_date, iso_currency_code")
     .eq("clerk_user_id", clerkUserId)
     .eq("is_active", true)
     .lte("next_due_date", today);
@@ -45,13 +47,14 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
   for (const rec of due as RecurringRow[]) {
     try {
       const txId = `manual_recurring_${randomUUID()}`;
+      const currency = normalizeSplitCurrency(rec.iso_currency_code);
 
       const { error: txErr } = await db.from("transactions").insert({
         clerk_user_id: rec.clerk_user_id,
         plaid_transaction_id: txId,
         date: rec.next_due_date,
         amount: -Math.abs(rec.amount),
-        iso_currency_code: "USD",
+        iso_currency_code: currency,
         raw_name: rec.description,
         merchant_name: rec.description,
         normalized_merchant: rec.description.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim(),
@@ -75,17 +78,38 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
 
       const payerMember = members.find((m: { user_id: string | null }) => m.user_id === rec.clerk_user_id);
 
-      const { data: splitRow, error: splitErr } = await db
+      let splitRow: { id: string } | null = null;
+      const { data: st1, error: e1 } = await db
         .from("split_transactions")
         .insert({
           group_id: rec.group_id,
           transaction_id: txRow.id,
           created_by: rec.clerk_user_id,
           payer_member_id: payerMember?.id ?? null,
+          iso_currency_code: currency,
+          date: rec.next_due_date,
         })
         .select("id")
         .single();
-      if (splitErr || !splitRow) continue;
+      if (e1 && e1.message?.includes("column")) {
+        const { data: st2, error: e2 } = await db
+          .from("split_transactions")
+          .insert({
+            group_id: rec.group_id,
+            transaction_id: txRow.id,
+            created_by: rec.clerk_user_id,
+            payer_member_id: payerMember?.id ?? null,
+            iso_currency_code: currency,
+          })
+          .select("id")
+          .single();
+        splitRow = st2;
+        if (e2 || !splitRow) continue;
+      } else if (e1 || !st1) {
+        continue;
+      } else {
+        splitRow = st1;
+      }
 
       if (rec.person_key) {
         const parts = rec.person_key.split("-");
@@ -138,9 +162,11 @@ export async function createRecurringExpense(opts: {
   description: string;
   frequency: "weekly" | "biweekly" | "monthly";
   startDate?: string;
+  isoCurrencyCode?: string | null;
 }): Promise<{ id: string } | null> {
   const db = getSupabase();
   const startDate = opts.startDate ?? addFrequency(new Date().toISOString().split("T")[0], opts.frequency);
+  const currency = normalizeSplitCurrency(opts.isoCurrencyCode);
 
   const { data, error } = await db
     .from("recurring_expenses")
@@ -152,6 +178,7 @@ export async function createRecurringExpense(opts: {
       description: opts.description,
       frequency: opts.frequency,
       next_due_date: startDate,
+      iso_currency_code: currency,
     })
     .select("id")
     .single();

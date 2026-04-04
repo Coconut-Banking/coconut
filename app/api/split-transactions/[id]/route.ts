@@ -28,19 +28,22 @@ export async function DELETE(
   const allowed = await canAccessGroup(userId, split.group_id);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await db.from("split_transactions").delete().eq("id", id);
-  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
-
+  let linkedTxClerkUserId: string | null = null;
   if (split.transaction_id) {
     const { data: tx } = await db
       .from("transactions")
       .select("clerk_user_id")
       .eq("id", split.transaction_id)
       .maybeSingle();
-    if (tx?.clerk_user_id && tx.clerk_user_id !== userId) {
-      revalidateTag(CACHE_TAGS.splitTransactions(tx.clerk_user_id as string), "max");
-      revalidateTag(CACHE_TAGS.transactions(tx.clerk_user_id as string), "max");
-    }
+    linkedTxClerkUserId = (tx?.clerk_user_id as string | undefined) ?? null;
+  }
+
+  await db.from("split_transactions").delete().eq("id", id);
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+
+  if (linkedTxClerkUserId && linkedTxClerkUserId !== userId) {
+    revalidateTag(CACHE_TAGS.splitTransactions(linkedTxClerkUserId), "max");
+    revalidateTag(CACHE_TAGS.transactions(linkedTxClerkUserId), "max");
   }
 
   const { count } = await db
@@ -50,6 +53,10 @@ export async function DELETE(
 
   if (count === 0) {
     await db.from("settlements").delete().eq("group_id", split.group_id);
+  }
+
+  if (split.transaction_id) {
+    await db.from("transactions").delete().eq("id", split.transaction_id);
   }
 
   return NextResponse.json({ ok: true });

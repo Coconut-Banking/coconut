@@ -14,7 +14,7 @@ export async function GET() {
   const db = getSupabase();
   const { data } = await db
     .from("recurring_expenses")
-    .select("id, group_id, person_key, amount, description, frequency, next_due_date, is_active, created_at")
+    .select("id, group_id, person_key, amount, description, frequency, next_due_date, is_active, created_at, iso_currency_code")
     .eq("clerk_user_id", userId)
     .eq("is_active", true)
     .order("next_due_date", { ascending: true });
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
-  const { action, groupId, personKey, amount, description, frequency, startDate } = body as {
+  const { action, groupId, personKey, amount, description, frequency, startDate, iso_currency_code } = body as {
     action?: string;
     groupId?: string;
     personKey?: string;
@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     description?: string;
     frequency?: string;
     startDate?: string;
+    iso_currency_code?: string;
   };
 
   if (action === "process") {
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
     description,
     frequency: frequency as "weekly" | "biweekly" | "monthly",
     startDate,
+    isoCurrencyCode: iso_currency_code,
   });
 
   if (!result) return NextResponse.json({ error: "Failed to create" }, { status: 500 });
