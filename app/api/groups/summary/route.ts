@@ -28,22 +28,39 @@ function scheduleProcessRecurringExpenses(userId: string) {
     .catch((err) => console.error("[recurring] background process failed:", err));
 }
 
-type PersonAgg = { displayName: string; byCurrency: Map<string, number> };
+type PersonAgg = { displayName: string; byCurrency: Map<string, number>; lastActivityAt: string | null };
 
 function addPersonCurrency(
   personBalances: Map<string, PersonAgg>,
   key: string,
   displayName: string,
   currency: string,
-  delta: number
+  delta: number,
+  activityAt?: string | null,
 ) {
   const cur = normalizeSplitCurrency(currency);
   const d = Math.round(delta * 100) / 100;
   if (Math.abs(d) < BALANCE_EPS) return;
-  const existing = personBalances.get(key) ?? { displayName, byCurrency: new Map() };
+  const existing = personBalances.get(key) ?? { displayName, byCurrency: new Map(), lastActivityAt: null };
   existing.displayName = displayName;
+  if (activityAt && (!existing.lastActivityAt || activityAt > existing.lastActivityAt)) {
+    existing.lastActivityAt = activityAt;
+  }
   const next = (existing.byCurrency.get(cur) ?? 0) + d;
   existing.byCurrency.set(cur, Math.round(next * 100) / 100);
+  personBalances.set(key, existing);
+}
+
+function updatePersonActivity(
+  personBalances: Map<string, PersonAgg>,
+  key: string,
+  displayName: string,
+  activityAt: string,
+) {
+  const existing = personBalances.get(key) ?? { displayName, byCurrency: new Map(), lastActivityAt: null };
+  if (!existing.lastActivityAt || activityAt > existing.lastActivityAt) {
+    existing.lastActivityAt = activityAt;
+  }
   personBalances.set(key, existing);
 }
 
@@ -53,7 +70,7 @@ function friendRowFromAgg(key: string, v: PersonAgg, imageUrl?: string | null) {
     .filter((b) => Math.abs(b.amount) >= BALANCE_EPS)
     .sort((a, b) => a.currency.localeCompare(b.currency));
   const balance = balances.length === 1 ? balances[0].amount : balances.length === 0 ? 0 : null;
-  return { key, displayName: v.displayName, balance, balances, image_url: imageUrl ?? null };
+  return { key, displayName: v.displayName, balance, balances, image_url: imageUrl ?? null, lastActivityAt: v.lastActivityAt };
 }
 
 /**
@@ -184,16 +201,20 @@ async function handleSummary(req: NextRequest, userId: string) {
     ),
     batchIn<{
       id: string; group_id: string; transaction_id: string | null; created_by: string | null;
-      created_at: string; payer_member_id: string | null; amount: number | null; description: string | null;
+      created_at: string; date: string | null; payer_member_id: string | null; amount: number | null; description: string | null;
       iso_currency_code: string | null; transactions: { amount: number } | null;
     }>(
       "split_transactions",
-      `id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, transactions(amount)`,
+      `id, group_id, transaction_id, created_by, created_at, date, payer_member_id, amount, description, iso_currency_code, transactions(amount)`,
       "group_id",
       groupIds,
     ),
   ]);
-  splits.sort((a, b) => (b.created_at > a.created_at ? 1 : b.created_at < a.created_at ? -1 : 0));
+  splits.sort((a, b) => {
+    const aDate = a.date ?? a.created_at;
+    const bDate = b.date ?? b.created_at;
+    return bDate > aDate ? 1 : bDate < aDate ? -1 : 0;
+  });
 
   const splitIds = splits.map((s) => s.id);
   const txIds = splits.map((s) => s.transaction_id).filter(Boolean) as string[];
@@ -377,12 +398,18 @@ async function handleSummary(req: NextRequest, userId: string) {
           const payerId = payerBySplit.get(s.id);
           if (!payerId) continue;
 
+          const activityTs = (s as { date?: string | null }).date ?? s.created_at;
+          const involvedInSplit = txShares.has(m.id) || payerId === m.id;
+          if (involvedInSplit) {
+            updatePersonActivity(personBalances, key, m.display_name, activityTs);
+          }
+
           if (payerId === myMember.id) {
             const theirShare = txShares.get(m.id) ?? 0;
-            if (theirShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, theirShare);
+            if (theirShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, theirShare, activityTs);
           } else if (payerId === m.id) {
             const myShare = txShares.get(myMember.id) ?? 0;
-            if (myShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, -myShare);
+            if (myShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, -myShare, activityTs);
           }
         }
 
@@ -399,7 +426,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     }
 
     const lastSplit = groupSplits[0];
-    const lastActivityAt = lastSplit?.created_at ?? g.created_at;
+    const lastActivityAt = (lastSplit as { date?: string | null } | undefined)?.date ?? lastSplit?.created_at ?? g.created_at;
 
     return {
       id: g.id,
@@ -505,7 +532,7 @@ async function handleSummary(req: NextRequest, userId: string) {
             else newByCurrency.set(cur, adjusted);
           }
         }
-        personBalances.set(match.key, { displayName: match.displayName, byCurrency: newByCurrency });
+        personBalances.set(match.key, { displayName: match.displayName, byCurrency: newByCurrency, lastActivityAt: personBalances.get(match.key)?.lastActivityAt ?? null });
       }
 
       // For members ONLY in Splitwise groups who are NOT in the cache,
@@ -521,7 +548,7 @@ async function handleSummary(req: NextRequest, userId: string) {
         const allSw = memberGroups.every((gid) => swGroupIds.has(gid));
         if (allSw) {
           const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
-          personBalances.set(key, { displayName: m.display_name, byCurrency: new Map() });
+          personBalances.set(key, { displayName: m.display_name, byCurrency: new Map(), lastActivityAt: null });
         }
       }
 
@@ -542,7 +569,7 @@ async function handleSummary(req: NextRequest, userId: string) {
           const cur = normalizeSplitCurrency(b.currency_code);
           newByCurrency.set(cur, Math.round(amt * 100) / 100);
         }
-        personBalances.set(key, { displayName: name, byCurrency: newByCurrency });
+        personBalances.set(key, { displayName: name, byCurrency: newByCurrency, lastActivityAt: null });
       }
     }
 
@@ -584,7 +611,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       if (m.user_id === userId) continue;
       const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
       if (!personBalances.has(key)) {
-        personBalances.set(key, { displayName: m.display_name, byCurrency: new Map() });
+        personBalances.set(key, { displayName: m.display_name, byCurrency: new Map(), lastActivityAt: null });
       }
     }
   }
@@ -598,13 +625,16 @@ async function handleSummary(req: NextRequest, userId: string) {
       const normName = agg.displayName.trim().toLowerCase();
       const existing = byName.get(normName);
       if (!existing) {
-        byName.set(normName, { canonicalKey: key, agg: { displayName: agg.displayName, byCurrency: new Map(agg.byCurrency) } });
+        byName.set(normName, { canonicalKey: key, agg: { displayName: agg.displayName, byCurrency: new Map(agg.byCurrency), lastActivityAt: agg.lastActivityAt } });
       } else {
         for (const [cur, amt] of agg.byCurrency) {
           const prev = existing.agg.byCurrency.get(cur) ?? 0;
           const merged = Math.round((prev + amt) * 100) / 100;
           if (Math.abs(merged) < BALANCE_EPS) existing.agg.byCurrency.delete(cur);
           else existing.agg.byCurrency.set(cur, merged);
+        }
+        if (agg.lastActivityAt && (!existing.agg.lastActivityAt || agg.lastActivityAt > existing.agg.lastActivityAt)) {
+          existing.agg.lastActivityAt = agg.lastActivityAt;
         }
       }
     }
@@ -633,16 +663,32 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   let friends = Array.from(personBalances.entries())
     .map(([key, v]) => friendRowFromAgg(key, v, friendKeyToPhoto.get(key)))
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    .sort((a, b) => {
+      const aHasBalance = a.balances.length > 0 ? 1 : 0;
+      const bHasBalance = b.balances.length > 0 ? 1 : 0;
+      if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
+      const aTime = a.lastActivityAt ?? "";
+      const bTime = b.lastActivityAt ?? "";
+      if (aTime !== bTime) return bTime > aTime ? 1 : -1;
+      return a.displayName.localeCompare(b.displayName);
+    });
 
-  let groupsOut = groupsWithBalance;
+  let groupsOut = [...groupsWithBalance].sort((a, b) => {
+    const aHasBalance = (a.myBalances?.length ?? 0) > 0 ? 1 : 0;
+    const bHasBalance = (b.myBalances?.length ?? 0) > 0 ? 1 : 0;
+    if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
+    const aTime = a.lastActivityAt ?? "";
+    const bTime = b.lastActivityAt ?? "";
+    if (aTime !== bTime) return bTime > aTime ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
 
   if (showAll) {
     // Return everything (incl. settled) — no filtering.
   } else {
     // Splitwise-style: only show friends with non-zero pairwise balance.
     friends = friends.filter((f) => f.balances.length > 0);
-    groupsOut = groupsWithBalance.filter((g) => (g.myBalances?.length ?? 0) > 0);
+    groupsOut = groupsOut.filter((g) => (g.myBalances?.length ?? 0) > 0);
   }
 
   const totalsMap = new Map<string, { owedToMe: number; iOwe: number }>();
