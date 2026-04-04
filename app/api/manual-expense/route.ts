@@ -43,6 +43,8 @@ export async function POST(req: NextRequest) {
   const clientDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
     ? body.date
     : null;
+  const rawCurrency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : null;
+  const currency = rawCurrency && /^[A-Z]{3}$/.test(rawCurrency) ? rawCurrency : "USD";
 
   if (!groupId || !amount || amount <= 0) {
     return NextResponse.json(
@@ -156,7 +158,7 @@ export async function POST(req: NextRequest) {
       transaction_id: transaction.id,
       created_by: userId,
       payer_member_id: effectivePayer,
-      iso_currency_code: "USD",
+      iso_currency_code: currency,
       date: expenseDate,
     })
     .select("id")
@@ -168,7 +170,7 @@ export async function POST(req: NextRequest) {
         group_id: groupId,
         transaction_id: transaction.id,
         created_by: userId,
-        iso_currency_code: "USD",
+        iso_currency_code: currency,
       })
       .select("id")
       .single();

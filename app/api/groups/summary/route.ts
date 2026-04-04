@@ -132,49 +132,78 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   const groupIds = dedupedGroups.map((g) => g.id);
 
-  const [membersRes, splitsRes] = await Promise.all([
-    db
-      .from("group_members")
-      .select("id, group_id, user_id, display_name, email")
-      .in("group_id", groupIds),
-    db
-      .from("split_transactions")
-      .select(`
-        id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-        iso_currency_code,
-        transactions(amount)
-      `)
-      .in("group_id", groupIds)
-      .order("created_at", { ascending: false })
-      .limit(25000),
+  const BATCH_SIZE = 200;
+
+  async function batchIn<T>(
+    table: string,
+    selectCols: string,
+    column: string,
+    ids: string[],
+    extraFilters?: (q: ReturnType<ReturnType<typeof db.from>["select"]>) => ReturnType<ReturnType<typeof db.from>["select"]>,
+  ): Promise<T[]> {
+    if (ids.length === 0) return [];
+    const results: T[] = [];
+    const batches: Promise<T[]>[] = [];
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const chunk = ids.slice(i, i + BATCH_SIZE);
+      batches.push(
+        (async () => {
+          let q = db.from(table).select(selectCols).in(column, chunk) as ReturnType<ReturnType<typeof db.from>["select"]>;
+          if (extraFilters) q = extraFilters(q);
+          const { data } = await q;
+          return (data ?? []) as T[];
+        })()
+      );
+    }
+    const batchResults = await Promise.all(batches);
+    for (const b of batchResults) results.push(...b);
+    return results;
+  }
+
+  const [members, splits] = await Promise.all([
+    batchIn<{ id: string; group_id: string; user_id: string | null; display_name: string; email: string | null }>(
+      "group_members",
+      "id, group_id, user_id, display_name, email",
+      "group_id",
+      groupIds,
+    ),
+    batchIn<{
+      id: string; group_id: string; transaction_id: string | null; created_by: string | null;
+      created_at: string; payer_member_id: string | null; amount: number | null; description: string | null;
+      iso_currency_code: string | null; transactions: { amount: number } | null;
+    }>(
+      "split_transactions",
+      `id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, transactions(amount)`,
+      "group_id",
+      groupIds,
+    ),
   ]);
-  const { data: members } = membersRes;
-  const { data: splits } = splitsRes;
+  splits.sort((a, b) => (b.created_at > a.created_at ? 1 : b.created_at < a.created_at ? -1 : 0));
 
-  const splitIds = (splits ?? []).map((s) => s.id);
+  const splitIds = splits.map((s) => s.id);
+  const txIds = splits.map((s) => s.transaction_id).filter(Boolean) as string[];
 
-  let shares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
-  let txRows: { id: string; clerk_user_id: string }[] = [];
-
-  const txIds = (splits ?? []).map((s) => s.transaction_id).filter(Boolean);
-
-  const [sharesResult, txResult, settlementsResult] = await Promise.all([
-    splitIds.length > 0
-      ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds)
-      : Promise.resolve({ data: null }),
-    txIds.length > 0
-      ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
-      : Promise.resolve({ data: null }),
-    db
-      .from("settlements")
-      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-      .in("group_id", groupIds)
-      .eq("status", "completed"),
+  const [shares, txRows, settlements] = await Promise.all([
+    batchIn<{ split_transaction_id: string; member_id: string; amount: number }>(
+      "split_shares",
+      "split_transaction_id, member_id, amount",
+      "split_transaction_id",
+      splitIds,
+    ),
+    batchIn<{ id: string; clerk_user_id: string }>(
+      "transactions",
+      "id, clerk_user_id",
+      "id",
+      txIds,
+    ),
+    batchIn<{ group_id: string; payer_member_id: string; receiver_member_id: string; amount: number; iso_currency_code: string | null; method: string | null }>(
+      "settlements",
+      "group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method",
+      "group_id",
+      groupIds,
+      (q) => q.eq("status", "completed"),
+    ),
   ]);
-
-  shares = sharesResult.data ?? [];
-  txRows = txResult.data ?? [];
-  const { data: settlements } = settlementsResult;
 
   const memberByGroup = new Map<string, { id: string; user_id: string | null; display_name: string; email: string | null }[]>();
   for (const m of members ?? []) {
