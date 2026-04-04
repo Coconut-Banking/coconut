@@ -9,8 +9,7 @@ const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 /**
  * POST /api/stripe/webhook
- * Handles Stripe webhooks. On checkout.session.completed with settlement
- * metadata, auto-records the settlement so balances update.
+ * Handles Stripe webhooks for Terminal and Connect events.
  */
 export async function POST(req: NextRequest) {
   if (!stripe || !webhookSecret) {
@@ -108,73 +107,6 @@ export async function POST(req: NextRequest) {
         accountId: account.id,
         charges_enabled: account.charges_enabled,
         payouts_enabled: account.payouts_enabled,
-      });
-    }
-  }
-
-  if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const { group_id, payer_member_id, receiver_member_id } = session.metadata ?? {};
-
-    console.log("[stripe-webhook] checkout.session", {
-      hasMetadata: !!(group_id && payer_member_id && receiver_member_id),
-      group_id,
-      payer_member_id,
-      receiver_member_id,
-      payment_status: session.payment_status,
-      amount_total: session.amount_total,
-    });
-
-    if (group_id && payer_member_id && receiver_member_id && session.payment_status === "paid") {
-      const db = getSupabase();
-
-      const { data: existing } = await db
-        .from("settlements")
-        .select("id")
-        .eq("external_reference", session.id)
-        .maybeSingle();
-
-      if (existing) return NextResponse.json({ received: true });
-
-      const amountCents = session.amount_total ?? 0;
-      const amount = amountCents / 100;
-
-      const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
-        group_id,
-        payer_member_id,
-        receiver_member_id,
-        "USD"
-      );
-
-      if (!allowed || maxAmount <= 0) {
-        console.error("[stripe-webhook] settlement not allowed — returning 500 for retry:", { allowed, maxAmount, reason });
-        return NextResponse.json({ error: "Settlement validation failed" }, { status: 500 });
-      } else {
-        const amountToInsert = Math.min(amount, maxAmount);
-        const { error } = await db.from("settlements").insert({
-          group_id,
-          payer_member_id,
-          receiver_member_id,
-          amount: Math.round(amountToInsert * 100) / 100,
-          method: "stripe",
-          status: "completed",
-          external_reference: session.id,
-          iso_currency_code: "USD",
-        });
-
-        if (error) {
-          console.error("[stripe-webhook] settlement insert failed:", error);
-          return NextResponse.json({ error: "DB insert failed" }, { status: 500 });
-        } else {
-          console.log("[stripe-webhook] settlement recorded", { group_id, amount: amountToInsert });
-        }
-      }
-    } else {
-      console.warn("[stripe-webhook] missing metadata or not paid:", {
-        hasGroup: !!group_id,
-        hasPayer: !!payer_member_id,
-        hasReceiver: !!receiver_member_id,
-        payment_status: session.payment_status,
       });
     }
   }

@@ -11,8 +11,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import {
   useGroupsSummary,
@@ -408,7 +407,6 @@ function SettleModal({
   person,
   onClose,
   onSuccess,
-  onRequestPayment,
   recordSettlement,
   p2pHandles,
   groupName,
@@ -417,7 +415,6 @@ function SettleModal({
   person: { key: string; displayName: string; balance: number; initials: string; color: string };
   onClose: () => void;
   onSuccess: () => void;
-  onRequestPayment: () => void;
   recordSettlement: () => Promise<void>;
   p2pHandles?: {
     venmo_username?: string | null;
@@ -489,17 +486,6 @@ function SettleModal({
               </motion.div>
             ) : (
               <div className="mt-8 space-y-2">
-                {direction === "owes_you" && (
-                  <button
-                    onClick={() => {
-                      onRequestPayment();
-                      onClose();
-                    }}
-                    className="w-full py-3.5 rounded-2xl border-2 border-[#1e2021] text-[#1e2021] font-semibold hover:bg-[#F5F3F2] transition-colors"
-                  >
-                    Request payment
-                  </button>
-                )}
                 {direction === "you_owe" &&
                   getP2PDeepLinks(
                     amount,
@@ -545,8 +531,6 @@ function SettleModal({
 
 // ── Main Page ─────────────────────────────────────────────────────────────
 function SharedPageContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const { user: _user } = useUser();
   const { linked, loading: txLoading } = useTransactions();
   const { format: fc, formatAbs: fca } = useCurrency();
@@ -572,7 +556,6 @@ function SharedPageContent() {
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
-  const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingSettlement, setRecordingSettlement] = useState(false);
   const [editingHandlesMemberId, setEditingHandlesMemberId] = useState<string | null>(null);
   const [handlesDraft, setHandlesDraft] = useState<{ venmo: string; cashapp: string; paypal: string }>({ venmo: "", cashapp: "", paypal: "" });
@@ -635,17 +618,6 @@ function SharedPageContent() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [settleTarget, personDetail, summary?.groups]);
-
-  useEffect(() => {
-    if (searchParams.get("stripe") !== "success" || !showRealUI) return;
-    const t = setTimeout(() => {
-      refetchSummary();
-      if (selectedId) refetchGroupDetail();
-      if (selectedPersonKey) refetchPersonDetail();
-      router.replace("/app/shared");
-    }, 2500);
-    return () => clearTimeout(t);
-  }, [searchParams, showRealUI, refetchSummary, refetchGroupDetail, refetchPersonDetail, selectedId, selectedPersonKey, router]);
 
   const openCreate = () => {
     setNewGroupName("");
@@ -765,36 +737,6 @@ function SharedPageContent() {
       }
     } finally {
       setSavingHandles(false);
-    }
-  };
-
-  const requestPayment = async (
-    _email: string | null,
-    name: string,
-    amount: number,
-    groupName = "expenses",
-    opts?: { groupId?: string; payerMemberId?: string; receiverMemberId?: string }
-  ) => {
-    setRequestingPayment(true);
-    try {
-      const res = await fetch("/api/stripe/create-payment-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount,
-          description: groupName,
-          recipientName: name,
-          groupId: opts?.groupId,
-          payerMemberId: opts?.payerMemberId,
-          receiverMemberId: opts?.receiverMemberId,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        await navigator.clipboard.writeText(data.url);
-      }
-    } finally {
-      setRequestingPayment(false);
     }
   };
 
@@ -1122,24 +1064,6 @@ function SharedPageContent() {
         </div>
         {pd.balance !== 0 && (
           <div className="flex gap-2">
-            {pd.balance > 0 && (
-              <button
-                onClick={() => {
-                  const s = (pd.settlements ?? [])[0];
-                  requestPayment(
-                    pd.email,
-                    pd.displayName,
-                    pd.balance,
-                    "expenses",
-                    s ? { groupId: s.groupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } : undefined
-                  );
-                }}
-                disabled={requestingPayment}
-                className="px-4 py-2 rounded-lg bg-[#1e2021] text-white text-sm font-medium min-h-[44px] disabled:opacity-50"
-              >
-                {requestingPayment ? "Creating…" : "Request"}
-              </button>
-            )}
             <button
               onClick={async () => {
                 if (!window.confirm(`Mark ${fca(pd.balance)} as paid?`)) return;
@@ -1463,20 +1387,6 @@ function SharedPageContent() {
                           });
                           setExpandedPerson(null);
                         }}
-                        onRemind={() => {
-                          const pd = personDetail as PersonDetail | null;
-                          if (pd) {
-                            const s = (pd.settlements ?? [])[0];
-                            requestPayment(
-                              pd.email,
-                              pd.displayName,
-                              person.amount,
-                              "expenses",
-                              s ? { groupId: s.groupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } : undefined
-                            );
-                          }
-                          setExpandedPerson(null);
-                        }}
                         onViewDetails={() => setSelectedPersonKey(person.id)}
                       />
                     ))
@@ -1609,17 +1519,6 @@ function SharedPageContent() {
               refetchActivity();
               setSettleTarget(null);
             }}
-            onRequestPayment={() => {
-              const pd = personDetail as PersonDetail | null;
-              const s = pd?.settlements?.[0];
-              requestPayment(
-                pd?.email ?? null,
-                settleTarget.displayName,
-                Math.abs(settleTarget.balance),
-                "expenses",
-                s ? { groupId: s.groupId, payerMemberId: s.fromMemberId, receiverMemberId: s.toMemberId } : undefined
-              );
-            }}
             recordSettlement={async () => {
               const pd = personDetail as PersonDetail | null;
               if (!pd?.settlements?.length) {
@@ -1645,16 +1544,7 @@ function SharedPageContent() {
 }
 
 export default function SharedPage() {
-  return (
-    <Suspense fallback={
-      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-8">
-        <div className="h-8 w-48 bg-gray-200 rounded animate-pulse mb-6" />
-        <div className="h-64 bg-gray-100 rounded-2xl animate-pulse" />
-      </div>
-    }>
-      <SharedPageContent />
-    </Suspense>
-  );
+  return <SharedPageContent />;
 }
 
 function PersonRow({
@@ -1663,7 +1553,6 @@ function PersonRow({
   personDetail,
   onToggle,
   onSettleUp,
-  onRemind,
   onViewDetails,
 }: {
   person: {
@@ -1679,7 +1568,6 @@ function PersonRow({
   personDetail: PersonDetail | null;
   onToggle: () => void;
   onSettleUp: () => void;
-  onRemind: () => void;
   onViewDetails: () => void;
 }) {
   const { format: fc } = useCurrency();
@@ -1754,14 +1642,6 @@ function PersonRow({
                     </div>
                   ))}
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {person.direction === "owes_you" && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onRemind(); }}
-                        className="text-xs font-semibold text-[#1e2021] hover:underline"
-                      >
-                        Remind →
-                      </button>
-                    )}
                     {person.direction === "you_owe" && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onSettleUp(); }}
