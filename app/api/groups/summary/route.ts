@@ -106,9 +106,31 @@ async function handleSummary(req: NextRequest, userId: string) {
     }
   }
 
-  const groups = (groupsRaw ?? []).filter((g) => !g.archived_at);
+  const nonArchived = (groupsRaw ?? []).filter((g) => !g.archived_at);
 
-  const groupIds = (groups ?? []).map((g) => g.id);
+  // Deduplicate groups with the same (source, external_id) — keep the newest.
+  // This handles Splitwise re-imports that created duplicate group records before
+  // the unique index was applied.
+  const seenExternal = new Map<string, typeof nonArchived[0]>();
+  const groups = nonArchived.filter((g) => {
+    if (!g.source || !g.external_id) return true;
+    const key = `${g.source}:${g.external_id}`;
+    const prev = seenExternal.get(key);
+    if (!prev) { seenExternal.set(key, g); return true; }
+    if (g.created_at > prev.created_at) {
+      seenExternal.set(key, g);
+      return true;
+    }
+    return false;
+  });
+  // Remove older duplicates that initially passed the filter
+  const keepIds = new Set(seenExternal.values());
+  const dedupedGroups = groups.filter((g) => {
+    if (!g.source || !g.external_id) return true;
+    return keepIds.has(g);
+  });
+
+  const groupIds = dedupedGroups.map((g) => g.id);
 
   const [membersRes, splitsRes] = await Promise.all([
     db
@@ -184,7 +206,7 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   const personBalances = new Map<string, PersonAgg>();
 
-  const groupsWithBalance = (groups ?? []).map((g) => {
+  const groupsWithBalance = (dedupedGroups ?? []).map((g) => {
     const groupSplits = splitByGroup.get(g.id) ?? [];
     const groupMembers = memberByGroup.get(g.id) ?? [];
     const myMember = groupMembers.find((m) => m.user_id === userId);
@@ -368,7 +390,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     if (cached && Array.isArray(cached) && cached.length > 0) {
       // Build a set of emails belonging to Splitwise-imported group members
       const swGroupIds = new Set(
-        (groups ?? [])
+        (dedupedGroups ?? [])
           .filter((g) => {
             const row = g as Record<string, unknown>;
             return row.source === "splitwise";
@@ -492,7 +514,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       const groupCacheMap = new Map(cachedGroups.map((g) => [g.external_id, g.balances]));
 
       for (const g of groupsWithBalance) {
-        const row = (groups ?? []).find((gr) => gr.id === g.id);
+        const row = (dedupedGroups ?? []).find((gr) => gr.id === g.id);
         if (row?.source !== "splitwise" || !row.external_id) continue;
         const cachedBals = groupCacheMap.get(row.external_id);
         if (!cachedBals) continue;

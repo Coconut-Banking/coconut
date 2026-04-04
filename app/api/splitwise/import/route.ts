@@ -349,6 +349,18 @@ async function importGroup(
     stats.groups++;
   }
 
+  // 3b. Save Splitwise group avatar if the group has a custom one
+  const avatarUrl = swGroup.custom_avatar
+    ? (swGroup.avatar?.xlarge || swGroup.avatar?.large || swGroup.avatar?.medium || swGroup.avatar?.original || null)
+    : null;
+  if (avatarUrl) {
+    const { error: imgErr } = await db
+      .from("groups")
+      .update({ image_url: avatarUrl })
+      .eq("id", groupId);
+    if (imgErr) console.warn(`[splitwise-import] group image update error for ${groupId}:`, imgErr.message);
+  }
+
   // 4. Import members
   const swMemberIdToCoconutId = new Map<number, string>();
 
