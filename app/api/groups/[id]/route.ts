@@ -98,8 +98,8 @@ export async function GET(
       .from("split_transactions")
       .select(`
       id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code, receipt_url,
-      transactions(merchant_name, raw_name, amount, date)
+      iso_currency_code, receipt_url, category,
+      transactions(merchant_name, raw_name, amount, date, primary_category)
     `)
       .eq("group_id", id)
       .order("created_at", { ascending: false });
@@ -130,6 +130,9 @@ export async function GET(
         suggestions: [],
         totalSpend: 0,
         totalSpendByCurrency: [],
+        mySpend: 0,
+        mySpendByCurrency: [],
+        categoryBreakdown: [],
       });
     }
 
@@ -353,6 +356,49 @@ export async function GET(
       }
     }
 
+    // Compute per-user spending summary: total + category breakdown
+    const myMemberId = (members ?? []).find((m) => m.user_id === userId)?.id;
+    const mySpendByCurrency = new Map<string, number>();
+    const catSpend = new Map<string, number>();
+
+    if (myMemberId) {
+      const splitCatById = new Map(
+        splits.map((s) => {
+          const cat =
+            (s as { category?: string | null }).category ||
+            ((s as { transactions?: { primary_category?: string | null } }).transactions
+              ?.primary_category) ||
+            null;
+          return [s.id, cat];
+        })
+      );
+
+      for (const sh of shares ?? []) {
+        if (sh.member_id !== myMemberId) continue;
+        const amt = Math.round(Number(sh.amount) * 100) / 100;
+        if (amt <= 0) continue;
+        const cur = splitCurrencyById.get(sh.split_transaction_id) ?? "USD";
+        mySpendByCurrency.set(cur, (mySpendByCurrency.get(cur) ?? 0) + amt);
+        const cat = splitCatById.get(sh.split_transaction_id) ?? "Other";
+        catSpend.set(cat, (catSpend.get(cat) ?? 0) + amt);
+      }
+    }
+
+    const mySpendArr = [...mySpendByCurrency.entries()]
+      .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
+      .sort((a, b) => a.currency.localeCompare(b.currency));
+    const mySpend =
+      mySpendArr.length === 1 ? mySpendArr[0].amount : mySpendArr.length === 0 ? 0 : null;
+
+    const catTotal = [...catSpend.values()].reduce((s, v) => s + v, 0);
+    const categoryBreakdown = [...catSpend.entries()]
+      .map(([category, amount]) => ({
+        category,
+        amount: Math.round(amount * 100) / 100,
+        percent: catTotal > 0 ? Math.round((amount / catTotal) * 100) : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
     return NextResponse.json({
       ...maskedGroup,
       group: maskedGroup,
@@ -368,6 +414,9 @@ export async function GET(
       })),
       totalSpend,
       totalSpendByCurrency,
+      mySpend,
+      mySpendByCurrency: mySpendArr,
+      categoryBreakdown,
     });
   } catch (err) {
     console.error("[groups/id]", err);
