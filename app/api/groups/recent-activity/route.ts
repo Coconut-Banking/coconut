@@ -98,17 +98,30 @@ export async function GET() {
   }
 
   const splitIds = splits.map((s) => s.id);
-  const { data: shares } = await db
-    .from("split_shares")
-    .select("split_transaction_id, member_id, amount")
-    .in("split_transaction_id", splitIds);
 
-  const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-  const { data: txRows } = await db
-    .from("transactions")
-    .select("id, clerk_user_id")
-    .in("id", txIds);
-  const txOwnerById = new Map((txRows ?? []).map((t) => [t.id, t.clerk_user_id]));
+  // Batch the shares query — large .in() calls can exceed URL length limits
+  const BATCH = 200;
+  const shareBatches = await Promise.all(
+    Array.from({ length: Math.ceil(splitIds.length / BATCH) }, (_, i) =>
+      db
+        .from("split_shares")
+        .select("split_transaction_id, member_id, amount")
+        .in("split_transaction_id", splitIds.slice(i * BATCH, (i + 1) * BATCH))
+    )
+  );
+  const shares = shareBatches.flatMap((b) => b.data ?? []);
+
+  const txIds = splits.map((s) => s.transaction_id).filter(Boolean) as string[];
+  const txBatches = await Promise.all(
+    Array.from({ length: Math.ceil(txIds.length / BATCH) || 1 }, (_, i) =>
+      db
+        .from("transactions")
+        .select("id, clerk_user_id")
+        .in("id", txIds.slice(i * BATCH, (i + 1) * BATCH))
+    )
+  );
+  const txRows = txBatches.flatMap((b) => b.data ?? []);
+  const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
   const membersByGroup = new Map<string, { id: string; user_id: string | null; display_name: string }[]>();
   for (const m of members ?? []) {
@@ -155,7 +168,7 @@ export async function GET() {
       payerByMemberRow ??
       (payerUserIdFromTx ? groupMembers.find((m) => m.user_id === payerUserIdFromTx) : null) ??
       null;
-    const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
+    const shareList = shares.filter((sh) => sh.split_transaction_id === s.id);
     const myShareRow = myMember ? shareList.find((sh) => sh.member_id === myMember.id) : null;
     const myShare = myShareRow ? Number(myShareRow.amount) : 0;
     const currency = ((s as { iso_currency_code?: string | null }).iso_currency_code ?? "USD").trim().toUpperCase() || "USD";
