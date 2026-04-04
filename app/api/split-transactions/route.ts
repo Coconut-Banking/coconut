@@ -7,6 +7,7 @@ import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 import { formatCurrency } from "@/lib/currency";
 import { toCents } from "@/lib/expense-shares";
+import { notifyGroupMembers } from "@/lib/push-sender";
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
 
   const { data: groupMembers } = await db
     .from("group_members")
-    .select("id")
+    .select("id, user_id, display_name, email")
     .eq("group_id", groupId);
 
   const memberIds = new Set((groupMembers ?? []).map((m) => m.id));
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
 
   const { data: tx, error: txError } = await db
     .from("transactions")
-    .select("id, amount, clerk_user_id, iso_currency_code")
+    .select("id, amount, clerk_user_id, iso_currency_code, merchant_name, raw_name")
     .eq("id", transactionId)
     .eq("clerk_user_id", userId)
     .single();
@@ -123,6 +124,23 @@ export async function POST(req: NextRequest) {
   if (shareRows.length > 0) {
     await db.from("split_shares").insert(shareRows);
   }
+
+  const creatorMember = (groupMembers ?? []).find((m) => m.user_id === userId);
+  const creatorName =
+    creatorMember?.display_name?.trim() ||
+    creatorMember?.email?.split("@")[0] ||
+    "Someone";
+  const merchantLabel = (
+    (tx.merchant_name || tx.raw_name || "a purchase").toString().trim() || "a purchase"
+  ).slice(0, 120);
+  const splitCurrency = tx.iso_currency_code ?? "USD";
+  void notifyGroupMembers(
+    groupId,
+    "New split",
+    `${creatorName} split ${merchantLabel} for ${formatCurrency(totalAmount, splitCurrency)}`,
+    userId,
+    { type: "split_transaction", groupId, splitTransactionId: split.id }
+  );
 
   return NextResponse.json({ id: split.id });
 }

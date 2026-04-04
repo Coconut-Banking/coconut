@@ -387,27 +387,57 @@ export async function PATCH(
   // Single query — owner check is sufficient for PATCH (members can't archive)
   const { data: row, error: loadErr } = await db.from("groups").select("owner_id").eq("id", id).single();
   if (loadErr || !row || row.owner_id !== userId) {
-    return NextResponse.json({ error: "Only the group owner can archive or unarchive" }, { status: 403 });
+    return NextResponse.json({ error: "Only the group owner can update this group" }, { status: 403 });
   }
 
-  let body: { archived?: boolean };
+  let body: { archived?: boolean; name?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (body.archived === true) {
-    const archivedAt = new Date().toISOString();
-    const { error: up } = await db.from("groups").update({ archived_at: archivedAt }).eq("id", id);
-    if (up) return NextResponse.json({ error: up.message }, { status: 500 });
-    return NextResponse.json({ ok: true, archivedAt });
-  }
-  if (body.archived === false) {
-    const { error: up } = await db.from("groups").update({ archived_at: null }).eq("id", id);
-    if (up) return NextResponse.json({ error: up.message }, { status: 500 });
-    return NextResponse.json({ ok: true, archivedAt: null });
+  const updates: { archived_at?: string | null; name?: string } = {};
+
+  if ("name" in body) {
+    if (typeof body.name !== "string") {
+      return NextResponse.json({ error: "name must be a string" }, { status: 400 });
+    }
+    const trimmed = body.name.trim();
+    if (trimmed.length === 0) {
+      return NextResponse.json({ error: "name must not be empty" }, { status: 400 });
+    }
+    if (trimmed.length > 100) {
+      return NextResponse.json({ error: "name must be at most 100 characters" }, { status: 400 });
+    }
+    updates.name = trimmed;
   }
 
-  return NextResponse.json({ error: "Set archived to true or false" }, { status: 400 });
+  if (body.archived === true) {
+    updates.archived_at = new Date().toISOString();
+  } else if (body.archived === false) {
+    updates.archived_at = null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json(
+      { error: "Provide name and/or set archived to true or false" },
+      { status: 400 }
+    );
+  }
+
+  const { error: up } = await db.from("groups").update(updates).eq("id", id);
+  if (up) return NextResponse.json({ error: up.message }, { status: 500 });
+
+  const response: Record<string, unknown> = { ok: true };
+  if ("name" in body && typeof body.name === "string") {
+    response.name = updates.name;
+  }
+  if (body.archived === true) {
+    response.archivedAt = updates.archived_at;
+  } else if (body.archived === false) {
+    response.archivedAt = null;
+  }
+
+  return NextResponse.json(response);
 }

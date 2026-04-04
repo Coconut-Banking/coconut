@@ -12,6 +12,8 @@ import {
   toCents,
 } from "@/lib/expense-shares";
 import { createRecurringExpense } from "@/lib/recurring-expenses";
+import { formatCurrency } from "@/lib/currency";
+import { notifyGroupMembers } from "@/lib/push-sender";
 
 /**
  * POST /api/manual-expense
@@ -219,6 +221,18 @@ export async function POST(req: NextRequest) {
       frequency: recurringFrequency,
     });
   }
+
+  const creatorName =
+    currentUserMember.display_name?.trim() ||
+    currentUserMember.email?.split("@")[0] ||
+    "Someone";
+  void notifyGroupMembers(
+    groupId,
+    "New expense",
+    `${creatorName} added ${description} for ${formatCurrency(amount, currency)}`,
+    userId,
+    { type: "manual_expense", groupId, splitTransactionId: splitTx.id }
+  );
 
   return NextResponse.json({ id: splitTx.id });
 }
