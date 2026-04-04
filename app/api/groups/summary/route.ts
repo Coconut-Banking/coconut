@@ -502,9 +502,9 @@ async function handleSummary(req: NextRequest, userId: string) {
           if (!localSettlementDeltas.has(personKey)) localSettlementDeltas.set(personKey, new Map());
           const pMap = localSettlementDeltas.get(personKey)!;
           if (st.payer_member_id === m.id && st.receiver_member_id === myMember.id) {
-            pMap.set(cur, (pMap.get(cur) ?? 0) + amt);
-          } else if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
             pMap.set(cur, (pMap.get(cur) ?? 0) - amt);
+          } else if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
+            pMap.set(cur, (pMap.get(cur) ?? 0) + amt);
           }
         }
       }

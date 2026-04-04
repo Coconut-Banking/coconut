@@ -366,9 +366,9 @@ export async function GET(req: NextRequest) {
               const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
               const amt = Number(st.amount);
               if (st.payer_member_id === theirMember.id && st.receiver_member_id === myMember.id) {
-                cachedByCurrency.set(cur, Math.round(((cachedByCurrency.get(cur) ?? 0) + amt) * 100) / 100);
-              } else if (st.payer_member_id === myMember.id && st.receiver_member_id === theirMember.id) {
                 cachedByCurrency.set(cur, Math.round(((cachedByCurrency.get(cur) ?? 0) - amt) * 100) / 100);
+              } else if (st.payer_member_id === myMember.id && st.receiver_member_id === theirMember.id) {
+                cachedByCurrency.set(cur, Math.round(((cachedByCurrency.get(cur) ?? 0) + amt) * 100) / 100);
               }
             }
           }
