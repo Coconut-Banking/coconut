@@ -63,7 +63,7 @@ function buildEmbedText(row: EmbedRow): string {
   return parts.filter(Boolean).join(" | ").trim();
 }
 
-const EMBED_DIMENSIONS = 256;
+const EMBED_DIMENSIONS = 1536;
 
 async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
   if (!openai || texts.length === 0) return texts.map(() => null);

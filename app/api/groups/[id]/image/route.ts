@@ -2,8 +2,9 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
+import { canAccessGroup } from "@/lib/group-access";
 
-const MAX_BASE64_LENGTH = 1_500_000;
+const MAX_BASE64_LENGTH = 2_000_000;
 
 export async function POST(
   req: NextRequest,
@@ -13,6 +14,9 @@ export async function POST(
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+
+  const allowed = await canAccessGroup(userId, id);
+  if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   let body: { image: string };
   try {
@@ -27,20 +31,10 @@ export async function POST(
   }
 
   if (image.length > MAX_BASE64_LENGTH) {
-    return NextResponse.json({ error: "Image too large (max ~1MB)" }, { status: 413 });
+    return NextResponse.json({ error: "Image too large (max ~1.5MB)" }, { status: 413 });
   }
 
   const db = getSupabase();
-
-  const { data: group, error: groupError } = await db
-    .from("groups")
-    .select("owner_id")
-    .eq("id", id)
-    .single();
-
-  if (groupError || !group || group.owner_id !== userId) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
 
   const { error: updateError } = await db
     .from("groups")
