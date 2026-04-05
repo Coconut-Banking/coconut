@@ -743,7 +743,7 @@ async function runVectorSearch(
     const resp = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: searchText,
-      dimensions: 256,
+      dimensions: 1536,
     });
     embData = resp.data;
   } catch (e) {
