@@ -34,29 +34,43 @@ export async function POST(
     return NextResponse.json({ error: "Image too large (max ~1.5MB)" }, { status: 413 });
   }
 
+  const match = image.match(/^data:(image\/\w+);base64,(.+)$/);
+  if (!match) {
+    return NextResponse.json({ error: "Invalid data URI format" }, { status: 400 });
+  }
+
+  const contentType = match[1];
+  const base64Data = match[2];
+  const ext = contentType === "image/png" ? "png" : "jpg";
+  const buffer = Buffer.from(base64Data, "base64");
+
   const admin = getSupabaseAdmin();
-  console.log(`[groups/image] updating image_url for group ${id}, base64 length: ${image.length}`);
-  const { error: updateError, count } = await admin
+  const storagePath = `${id}.${ext}`;
+
+  const { error: uploadError } = await admin.storage
+    .from("group-icons")
+    .upload(storagePath, buffer, { contentType, upsert: true });
+
+  if (uploadError) {
+    console.error("[groups/image] storage upload error:", uploadError);
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+  }
+
+  const { data: publicUrlData } = admin.storage
+    .from("group-icons")
+    .getPublicUrl(storagePath);
+
+  const imageUrl = publicUrlData.publicUrl;
+
+  const { error: updateError } = await admin
     .from("groups")
-    .update({ image_url: image })
+    .update({ image_url: imageUrl })
     .eq("id", id);
 
   if (updateError) {
-    if (updateError.message?.includes("column")) {
-      return NextResponse.json({ error: "image_url column not yet available — run the migration" }, { status: 501 });
-    }
-    console.error("[groups/image] update failed:", updateError.message, updateError);
+    console.error("[groups/image] db update error:", updateError.message);
     return NextResponse.json({ error: "Failed to save image" }, { status: 500 });
   }
 
-  // Verify the write actually persisted
-  const { data: verify } = await admin
-    .from("groups")
-    .select("id, image_url")
-    .eq("id", id)
-    .maybeSingle();
-  const saved = verify?.image_url ? verify.image_url.length : 0;
-  console.log(`[groups/image] saved for group ${id}: image_url length=${saved}, count=${count}`);
-
-  return NextResponse.json({ ok: true, savedLength: saved });
+  return NextResponse.json({ ok: true, imageUrl });
 }
