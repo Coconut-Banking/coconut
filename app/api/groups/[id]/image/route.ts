@@ -35,7 +35,8 @@ export async function POST(
   }
 
   const admin = getSupabaseAdmin();
-  const { error: updateError } = await admin
+  console.log(`[groups/image] updating image_url for group ${id}, base64 length: ${image.length}`);
+  const { error: updateError, count } = await admin
     .from("groups")
     .update({ image_url: image })
     .eq("id", id);
@@ -44,9 +45,18 @@ export async function POST(
     if (updateError.message?.includes("column")) {
       return NextResponse.json({ error: "image_url column not yet available — run the migration" }, { status: 501 });
     }
-    console.error("[groups/image] update:", updateError.message);
+    console.error("[groups/image] update failed:", updateError.message, updateError);
     return NextResponse.json({ error: "Failed to save image" }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  // Verify the write actually persisted
+  const { data: verify } = await admin
+    .from("groups")
+    .select("id, image_url")
+    .eq("id", id)
+    .maybeSingle();
+  const saved = verify?.image_url ? verify.image_url.length : 0;
+  console.log(`[groups/image] saved for group ${id}: image_url length=${saved}, count=${count}`);
+
+  return NextResponse.json({ ok: true, savedLength: saved });
 }
