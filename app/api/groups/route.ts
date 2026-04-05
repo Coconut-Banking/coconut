@@ -6,8 +6,6 @@ import { getSupabase } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 
-let _hasImageUrlCol: boolean | null = null;
-
 export async function GET(req: NextRequest) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -21,24 +19,19 @@ export async function GET(req: NextRequest) {
   type GroupRow = { id: string; name: string; owner_id: string; created_at: string; group_type?: string; invite_token?: string; archived_at?: string | null; image_url?: string | null };
   let groupsRaw: GroupRow[] | null;
   {
-    const cols = _hasImageUrlCol !== false
-      ? "id, name, owner_id, created_at, group_type, invite_token, archived_at, image_url"
-      : "id, name, owner_id, created_at, group_type, invite_token, archived_at";
     const res = await db
       .from("groups")
-      .select(cols)
+      .select("id, name, owner_id, created_at, group_type, invite_token, archived_at, image_url")
       .in("id", ids)
       .order("created_at", { ascending: false });
-    if (res.error?.code === "42703" && _hasImageUrlCol !== false) {
-      _hasImageUrlCol = false;
+    if (res.error?.code === "42703") {
       const fallback = await db
         .from("groups")
-        .select("id, name, owner_id, created_at, group_type, invite_token, archived_at")
+        .select("id, name, owner_id, created_at, group_type, invite_token")
         .in("id", ids)
         .order("created_at", { ascending: false });
       groupsRaw = fallback.data;
     } else {
-      if (!res.error) _hasImageUrlCol = true;
       groupsRaw = res.data;
     }
   }
@@ -64,6 +57,7 @@ export async function GET(req: NextRequest) {
     groups.map((g) => ({
       ...g,
       invite_token: g.invite_token ?? null,
+      imageUrl: g.image_url ?? null,
       memberCount: countByGroup[g.id] ?? 0,
     }))
   );
