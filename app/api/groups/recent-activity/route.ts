@@ -173,11 +173,17 @@ export async function GET() {
     const myShare = myShareRow ? Number(myShareRow.amount) : 0;
     const currency = ((s as { iso_currency_code?: string | null }).iso_currency_code ?? "USD").trim().toUpperCase() || "USD";
 
+    const iAmPayer = paidByMember && myMember && paidByMember.id === myMember.id;
+    const iHaveShare = !!myShareRow;
+
+    // Skip expenses where the user isn't involved (not payer AND not in shares)
+    if (!iAmPayer && !iHaveShare) continue;
+
     let effectOnBalance = 0;
     let direction: "get_back" | "owe" = "owe";
-    if (paidByMember && myMember && paidByMember.id === myMember.id) {
+    if (iAmPayer) {
       const othersShare = shareList
-        .filter((sh) => sh.member_id !== myMember.id)
+        .filter((sh) => sh.member_id !== myMember!.id)
         .reduce((a, sh) => a + Number(sh.amount), 0);
       effectOnBalance = Math.round(othersShare * 100) / 100;
       direction = "get_back";
@@ -186,10 +192,7 @@ export async function GET() {
       direction = "owe";
     }
 
-    const who =
-      paidByMember && myMember && paidByMember.id === myMember.id
-        ? "You"
-        : paidByMember?.display_name ?? "Someone";
+    const who = iAmPayer ? "You" : paidByMember?.display_name ?? "Someone";
     const groupName = groupNames.get(s.group_id) ?? "";
     const expenseDate = (s as { date?: string }).date ?? s.created_at;
 
