@@ -17,6 +17,8 @@ import {
 /** Ignore sub–half-cent noise when deciding “settled” vs outstanding (Splitwise-style lists). */
 const BALANCE_EPS = 0.005;
 
+let _hasImageUrlColumn: boolean | null = null;
+
 function scheduleProcessRecurringExpenses(userId: string) {
   void processRecurringExpenses(userId)
     .then((n) => {
@@ -120,20 +122,26 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   let groupsRaw: { id: string; name: string; owner_id: string; created_at: string; group_type?: string; source?: string | null; external_id?: string | null; archived_at?: string | null; image_url?: string | null }[] | null;
   {
+    const selectWithImage = _hasImageUrlColumn !== false;
+    const cols = selectWithImage
+      ? "id, name, owner_id, created_at, group_type, source, external_id, archived_at, image_url"
+      : "id, name, owner_id, created_at, group_type, source, external_id, archived_at";
     const res = await db
       .from("groups")
-      .select("id, name, owner_id, created_at, group_type, source, external_id, archived_at, image_url")
+      .select(cols)
       .in("id", ids)
       .order("created_at", { ascending: false });
-    if (res.error?.code === "42703") {
-      console.warn("[summary] image_url column not found — falling back. Run: ALTER TABLE groups ADD COLUMN IF NOT EXISTS image_url text;");
+    if (res.error?.code === "42703" && selectWithImage) {
+      _hasImageUrlColumn = false;
+      console.warn("[summary] image_url column not found — caching fallback for this instance. Run: ALTER TABLE groups ADD COLUMN IF NOT EXISTS image_url text;");
       const fallback = await db
         .from("groups")
-        .select("id, name, owner_id, created_at, group_type, source, external_id")
+        .select("id, name, owner_id, created_at, group_type, source, external_id, archived_at")
         .in("id", ids)
         .order("created_at", { ascending: false });
       groupsRaw = fallback.data;
     } else {
+      if (selectWithImage && !res.error) _hasImageUrlColumn = true;
       groupsRaw = res.data;
     }
   }

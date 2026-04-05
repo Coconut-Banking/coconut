@@ -15,6 +15,8 @@ import { createRecurringExpense, processRecurringExpenses } from "@/lib/recurrin
 import { formatCurrency } from "@/lib/currency";
 import { notifyGroupMembers } from "@/lib/push-sender";
 
+let _hasPayerAndDateCols: boolean | null = null;
+
 /**
  * POST /api/manual-expense
  * Create a manual expense and split it in a group.
@@ -178,20 +180,24 @@ export async function POST(req: NextRequest) {
   let splitTx: { id: string } | null = null;
   let splitError: { message?: string } | null = null;
   const expenseDate = clientDate ?? new Date().toISOString().split("T")[0];
+  const insertPayload: Record<string, unknown> = {
+    group_id: groupId,
+    transaction_id: transaction.id,
+    created_by: userId,
+    iso_currency_code: currency,
+    ...splitDetailFields,
+  };
+  if (_hasPayerAndDateCols !== false) {
+    insertPayload.payer_member_id = effectivePayer;
+    insertPayload.date = expenseDate;
+  }
   const { data: st1, error: e1 } = await db
     .from("split_transactions")
-    .insert({
-      group_id: groupId,
-      transaction_id: transaction.id,
-      created_by: userId,
-      payer_member_id: effectivePayer,
-      iso_currency_code: currency,
-      date: expenseDate,
-      ...splitDetailFields,
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
-  if (e1 && e1.message?.includes("column")) {
+  if (e1 && e1.message?.includes("column") && _hasPayerAndDateCols !== false) {
+    _hasPayerAndDateCols = false;
     const { data: st2, error: e2 } = await db
       .from("split_transactions")
       .insert({
@@ -206,6 +212,7 @@ export async function POST(req: NextRequest) {
     splitTx = st2;
     splitError = e2;
   } else {
+    if (!e1) _hasPayerAndDateCols = true;
     splitTx = st1;
     splitError = e1;
   }

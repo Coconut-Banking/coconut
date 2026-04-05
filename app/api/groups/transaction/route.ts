@@ -6,6 +6,8 @@ import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
 
+let _hasExtendedCols: boolean | null = null;
+
 /**
  * GET /api/groups/transaction?id=<split_transaction_id>
  * Returns full detail for a single split transaction including shares and member names.
@@ -19,23 +21,20 @@ export async function GET(req: NextRequest) {
 
   const db = getSupabaseAdmin();
 
+  const selectCols = _hasExtendedCols !== false
+    ? `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id, notes, category, receipt_url`
+    : `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id`;
   const { data: tx, error: txErr } = await db
     .from("split_transactions")
-    .select(`
-      id, group_id, description, amount, date, iso_currency_code,
-      payer_member_id, created_at, source, external_id,
-      notes, category, receipt_url
-    `)
+    .select(selectCols)
     .eq("id", id)
     .maybeSingle();
 
-  if (txErr?.code === "42703") {
+  if (txErr?.code === "42703" && _hasExtendedCols !== false) {
+    _hasExtendedCols = false;
     const { data: txFallback } = await db
       .from("split_transactions")
-      .select(`
-        id, group_id, description, amount, date, iso_currency_code,
-        payer_member_id, created_at, source, external_id
-      `)
+      .select(`id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id`)
       .eq("id", id)
       .maybeSingle();
     if (!txFallback) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
@@ -45,6 +44,7 @@ export async function GET(req: NextRequest) {
     }
     return buildResponse(db, userId, txFallback, null, null, null);
   }
+  if (!txErr) _hasExtendedCols = true;
 
   if (!tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
 
