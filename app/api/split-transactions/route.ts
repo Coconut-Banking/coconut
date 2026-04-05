@@ -122,7 +122,11 @@ export async function POST(req: NextRequest) {
     }));
 
   if (shareRows.length > 0) {
-    await db.from("split_shares").insert(shareRows);
+    const { error: sharesErr } = await db.from("split_shares").insert(shareRows);
+    if (sharesErr) {
+      await db.from("split_transactions").delete().eq("id", split.id);
+      return NextResponse.json({ error: sharesErr.message ?? "Failed to create shares" }, { status: 500 });
+    }
   }
 
   const creatorMember = (groupMembers ?? []).find((m) => m.user_id === userId);
