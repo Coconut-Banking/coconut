@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import { canAccessGroup } from "@/lib/group-access";
 
@@ -34,9 +34,8 @@ export async function POST(
     return NextResponse.json({ error: "Image too large (max ~1.5MB)" }, { status: 413 });
   }
 
-  const db = getSupabase();
-
-  const { error: updateError } = await db
+  const admin = getSupabaseAdmin();
+  const { error: updateError } = await admin
     .from("groups")
     .update({ image_url: image })
     .eq("id", id);

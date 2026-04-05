@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
+import { getClerkUserPhotos } from "@/lib/clerk-user-lookup";
 
 let _hasExtendedCols: boolean | null = null;
 
@@ -99,6 +100,8 @@ async function buildResponse(
     .eq("split_transaction_id", tx.id);
 
   const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
+  const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
+  const photoMap = await getClerkUserPhotos(memberUserIds);
   const currency = normalizeSplitCurrency(tx.iso_currency_code);
 
   const payer = tx.payer_member_id ? memberMap.get(tx.payer_member_id) : null;
@@ -110,6 +113,7 @@ async function buildResponse(
       displayName: member?.display_name ?? "Someone",
       isMe: member?.user_id === userId,
       amount: Number(s.amount),
+      image_url: (member?.user_id && photoMap.get(member.user_id)) || null,
     };
   }).sort((a, b) => b.amount - a.amount);
 
@@ -127,7 +131,7 @@ async function buildResponse(
     groupName: group?.name ?? null,
     groupId: tx.group_id,
     paidBy: payer
-      ? { memberId: payer.id, displayName: payer.display_name, isMe: payer.user_id === userId }
+      ? { memberId: payer.id, displayName: payer.display_name, isMe: payer.user_id === userId, image_url: (payer.user_id && photoMap.get(payer.user_id)) || null }
       : null,
     shares: shareRows,
     notes,

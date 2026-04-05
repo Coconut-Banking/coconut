@@ -71,8 +71,7 @@ export async function POST(
 
     const imageUrl = publicUrlData.publicUrl;
 
-    const db = getSupabase();
-    const { error: updateError } = await db
+    const { error: updateError } = await admin
       .from("groups")
       .update({ image_url: imageUrl })
       .eq("id", id);
@@ -112,8 +111,7 @@ export async function DELETE(
       console.error("[group-icon] storage remove error:", removeError);
     }
 
-    const db = getSupabase();
-    const { error: updateError } = await db
+    const { error: updateError } = await admin
       .from("groups")
       .update({ image_url: null })
       .eq("id", id);
