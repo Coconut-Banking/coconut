@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
 
   const db = getSupabaseAdmin();
 
+  type TxRow = { id: string; group_id: string; description: string; amount: number; date: string; iso_currency_code: string | null; payer_member_id: string; created_at: string; source: string | null; external_id: string | null; notes?: string | null; category?: string | null; receipt_url?: string | null };
   const selectCols = _hasExtendedCols !== false
     ? `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id, notes, category, receipt_url`
     : `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id`;
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
     .from("split_transactions")
     .select(selectCols)
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle() as unknown as { data: TxRow | null; error: { code?: string } | null };
 
   if (txErr?.code === "42703" && _hasExtendedCols !== false) {
     _hasExtendedCols = false;
