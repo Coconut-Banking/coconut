@@ -35,6 +35,29 @@ export async function GET(
     }
 
     const isOwner = group.owner_id === userId;
+
+    // Lazy-migrate data URI to Supabase Storage if still using inline base64
+    if ((group as Record<string, unknown>).image_url && typeof (group as Record<string, unknown>).image_url === "string" && ((group as Record<string, unknown>).image_url as string).startsWith("data:")) {
+      void (async () => {
+        try {
+          const raw = (group as Record<string, unknown>).image_url as string;
+          const match = raw.match(/^data:(image\/\w+);base64,(.+)$/);
+          if (!match) return;
+          const contentType = match[1];
+          const base64Data = match[2];
+          const ext = contentType === "image/png" ? "png" : "jpg";
+          const buffer = Buffer.from(base64Data, "base64");
+          const storagePath = `${id}.${ext}`;
+          const adminDb = getSupabaseAdmin();
+          const { error: upErr } = await adminDb.storage.from("group-icons").upload(storagePath, buffer, { contentType, upsert: true });
+          if (upErr) return;
+          const { data: urlData } = adminDb.storage.from("group-icons").getPublicUrl(storagePath);
+          await adminDb.from("groups").update({ image_url: urlData.publicUrl }).eq("id", id);
+          console.log("[groups/id] migrated data URI to storage for", id);
+        } catch { /* best effort */ }
+      })();
+    }
+
     const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
     const maskedGroup = { ...groupWithoutToken, invite_token: invite_token ?? null };
 
