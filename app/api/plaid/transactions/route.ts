@@ -387,11 +387,13 @@ export async function POST() {
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    // Sync first, THEN clear stale data only if sync succeeds.
-    // Previously we cleared before sync, which destroyed data when Plaid tokens failed.
     const { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } = await import("@/lib/transaction-sync");
     const { synced, error } = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
-    if (error) return NextResponse.json({ error }, { status: 500 });
+    if (error) {
+      const isUserError =
+        /no plaid connection/i.test(error) || /not configured/i.test(error);
+      return NextResponse.json({ error }, { status: isUserError ? 400 : 500 });
+    }
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
     embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));

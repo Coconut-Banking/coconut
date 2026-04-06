@@ -46,15 +46,24 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabaseAdmin();
 
-  const { error } = await db.from("push_tokens").upsert(
-    {
-      clerk_user_id: clerkAuth.userId,
-      token,
-      platform,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "clerk_user_id,token" }
-  );
+  const row: Record<string, string> = {
+    clerk_user_id: clerkAuth.userId,
+    token,
+    platform,
+    updated_at: new Date().toISOString(),
+  };
+
+  let { error } = await db
+    .from("push_tokens")
+    .upsert(row, { onConflict: "clerk_user_id,token" });
+
+  if (error?.message?.includes("platform")) {
+    const { platform: _p, ...rowWithoutPlatform } = row;
+    void _p;
+    ({ error } = await db
+      .from("push_tokens")
+      .upsert(rowWithoutPlatform, { onConflict: "clerk_user_id,token" }));
+  }
 
   if (error) {
     console.error("[push-token] upsert failed:", error.message);
