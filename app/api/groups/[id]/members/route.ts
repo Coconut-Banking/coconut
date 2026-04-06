@@ -34,9 +34,10 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // If the member has an email, check if they already have a Coconut account
-  let linkedUserId: string | null = null;
-  if (email) {
+  // Link by explicit user_id hint first, then fall back to email lookup
+  const hintUserId = typeof body.userId === "string" ? body.userId.trim() : null;
+  let linkedUserId: string | null = hintUserId || null;
+  if (!linkedUserId && email) {
     linkedUserId = await findClerkUserIdByEmail(email);
   }
 

@@ -47,13 +47,54 @@ export async function GET(req: NextRequest) {
       .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
       .in("group_id", ids);
 
-    const personMembers = (members ?? []).filter((m) => {
+    const directMatches = (members ?? []).filter((m) => {
       if (m.user_id === userId) return false;
       if (m.user_id && m.user_id === key) return true;
       if (m.email && m.email === key) return true;
       if (`${m.group_id}-${m.id}` === key) return true;
       return false;
     });
+
+    // Widen the net: also match members by email or display_name from
+    // direct matches. This catches auto-created 1:1 group members that
+    // have the same email/name but a null user_id.
+    const knownEmails = new Set(
+      directMatches.map((m) => m.email?.toLowerCase()).filter(Boolean)
+    );
+    const knownNames = new Set(
+      directMatches.map((m) => m.display_name?.trim().toLowerCase()).filter(Boolean)
+    );
+
+    // If key is a composite key (groupId-memberId), resolve the source member
+    const memberIdFromKey =
+      key.length > 37 && key[36] === "-" ? key.slice(37) : null;
+    if (memberIdFromKey && directMatches.length === 0) {
+      const srcMember = (members ?? []).find((m) => m.id === memberIdFromKey);
+      if (srcMember) {
+        if (srcMember.email) knownEmails.add(srcMember.email.toLowerCase());
+        if (srcMember.display_name) knownNames.add(srcMember.display_name.trim().toLowerCase());
+      }
+    }
+
+    const matchedIds = new Set(directMatches.map((m) => m.id));
+    const personMembers = [...directMatches];
+
+    if (knownEmails.size > 0 || knownNames.size > 0) {
+      for (const m of members ?? []) {
+        if (m.user_id === userId) continue;
+        if (matchedIds.has(m.id)) continue;
+        const emailMatch = m.email && knownEmails.has(m.email.toLowerCase());
+        const nameMatch =
+          !emailMatch &&
+          knownEmails.size === 0 &&
+          m.display_name &&
+          knownNames.has(m.display_name.trim().toLowerCase());
+        if (emailMatch || nameMatch) {
+          personMembers.push(m);
+          matchedIds.add(m.id);
+        }
+      }
+    }
 
     if (personMembers.length === 0) {
       return NextResponse.json(
