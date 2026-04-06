@@ -49,6 +49,11 @@ export async function POST(req: Request) {
         type: "express",
         email,
         business_type: "individual",
+        business_profile: {
+          url: "https://coconut-app.dev",
+          mcc: "7372", // Software — personal finance app
+          product_description: "Peer-to-peer expense splitting and payments via the Coconut app",
+        },
         capabilities: {
           card_payments: { requested: true },
           transfers: { requested: true },
