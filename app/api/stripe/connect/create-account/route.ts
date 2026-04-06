@@ -48,9 +48,15 @@ export async function POST(req: Request) {
       const account = await stripe.accounts.create({
         type: "express",
         email,
+        business_type: "individual",
         capabilities: {
           card_payments: { requested: true },
           transfers: { requested: true },
+        },
+        settings: {
+          payouts: {
+            schedule: { interval: "daily" },
+          },
         },
         metadata: { clerk_user_id: userId },
       });
