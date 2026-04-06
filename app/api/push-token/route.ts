@@ -66,6 +66,12 @@ export async function POST(req: NextRequest) {
   }
 
   if (error) {
+    const isSchemaIssue =
+      /schema cache|does not exist|relation.*push_tokens/i.test(error.message);
+    if (isSchemaIssue) {
+      console.warn("[push-token] table not ready (run migration):", error.message);
+      return NextResponse.json({ ok: true, pending: true });
+    }
     console.error("[push-token] upsert failed:", error.message);
     return NextResponse.json(
       { error: "Failed to store push token" },
