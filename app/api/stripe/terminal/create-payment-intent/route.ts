@@ -91,10 +91,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // card_present requires the currency matching the Stripe account's country
+  let currency = DEFAULT_CURRENCY;
+  try {
+    const acct = await stripe.accounts.retrieve();
+    const country = (acct.country ?? "").toUpperCase();
+    const countryToCurrency: Record<string, string> = {
+      CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
+      SG: "sgd", HK: "hkd", JP: "jpy", EU: "eur",
+      DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
+      IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
+    };
+    currency = countryToCurrency[country] ?? DEFAULT_CURRENCY;
+  } catch {
+    // Fallback to default
+  }
+
   try {
     const piParams: Stripe.PaymentIntentCreateParams = {
       amount: amountCents,
-      currency: DEFAULT_CURRENCY,
+      currency,
       metadata,
       payment_method_types: ["card_present"],
       capture_method: "automatic",
@@ -109,6 +125,7 @@ export async function POST(req: NextRequest) {
       clientSecret: paymentIntent.client_secret,
       directPayout: !!destinationAccountId,
       paymentIntentId: paymentIntent.id,
+      currency,
     });
   } catch (e) {
     const stripeMsg = e instanceof Stripe.errors.StripeError ? e.message : null;
@@ -122,7 +139,7 @@ export async function POST(req: NextRequest) {
       try {
         const fallbackParams: Stripe.PaymentIntentCreateParams = {
           amount: amountCents,
-          currency: DEFAULT_CURRENCY,
+          currency,
           metadata,
           payment_method_types: ["card_present"],
           capture_method: "automatic",
