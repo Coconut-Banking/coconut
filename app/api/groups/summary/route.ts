@@ -340,9 +340,11 @@ async function handleSummary(req: NextRequest, userId: string) {
           const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
           const amt = Number(st.amount);
           if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
-            addPersonCurrency(personBalances, key, m.display_name, cur, -amt);
-          } else if (st.payer_member_id === m.id && st.receiver_member_id === myMember.id) {
+            // I paid them → I owe them less → balance goes UP
             addPersonCurrency(personBalances, key, m.display_name, cur, amt);
+          } else if (st.payer_member_id === m.id && st.receiver_member_id === myMember.id) {
+            // They paid me → they owe me less → balance goes DOWN
+            addPersonCurrency(personBalances, key, m.display_name, cur, -amt);
           }
         }
       }
@@ -428,9 +430,11 @@ async function handleSummary(req: NextRequest, userId: string) {
           if (!localSettlementDeltas.has(personKey)) localSettlementDeltas.set(personKey, new Map());
           const pMap = localSettlementDeltas.get(personKey)!;
           if (st.payer_member_id === m.id && st.receiver_member_id === myMember.id) {
-            pMap.set(cur, (pMap.get(cur) ?? 0) + amt);
-          } else if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
+            // They paid me → they owe me less → subtract from cached balance
             pMap.set(cur, (pMap.get(cur) ?? 0) - amt);
+          } else if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
+            // I paid them → I owe them less → add to cached balance
+            pMap.set(cur, (pMap.get(cur) ?? 0) + amt);
           }
         }
       }
