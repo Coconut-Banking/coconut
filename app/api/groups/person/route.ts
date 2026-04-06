@@ -131,23 +131,21 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const { data: shares } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splits.map((s) => s.id));
-
-    const { data: settlements } = await db
-      .from("settlements")
-      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-      .in("group_id", sharedGroupIds)
-      .eq("status", "completed");
-
     const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-    let txRows: { id: string; clerk_user_id: string }[] = [];
-    if (txIds.length > 0) {
-      const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-      txRows = data ?? [];
-    }
+    const [{ data: shares }, { data: settlements }, txRows] = await Promise.all([
+      db
+        .from("split_shares")
+        .select("split_transaction_id, member_id, amount")
+        .in("split_transaction_id", splits.map((s) => s.id)),
+      db
+        .from("settlements")
+        .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
+        .in("group_id", sharedGroupIds)
+        .eq("status", "completed"),
+      txIds.length > 0
+        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds).then(({ data }) => data ?? [])
+        : Promise.resolve([] as { id: string; clerk_user_id: string }[]),
+    ]);
 
     const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
@@ -403,7 +401,7 @@ export async function GET(req: NextRequest) {
       (a) => Math.abs(a.effectOnBalance) >= BALANCE_EPS
     );
 
-    return NextResponse.json({
+    const resp = NextResponse.json({
       displayName,
       balance,
       currencyBalances,
@@ -415,6 +413,8 @@ export async function GET(req: NextRequest) {
       sharedGroups,
       p2pHandles,
     });
+    resp.headers.set("Cache-Control", "private, max-age=30");
+    return resp;
   } catch (err) {
     console.error("[person]", err);
     return NextResponse.json({ error: "Failed to load person" }, { status: 500 });

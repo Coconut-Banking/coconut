@@ -122,7 +122,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     `)
     .in("group_id", groupIds)
     .order("created_at", { ascending: false })
-    .limit(25000);
+    .limit(5000);
 
   const splitIds = (splits ?? []).map((s) => s.id);
 
@@ -596,7 +596,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     totalsByCurrency: totalsByCurrency.length,
   });
 
-  return NextResponse.json({
+  const resp = NextResponse.json({
     groups: groupsOut,
     friends,
     totalOwedToMe,
@@ -604,4 +604,6 @@ async function handleSummary(req: NextRequest, userId: string) {
     netBalance,
     totalsByCurrency,
   });
+  resp.headers.set("Cache-Control", "private, max-age=15, stale-while-revalidate=30");
+  return resp;
 }

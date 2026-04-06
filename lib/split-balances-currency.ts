@@ -15,27 +15,57 @@ export function computeBalancesByCurrency(
   paidSettlements: { payer_member_id: string; amount: number; currency: string }[],
   receivedSettlements: { receiver_member_id: string; amount: number; currency: string }[]
 ): Map<string, Map<string, MemberBalance>> {
+  // Single-pass: group all rows by normalized currency
+  const paidByCur = new Map<string, { member_id: string; amount: number }[]>();
+  for (const r of paidRows) {
+    const cur = normalizeSplitCurrency(r.currency);
+    let list = paidByCur.get(cur);
+    if (!list) { list = []; paidByCur.set(cur, list); }
+    list.push({ member_id: r.member_id, amount: r.amount });
+  }
+
+  const owedByCur = new Map<string, { member_id: string; amount: number }[]>();
+  for (const r of owedRows) {
+    const cur = normalizeSplitCurrency(r.currency);
+    let list = owedByCur.get(cur);
+    if (!list) { list = []; owedByCur.set(cur, list); }
+    list.push({ member_id: r.member_id, amount: r.amount });
+  }
+
+  const paidSettByCur = new Map<string, { payer_member_id: string; amount: number }[]>();
+  for (const r of paidSettlements) {
+    const cur = normalizeSplitCurrency(r.currency);
+    let list = paidSettByCur.get(cur);
+    if (!list) { list = []; paidSettByCur.set(cur, list); }
+    list.push({ payer_member_id: r.payer_member_id, amount: r.amount });
+  }
+
+  const recvSettByCur = new Map<string, { receiver_member_id: string; amount: number }[]>();
+  for (const r of receivedSettlements) {
+    const cur = normalizeSplitCurrency(r.currency);
+    let list = recvSettByCur.get(cur);
+    if (!list) { list = []; recvSettByCur.set(cur, list); }
+    list.push({ receiver_member_id: r.receiver_member_id, amount: r.amount });
+  }
+
+  // Collect all currencies
   const currencies = new Set<string>();
-  for (const r of paidRows) currencies.add(normalizeSplitCurrency(r.currency));
-  for (const r of owedRows) currencies.add(normalizeSplitCurrency(r.currency));
-  for (const r of paidSettlements) currencies.add(normalizeSplitCurrency(r.currency));
-  for (const r of receivedSettlements) currencies.add(normalizeSplitCurrency(r.currency));
+  for (const k of paidByCur.keys()) currencies.add(k);
+  for (const k of owedByCur.keys()) currencies.add(k);
+  for (const k of paidSettByCur.keys()) currencies.add(k);
+  for (const k of recvSettByCur.keys()) currencies.add(k);
 
   const out = new Map<string, Map<string, MemberBalance>>();
   for (const cur of currencies) {
-    const pr = paidRows
-      .filter((r) => normalizeSplitCurrency(r.currency) === cur)
-      .map(({ member_id, amount }) => ({ member_id, amount }));
-    const or = owedRows
-      .filter((r) => normalizeSplitCurrency(r.currency) === cur)
-      .map(({ member_id, amount }) => ({ member_id, amount }));
-    const ps = paidSettlements
-      .filter((r) => normalizeSplitCurrency(r.currency) === cur)
-      .map(({ payer_member_id, amount }) => ({ payer_member_id, amount }));
-    const rs = receivedSettlements
-      .filter((r) => normalizeSplitCurrency(r.currency) === cur)
-      .map(({ receiver_member_id, amount }) => ({ receiver_member_id, amount }));
-    out.set(cur, computeBalances(pr, or, ps, rs));
+    out.set(
+      cur,
+      computeBalances(
+        paidByCur.get(cur) ?? [],
+        owedByCur.get(cur) ?? [],
+        paidSettByCur.get(cur) ?? [],
+        recvSettByCur.get(cur) ?? [],
+      )
+    );
   }
   return out;
 }

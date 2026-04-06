@@ -1,22 +1,21 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { getSupabase } from "./supabase";
 
-const _linkCache = new Map<string, number>();
-const LINK_CACHE_TTL_MS = 60_000;
+const _linkedUserIds = new Map<string, number>();
+const LINK_TTL_MS = 300_000; // Re-check email linking every 5 minutes
 
 /**
  * Link group members by email when user signs in.
- * Cached per-user for 60s to avoid redundant Clerk + DB calls on every request.
+ * Cached per-user for 5 minutes to avoid redundant Clerk + DB calls.
  */
 async function linkMemberByEmail(userId: string) {
-  const now = Date.now();
-  const lastRun = _linkCache.get(userId);
-  if (lastRun && now - lastRun < LINK_CACHE_TTL_MS) return;
+  const lastLinked = _linkedUserIds.get(userId);
+  if (lastLinked && Date.now() - lastLinked < LINK_TTL_MS) return;
 
   const user = await currentUser();
   const email = user?.emailAddresses?.[0]?.emailAddress;
   if (!email) {
-    _linkCache.set(userId, now);
+    _linkedUserIds.set(userId, Date.now());
     return;
   }
 
@@ -29,7 +28,7 @@ async function linkMemberByEmail(userId: string) {
     .is("user_id", null);
 
   if (!candidates || candidates.length === 0) {
-    _linkCache.set(userId, now);
+    _linkedUserIds.set(userId, Date.now());
     return;
   }
 
@@ -42,7 +41,7 @@ async function linkMemberByEmail(userId: string) {
   console.log(
     `[group-access] linked ${candidates.length} member row(s) for ${email}`
   );
-  _linkCache.set(userId, now);
+  _linkedUserIds.add(userId);
 }
 
 /**
@@ -67,15 +66,27 @@ export async function canAccessGroup(
   return !!member;
 }
 
+const _idsCache = new Map<string, { ids: string[]; ts: number }>();
+const IDS_CACHE_TTL_MS = 60_000;
+
 /**
  * Get all group IDs the user can access (as owner or member).
- * Links members by email when they sign in (so invited users see groups).
+ * Links members by email when they first sign in (so invited users see groups).
+ * Results are cached for 60s per userId.
  */
 export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
+  const now = Date.now();
+  const cached = _idsCache.get(userId);
+  if (cached && now - cached.ts < IDS_CACHE_TTL_MS) {
+    return cached.ids;
+  }
+
+  // Link member by email (cached per-user with TTL)
+  await linkMemberByEmail(userId);
+
   const db = getSupabase();
 
-  const [, ownedRes, memberRes] = await Promise.all([
-    linkMemberByEmail(userId),
+  const [ownedRes, memberRes] = await Promise.all([
     db.from("groups").select("id").eq("owner_id", userId),
     db.from("group_members").select("group_id").eq("user_id", userId),
   ]);
@@ -89,5 +100,7 @@ export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
   for (const g of owned ?? []) ids.add(g.id);
   for (const r of memberRows ?? []) if (r.group_id) ids.add(r.group_id);
 
-  return Array.from(ids);
+  const result = Array.from(ids);
+  _idsCache.set(userId, { ids: result, ts: now });
+  return result;
 }

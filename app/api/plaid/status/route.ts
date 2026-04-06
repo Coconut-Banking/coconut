@@ -26,7 +26,9 @@ export async function GET() {
     const linked = items && items.length > 0;
     const needsReauth = items?.some((r) => r.needs_reauth === true) ?? false;
     const newAccountsAvailable = items?.some((r) => r.new_accounts_available === true) ?? false;
-    return NextResponse.json({ linked: Boolean(linked), needs_reauth: needsReauth, new_accounts_available: newAccountsAvailable });
+    const resp = NextResponse.json({ linked: Boolean(linked), needs_reauth: needsReauth, new_accounts_available: newAccountsAvailable });
+    resp.headers.set("Cache-Control", "private, max-age=30");
+    return resp;
   } catch {
     return NextResponse.json({ linked: false, needs_reauth: false, new_accounts_available: false });
   }

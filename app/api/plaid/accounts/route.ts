@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
       const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
       return NextResponse.json(
         { accounts: deduped },
-        { headers: { "Cache-Control": "no-store, max-age=0" } }
+        { headers: { "Cache-Control": "private, max-age=30" } }
       );
     }
 
@@ -190,7 +190,7 @@ export async function GET(request: NextRequest) {
         const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
         return NextResponse.json(
           { accounts: deduped },
-          { headers: { "Cache-Control": "no-store, max-age=0" } }
+          { headers: { "Cache-Control": "private, max-age=30" } }
         );
       }
     }
@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
       const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
       return NextResponse.json(
         { accounts: deduped },
-        { headers: { "Cache-Control": "no-store, max-age=0" } }
+        { headers: { "Cache-Control": "private, max-age=30" } }
       );
     }
 
@@ -272,7 +272,7 @@ export async function GET(request: NextRequest) {
       const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
       return NextResponse.json(
         { accounts: deduped },
-        { headers: { "Cache-Control": "no-store, max-age=0" } }
+        { headers: { "Cache-Control": "private, max-age=30" } }
       );
     }
 
@@ -339,7 +339,7 @@ export async function GET(request: NextRequest) {
     const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
     return NextResponse.json(
       { accounts: deduped },
-      { headers: { "Cache-Control": "no-store, max-age=0" } }
+      { headers: { "Cache-Control": "private, max-age=30" } }
     );
   } catch (err) {
     console.error("[plaid][accounts] error:", err);

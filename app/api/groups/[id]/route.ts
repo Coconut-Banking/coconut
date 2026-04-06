@@ -43,22 +43,22 @@ export async function GET(
       .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
       .eq("group_id", id);
 
+    // Fire-and-forget: backfill owner email via Clerk (don't block the response)
     const ownerId = group.owner_id as string;
     const ownerMember = (members ?? []).find((m) => m.user_id === ownerId && !m.email);
     if (ownerMember && ownerId) {
-      try {
-        const client = await clerkClient();
-        const ownerUser = await client.users.getUser(ownerId);
-        const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
-        if (ownerEmail) {
-          await db.from("group_members").update({ email: ownerEmail }).eq("id", ownerMember.id);
-          members = (members ?? []).map((m) =>
-            m.id === ownerMember.id ? { ...m, email: ownerEmail } : m
-          );
+      (async () => {
+        try {
+          const client = await clerkClient();
+          const ownerUser = await client.users.getUser(ownerId);
+          const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
+          if (ownerEmail) {
+            await db.from("group_members").update({ email: ownerEmail }).eq("id", ownerMember.id);
+          }
+        } catch {
+          // Ignore Clerk errors (e.g. no secret key in dev)
         }
-      } catch {
-        // Ignore Clerk errors (e.g. no secret key in dev)
-      }
+      })();
     }
 
     // Deduplicate members that share the same non-null user_id.
@@ -86,23 +86,24 @@ export async function GET(
       members = deduped;
     }
 
-    // Batch-fetch Clerk profile photos for members with a linked user_id.
+    // Fetch Clerk photos in parallel with splits query
     const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
-    const photoMap = await getClerkUserPhotos(memberUserIds);
+    const [photoMap, { data: splitsRaw }] = await Promise.all([
+      getClerkUserPhotos(memberUserIds),
+      db
+        .from("split_transactions")
+        .select(`
+        id, transaction_id, created_by, created_at, payer_member_id, amount, description,
+        iso_currency_code, receipt_url, category,
+        transactions(merchant_name, raw_name, amount, date, primary_category)
+      `)
+        .eq("group_id", id)
+        .order("created_at", { ascending: false }),
+    ]);
     members = (members ?? []).map((m) => ({
       ...m,
       image_url: (m.user_id && photoMap.get(m.user_id)) || null,
     }));
-
-    const { data: splitsRaw } = await db
-      .from("split_transactions")
-      .select(`
-      id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code, receipt_url, category,
-      transactions(merchant_name, raw_name, amount, date, primary_category)
-    `)
-      .eq("group_id", id)
-      .order("created_at", { ascending: false });
 
     const seenTxIds = new Set<string>();
     const splits = (splitsRaw ?? []).filter((s) => {
@@ -136,23 +137,21 @@ export async function GET(
       });
     }
 
-    const { data: shares } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splits.map((s) => s.id));
-
-    const { data: settlements } = await db
-      .from("settlements")
-      .select("payer_member_id, receiver_member_id, amount, method, status, iso_currency_code")
-      .eq("group_id", id)
-      .eq("status", "completed");
-
     const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-    let txRows: { id: string; clerk_user_id: string }[] = [];
-    if (txIds.length > 0) {
-      const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-      txRows = data ?? [];
-    }
+    const [{ data: shares }, { data: settlements }, txRows] = await Promise.all([
+      db
+        .from("split_shares")
+        .select("split_transaction_id, member_id, amount")
+        .in("split_transaction_id", splits.map((s) => s.id)),
+      db
+        .from("settlements")
+        .select("payer_member_id, receiver_member_id, amount, method, status, iso_currency_code")
+        .eq("group_id", id)
+        .eq("status", "completed"),
+      txIds.length > 0
+        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds).then(({ data }) => data ?? [])
+        : Promise.resolve([] as { id: string; clerk_user_id: string }[]),
+    ]);
 
     const txOwnerById = new Map((txRows ?? []).map((t) => [t.id, t.clerk_user_id]));
     const memberByUserId = new Map(
@@ -399,7 +398,7 @@ export async function GET(
       }))
       .sort((a, b) => b.amount - a.amount);
 
-    return NextResponse.json({
+    const resp = NextResponse.json({
       ...maskedGroup,
       group: maskedGroup,
       isOwner,
@@ -418,6 +417,8 @@ export async function GET(
       mySpendByCurrency: mySpendArr,
       categoryBreakdown,
     });
+    resp.headers.set("Cache-Control", "private, max-age=10");
+    return resp;
   } catch (err) {
     console.error("[groups/id]", err);
     return NextResponse.json({ error: "Failed to load group" }, { status: 500 });
