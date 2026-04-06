@@ -130,13 +130,38 @@ export async function POST(req: NextRequest) {
   } else if (personKey) {
     const memberIdFromKey =
       personKey.length > 37 && personKey[36] === "-" ? personKey.slice(37) : null;
-    const otherMember = members.find((m) => {
+    const sourceGroupId =
+      personKey.length > 37 && personKey[36] === "-" ? personKey.slice(0, 36) : null;
+    let otherMember = members.find((m) => {
       if (m.user_id === userId) return false;
       if (memberIdFromKey && m.id === memberIdFromKey) return true;
       if (m.user_id === personKey) return true;
       if (m.email === personKey) return true;
       return false;
     });
+    // When the personKey references a member in a DIFFERENT group (e.g. after
+    // auto-creating a 1:1 group), look up the original member and match by
+    // display_name or email. As a last resort, pick the only other member.
+    if (!otherMember && memberIdFromKey && sourceGroupId && sourceGroupId !== groupId) {
+      const { data: srcMembers } = await db
+        .from("group_members")
+        .select("display_name, email")
+        .eq("id", memberIdFromKey)
+        .limit(1);
+      const src = srcMembers?.[0];
+      if (src) {
+        otherMember = members.find((m) => {
+          if (m.user_id === userId) return false;
+          if (src.email && m.email === src.email) return true;
+          if (src.display_name && m.display_name === src.display_name) return true;
+          return false;
+        });
+      }
+    }
+    if (!otherMember) {
+      const others = members.filter((m) => m.user_id !== userId);
+      if (others.length === 1) otherMember = others[0];
+    }
     if (!otherMember) {
       return NextResponse.json({ error: "Person not found in group" }, { status: 404 });
     }
