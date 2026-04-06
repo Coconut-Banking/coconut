@@ -197,6 +197,15 @@ async function handleSummary(req: NextRequest, userId: string) {
   }
 
   const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
+
+  // Pre-index shares by split_transaction_id for O(1) lookups
+  const sharesBySplitId = new Map<string, typeof shares>();
+  for (const sh of shares) {
+    const list = sharesBySplitId.get(sh.split_transaction_id);
+    if (list) list.push(sh);
+    else sharesBySplitId.set(sh.split_transaction_id, [sh]);
+  }
+
   const splitByGroup = new Map<string, NonNullable<typeof splits>>();
   const seenByGroup = new Map<string, Set<string>>();
   for (const s of splits ?? []) {
@@ -227,6 +236,8 @@ async function handleSummary(req: NextRequest, userId: string) {
   );
 
   const personBalances = new Map<string, PersonAgg>();
+  // Debug: track per-person, per-group pairwise contributions
+  const _pairwiseDebug: Array<{ name: string; key: string; group: string; groupId: string; currency: string; delta: number; source: string }> = [];
 
   const groupsWithBalance = (groups ?? []).map((g) => {
     const groupSplits = splitByGroup.get(g.id) ?? [];
@@ -283,14 +294,16 @@ async function handleSummary(req: NextRequest, userId: string) {
       }
     }
 
-    const groupShareIds = groupSplits.map((x) => x.id);
-    const owedRows = shares
-      .filter((sh) => groupShareIds.includes(sh.split_transaction_id))
-      .map((s) => ({
-        member_id: s.member_id,
-        amount: Number(s.amount),
-        currency: splitCurrencyById.get(s.split_transaction_id) ?? "USD",
-      }));
+    const owedRows: { member_id: string; amount: number; currency: string }[] = [];
+    for (const s of groupSplits) {
+      for (const sh of sharesBySplitId.get(s.id) ?? []) {
+        owedRows.push({
+          member_id: sh.member_id,
+          amount: Number(sh.amount),
+          currency: splitCurrencyById.get(sh.split_transaction_id) ?? "USD",
+        });
+      }
+    }
 
     const groupSettlements = (settlements ?? []).filter((s) => s.group_id === g.id);
     const paidSettlements = groupSettlements.map((s) => ({
@@ -331,10 +344,12 @@ async function handleSummary(req: NextRequest, userId: string) {
     // too would double-count during the name-based dedup merge.
     if (myMember && !(hasSwCache && swGroupIds.has(g.id))) {
       const sharesByTx = new Map<string, Map<string, number>>();
-      for (const sh of shares.filter((s) => groupShareIds.includes(s.split_transaction_id))) {
-        let txMap = sharesByTx.get(sh.split_transaction_id);
-        if (!txMap) { txMap = new Map(); sharesByTx.set(sh.split_transaction_id, txMap); }
-        txMap.set(sh.member_id, Number(sh.amount));
+      for (const s of groupSplits) {
+        for (const sh of sharesBySplitId.get(s.id) ?? []) {
+          let txMap = sharesByTx.get(sh.split_transaction_id);
+          if (!txMap) { txMap = new Map(); sharesByTx.set(sh.split_transaction_id, txMap); }
+          txMap.set(sh.member_id, Number(sh.amount));
+        }
       }
 
       const payerBySplit = new Map<string, string>();
@@ -359,10 +374,16 @@ async function handleSummary(req: NextRequest, userId: string) {
 
           if (payerId === myMember.id) {
             const theirShare = txShares.get(m.id) ?? 0;
-            if (theirShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, theirShare);
+            if (theirShare > 0) {
+              addPersonCurrency(personBalances, key, m.display_name, cur, theirShare);
+              _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: theirShare, source: "expense:iPaid" });
+            }
           } else if (payerId === m.id) {
             const myShare = txShares.get(myMember.id) ?? 0;
-            if (myShare > 0) addPersonCurrency(personBalances, key, m.display_name, cur, -myShare);
+            if (myShare > 0) {
+              addPersonCurrency(personBalances, key, m.display_name, cur, -myShare);
+              _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: -myShare, source: "expense:theyPaid" });
+            }
           }
         }
 
@@ -370,11 +391,11 @@ async function handleSummary(req: NextRequest, userId: string) {
           const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
           const amt = Number(st.amount);
           if (st.payer_member_id === myMember.id && st.receiver_member_id === m.id) {
-            // I paid them → I owe them less → balance goes UP
             addPersonCurrency(personBalances, key, m.display_name, cur, amt);
+            _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: amt, source: "settlement:iPaid" });
           } else if (st.payer_member_id === m.id && st.receiver_member_id === myMember.id) {
-            // They paid me → they owe me less → balance goes DOWN
             addPersonCurrency(personBalances, key, m.display_name, cur, -amt);
+            _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: -amt, source: "settlement:theyPaid" });
           }
         }
       }
@@ -663,6 +684,23 @@ async function handleSummary(req: NextRequest, userId: string) {
     _debug: {
       hasSwCache,
       swGroupCount: swGroupIds.size,
+      topFriendBreakdown: friends
+        .filter((f) => f.balances.length > 0)
+        .slice(0, 3)
+        .map((f) => ({
+          name: f.displayName,
+          key: f.key,
+          balances: f.balances,
+          contributions: _pairwiseDebug
+            .filter((d) => d.name.toLowerCase() === f.displayName.toLowerCase())
+            .reduce((acc, d) => {
+              const gKey = `${d.group}|${d.currency}`;
+              if (!acc[gKey]) acc[gKey] = { group: d.group, groupId: d.groupId, currency: d.currency, total: 0, count: 0 };
+              acc[gKey].total = Math.round((acc[gKey].total + d.delta) * 100) / 100;
+              acc[gKey].count++;
+              return acc;
+            }, {} as Record<string, { group: string; groupId: string; currency: string; total: number; count: number }>),
+        })),
     },
     totalsByCurrency,
   });
