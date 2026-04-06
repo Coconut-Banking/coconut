@@ -10,7 +10,7 @@ import { getSupabase } from "@/lib/supabase";
  * an Account Link URL for hosted onboarding. If the user already has an account,
  * returns a fresh onboarding link instead.
  */
-export async function POST() {
+export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -18,6 +18,9 @@ export async function POST() {
   if (!key) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
+
+  const body = await req.json().catch(() => ({}));
+  const scheme = (body as { scheme?: string }).scheme ?? "coconut";
 
   const stripe = new Stripe(key);
   const db = getSupabase();
@@ -67,8 +70,8 @@ export async function POST() {
   const appUrl = process.env.APP_URL ?? "https://coconut-app.dev";
   const accountLink = await stripe.accountLinks.create({
     account: accountId,
-    refresh_url: `${appUrl}/api/stripe/connect/onboarding-refresh?account_id=${accountId}`,
-    return_url: `${appUrl}/api/stripe/connect/onboarding-return?account_id=${accountId}`,
+    refresh_url: `${appUrl}/api/stripe/connect/onboarding-refresh?account_id=${accountId}&scheme=${scheme}`,
+    return_url: `${appUrl}/api/stripe/connect/onboarding-return?account_id=${accountId}&scheme=${scheme}`,
     type: "account_onboarding",
   });
 

@@ -8,7 +8,7 @@ import { getSupabase } from "@/lib/supabase";
  * POST /api/stripe/connect/onboarding-link
  * Generates a fresh Stripe Account Link for users who started but didn't finish onboarding.
  */
-export async function POST() {
+export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -16,6 +16,9 @@ export async function POST() {
   if (!key) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
+
+  const body = await req.json().catch(() => ({}));
+  const scheme = (body as { scheme?: string }).scheme ?? "coconut";
 
   const db = getSupabase();
   const { data: row } = await db
@@ -36,8 +39,8 @@ export async function POST() {
 
   const accountLink = await stripe.accountLinks.create({
     account: row.stripe_account_id,
-    refresh_url: `${appUrl}/api/stripe/connect/onboarding-refresh?account_id=${row.stripe_account_id}`,
-    return_url: `${appUrl}/api/stripe/connect/onboarding-return?account_id=${row.stripe_account_id}`,
+    refresh_url: `${appUrl}/api/stripe/connect/onboarding-refresh?account_id=${row.stripe_account_id}&scheme=${scheme}`,
+    return_url: `${appUrl}/api/stripe/connect/onboarding-return?account_id=${row.stripe_account_id}&scheme=${scheme}`,
     type: "account_onboarding",
   });
 
