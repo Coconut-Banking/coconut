@@ -198,6 +198,33 @@ async function handleSummary(req: NextRequest, userId: string) {
     splitByGroup.set(s.group_id, list);
   }
 
+  // Pre-detect Splitwise groups and cached balances to avoid double-counting
+  // pairwise. When the cache exists, pairwise for Splitwise groups is skipped
+  // entirely — the overlay block adds cached totals instead.
+  const swGroupIds = new Set(
+    (groups ?? []).filter((g) => g.source === "splitwise").map((g) => g.id)
+  );
+  let swTokenRow: Record<string, unknown> | null = null;
+  {
+    const tokenRes = await db
+      .from("splitwise_tokens")
+      .select("cached_friend_balances, cached_group_balances")
+      .eq("clerk_user_id", userId)
+      .maybeSingle();
+    swTokenRow =
+      tokenRes.error?.code === "PGRST204"
+        ? null
+        : (tokenRes.data as Record<string, unknown> | null);
+  }
+  const cachedSwFriends = swTokenRow?.cached_friend_balances as
+    | unknown[]
+    | null;
+  const hasSwCache = !!(
+    cachedSwFriends &&
+    Array.isArray(cachedSwFriends) &&
+    cachedSwFriends.length > 0
+  );
+
   const personBalances = new Map<string, PersonAgg>();
 
   const groupsWithBalance = (groups ?? []).map((g) => {
@@ -298,8 +325,10 @@ async function handleSummary(req: NextRequest, userId: string) {
 
     // Compute correct PAIRWISE balances between me and each other member.
     // For each expense: if I paid, they owe me their share; if they paid, I owe them my share.
-    // (Using group-level totals would be wrong for 3+ person groups.)
-    if (myMember) {
+    // Skip Splitwise-sourced groups when cached balances exist — the overlay
+    // block adds the authoritative cached totals. Computing pairwise for them
+    // too would double-count during the name-based dedup merge.
+    if (myMember && !(hasSwCache && swGroupIds.has(g.id))) {
       const sharesByTx = new Map<string, Map<string, number>>();
       for (const sh of shares.filter((s) => groupShareIds.includes(s.split_transaction_id))) {
         let txMap = sharesByTx.get(sh.split_transaction_id);
@@ -365,16 +394,10 @@ async function handleSummary(req: NextRequest, userId: string) {
     };
   });
 
-  // Try to use cached Splitwise balances (authoritative) instead of recalculated ones.
+  // Use cached Splitwise balances (authoritative) instead of recalculated ones.
   // Splitwise's balance engine handles multi-payer, debt simplification, etc. correctly.
   {
-    const tokenRes = await db
-      .from("splitwise_tokens")
-      .select("cached_friend_balances, cached_group_balances")
-      .eq("clerk_user_id", userId)
-      .maybeSingle();
-    // Gracefully handle missing column (pre-migration)
-    const tokenRow = tokenRes.error?.code === "PGRST204" ? null : tokenRes.data;
+    const tokenRow = swTokenRow;
 
     type CachedFriend = {
       id: number;
