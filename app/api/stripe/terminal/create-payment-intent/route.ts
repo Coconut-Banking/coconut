@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
       currency: DEFAULT_CURRENCY,
       metadata,
       payment_method_types: ["card_present"],
+      capture_method: "automatic",
     };
 
     if (destinationAccountId) {
@@ -107,11 +108,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       clientSecret: paymentIntent.client_secret,
       directPayout: !!destinationAccountId,
+      paymentIntentId: paymentIntent.id,
     });
   } catch (e) {
-    console.error("[terminal] create payment intent error:", e);
+    const stripeMsg = e instanceof Stripe.errors.StripeError ? e.message : null;
+    const stripeCode = e instanceof Stripe.errors.StripeError ? e.code : null;
+    console.error("[terminal] create payment intent error:", stripeMsg ?? e);
+    if (stripeCode) console.error("[terminal] stripe code:", stripeCode);
+
+    // If the connected account is invalid, retry without transfer_data
+    if (destinationAccountId && stripeMsg?.includes("transfer")) {
+      console.warn("[terminal] retrying without transfer_data");
+      try {
+        const fallbackParams: Stripe.PaymentIntentCreateParams = {
+          amount: amountCents,
+          currency: DEFAULT_CURRENCY,
+          metadata,
+          payment_method_types: ["card_present"],
+          capture_method: "automatic",
+        };
+        const pi = await stripe.paymentIntents.create(fallbackParams);
+        return NextResponse.json({
+          clientSecret: pi.client_secret,
+          directPayout: false,
+          paymentIntentId: pi.id,
+        });
+      } catch (e2) {
+        const msg2 = e2 instanceof Stripe.errors.StripeError ? e2.message : "Payment failed";
+        console.error("[terminal] fallback also failed:", msg2);
+        return NextResponse.json({ error: msg2 }, { status: 500 });
+      }
+    }
+
     return NextResponse.json(
-      { error: "Payment failed" },
+      { error: stripeMsg ?? "Payment failed" },
       { status: 500 }
     );
   }
