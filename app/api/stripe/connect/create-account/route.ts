@@ -44,6 +44,9 @@ export async function POST(req: Request) {
     } else {
       const user = await currentUser();
       const email = user?.emailAddresses?.[0]?.emailAddress ?? undefined;
+      const firstName = user?.firstName ?? undefined;
+      const lastName = user?.lastName ?? undefined;
+      const phone = user?.phoneNumbers?.[0]?.phoneNumber ?? undefined;
 
       const account = await stripe.accounts.create({
         type: "express",
@@ -51,8 +54,17 @@ export async function POST(req: Request) {
         business_type: "individual",
         business_profile: {
           url: "https://coconut-app.dev",
-          mcc: "7372", // Software — personal finance app
+          mcc: "7372",
           product_description: "Peer-to-peer expense splitting and payments via the Coconut app",
+        },
+        individual: {
+          email,
+          first_name: firstName,
+          last_name: lastName,
+          phone,
+          relationship: {
+            title: "Individual",
+          },
         },
         capabilities: {
           card_payments: { requested: true },
