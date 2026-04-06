@@ -61,11 +61,33 @@ export async function GET(
     const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
     const maskedGroup = { ...groupWithoutToken, invite_token: invite_token ?? null };
 
-    let { data: members } = await db
-      .from("group_members")
-      .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
-      .eq("group_id", id);
+    // Stage 1: parallel fetch of members, splits, and settlements
+    const [membersResult, splitsResult, settlementsResult] = await Promise.all([
+      db
+        .from("group_members")
+        .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
+        .eq("group_id", id),
+      db
+        .from("split_transactions")
+        .select(`
+          id, transaction_id, created_by, created_at, payer_member_id, amount, description,
+          iso_currency_code, receipt_url, category,
+          transactions(merchant_name, raw_name, amount, date, primary_category)
+        `)
+        .eq("group_id", id)
+        .order("created_at", { ascending: false }),
+      db
+        .from("settlements")
+        .select("payer_member_id, receiver_member_id, amount, method, status, iso_currency_code")
+        .eq("group_id", id)
+        .eq("status", "completed"),
+    ]);
 
+    let { data: members } = membersResult;
+    const { data: splitsRaw } = splitsResult;
+    const { data: settlements } = settlementsResult;
+
+    // Owner email backfill (fire-and-forget DB write, sync member update)
     const ownerId = group.owner_id as string;
     const ownerMember = (members ?? []).find((m) => m.user_id === ownerId && !m.email);
     if (ownerMember && ownerId) {
@@ -74,7 +96,7 @@ export async function GET(
         const ownerUser = await client.users.getUser(ownerId);
         const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
         if (ownerEmail) {
-          await db.from("group_members").update({ email: ownerEmail }).eq("id", ownerMember.id);
+          void db.from("group_members").update({ email: ownerEmail }).eq("id", ownerMember.id);
           members = (members ?? []).map((m) =>
             m.id === ownerMember.id ? { ...m, email: ownerEmail } : m
           );
@@ -85,7 +107,6 @@ export async function GET(
     }
 
     // Deduplicate members that share the same non-null user_id.
-    // Keeps the row with a real display_name (not "You") and merges payment handles.
     {
       const seen = new Map<string, number>();
       const deduped: typeof members = [];
@@ -109,24 +130,6 @@ export async function GET(
       members = deduped;
     }
 
-    // Batch-fetch Clerk profile photos for members with a linked user_id.
-    const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
-    const photoMap = await getClerkUserPhotos(memberUserIds);
-    members = (members ?? []).map((m) => ({
-      ...m,
-      image_url: (m.user_id && photoMap.get(m.user_id)) || null,
-    }));
-
-    const { data: splitsRaw } = await db
-      .from("split_transactions")
-      .select(`
-      id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code, receipt_url, category,
-      transactions(merchant_name, raw_name, amount, date, primary_category)
-    `)
-      .eq("group_id", id)
-      .order("created_at", { ascending: false });
-
     const seenTxIds = new Set<string>();
     const splits = (splitsRaw ?? []).filter((s) => {
       const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
@@ -134,6 +137,29 @@ export async function GET(
       seenTxIds.add(k);
       return true;
     });
+
+    // Stage 2: parallel fetch of shares, tx owners, and Clerk photos
+    const splitIdList = splits.map((s) => s.id);
+    const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
+    const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
+
+    const [sharesResult, txResult, photoMap] = await Promise.all([
+      splitIdList.length > 0
+        ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIdList)
+        : Promise.resolve({ data: null }),
+      txIds.length > 0
+        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+        : Promise.resolve({ data: null }),
+      getClerkUserPhotos(memberUserIds),
+    ]);
+
+    const shares = sharesResult.data;
+    const txRows: { id: string; clerk_user_id: string }[] = txResult.data ?? [];
+
+    members = (members ?? []).map((m) => ({
+      ...m,
+      image_url: (m.user_id && photoMap.get(m.user_id)) || null,
+    }));
 
     if (splits.length === 0) {
       return NextResponse.json({
@@ -159,28 +185,18 @@ export async function GET(
       });
     }
 
-    const { data: shares } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splits.map((s) => s.id));
-
-    const { data: settlements } = await db
-      .from("settlements")
-      .select("payer_member_id, receiver_member_id, amount, method, status, iso_currency_code")
-      .eq("group_id", id)
-      .eq("status", "completed");
-
-    const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-    let txRows: { id: string; clerk_user_id: string }[] = [];
-    if (txIds.length > 0) {
-      const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-      txRows = data ?? [];
-    }
-
     const txOwnerById = new Map((txRows ?? []).map((t) => [t.id, t.clerk_user_id]));
     const memberByUserId = new Map(
       (members ?? []).filter((m) => m.user_id).map((m) => [m.user_id, m.id])
     );
+
+    // Pre-index shares by split_transaction_id for O(1) lookups
+    const sharesBySplitId = new Map<string, NonNullable<typeof shares>>();
+    for (const sh of shares ?? []) {
+      const list = sharesBySplitId.get(sh.split_transaction_id);
+      if (list) list.push(sh);
+      else sharesBySplitId.set(sh.split_transaction_id, [sh]);
+    }
 
     const splitCurrencyById = new Map(
       splits.map((s) => [
@@ -304,7 +320,7 @@ export async function GET(
     const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
 
     const activity = splits.map((s) => {
-      const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
+      const shareList = sharesBySplitId.get(s.id) ?? [];
       const totalShares = shareList.length;
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const payerMember = payerMemberId ? memberMap.get(payerMemberId) : null;

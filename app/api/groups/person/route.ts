@@ -40,12 +40,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const { data: groups } = await db.from("groups").select("id, name, owner_id").in("id", ids);
-
-    const { data: members } = await db
-      .from("group_members")
-      .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
-      .in("group_id", ids);
+    // Parallel fetch of groups and members (both only need accessible ids)
+    const [{ data: groups }, { data: members }] = await Promise.all([
+      db.from("groups").select("id, name, owner_id, source").in("id", ids),
+      db.from("group_members")
+        .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
+        .in("group_id", ids),
+    ]);
 
     const directMatches = (members ?? []).filter((m) => {
       if (m.user_id === userId) return false;
@@ -136,25 +137,49 @@ export async function GET(req: NextRequest) {
       }))
       .sort((a, b) => a.memberCount - b.memberCount);
 
-    // Detect Splitwise groups so we can skip them in pairwise when cache exists
-    const { data: groupRows } = await db
-      .from("groups")
-      .select("id, source")
-      .in("id", sharedGroupIds);
+    // Detect Splitwise groups from the already-fetched groups data
     const swGroupIds = new Set(
-      (groupRows ?? []).filter((g) => g.source === "splitwise").map((g) => g.id)
+      (groups ?? []).filter((g) => (g as { source?: string }).source === "splitwise" && sharedGroupIds.includes(g.id)).map((g) => g.id)
     );
 
-    const { data: splitsRaw } = await db
-      .from("split_transactions")
-      .select(`
-      id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code, receipt_url,
-      transactions(merchant_name, raw_name, amount, date)
-    `)
-      .in("group_id", sharedGroupIds)
-      .order("created_at", { ascending: false })
-      .limit(500);
+    // Stage 2: parallel fetch of splits, settlements, and SW tokens
+    type CachedFriend = {
+      email: string | null;
+      balance: { currency_code: string; amount: string }[];
+    };
+    const [{ data: splitsRaw }, { data: settlements }, swTokenResult] = await Promise.all([
+      db
+        .from("split_transactions")
+        .select(`
+          id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
+          iso_currency_code, receipt_url,
+          transactions(merchant_name, raw_name, amount, date)
+        `)
+        .in("group_id", sharedGroupIds)
+        .order("created_at", { ascending: false })
+        .limit(500),
+      db
+        .from("settlements")
+        .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
+        .in("group_id", sharedGroupIds)
+        .eq("status", "completed"),
+      swGroupIds.size > 0
+        ? db.from("splitwise_tokens").select("cached_friend_balances").eq("clerk_user_id", userId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+    let swCachedFriends: CachedFriend[] | null = null;
+    let hasSwCache = false;
+    if (swGroupIds.size > 0 && swTokenResult.data) {
+      swCachedFriends =
+        (swTokenResult.data as Record<string, unknown> | null)
+          ?.cached_friend_balances as CachedFriend[] | null;
+      hasSwCache = !!(
+        swCachedFriends &&
+        Array.isArray(swCachedFriends) &&
+        swCachedFriends.length > 0
+      );
+    }
 
     const seenByGroup = new Map<string, Set<string>>();
     const splits = (splitsRaw ?? []).filter((s) => {
@@ -181,51 +206,26 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const { data: shares } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splits.map((s) => s.id));
-
-    const { data: settlements } = await db
-      .from("settlements")
-      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-      .in("group_id", sharedGroupIds)
-      .eq("status", "completed");
-
+    // Stage 3: parallel fetch of shares and tx owners
+    const splitIdList = splits.map((s) => s.id);
     const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-    let txRows: { id: string; clerk_user_id: string }[] = [];
-    if (txIds.length > 0) {
-      const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-      txRows = data ?? [];
-    }
+    const [sharesResult, txResult] = await Promise.all([
+      db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIdList),
+      txIds.length > 0
+        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+        : Promise.resolve({ data: null }),
+    ]);
+    const { data: shares } = sharesResult;
+    const txRows: { id: string; clerk_user_id: string }[] = txResult.data ?? [];
 
     const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
-    // Pre-fetch Splitwise cache so we can skip SW groups in pairwise
-    let hasSwCache = false;
-    type CachedFriend = {
-      email: string | null;
-      balance: { currency_code: string; amount: string }[];
-    };
-    let swCachedFriends: CachedFriend[] | null = null;
-    if (swGroupIds.size > 0) {
-      try {
-        const { data: tokenRow } = await db
-          .from("splitwise_tokens")
-          .select("cached_friend_balances")
-          .eq("clerk_user_id", userId)
-          .maybeSingle();
-        swCachedFriends =
-          (tokenRow as Record<string, unknown> | null)
-            ?.cached_friend_balances as CachedFriend[] | null;
-        hasSwCache = !!(
-          swCachedFriends &&
-          Array.isArray(swCachedFriends) &&
-          swCachedFriends.length > 0
-        );
-      } catch {
-        // ignore — fall back to full pairwise
-      }
+    // Pre-index shares by split_transaction_id for O(1) lookups
+    const sharesBySplitId = new Map<string, NonNullable<typeof shares>>();
+    for (const sh of shares ?? []) {
+      const list = sharesBySplitId.get(sh.split_transaction_id);
+      if (list) list.push(sh);
+      else sharesBySplitId.set(sh.split_transaction_id, [sh]);
     }
 
     const byCurrency = new Map<string, number>();
@@ -270,12 +270,13 @@ export async function GET(req: NextRequest) {
         ])
       );
 
-      const groupShareIds = groupSplits.map((x) => x.id);
       const sharesByTx = new Map<string, Map<string, number>>();
-      for (const sh of (shares ?? []).filter((s) => groupShareIds.includes(s.split_transaction_id))) {
-        let txMap = sharesByTx.get(sh.split_transaction_id);
-        if (!txMap) { txMap = new Map(); sharesByTx.set(sh.split_transaction_id, txMap); }
-        txMap.set(sh.member_id, Number(sh.amount));
+      for (const s of groupSplits) {
+        for (const sh of sharesBySplitId.get(s.id) ?? []) {
+          let txMap = sharesByTx.get(sh.split_transaction_id);
+          if (!txMap) { txMap = new Map(); sharesByTx.set(sh.split_transaction_id, txMap); }
+          txMap.set(sh.member_id, Number(sh.amount));
+        }
       }
 
       const payerBySplit = new Map<string, string>();
@@ -352,13 +353,16 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const owedRows = (shares ?? [])
-        .filter((sh) => groupShareIds.includes(sh.split_transaction_id))
-        .map((s) => ({
-          member_id: s.member_id,
-          amount: Number(s.amount),
-          currency: splitCurrencyById.get(s.split_transaction_id) ?? "USD",
-        }));
+      const owedRows: { member_id: string; amount: number; currency: string }[] = [];
+      for (const s of groupSplits) {
+        for (const sh of sharesBySplitId.get(s.id) ?? []) {
+          owedRows.push({
+            member_id: sh.member_id,
+            amount: Number(sh.amount),
+            currency: splitCurrencyById.get(sh.split_transaction_id) ?? "USD",
+          });
+        }
+      }
 
       const paidSettlements = groupSettlements.map((s) => ({
         payer_member_id: s.payer_member_id,
@@ -403,7 +407,7 @@ export async function GET(req: NextRequest) {
       }
 
       for (const s of groupSplits) {
-        const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
+        const shareList = sharesBySplitId.get(s.id) ?? [];
         const txAmount = paidAmountFromSplitRow(
           s as { transactions?: unknown; amount?: number | string | null }
         );
