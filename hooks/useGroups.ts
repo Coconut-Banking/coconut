@@ -198,8 +198,6 @@ export function useGroupsSummary() {
   return { summary, loading, error, refetch: fetchSummary };
 }
 
-const PERSON_POLL_MS = 30000; // Person view spans multiple groups — poll every 30s
-
 export function usePersonDetail(key: string | null) {
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -242,10 +240,19 @@ export function usePersonDetail(key: string | null) {
   const fetchDetailRef = useRef(fetchDetail);
   fetchDetailRef.current = fetchDetail;
 
+  // Refetch on tab visibility restore or window focus instead of polling every 30s
   useEffect(() => {
     if (!key) return;
-    const interval = setInterval(() => fetchDetailRef.current(true), PERSON_POLL_MS);
-    return () => clearInterval(interval);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchDetailRef.current(true);
+    };
+    const onFocus = () => fetchDetailRef.current(true);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [key]);
 
   return { detail, loading, error, refetch: fetchDetail };

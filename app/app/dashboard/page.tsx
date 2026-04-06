@@ -294,7 +294,7 @@ export default function DashboardPage() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         {/* Monthly Spend */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-4">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-red-50 mb-3">
             <TrendingDown size={15} className="text-red-500" />
           </div>
@@ -303,10 +303,10 @@ export default function DashboardPage() {
           <div className="text-xs text-gray-400">
             {linked ? "From transactions" : "Connect a bank to see"}
           </div>
-        </motion.div>
+        </div>
 
         {/* Net Cash Flow */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-4" style={{ animationDelay: "0.05s" }}>
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#F5F3F2] mb-3">
             <DollarSign size={15} className="text-[#1e2021]" />
           </div>
@@ -317,10 +317,10 @@ export default function DashboardPage() {
           <div className="text-xs text-gray-400">
             {linked ? `${fc(cashFlow.income)} in · ${fc(cashFlow.expenses)} out` : "Connect a bank to see"}
           </div>
-        </motion.div>
+        </div>
 
         {/* Subscriptions */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-4" style={{ animationDelay: "0.1s" }}>
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-50 mb-3">
             <RefreshCw size={15} className="text-purple-500" />
           </div>
@@ -337,10 +337,10 @@ export default function DashboardPage() {
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}
-        </motion.div>
+        </div>
 
         {/* Shared expenses */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-4" style={{ animationDelay: "0.15s" }}>
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-50 mb-3">
             <Users size={15} className="text-amber-600" />
           </div>
@@ -369,10 +369,10 @@ export default function DashboardPage() {
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}
-        </motion.div>
+        </div>
 
         {/* Net Worth */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-4" style={{ animationDelay: "0.2s" }}>
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 mb-3">
             <Wallet size={15} className="text-blue-500" />
           </div>
@@ -387,16 +387,14 @@ export default function DashboardPage() {
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}
-        </motion.div>
+        </div>
       </div>
 
       {/* Accounts */}
       {linked && dashboard?.accounts && dashboard.accounts.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.28 }}
-          className="bg-white rounded-2xl border border-gray-100 p-5 mb-6"
+        <div
+          className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-5 mb-6"
+          style={{ animationDelay: "0.28s" }}
         >
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -412,12 +410,10 @@ export default function DashboardPage() {
                 ? acct.subtype.replace(/_/g, " ")
                 : acct.type.replace(/_/g, " ");
               return (
-                <motion.div
+                <div
                   key={i}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 + i * 0.04 }}
-                  className="flex items-start gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/60"
+                  className="animate-fade-in-up flex items-start gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/60"
+                  style={{ animationDelay: `${0.3 + i * 0.04}s` }}
                 >
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isCredit ? "bg-red-50" : "bg-[#F5F3F2]"}`}>
                     {isCredit
@@ -435,20 +431,18 @@ export default function DashboardPage() {
                       <div className="text-xs text-gray-400 mt-0.5">balance owed</div>
                     )}
                   </div>
-                </motion.div>
+                </div>
               );
             })}
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Digital Wallets */}
       {linked && dashboard?.wallets && dashboard.wallets.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.32 }}
-          className="bg-white rounded-2xl border border-gray-100 p-5 mb-6"
+        <div
+          className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-5 mb-6"
+          style={{ animationDelay: "0.32s" }}
         >
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -459,12 +453,10 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {dashboard.wallets.map((wallet, i) => (
-              <motion.div
+              <div
                 key={wallet.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.34 + i * 0.04 }}
-                className="flex items-start gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/60"
+                className="animate-fade-in-up flex items-start gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/60"
+                style={{ animationDelay: `${0.34 + i * 0.04}s` }}
               >
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-blue-50">
                   <Wallet size={14} className="text-blue-500" />
@@ -479,10 +471,10 @@ export default function DashboardPage() {
                     {formatCurrency(wallet.balance, wallet.iso_currency_code)}
                   </div>
                 </div>
-              </motion.div>
+              </div>
             ))}
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Charts Row */}
@@ -561,13 +553,11 @@ export default function DashboardPage() {
               </button>
             </div>
           ) : recentTransactions.map((tx, i) => (
-            <motion.div
+            <div
               key={tx.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.1 + i * 0.05 }}
+              className="animate-fade-in-up flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
+              style={{ animationDelay: `${0.1 + i * 0.05}s` }}
               onClick={() => router.push("/app/transactions")}
-              className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0"
             >
               <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
               <div className="flex-1 min-w-0">
@@ -595,7 +585,7 @@ export default function DashboardPage() {
                   />
                 <div className="text-xs text-gray-400">{tx.dateStr}</div>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
 
