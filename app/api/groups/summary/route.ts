@@ -136,46 +136,58 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   const groupIds = (groups ?? []).map((g) => g.id);
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, group_id, user_id, display_name, email")
-    .in("group_id", groupIds);
+  // Stage 1: parallel fetch of members, splits, settlements, and SW tokens
+  const [
+    { data: members },
+    { data: splits },
+    { data: settlements },
+    swTokenResult,
+  ] = await Promise.all([
+    db
+      .from("group_members")
+      .select("id, group_id, user_id, display_name, email")
+      .in("group_id", groupIds),
+    db
+      .from("split_transactions")
+      .select(`
+        id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
+        iso_currency_code,
+        transactions(amount)
+      `)
+      .in("group_id", groupIds)
+      .order("created_at", { ascending: false })
+      .limit(25000),
+    db
+      .from("settlements")
+      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
+      .in("group_id", groupIds)
+      .eq("status", "completed"),
+    db
+      .from("splitwise_tokens")
+      .select("cached_friend_balances, cached_group_balances")
+      .eq("clerk_user_id", userId)
+      .maybeSingle(),
+  ]);
 
-  const { data: splits } = await db
-    .from("split_transactions")
-    .select(`
-      id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code,
-      transactions(amount)
-    `)
-    .in("group_id", groupIds)
-    .order("created_at", { ascending: false })
-    .limit(25000);
-
+  // Stage 2: parallel fetch of shares and tx owners (depend on splits)
   const splitIds = (splits ?? []).map((s) => s.id);
+  const txIds = (splits ?? []).map((s) => s.transaction_id).filter(Boolean);
 
   let shares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
   let txRows: { id: string; clerk_user_id: string }[] = [];
 
-  if (splitIds.length > 0) {
-    const { data: sharesData } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splitIds);
-    shares = sharesData ?? [];
+  if (splitIds.length > 0 || txIds.length > 0) {
+    const [sharesResult, txResult] = await Promise.all([
+      splitIds.length > 0
+        ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds)
+        : Promise.resolve({ data: null }),
+      txIds.length > 0
+        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+        : Promise.resolve({ data: null }),
+    ]);
+    shares = sharesResult.data ?? [];
+    txRows = txResult.data ?? [];
   }
-
-  const txIds = (splits ?? []).map((s) => s.transaction_id).filter(Boolean);
-  if (txIds.length > 0) {
-    const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-    txRows = data ?? [];
-  }
-
-  const { data: settlements } = await db
-    .from("settlements")
-    .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-    .in("group_id", groupIds)
-    .eq("status", "completed");
 
   const memberByGroup = new Map<string, { id: string; user_id: string | null; display_name: string; email: string | null }[]>();
   for (const m of members ?? []) {
@@ -198,24 +210,13 @@ async function handleSummary(req: NextRequest, userId: string) {
     splitByGroup.set(s.group_id, list);
   }
 
-  // Pre-detect Splitwise groups and cached balances to avoid double-counting
-  // pairwise. When the cache exists, pairwise for Splitwise groups is skipped
-  // entirely — the overlay block adds cached totals instead.
   const swGroupIds = new Set(
     (groups ?? []).filter((g) => g.source === "splitwise").map((g) => g.id)
   );
-  let swTokenRow: Record<string, unknown> | null = null;
-  {
-    const tokenRes = await db
-      .from("splitwise_tokens")
-      .select("cached_friend_balances, cached_group_balances")
-      .eq("clerk_user_id", userId)
-      .maybeSingle();
-    swTokenRow =
-      tokenRes.error?.code === "PGRST204"
-        ? null
-        : (tokenRes.data as Record<string, unknown> | null);
-  }
+  const swTokenRow =
+    swTokenResult.error?.code === "PGRST204"
+      ? null
+      : (swTokenResult.data as Record<string, unknown> | null);
   const cachedSwFriends = swTokenRow?.cached_friend_balances as
     | unknown[]
     | null;
@@ -649,6 +650,8 @@ async function handleSummary(req: NextRequest, userId: string) {
     friends: friends.length,
     showAll,
     totalsByCurrency: totalsByCurrency.length,
+    hasSwCache,
+    swGroupCount: swGroupIds.size,
   });
 
   return NextResponse.json({
@@ -657,6 +660,10 @@ async function handleSummary(req: NextRequest, userId: string) {
     totalOwedToMe,
     totalIOwe,
     netBalance,
+    _debug: {
+      hasSwCache,
+      swGroupCount: swGroupIds.size,
+    },
     totalsByCurrency,
   });
 }
