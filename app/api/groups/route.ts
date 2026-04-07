@@ -45,11 +45,11 @@ export async function GET(req: NextRequest) {
 
   const { data: memberCounts } = await db
     .from("group_members")
-    .select("group_id")
+    .select("group_id, count:id.count()")
     .in("group_id", groups.map((g) => g.id));
 
   const countByGroup = (memberCounts ?? []).reduce(
-    (acc, r) => ({ ...acc, [r.group_id]: (acc[r.group_id] ?? 0) + 1 }),
+    (acc, r) => ({ ...acc, [r.group_id]: Number((r as unknown as { group_id: string; count: number }).count) }),
     {} as Record<string, number>
   );
 

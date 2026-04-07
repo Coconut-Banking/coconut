@@ -14,6 +14,10 @@ import {
 
 const BALANCE_EPS = 0.005;
 
+// Cache to prevent repeated Clerk email-enrichment calls for the same member within 5 minutes
+const _ownerEmailCache = new Map<string, number>();
+const OWNER_EMAIL_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,7 +30,7 @@ export async function GET(
     const db = getSupabase();
 
     // Fetch group first, then check access inline — avoids canAccessGroup's redundant re-query
-    const { data: group, error: groupError } = await db.from("groups").select("*").eq("id", id).single();
+    const { data: group, error: groupError } = await db.from("groups").select("id, name, owner_id, created_at, group_type, invite_token, archived_at, image_url, source, external_id").eq("id", id).single();
     if (groupError || !group) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (group.owner_id !== userId) {
@@ -90,7 +94,11 @@ export async function GET(
     // Owner email backfill (fire-and-forget DB write, sync member update)
     const ownerId = group.owner_id as string;
     const ownerMember = (members ?? []).find((m) => m.user_id === ownerId && !m.email);
-    if (ownerMember && ownerId) {
+    const now = Date.now();
+    const lastAttempt = ownerMember ? _ownerEmailCache.get(ownerMember.id) : undefined;
+    const clerkCacheHit = lastAttempt !== undefined && now - lastAttempt < OWNER_EMAIL_CACHE_TTL_MS;
+    if (ownerMember && ownerId && !clerkCacheHit) {
+      _ownerEmailCache.set(ownerMember.id, now);
       try {
         const client = await clerkClient();
         const ownerUser = await client.users.getUser(ownerId);

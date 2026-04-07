@@ -1150,10 +1150,8 @@ function SharedPageContent() {
       </div>
 
       {showCreate && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl border border-gray-100 p-6 mb-6 shadow-lg shadow-gray-200/50"
+        <div
+          className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 p-6 mb-6 shadow-lg shadow-gray-200/50"
         >
           <h3 className="text-base font-bold text-gray-900 mb-4">New group</h3>
           <div className="space-y-4">
@@ -1297,7 +1295,7 @@ function SharedPageContent() {
             </div>
           </div>
           {createError && <p className="text-sm text-red-600 mt-3">{createError}</p>}
-        </motion.div>
+        </div>
       )}
 
       {!linked && (
@@ -1322,10 +1320,8 @@ function SharedPageContent() {
         <div className="text-sm text-gray-500 py-12">Loading…</div>
       ) : (
         <>
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`rounded-2xl border px-6 py-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${
+          <div
+            className={`animate-fade-in-up rounded-2xl border px-6 py-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${
               netBalance > 0
                 ? "bg-[#F0F9F4] border-[#E3DBD8]"
                 : netBalance < 0
@@ -1360,7 +1356,7 @@ function SharedPageContent() {
                 <p className="font-bold text-red-500">{fc(netOwing)}</p>
               </div>
             </div>
-          </motion.div>
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             <div className="lg:col-span-3 space-y-6">
@@ -1401,7 +1397,7 @@ function SharedPageContent() {
                     <div className="px-5 py-8 text-center text-sm text-gray-500">No groups yet. Create one to split expenses.</div>
                   )}
                   {groupsData.map((group) => (
-                    <motion.div
+                    <div
                       key={group.id}
                       className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => setSelectedId(group.id)}
@@ -1429,7 +1425,7 @@ function SharedPageContent() {
                         {group.direction === "settled" && <p className="text-sm text-gray-400">settled up</p>}
                         <ChevronRight size={15} className="text-gray-400" />
                       </div>
-                    </motion.div>
+                    </div>
                   ))}
                   <button
                     onClick={() => openCreate()}
@@ -1454,12 +1450,10 @@ function SharedPageContent() {
                     <div className="px-4 py-8 text-center text-sm text-gray-500">No recent activity</div>
                   ) : (
                     activity.map((item, i) => (
-                      <motion.div
+                      <div
                         key={item.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: i * 0.03 }}
-                        className={`flex items-start gap-3.5 px-4 py-4 ${i < activity.length - 1 ? "border-b border-gray-50" : ""}`}
+                        className={`animate-fade-in-up flex items-start gap-3.5 px-4 py-4 ${i < activity.length - 1 ? "border-b border-gray-50" : ""}`}
+                        style={{ animationDelay: `${i * 0.03}s` }}
                       >
                         <div
                           className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 bg-[#F5F3F2]"
@@ -1487,7 +1481,7 @@ function SharedPageContent() {
                           )}
                           <p className="text-[10px] text-gray-400 mt-1">{item.time}</p>
                         </div>
-                      </motion.div>
+                      </div>
                     ))
                   )}
                 </div>
@@ -1588,7 +1582,7 @@ function PersonRow({
 
   return (
     <div>
-      <motion.div
+      <div
         className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
         onClick={onToggle}
       >
@@ -1618,7 +1612,7 @@ function PersonRow({
           {person.direction === "settled" && <p className="text-sm text-gray-400 font-medium">settled up</p>}
           <ChevronRight size={15} className={`text-gray-400 transition-transform ${expanded ? "rotate-90" : ""}`} />
         </div>
-      </motion.div>
+      </div>
 
       <AnimatePresence>
         {expanded && (

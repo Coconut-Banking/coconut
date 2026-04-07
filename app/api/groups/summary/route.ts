@@ -678,33 +678,36 @@ async function handleSummary(req: NextRequest, userId: string) {
     swGroupCount: swGroupIds.size,
   });
 
-  return NextResponse.json({
-    groups: groupsOut,
-    friends,
-    totalOwedToMe,
-    totalIOwe,
-    netBalance,
-    _debug: {
-      hasSwCache,
-      swGroupCount: swGroupIds.size,
-      topFriendBreakdown: friends
-        .filter((f) => f.balances.length > 0)
-        .slice(0, 3)
-        .map((f) => ({
-          name: f.displayName,
-          key: f.key,
-          balances: f.balances,
-          contributions: _pairwiseDebug
-            .filter((d) => d.name.toLowerCase() === f.displayName.toLowerCase())
-            .reduce((acc, d) => {
-              const gKey = `${d.group}|${d.currency}`;
-              if (!acc[gKey]) acc[gKey] = { group: d.group, groupId: d.groupId, currency: d.currency, total: 0, count: 0 };
-              acc[gKey].total = Math.round((acc[gKey].total + d.delta) * 100) / 100;
-              acc[gKey].count++;
-              return acc;
-            }, {} as Record<string, { group: string; groupId: string; currency: string; total: number; count: number }>),
-        })),
+  return NextResponse.json(
+    {
+      groups: groupsOut,
+      friends,
+      totalOwedToMe,
+      totalIOwe,
+      netBalance,
+      _debug: {
+        hasSwCache,
+        swGroupCount: swGroupIds.size,
+        topFriendBreakdown: friends
+          .filter((f) => f.balances.length > 0)
+          .slice(0, 3)
+          .map((f) => ({
+            name: f.displayName,
+            key: f.key,
+            balances: f.balances,
+            contributions: _pairwiseDebug
+              .filter((d) => d.name.toLowerCase() === f.displayName.toLowerCase())
+              .reduce((acc, d) => {
+                const gKey = `${d.group}|${d.currency}`;
+                if (!acc[gKey]) acc[gKey] = { group: d.group, groupId: d.groupId, currency: d.currency, total: 0, count: 0 };
+                acc[gKey].total = Math.round((acc[gKey].total + d.delta) * 100) / 100;
+                acc[gKey].count++;
+                return acc;
+              }, {} as Record<string, { group: string; groupId: string; currency: string; total: number; count: number }>),
+          })),
+      },
+      totalsByCurrency,
     },
-    totalsByCurrency,
-  });
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+  );
 }
