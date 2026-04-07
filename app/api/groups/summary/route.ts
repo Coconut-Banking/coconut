@@ -620,9 +620,17 @@ async function handleSummary(req: NextRequest, userId: string) {
     .map(([key, v]) => friendRowFromAgg(key, v))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-  // Auto-created 1:1 "friend" groups are backing stores for pairwise expenses;
-  // their balances already appear in the friends list so hide them from groups.
-  const nonFriendGroups = groupsWithBalance.filter((g) => g.groupType !== "friend");
+  // Hide 1:1 groups from the group list — their balances already appear in the
+  // friends list via pairwise computation. This covers both explicit "friend"
+  // groupType AND 2-member groups whose name matches a known person.
+  const allPersonNames = new Set(
+    [...personBalances.values()].map((v) => v.displayName.trim().toLowerCase())
+  );
+  const nonFriendGroups = groupsWithBalance.filter((g) => {
+    if (g.groupType === "friend") return false;
+    if (g.memberCount <= 2 && allPersonNames.has(g.name.trim().toLowerCase())) return false;
+    return true;
+  });
   let groupsOut = nonFriendGroups;
 
   if (showAll) {
