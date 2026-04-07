@@ -187,6 +187,14 @@ export async function GET(req: NextRequest) {
       const dedupeKey = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
       if (seen.has(dedupeKey)) return false;
       seen.add(dedupeKey);
+
+      // Secondary dedup: catch duplicate splits with different IDs but identical content
+      const desc = (s as { description?: string | null }).description ?? "";
+      const amt = String((s as { amount?: unknown }).amount ?? "");
+      const contentKey = `content:${desc}|${amt}|${s.payer_member_id ?? ""}|${s.created_at}`;
+      if (seen.has(contentKey)) return false;
+      seen.add(contentKey);
+
       seenByGroup.set(s.group_id, seen);
       return true;
     });
@@ -503,11 +511,21 @@ export async function GET(req: NextRequest) {
       (a) => Math.abs(a.effectOnBalance) >= BALANCE_EPS
     );
 
+    // Secondary dedup: catch duplicate splits with different IDs but identical content
+    // (e.g. same bank transaction split twice, or duplicate Plaid transactions)
+    const seenContent = new Set<string>();
+    const dedupedActivity = relevantActivity.filter((a) => {
+      const sig = `${a.merchant}|${a.amount}|${a.effectOnBalance}|${a.groupName}|${a.createdAt}`;
+      if (seenContent.has(sig)) return false;
+      seenContent.add(sig);
+      return true;
+    });
+
     return NextResponse.json({
       displayName,
       balance,
       currencyBalances,
-      activity: relevantActivity,
+      activity: dedupedActivity,
       email,
       key,
       settlements: personSettlements,

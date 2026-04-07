@@ -396,21 +396,20 @@ export async function POST() {
     }
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+
+    // Fire-and-forget heavy background tasks so the POST returns quickly.
+    // These tasks are non-critical for the sync response.
     embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));
     embedRichTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] rich-embed:", e));
     enrichCategoriesForUser(effectiveUserId).catch((e) => console.error("[transactions] categorize:", e));
+    import("@/lib/subscription-detect")
+      .then(async ({ detectSubscriptionsForUser, saveDetectedSubscriptions }) => {
+        const subs = await detectSubscriptionsForUser(effectiveUserId);
+        await saveDetectedSubscriptions(effectiveUserId, subs);
+      })
+      .catch((e) => console.warn("[transactions] subscription detect failed:", e instanceof Error ? e.message : e));
 
-    let detected = 0;
-    try {
-      const { detectSubscriptionsForUser, saveDetectedSubscriptions } = await import("@/lib/subscription-detect");
-      const subs = await detectSubscriptionsForUser(effectiveUserId);
-      await saveDetectedSubscriptions(effectiveUserId, subs);
-      detected = subs.length;
-    } catch (e) {
-      console.warn("[transactions] subscription detect failed:", e instanceof Error ? e.message : e);
-    }
-
-    return NextResponse.json({ synced, detected });
+    return NextResponse.json({ synced });
   } catch (err) {
     console.error("[transactions] sync error:", err);
     return NextResponse.json(

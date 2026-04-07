@@ -620,14 +620,17 @@ async function handleSummary(req: NextRequest, userId: string) {
     .map(([key, v]) => friendRowFromAgg(key, v))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-  let groupsOut = groupsWithBalance;
+  // Auto-created 1:1 "friend" groups are backing stores for pairwise expenses;
+  // their balances already appear in the friends list so hide them from groups.
+  const nonFriendGroups = groupsWithBalance.filter((g) => g.groupType !== "friend");
+  let groupsOut = nonFriendGroups;
 
   if (showAll) {
     // Return everything (incl. settled) — no filtering.
   } else {
     // Splitwise-style: only show friends with non-zero pairwise balance.
     friends = friends.filter((f) => f.balances.length > 0);
-    groupsOut = groupsWithBalance.filter((g) => (g.myBalances?.length ?? 0) > 0);
+    groupsOut = nonFriendGroups.filter((g) => (g.myBalances?.length ?? 0) > 0);
   }
 
   const totalsMap = new Map<string, { owedToMe: number; iOwe: number }>();
