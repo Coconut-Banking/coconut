@@ -34,9 +34,17 @@ export async function POST() {
     .eq("clerk_user_id", userId)
     .not("transaction_id", "is", null);
 
+  const { count: afterUnmatched } = await db
+    .from("email_receipts")
+    .select("id", { count: "exact", head: true })
+    .eq("clerk_user_id", userId)
+    .is("transaction_id", null);
+
+  const afterTotal = (afterMatched ?? 0) + (afterUnmatched ?? 0);
+
   return NextResponse.json({
     ...result,
     before: { total: beforeTotal ?? 0, matched: beforeMatched ?? 0 },
-    after: { total: beforeTotal ?? 0, matched: afterMatched ?? 0 },
+    after: { total: afterTotal, matched: afterMatched ?? 0 },
   });
 }

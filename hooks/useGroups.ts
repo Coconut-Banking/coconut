@@ -168,6 +168,7 @@ export function useGroupsSummary() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchSummary = useCallback(async () => {
+    setLoading(true);
     try {
       setError(null);
       const res = await fetch("/api/groups/summary", { cache: "no-store" });
@@ -278,6 +279,7 @@ export function useRecentActivity(enabled = true) {
       setLoading(false);
       return;
     }
+    setLoading(true);
     try {
       const res = await fetch("/api/groups/recent-activity", { cache: "no-store" });
       if (res.ok) {
