@@ -765,6 +765,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
       if (res.ok) {
         setFinished(true);
+        setFinishing(false);
         setGroupBalances(Array.isArray(data.balances) ? data.balances : []);
         setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
         // Don't redirect immediately - let user see the balances
