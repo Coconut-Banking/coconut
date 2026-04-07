@@ -634,7 +634,8 @@ async function handleSummary(req: NextRequest, userId: string) {
   let groupsOut = nonFriendGroups;
 
   if (showAll) {
-    // Return everything (incl. settled) — no filtering.
+    // Return everything (incl. settled and 1:1 friend groups) — no filtering.
+    groupsOut = groupsWithBalance;
   } else {
     // Splitwise-style: only show friends with non-zero pairwise balance.
     friends = friends.filter((f) => f.balances.length > 0);

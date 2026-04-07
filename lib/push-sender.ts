@@ -42,6 +42,13 @@ export async function sendPushNotification(
     body: JSON.stringify(message),
   });
 
+  if (!res.ok) {
+    console.error(
+      `[push-sender] Expo Push API returned HTTP ${res.status} for token ${expoPushToken}`
+    );
+    return { status: "error", message: `HTTP ${res.status}` };
+  }
+
   const result = await res.json();
   const ticket: ExpoPushTicket = result.data ?? result;
 
@@ -81,6 +88,13 @@ export async function sendPushNotificationBatch(
     },
     body: JSON.stringify(messages),
   });
+
+  if (!res.ok) {
+    console.error(
+      `[push-sender] Expo Push API returned HTTP ${res.status} for batch of ${tokens.length} tokens`
+    );
+    return [];
+  }
 
   const result = await res.json();
   return result.data ?? [];
