@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 
     // Parallel fetch of groups and members (both only need accessible ids)
     const [{ data: groups }, { data: members }] = await Promise.all([
-      db.from("groups").select("id, name, owner_id, source").in("id", ids),
+      db.from("groups").select("id, name, owner_id, source, group_type").in("id", ids),
       db.from("group_members")
         .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
         .in("group_id", ids),
@@ -125,6 +125,7 @@ export async function GET(req: NextRequest) {
     };
 
     const groupNameById = new Map((groups ?? []).map((g) => [g.id, g.name as string]));
+    const groupTypeById = new Map((groups ?? []).map((g) => [g.id, (g as { group_type?: string | null }).group_type ?? null]));
     const memberCountByGroup = new Map<string, number>();
     for (const m of members ?? []) {
       memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
@@ -134,6 +135,7 @@ export async function GET(req: NextRequest) {
         id,
         name: groupNameById.get(id) ?? "Group",
         memberCount: memberCountByGroup.get(id) ?? 0,
+        groupType: groupTypeById.get(id) ?? null,
       }))
       .sort((a, b) => a.memberCount - b.memberCount);
 
@@ -251,6 +253,7 @@ export async function GET(req: NextRequest) {
       amount: number;
       currency: string;
       groupName: string;
+      groupType: string | null;
       paidByMe: boolean;
       paidByThem: boolean;
       myShare: number;
@@ -441,6 +444,7 @@ export async function GET(req: NextRequest) {
           amount: txAmount,
           currency: cur,
           groupName: groupNameById.get(groupId) ?? "",
+          groupType: groupTypeById.get(groupId) ?? null,
           paidByMe,
           paidByThem,
           myShare,

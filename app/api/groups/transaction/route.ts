@@ -86,7 +86,7 @@ async function buildResponse(
 ) {
   const { data: group } = await db
     .from("groups")
-    .select("id, name")
+    .select("id, name, group_type")
     .eq("id", tx.group_id)
     .maybeSingle();
 
@@ -131,6 +131,7 @@ async function buildResponse(
     createdAt: tx.created_at,
     groupName: group?.name ?? null,
     groupId: tx.group_id,
+    groupType: (group as Record<string, unknown> | null)?.group_type as string | null ?? null,
     paidBy: payer
       ? { memberId: payer.id, displayName: payer.display_name, isMe: payer.user_id === userId, image_url: (payer.user_id && photoMap.get(payer.user_id)) || null }
       : null,
