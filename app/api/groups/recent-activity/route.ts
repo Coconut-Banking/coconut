@@ -98,17 +98,42 @@ export async function GET() {
   }
 
   const splitIds = splits.map((s) => s.id);
-  const { data: shares } = await db
-    .from("split_shares")
-    .select("split_transaction_id, member_id, amount")
-    .in("split_transaction_id", splitIds);
+  const txIds = splits.map((s) => s.transaction_id).filter(Boolean) as string[];
 
-  const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-  const { data: txRows } = await db
-    .from("transactions")
-    .select("id, clerk_user_id")
-    .in("id", txIds);
-  const txOwnerById = new Map((txRows ?? []).map((t) => [t.id, t.clerk_user_id]));
+  // Batch shares + tx queries in parallel (previously sequential)
+  const BATCH = 200;
+  const allBatches = await Promise.all([
+    ...Array.from({ length: Math.ceil(splitIds.length / BATCH) }, (_, i) =>
+      db
+        .from("split_shares")
+        .select("split_transaction_id, member_id, amount")
+        .in("split_transaction_id", splitIds.slice(i * BATCH, (i + 1) * BATCH))
+        .then((r) => ({ type: "share" as const, data: r.data ?? [] }))
+    ),
+    ...Array.from({ length: Math.ceil(txIds.length / BATCH) || 1 }, (_, i) =>
+      db
+        .from("transactions")
+        .select("id, clerk_user_id")
+        .in("id", txIds.slice(i * BATCH, (i + 1) * BATCH))
+        .then((r) => ({ type: "tx" as const, data: r.data ?? [] }))
+    ),
+  ]);
+
+  const shares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
+  const txRows: { id: string; clerk_user_id: string }[] = [];
+  for (const batch of allBatches) {
+    if (batch.type === "share") shares.push(...batch.data);
+    else txRows.push(...batch.data);
+  }
+  const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
+
+  // Pre-index shares by split_transaction_id for O(1) lookups
+  const sharesBySplitId = new Map<string, typeof shares>();
+  for (const sh of shares) {
+    const list = sharesBySplitId.get(sh.split_transaction_id);
+    if (list) list.push(sh);
+    else sharesBySplitId.set(sh.split_transaction_id, [sh]);
+  }
 
   const membersByGroup = new Map<string, { id: string; user_id: string | null; display_name: string }[]>();
   for (const m of members ?? []) {
@@ -155,16 +180,22 @@ export async function GET() {
       payerByMemberRow ??
       (payerUserIdFromTx ? groupMembers.find((m) => m.user_id === payerUserIdFromTx) : null) ??
       null;
-    const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
+    const shareList = sharesBySplitId.get(s.id) ?? [];
     const myShareRow = myMember ? shareList.find((sh) => sh.member_id === myMember.id) : null;
     const myShare = myShareRow ? Number(myShareRow.amount) : 0;
     const currency = ((s as { iso_currency_code?: string | null }).iso_currency_code ?? "USD").trim().toUpperCase() || "USD";
 
+    const iAmPayer = paidByMember && myMember && paidByMember.id === myMember.id;
+    const iHaveShare = !!myShareRow;
+
+    // Skip expenses where the user isn't involved (not payer AND not in shares)
+    if (!iAmPayer && !iHaveShare) continue;
+
     let effectOnBalance = 0;
     let direction: "get_back" | "owe" = "owe";
-    if (paidByMember && myMember && paidByMember.id === myMember.id) {
+    if (iAmPayer) {
       const othersShare = shareList
-        .filter((sh) => sh.member_id !== myMember.id)
+        .filter((sh) => sh.member_id !== myMember!.id)
         .reduce((a, sh) => a + Number(sh.amount), 0);
       effectOnBalance = Math.round(othersShare * 100) / 100;
       direction = "get_back";
@@ -173,10 +204,7 @@ export async function GET() {
       direction = "owe";
     }
 
-    const who =
-      paidByMember && myMember && paidByMember.id === myMember.id
-        ? "You"
-        : paidByMember?.display_name ?? "Someone";
+    const who = iAmPayer ? "You" : paidByMember?.display_name ?? "Someone";
     const groupName = groupNames.get(s.group_id) ?? "";
     const expenseDate = (s as { date?: string }).date ?? s.created_at;
 

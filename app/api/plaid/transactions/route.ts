@@ -161,11 +161,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Parallel lookups: splits, receipts, subscriptions are independent.
+    // Use admin client for email_receipts to avoid RLS mismatch — the email_receipts
+    // API route uses admin, so the transactions route must too for consistency.
+    // Security: we filter by effectiveUserId explicitly.
+    const adminDb = getSupabaseAdmin();
     const txIds = bankOnly.map((tx) => tx.id);
     const [{ data: inSplits }, receiptRows, { data: inSubscriptions }] = await Promise.all([
       db.from("split_transactions").select("transaction_id").in("transaction_id", txIds),
       fetchAllEmailReceiptsLinkedForUser(
-        db,
+        adminDb,
         effectiveUserId,
         "id, transaction_id, merchant, raw_subject, merchant_type, merchant_details"
       ),
@@ -195,7 +199,7 @@ export async function GET(request: NextRequest) {
       if (line.length > 80) line = line.slice(0, 78) + "…";
       receiptMatchLineByTxId.set(tid, line);
     }
-    const receiptTxIds = new Set(receiptMatchLineByTxId.keys());
+    let receiptTxIds = new Set(receiptMatchLineByTxId.keys());
     const splitTxIds = new Set(
       (inSplits ?? []).map((r) => r.transaction_id as string).filter(Boolean)
     );
@@ -210,9 +214,6 @@ export async function GET(request: NextRequest) {
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
     if (idsToDelete.length > 0) {
-      // Remap + delete must bypass RLS: user JWT clients can fail to update email_receipts
-      // (leaving FKs pointing at duplicate tx rows), then delete hits email_receipts_transaction_id_fkey.
-      const adminDb = getSupabaseAdmin();
       const DEDUPE_BATCH = 100;
       for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
         const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
@@ -224,6 +225,21 @@ export async function GET(request: NextRequest) {
           .in("id", batch);
         if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
       }
+
+      // DB receipts now point to kept IDs — sync in-memory maps so the
+      // response reflects the remapping done by remapEmailReceiptsBeforeTxDedupeDelete.
+      for (const [dupId, keptId] of duplicateIdToKeptId) {
+        if (receiptMatchLineByTxId.has(dupId)) {
+          receiptMatchLineByTxId.set(keptId, receiptMatchLineByTxId.get(dupId)!);
+          receiptMatchLineByTxId.delete(dupId);
+        }
+        if (receiptIdByTxId.has(dupId)) {
+          receiptIdByTxId.set(keptId, receiptIdByTxId.get(dupId)!);
+          receiptIdByTxId.delete(dupId);
+        }
+      }
+      receiptTxIds = new Set(receiptMatchLineByTxId.keys());
+
       try {
         revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
       } catch (e) {
@@ -350,7 +366,8 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    console.log("[pipeline:tx] GET output", { count: mapped.length });
+    const receiptCount = mapped.filter((t) => t.hasReceipt).length;
+    console.log("[pipeline:tx] GET output", { count: mapped.length, withReceipt: receiptCount, deduped: idsToDelete.length });
     return NextResponse.json(mapped, {
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
@@ -370,28 +387,29 @@ export async function POST() {
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    // Sync first, THEN clear stale data only if sync succeeds.
-    // Previously we cleared before sync, which destroyed data when Plaid tokens failed.
     const { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } = await import("@/lib/transaction-sync");
     const { synced, error } = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
-    if (error) return NextResponse.json({ error }, { status: 500 });
+    if (error) {
+      const isUserError =
+        /no plaid connection/i.test(error) || /not configured/i.test(error);
+      return NextResponse.json({ error }, { status: isUserError ? 400 : 500 });
+    }
 
     revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
+
+    // Fire-and-forget heavy background tasks so the POST returns quickly.
+    // These tasks are non-critical for the sync response.
     embedTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] embed:", e));
     embedRichTransactionsForUser(effectiveUserId).catch((e) => console.error("[transactions] rich-embed:", e));
     enrichCategoriesForUser(effectiveUserId).catch((e) => console.error("[transactions] categorize:", e));
+    import("@/lib/subscription-detect")
+      .then(async ({ detectSubscriptionsForUser, saveDetectedSubscriptions }) => {
+        const subs = await detectSubscriptionsForUser(effectiveUserId);
+        await saveDetectedSubscriptions(effectiveUserId, subs);
+      })
+      .catch((e) => console.warn("[transactions] subscription detect failed:", e instanceof Error ? e.message : e));
 
-    let detected = 0;
-    try {
-      const { detectSubscriptionsForUser, saveDetectedSubscriptions } = await import("@/lib/subscription-detect");
-      const subs = await detectSubscriptionsForUser(effectiveUserId);
-      await saveDetectedSubscriptions(effectiveUserId, subs);
-      detected = subs.length;
-    } catch (e) {
-      console.warn("[transactions] subscription detect failed:", e instanceof Error ? e.message : e);
-    }
-
-    return NextResponse.json({ synced, detected });
+    return NextResponse.json({ synced });
   } catch (err) {
     console.error("[transactions] sync error:", err);
     return NextResponse.json(

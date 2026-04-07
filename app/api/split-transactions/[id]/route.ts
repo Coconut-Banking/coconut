@@ -28,19 +28,22 @@ export async function DELETE(
   const allowed = await canAccessGroup(userId, split.group_id);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await db.from("split_transactions").delete().eq("id", id);
-  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
-
+  let linkedTxClerkUserId: string | null = null;
   if (split.transaction_id) {
     const { data: tx } = await db
       .from("transactions")
       .select("clerk_user_id")
       .eq("id", split.transaction_id)
       .maybeSingle();
-    if (tx?.clerk_user_id && tx.clerk_user_id !== userId) {
-      revalidateTag(CACHE_TAGS.splitTransactions(tx.clerk_user_id as string), "max");
-      revalidateTag(CACHE_TAGS.transactions(tx.clerk_user_id as string), "max");
-    }
+    linkedTxClerkUserId = (tx?.clerk_user_id as string | undefined) ?? null;
+  }
+
+  await db.from("split_transactions").delete().eq("id", id);
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+
+  if (linkedTxClerkUserId && linkedTxClerkUserId !== userId) {
+    revalidateTag(CACHE_TAGS.splitTransactions(linkedTxClerkUserId), "max");
+    revalidateTag(CACHE_TAGS.transactions(linkedTxClerkUserId), "max");
   }
 
   const { count } = await db
@@ -52,13 +55,17 @@ export async function DELETE(
     await db.from("settlements").delete().eq("group_id", split.group_id);
   }
 
+  if (split.transaction_id) {
+    await db.from("transactions").delete().eq("id", split.transaction_id);
+  }
+
   return NextResponse.json({ ok: true });
 }
 
 /**
  * PATCH /api/split-transactions/:id
  * Edit an existing expense. Any group member can edit.
- * Body: { description?, amount?, payerMemberId?, shares?: [{ memberId, amount }] }
+ * Body: { description?, amount?, payerMemberId?, notes?, category?, receipt_url?, shares?: [{ memberId, amount }] }
  */
 export async function PATCH(
   req: NextRequest,
@@ -107,7 +114,7 @@ export async function PATCH(
     if (invalid.length > 0) {
       return NextResponse.json({ error: "Invalid member IDs in shares" }, { status: 400 });
     }
-    const effectiveAmount = newAmount ?? (await getExistingAmount(db, split.transaction_id));
+    const effectiveAmount = newAmount ?? (await getExistingAmount(db, split.transaction_id, split.id));
     if (effectiveAmount) {
       const sumCents = customShares.reduce((s, sh) => s + toCents(Number(sh.amount)), 0);
       if (Math.abs(sumCents - toCents(effectiveAmount)) > 1) {
@@ -130,11 +137,35 @@ export async function PATCH(
       .eq("id", split.transaction_id);
   }
 
+  const splitUpdates: Record<string, string | number | null> = {};
+
+  if (typeof body.description === "string" && !split.transaction_id) {
+    splitUpdates.description = description;
+  }
+  if (newAmount && !split.transaction_id) {
+    splitUpdates.amount = newAmount;
+  }
   if (payerMemberId) {
-    await db
-      .from("split_transactions")
-      .update({ payer_member_id: payerMemberId })
-      .eq("id", id);
+    splitUpdates.payer_member_id = payerMemberId;
+  }
+  if ("notes" in body) {
+    if (body.notes === null) splitUpdates.notes = null;
+    else if (typeof body.notes === "string") splitUpdates.notes = body.notes.trim().slice(0, 2000);
+    else return NextResponse.json({ error: "Invalid notes" }, { status: 400 });
+  }
+  if ("category" in body) {
+    if (body.category === null) splitUpdates.category = null;
+    else if (typeof body.category === "string") splitUpdates.category = body.category.trim().slice(0, 200);
+    else return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+  }
+  if ("receipt_url" in body) {
+    if (body.receipt_url === null) splitUpdates.receipt_url = null;
+    else if (typeof body.receipt_url === "string") splitUpdates.receipt_url = body.receipt_url.trim().slice(0, 2048);
+    else return NextResponse.json({ error: "Invalid receipt_url" }, { status: 400 });
+  }
+
+  if (Object.keys(splitUpdates).length > 0) {
+    await db.from("split_transactions").update(splitUpdates).eq("id", id);
   }
 
   if (customShares && customShares.length > 0) {
@@ -157,9 +188,13 @@ export async function PATCH(
 
 async function getExistingAmount(
   db: ReturnType<typeof getSupabase>,
-  txId: string | null
+  txId: string | null,
+  splitId: string
 ): Promise<number | null> {
-  if (!txId) return null;
-  const { data } = await db.from("transactions").select("amount").eq("id", txId).maybeSingle();
-  return data ? Math.abs(Number(data.amount)) : null;
+  if (txId) {
+    const { data } = await db.from("transactions").select("amount").eq("id", txId).maybeSingle();
+    return data ? Math.abs(Number(data.amount)) : null;
+  }
+  const { data } = await db.from("split_transactions").select("amount").eq("id", splitId).maybeSingle();
+  return data?.amount != null ? Math.abs(Number(data.amount)) : null;
 }

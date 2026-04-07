@@ -11,12 +11,16 @@ import {
   computeTwoWayShares,
   toCents,
 } from "@/lib/expense-shares";
-import { createRecurringExpense } from "@/lib/recurring-expenses";
+import { createRecurringExpense, processRecurringExpenses } from "@/lib/recurring-expenses";
+import { formatCurrency } from "@/lib/currency";
+import { notifyGroupMembers } from "@/lib/push-sender";
+
+let _hasPayerAndDateCols: boolean | null = null;
 
 /**
  * POST /api/manual-expense
  * Create a manual expense and split it in a group.
- * Body: { amount, description, groupId, personKey?, payerMemberId?, shares? }
+ * Body: { amount, description, groupId, personKey?, payerMemberId?, shares?, category?, notes?, receipt_url? }
  * - personKey: split 50/50 with that person
  * - shares: custom amounts [{ memberId, amount }] — must sum to amount
  * - payerMemberId: who paid (default: current user)
@@ -43,6 +47,33 @@ export async function POST(req: NextRequest) {
   const clientDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
     ? body.date
     : null;
+  const rawCurrency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : null;
+  const currency = rawCurrency && /^[A-Z]{3}$/.test(rawCurrency) ? rawCurrency : "USD";
+
+  if (body.category != null && typeof body.category !== "string") {
+    return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+  }
+  if (body.notes != null && typeof body.notes !== "string") {
+    return NextResponse.json({ error: "Invalid notes" }, { status: 400 });
+  }
+  if (body.receipt_url != null && typeof body.receipt_url !== "string") {
+    return NextResponse.json({ error: "Invalid receipt_url" }, { status: 400 });
+  }
+  const expenseCategory =
+    typeof body.category === "string" ? body.category.trim().slice(0, 100) || null : null;
+  const expenseNotes =
+    typeof body.notes === "string" ? body.notes.trim().slice(0, 2000) || null : null;
+  const receiptUrl =
+    typeof body.receipt_url === "string" ? body.receipt_url.trim().slice(0, 2048) || null : null;
+
+  const splitDetailFields: {
+    notes?: string;
+    category?: string;
+    receipt_url?: string;
+  } = {};
+  if (expenseNotes) splitDetailFields.notes = expenseNotes;
+  if (expenseCategory) splitDetailFields.category = expenseCategory;
+  if (receiptUrl) splitDetailFields.receipt_url = receiptUrl;
 
   if (!groupId || !amount || amount <= 0) {
     return NextResponse.json(
@@ -99,13 +130,38 @@ export async function POST(req: NextRequest) {
   } else if (personKey) {
     const memberIdFromKey =
       personKey.length > 37 && personKey[36] === "-" ? personKey.slice(37) : null;
-    const otherMember = members.find((m) => {
+    const sourceGroupId =
+      personKey.length > 37 && personKey[36] === "-" ? personKey.slice(0, 36) : null;
+    let otherMember = members.find((m) => {
       if (m.user_id === userId) return false;
       if (memberIdFromKey && m.id === memberIdFromKey) return true;
       if (m.user_id === personKey) return true;
       if (m.email === personKey) return true;
       return false;
     });
+    // When the personKey references a member in a DIFFERENT group (e.g. after
+    // auto-creating a 1:1 group), look up the original member and match by
+    // display_name or email. As a last resort, pick the only other member.
+    if (!otherMember && memberIdFromKey && sourceGroupId && sourceGroupId !== groupId) {
+      const { data: srcMembers } = await db
+        .from("group_members")
+        .select("display_name, email")
+        .eq("id", memberIdFromKey)
+        .limit(1);
+      const src = srcMembers?.[0];
+      if (src) {
+        otherMember = members.find((m) => {
+          if (m.user_id === userId) return false;
+          if (src.email && m.email === src.email) return true;
+          if (src.display_name && m.display_name === src.display_name) return true;
+          return false;
+        });
+      }
+    }
+    if (!otherMember) {
+      const others = members.filter((m) => m.user_id !== userId);
+      if (others.length === 1) otherMember = others[0];
+    }
     if (!otherMember) {
       return NextResponse.json({ error: "Person not found in group" }, { status: 404 });
     }
@@ -133,7 +189,7 @@ export async function POST(req: NextRequest) {
       amount: -amount,
       date: clientDate ?? new Date().toISOString().split("T")[0],
       is_pending: false,
-      primary_category: "Food & Drink",
+      primary_category: expenseCategory,
       detailed_category: null,
     })
     .select("id")
@@ -149,32 +205,39 @@ export async function POST(req: NextRequest) {
   let splitTx: { id: string } | null = null;
   let splitError: { message?: string } | null = null;
   const expenseDate = clientDate ?? new Date().toISOString().split("T")[0];
+  const insertPayload: Record<string, unknown> = {
+    group_id: groupId,
+    transaction_id: transaction.id,
+    created_by: userId,
+    iso_currency_code: currency,
+    ...splitDetailFields,
+  };
+  if (_hasPayerAndDateCols !== false) {
+    insertPayload.payer_member_id = effectivePayer;
+    insertPayload.date = expenseDate;
+  }
   const { data: st1, error: e1 } = await db
     .from("split_transactions")
-    .insert({
-      group_id: groupId,
-      transaction_id: transaction.id,
-      created_by: userId,
-      payer_member_id: effectivePayer,
-      iso_currency_code: "USD",
-      date: expenseDate,
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
-  if (e1 && e1.message?.includes("column")) {
+  if (e1 && e1.message?.includes("column") && _hasPayerAndDateCols !== false) {
+    _hasPayerAndDateCols = false;
     const { data: st2, error: e2 } = await db
       .from("split_transactions")
       .insert({
         group_id: groupId,
         transaction_id: transaction.id,
         created_by: userId,
-        iso_currency_code: "USD",
+        iso_currency_code: currency,
+        ...splitDetailFields,
       })
       .select("id")
       .single();
     splitTx = st2;
     splitError = e2;
   } else {
+    if (!e1) _hasPayerAndDateCols = true;
     splitTx = st1;
     splitError = e1;
   }
@@ -215,8 +278,30 @@ export async function POST(req: NextRequest) {
       amount,
       description,
       frequency: recurringFrequency,
+      isoCurrencyCode: currency,
     });
   }
+
+  const creatorName =
+    currentUserMember.display_name?.trim() ||
+    currentUserMember.email?.split("@")[0] ||
+    "Someone";
+  void notifyGroupMembers(
+    groupId,
+    "New expense",
+    `${creatorName} added ${description} for ${formatCurrency(amount, currency)}`,
+    userId,
+    { type: "manual_expense", groupId, splitTransactionId: splitTx.id }
+  );
+
+  void processRecurringExpenses(userId)
+    .then((n) => {
+      if (n > 0) {
+        revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+        revalidateTag(CACHE_TAGS.transactions(userId), "max");
+      }
+    })
+    .catch((err) => console.error("[recurring] background process failed:", err));
 
   return NextResponse.json({ id: splitTx.id });
 }

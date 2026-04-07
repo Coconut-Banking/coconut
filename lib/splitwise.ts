@@ -73,6 +73,9 @@ export interface SplitwiseGroup {
   group_type: string;
   members: SplitwiseUser[];
   simplified_debts: { from: number; to: number; amount: string; currency_code?: string }[];
+  avatar?: { original?: string | null; xxlarge?: string; xlarge?: string; large?: string; medium?: string; small?: string };
+  custom_avatar?: boolean;
+  cover_photo?: { xxlarge?: string; xlarge?: string };
 }
 
 export interface SplitwiseExpenseShare {

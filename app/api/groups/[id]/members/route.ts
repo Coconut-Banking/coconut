@@ -34,9 +34,10 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // If the member has an email, check if they already have a Coconut account
-  let linkedUserId: string | null = null;
-  if (email) {
+  // Link by explicit user_id hint first, then fall back to email lookup
+  const hintUserId = typeof body.userId === "string" ? body.userId.trim() : null;
+  let linkedUserId: string | null = hintUserId || null;
+  if (!linkedUserId && email) {
     linkedUserId = await findClerkUserIdByEmail(email);
   }
 
@@ -166,4 +167,54 @@ export async function PATCH(
   }
   if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
   return NextResponse.json(member);
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const userId = await getUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  const db = getSupabase();
+
+  const { data: group, error: groupError } = await db.from("groups").select("owner_id").eq("id", id).single();
+  if (groupError || !group) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (group.owner_id === userId) {
+    return NextResponse.json(
+      { error: "Group owner cannot leave; archive or delete the group instead" },
+      { status: 400 }
+    );
+  }
+
+  const { data: membership, error: membershipError } = await db
+    .from("group_members")
+    .select("id")
+    .eq("group_id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (membershipError) {
+    console.error("[members] leave lookup:", membershipError.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
+  if (!membership) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const { error: deleteError } = await db
+    .from("group_members")
+    .delete()
+    .eq("group_id", id)
+    .eq("user_id", userId);
+
+  if (deleteError) {
+    console.error("[members] leave delete:", deleteError.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

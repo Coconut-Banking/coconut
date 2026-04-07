@@ -63,7 +63,7 @@ function buildEmbedText(row: EmbedRow): string {
   return parts.filter(Boolean).join(" | ").trim();
 }
 
-const EMBED_DIMENSIONS = 256;
+const EMBED_DIMENSIONS = 1536;
 
 async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
   if (!openai || texts.length === 0) return texts.map(() => null);
@@ -635,8 +635,12 @@ export async function syncTransactionsForUser(
           }
         }
 
-        // Also match any older unmatched receipts against the new transactions
-        const { matchReceiptsToTransactions } = await import("./receipt-matcher");
+        // Clear stale receipt matches (pointing to deleted/deduped transactions)
+        // then re-match any unmatched receipts against current transactions
+        const { matchReceiptsToTransactions, clearStaleReceiptMatches } = await import("./receipt-matcher");
+        const staleCleared = await clearStaleReceiptMatches(clerkUserId);
+        if (staleCleared > 0) console.log(`[sync] cleared ${staleCleared} stale receipt matches for user ${clerkUserId}`);
+
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const { data: unmatched } = await db
@@ -1019,13 +1023,16 @@ export async function embedRichTransactionsForUser(clerkUserId: string): Promise
     for (let j = 0; j < batch.length; j++) {
       const emb = embeddings[j];
       if (emb) {
-        await db
+        const { error: updateErr } = await db
           .from("transactions")
           .update({
             rich_embedding: JSON.stringify(emb),
             embed_text: texts[j],
           })
           .eq("id", batch[j].id);
+        if (updateErr) {
+          console.warn("[embed-rich] update failed for tx", batch[j].id, ":", updateErr.message);
+        }
       }
     }
   }
@@ -1054,10 +1061,13 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
     for (let j = 0; j < batch.length; j++) {
       const emb = embeddings[j];
       if (emb) {
-        await db
+        const { error: updateErr } = await db
           .from("transactions")
           .update({ embedding: JSON.stringify(emb) })
           .eq("id", batch[j].id);
+        if (updateErr) {
+          console.warn("[embed] update failed for tx", batch[j].id, ":", updateErr.message);
+        }
       }
     }
   }

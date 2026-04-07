@@ -114,12 +114,13 @@ export const GMAIL = {
 
 export const RECEIPT_MATCH = {
   AMOUNT_TOLERANCE_DOLLARS: 5,
-  AMOUNT_TOLERANCE_PERCENT: 0.10,
+  AMOUNT_TOLERANCE_PERCENT: 0.20,
   DATE_WINDOW_DAYS: 7,
   MIN_KEYWORD_LENGTH: 3,
   STOP_WORDS: new Set([
     "the", "and", "for", "inc", "llc", "ltd", "com", "www", "online",
-    "payment", "pay", "purchase", "store", "shop",
+    "payment", "pay", "purchase", "store", "shop", "receipt", "order",
+    "confirmation", "your", "thank", "you",
   ]),
 } as const;
 

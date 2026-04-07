@@ -95,12 +95,12 @@ export function useSubscriptions() {
       });
       if (!res.ok) {
         // Re-fetch authoritative state from server on API error
-        await fetchSubs();
+        if (mountedRef.current) await fetchSubs();
       }
     } catch (e) {
       console.error("[subscriptions] dismiss:", e);
       // Re-fetch authoritative state from server on network error
-      await fetchSubs();
+      if (mountedRef.current) await fetchSubs();
     }
   }, [fetchSubs]);
 
@@ -116,12 +116,12 @@ export function useSubscriptions() {
       });
       if (!res.ok) {
         // Re-fetch authoritative state from server on API error
-        await fetchSubs();
+        if (mountedRef.current) await fetchSubs();
       }
     } catch (e) {
       console.error("[subscriptions] dismissPriceChange:", e);
       // Re-fetch authoritative state from server on network error
-      await fetchSubs();
+      if (mountedRef.current) await fetchSubs();
     }
   }, [fetchSubs]);
 

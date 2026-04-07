@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
     groups.map((g) => ({
       ...g,
       invite_token: g.invite_token ?? null,
+      imageUrl: g.image_url ?? null,
       memberCount: countByGroup[g.id] ?? 0,
     }))
   );
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
   const name = (body.name as string)?.trim()?.slice(0, 100);
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
-  const groupType = ["home", "trip", "couple", "other"].includes(body.group_type)
+  const groupType = ["home", "trip", "couple", "friend", "other"].includes(body.group_type)
     ? body.group_type
     : "other";
   const inviteToken = `inv_${randomUUID().replace(/-/g, "")}`;

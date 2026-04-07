@@ -13,6 +13,7 @@ create table if not exists recurring_expenses (
   description     text not null,
   frequency       text not null check (frequency in ('weekly', 'biweekly', 'monthly')),
   next_due_date   date not null,
+  iso_currency_code text default 'USD',
   last_created_at timestamptz,
   is_active       boolean default true,
   created_at      timestamptz default now()
@@ -22,3 +23,6 @@ create index if not exists recurring_expenses_user_idx on recurring_expenses(cle
 create index if not exists recurring_expenses_due_idx on recurring_expenses(next_due_date) where is_active = true;
 
 alter table recurring_expenses enable row level security;
+
+-- Existing databases that created the table before iso_currency_code existed:
+alter table recurring_expenses add column if not exists iso_currency_code text default 'USD';

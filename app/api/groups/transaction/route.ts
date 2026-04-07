@@ -5,6 +5,9 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
+import { getClerkUserPhotos } from "@/lib/clerk-user-lookup";
+
+let _hasExtendedCols: boolean | null = null;
 
 /**
  * GET /api/groups/transaction?id=<split_transaction_id>
@@ -19,23 +22,21 @@ export async function GET(req: NextRequest) {
 
   const db = getSupabaseAdmin();
 
+  type TxRow = { id: string; group_id: string; description: string; amount: number; date: string; iso_currency_code: string | null; payer_member_id: string; created_at: string; source: string | null; external_id: string | null; notes?: string | null; category?: string | null; receipt_url?: string | null };
+  const selectCols = _hasExtendedCols !== false
+    ? `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id, notes, category, receipt_url`
+    : `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id`;
   const { data: tx, error: txErr } = await db
     .from("split_transactions")
-    .select(`
-      id, group_id, description, amount, date, iso_currency_code,
-      payer_member_id, created_at, source, external_id,
-      notes, category, receipt_url
-    `)
+    .select(selectCols)
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle() as unknown as { data: TxRow | null; error: { code?: string } | null };
 
-  if (txErr?.code === "42703") {
+  if (txErr?.code === "42703" && _hasExtendedCols !== false) {
+    _hasExtendedCols = false;
     const { data: txFallback } = await db
       .from("split_transactions")
-      .select(`
-        id, group_id, description, amount, date, iso_currency_code,
-        payer_member_id, created_at, source, external_id
-      `)
+      .select(`id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id`)
       .eq("id", id)
       .maybeSingle();
     if (!txFallback) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
     }
     return buildResponse(db, userId, txFallback, null, null, null);
   }
+  if (!txErr) _hasExtendedCols = true;
 
   if (!tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
 
@@ -99,6 +101,8 @@ async function buildResponse(
     .eq("split_transaction_id", tx.id);
 
   const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
+  const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
+  const photoMap = await getClerkUserPhotos(memberUserIds);
   const currency = normalizeSplitCurrency(tx.iso_currency_code);
 
   const payer = tx.payer_member_id ? memberMap.get(tx.payer_member_id) : null;
@@ -110,6 +114,7 @@ async function buildResponse(
       displayName: member?.display_name ?? "Someone",
       isMe: member?.user_id === userId,
       amount: Number(s.amount),
+      image_url: (member?.user_id && photoMap.get(member.user_id)) || null,
     };
   }).sort((a, b) => b.amount - a.amount);
 
@@ -127,7 +132,7 @@ async function buildResponse(
     groupName: group?.name ?? null,
     groupId: tx.group_id,
     paidBy: payer
-      ? { memberId: payer.id, displayName: payer.display_name, isMe: payer.user_id === userId }
+      ? { memberId: payer.id, displayName: payer.display_name, isMe: payer.user_id === userId, image_url: (payer.user_id && photoMap.get(payer.user_id)) || null }
       : null,
     shares: shareRows,
     notes,

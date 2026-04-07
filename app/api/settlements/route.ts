@@ -7,6 +7,8 @@ import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cached-queries";
+import { formatCurrency } from "@/lib/currency";
+import { notifyGroupMembers } from "@/lib/push-sender";
 
 export async function POST(req: NextRequest) {
   const userId = await getUserId();
@@ -42,6 +44,24 @@ export async function POST(req: NextRequest) {
   if (!canAccess) return NextResponse.json({ error: "Group not found" }, { status: 404 });
 
   const db = getSupabase();
+
+  const { data: partyRows, error: partyErr } = await db
+    .from("group_members")
+    .select("id, display_name, email")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .in("id", [payerMemberId, receiverMemberId]);
+
+  if (partyErr) {
+    console.error("[settlements] party check:", partyErr.message);
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
+  if (!partyRows?.length) {
+    return NextResponse.json(
+      { error: "Only the payer or receiver can record this settlement" },
+      { status: 403 }
+    );
+  }
 
   const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
     groupId,
@@ -88,5 +108,18 @@ export async function POST(req: NextRequest) {
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+
+  const recorderName =
+    partyRows?.[0]?.display_name?.trim() ||
+    partyRows?.[0]?.email?.split("@")[0] ||
+    "Someone";
+  void notifyGroupMembers(
+    groupId,
+    "Settlement recorded",
+    `${recorderName} recorded a settlement of ${formatCurrency(amountToInsert, currency)}`,
+    userId,
+    { type: "settlement", groupId, settlementId: settlement.id }
+  );
+
   return NextResponse.json(settlement);
 }

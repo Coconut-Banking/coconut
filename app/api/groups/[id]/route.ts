@@ -39,14 +39,59 @@ export async function GET(
     }
 
     const isOwner = group.owner_id === userId;
+
+    // Lazy-migrate data URI to Supabase Storage if still using inline base64
+    if ((group as Record<string, unknown>).image_url && typeof (group as Record<string, unknown>).image_url === "string" && ((group as Record<string, unknown>).image_url as string).startsWith("data:")) {
+      void (async () => {
+        try {
+          const raw = (group as Record<string, unknown>).image_url as string;
+          const match = raw.match(/^data:(image\/\w+);base64,(.+)$/);
+          if (!match) return;
+          const contentType = match[1];
+          const base64Data = match[2];
+          const ext = contentType === "image/png" ? "png" : "jpg";
+          const buffer = Buffer.from(base64Data, "base64");
+          const storagePath = `${id}.${ext}`;
+          const adminDb = getSupabaseAdmin();
+          const { error: upErr } = await adminDb.storage.from("group-icons").upload(storagePath, buffer, { contentType, upsert: true });
+          if (upErr) return;
+          const { data: urlData } = adminDb.storage.from("group-icons").getPublicUrl(storagePath);
+          await adminDb.from("groups").update({ image_url: urlData.publicUrl }).eq("id", id);
+          console.log("[groups/id] migrated data URI to storage for", id);
+        } catch { /* best effort */ }
+      })();
+    }
+
     const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
     const maskedGroup = { ...groupWithoutToken, invite_token: invite_token ?? null };
 
-    let { data: members } = await db
-      .from("group_members")
-      .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
-      .eq("group_id", id);
+    // Stage 1: parallel fetch of members, splits, and settlements
+    const [membersResult, splitsResult, settlementsResult] = await Promise.all([
+      db
+        .from("group_members")
+        .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
+        .eq("group_id", id),
+      db
+        .from("split_transactions")
+        .select(`
+          id, transaction_id, created_by, created_at, payer_member_id, amount, description,
+          iso_currency_code, receipt_url, category,
+          transactions(merchant_name, raw_name, amount, date, primary_category)
+        `)
+        .eq("group_id", id)
+        .order("created_at", { ascending: false }),
+      db
+        .from("settlements")
+        .select("payer_member_id, receiver_member_id, amount, method, status, iso_currency_code")
+        .eq("group_id", id)
+        .eq("status", "completed"),
+    ]);
 
+    let { data: members } = membersResult;
+    const { data: splitsRaw } = splitsResult;
+    const { data: settlements } = settlementsResult;
+
+    // Owner email backfill (fire-and-forget DB write, sync member update)
     const ownerId = group.owner_id as string;
     const ownerMember = (members ?? []).find((m) => m.user_id === ownerId && !m.email);
     const now = Date.now();
@@ -59,7 +104,7 @@ export async function GET(
         const ownerUser = await client.users.getUser(ownerId);
         const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
         if (ownerEmail) {
-          await db.from("group_members").update({ email: ownerEmail }).eq("id", ownerMember.id);
+          void db.from("group_members").update({ email: ownerEmail }).eq("id", ownerMember.id);
           members = (members ?? []).map((m) =>
             m.id === ownerMember.id ? { ...m, email: ownerEmail } : m
           );
@@ -70,7 +115,6 @@ export async function GET(
     }
 
     // Deduplicate members that share the same non-null user_id.
-    // Keeps the row with a real display_name (not "You") and merges payment handles.
     {
       const seen = new Map<string, number>();
       const deduped: typeof members = [];
@@ -94,24 +138,6 @@ export async function GET(
       members = deduped;
     }
 
-    // Batch-fetch Clerk profile photos for members with a linked user_id.
-    const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
-    const photoMap = await getClerkUserPhotos(memberUserIds);
-    members = (members ?? []).map((m) => ({
-      ...m,
-      image_url: (m.user_id && photoMap.get(m.user_id)) || null,
-    }));
-
-    const { data: splitsRaw } = await db
-      .from("split_transactions")
-      .select(`
-      id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code, receipt_url,
-      transactions(merchant_name, raw_name, amount, date)
-    `)
-      .eq("group_id", id)
-      .order("created_at", { ascending: false });
-
     const seenTxIds = new Set<string>();
     const splits = (splitsRaw ?? []).filter((s) => {
       const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
@@ -119,6 +145,29 @@ export async function GET(
       seenTxIds.add(k);
       return true;
     });
+
+    // Stage 2: parallel fetch of shares, tx owners, and Clerk photos
+    const splitIdList = splits.map((s) => s.id);
+    const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
+    const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
+
+    const [sharesResult, txResult, photoMap] = await Promise.all([
+      splitIdList.length > 0
+        ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIdList)
+        : Promise.resolve({ data: null }),
+      txIds.length > 0
+        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+        : Promise.resolve({ data: null }),
+      getClerkUserPhotos(memberUserIds),
+    ]);
+
+    const shares = sharesResult.data;
+    const txRows: { id: string; clerk_user_id: string }[] = txResult.data ?? [];
+
+    members = (members ?? []).map((m) => ({
+      ...m,
+      image_url: (m.user_id && photoMap.get(m.user_id)) || null,
+    }));
 
     if (splits.length === 0) {
       return NextResponse.json({
@@ -138,31 +187,24 @@ export async function GET(
         suggestions: [],
         totalSpend: 0,
         totalSpendByCurrency: [],
+        mySpend: 0,
+        mySpendByCurrency: [],
+        categoryBreakdown: [],
       });
-    }
-
-    const { data: shares } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splits.map((s) => s.id));
-
-    const { data: settlements } = await db
-      .from("settlements")
-      .select("payer_member_id, receiver_member_id, amount, method, status, iso_currency_code")
-      .eq("group_id", id)
-      .eq("status", "completed");
-
-    const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-    let txRows: { id: string; clerk_user_id: string }[] = [];
-    if (txIds.length > 0) {
-      const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-      txRows = data ?? [];
     }
 
     const txOwnerById = new Map((txRows ?? []).map((t) => [t.id, t.clerk_user_id]));
     const memberByUserId = new Map(
       (members ?? []).filter((m) => m.user_id).map((m) => [m.user_id, m.id])
     );
+
+    // Pre-index shares by split_transaction_id for O(1) lookups
+    const sharesBySplitId = new Map<string, NonNullable<typeof shares>>();
+    for (const sh of shares ?? []) {
+      const list = sharesBySplitId.get(sh.split_transaction_id);
+      if (list) list.push(sh);
+      else sharesBySplitId.set(sh.split_transaction_id, [sh]);
+    }
 
     const splitCurrencyById = new Map(
       splits.map((s) => [
@@ -286,7 +328,7 @@ export async function GET(
     const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
 
     const activity = splits.map((s) => {
-      const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
+      const shareList = sharesBySplitId.get(s.id) ?? [];
       const totalShares = shareList.length;
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const payerMember = payerMemberId ? memberMap.get(payerMemberId) : null;
@@ -361,6 +403,49 @@ export async function GET(
       }
     }
 
+    // Compute per-user spending summary: total + category breakdown
+    const myMemberId = (members ?? []).find((m) => m.user_id === userId)?.id;
+    const mySpendByCurrency = new Map<string, number>();
+    const catSpend = new Map<string, number>();
+
+    if (myMemberId) {
+      const splitCatById = new Map(
+        splits.map((s) => {
+          const cat =
+            (s as { category?: string | null }).category ||
+            ((s as { transactions?: { primary_category?: string | null } }).transactions
+              ?.primary_category) ||
+            null;
+          return [s.id, cat];
+        })
+      );
+
+      for (const sh of shares ?? []) {
+        if (sh.member_id !== myMemberId) continue;
+        const amt = Math.round(Number(sh.amount) * 100) / 100;
+        if (amt <= 0) continue;
+        const cur = splitCurrencyById.get(sh.split_transaction_id) ?? "USD";
+        mySpendByCurrency.set(cur, (mySpendByCurrency.get(cur) ?? 0) + amt);
+        const cat = splitCatById.get(sh.split_transaction_id) ?? "Other";
+        catSpend.set(cat, (catSpend.get(cat) ?? 0) + amt);
+      }
+    }
+
+    const mySpendArr = [...mySpendByCurrency.entries()]
+      .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
+      .sort((a, b) => a.currency.localeCompare(b.currency));
+    const mySpend =
+      mySpendArr.length === 1 ? mySpendArr[0].amount : mySpendArr.length === 0 ? 0 : null;
+
+    const catTotal = [...catSpend.values()].reduce((s, v) => s + v, 0);
+    const categoryBreakdown = [...catSpend.entries()]
+      .map(([category, amount]) => ({
+        category,
+        amount: Math.round(amount * 100) / 100,
+        percent: catTotal > 0 ? Math.round((amount / catTotal) * 100) : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
     return NextResponse.json({
       ...maskedGroup,
       group: maskedGroup,
@@ -376,6 +461,9 @@ export async function GET(
       })),
       totalSpend,
       totalSpendByCurrency,
+      mySpend,
+      mySpendByCurrency: mySpendArr,
+      categoryBreakdown,
     });
   } catch (err) {
     console.error("[groups/id]", err);
@@ -395,27 +483,57 @@ export async function PATCH(
   // Single query — owner check is sufficient for PATCH (members can't archive)
   const { data: row, error: loadErr } = await db.from("groups").select("owner_id").eq("id", id).single();
   if (loadErr || !row || row.owner_id !== userId) {
-    return NextResponse.json({ error: "Only the group owner can archive or unarchive" }, { status: 403 });
+    return NextResponse.json({ error: "Only the group owner can update this group" }, { status: 403 });
   }
 
-  let body: { archived?: boolean };
+  let body: { archived?: boolean; name?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (body.archived === true) {
-    const archivedAt = new Date().toISOString();
-    const { error: up } = await db.from("groups").update({ archived_at: archivedAt }).eq("id", id);
-    if (up) return NextResponse.json({ error: up.message }, { status: 500 });
-    return NextResponse.json({ ok: true, archivedAt });
-  }
-  if (body.archived === false) {
-    const { error: up } = await db.from("groups").update({ archived_at: null }).eq("id", id);
-    if (up) return NextResponse.json({ error: up.message }, { status: 500 });
-    return NextResponse.json({ ok: true, archivedAt: null });
+  const updates: { archived_at?: string | null; name?: string } = {};
+
+  if ("name" in body) {
+    if (typeof body.name !== "string") {
+      return NextResponse.json({ error: "name must be a string" }, { status: 400 });
+    }
+    const trimmed = body.name.trim();
+    if (trimmed.length === 0) {
+      return NextResponse.json({ error: "name must not be empty" }, { status: 400 });
+    }
+    if (trimmed.length > 100) {
+      return NextResponse.json({ error: "name must be at most 100 characters" }, { status: 400 });
+    }
+    updates.name = trimmed;
   }
 
-  return NextResponse.json({ error: "Set archived to true or false" }, { status: 400 });
+  if (body.archived === true) {
+    updates.archived_at = new Date().toISOString();
+  } else if (body.archived === false) {
+    updates.archived_at = null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json(
+      { error: "Provide name and/or set archived to true or false" },
+      { status: 400 }
+    );
+  }
+
+  const { error: up } = await db.from("groups").update(updates).eq("id", id);
+  if (up) return NextResponse.json({ error: up.message }, { status: 500 });
+
+  const response: Record<string, unknown> = { ok: true };
+  if ("name" in body && typeof body.name === "string") {
+    response.name = updates.name;
+  }
+  if (body.archived === true) {
+    response.archivedAt = updates.archived_at;
+  } else if (body.archived === false) {
+    response.archivedAt = null;
+  }
+
+  return NextResponse.json(response);
 }

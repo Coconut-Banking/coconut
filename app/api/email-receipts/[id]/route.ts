@@ -48,6 +48,21 @@ export async function GET(
     if (val > 0) extras.push({ name: label, amount: val });
   }
 
+  // Build merchant-type-specific top-level objects the client expects
+  let rideshare: Record<string, unknown> | undefined;
+  if ((data as Record<string, unknown>).merchant_type === "rideshare" && details) {
+    rideshare = {
+      pickup: details.pickup ?? undefined,
+      dropoff: details.dropoff ?? undefined,
+      distance: details.distance ?? undefined,
+      duration: details.duration ?? undefined,
+      driver_name: details.driver_name ?? undefined,
+      vehicle: details.vehicle ?? undefined,
+      map_url: details.map_url ?? undefined,
+      fare_breakdown: details.fare_breakdown ?? undefined,
+    };
+  }
+
   return NextResponse.json({
     id: data.id,
     merchant_name: data.merchant ?? "Unknown",
@@ -58,6 +73,7 @@ export async function GET(
     tip: Number(details.tip) || 0,
     total: Number(data.amount) || 0,
     extras,
+    ...(rideshare ? { rideshare } : {}),
     receipt_items: lineItems.map((item, index) => {
       const quantity = Number(item.quantity) || 1;
       const unitPrice = Number(item.unit_price) || Number(item.price) || 0;
