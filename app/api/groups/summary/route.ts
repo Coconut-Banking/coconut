@@ -484,30 +484,36 @@ async function handleSummary(req: NextRequest, userId: string) {
         }
       }
 
-      // Replace personBalances with cached Splitwise balances, then apply local settlement deltas
+      // Merge cached Splitwise balances into existing pairwise balances (not replace).
+      // The pairwise loop above already computed Coconut-native group balances;
+      // the SW cache covers SW-imported groups. Adding them gives the true total.
       for (const cf of cached) {
         if (!cf || typeof cf !== "object" || !Array.isArray(cf.balance)) continue;
         const email = (cf.email ?? "").toLowerCase().trim();
         const match = memberEmailToKey.get(email);
         if (!match) continue;
-        const newByCurrency = new Map<string, number>();
+        const existing = personBalances.get(match.key) ?? { displayName: match.displayName, byCurrency: new Map() };
+        existing.displayName = match.displayName;
         for (const b of cf.balance) {
           const amt = parseFloat(b.amount);
           if (!Number.isFinite(amt) || Math.abs(amt) < BALANCE_EPS) continue;
           const cur = normalizeSplitCurrency(b.currency_code);
-          newByCurrency.set(cur, Math.round(amt * 100) / 100);
+          const prev = existing.byCurrency.get(cur) ?? 0;
+          const merged = Math.round((prev + amt) * 100) / 100;
+          if (Math.abs(merged) < BALANCE_EPS) existing.byCurrency.delete(cur);
+          else existing.byCurrency.set(cur, merged);
         }
         // Apply local Coconut settlements on top of cached Splitwise balance
         const deltas = localSettlementDeltas.get(match.key);
         if (deltas) {
           for (const [cur, delta] of deltas) {
-            const current = newByCurrency.get(cur) ?? 0;
+            const current = existing.byCurrency.get(cur) ?? 0;
             const adjusted = Math.round((current + delta) * 100) / 100;
-            if (Math.abs(adjusted) < BALANCE_EPS) newByCurrency.delete(cur);
-            else newByCurrency.set(cur, adjusted);
+            if (Math.abs(adjusted) < BALANCE_EPS) existing.byCurrency.delete(cur);
+            else existing.byCurrency.set(cur, adjusted);
           }
         }
-        personBalances.set(match.key, { displayName: match.displayName, byCurrency: newByCurrency });
+        personBalances.set(match.key, existing);
       }
 
       // For members ONLY in Splitwise groups who are NOT in the cache,
