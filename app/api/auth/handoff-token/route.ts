@@ -9,13 +9,12 @@ import { NextResponse } from "next/server";
  * The app opens that URL so the user is signed in on web without re-entering credentials.
  */
 export async function POST() {
-  const { userId } = await auth();
+  const [{ userId }, client] = await Promise.all([auth(), clerkClient()]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const client = await clerkClient();
     const signInToken = await client.signInTokens.createSignInToken({
       userId,
       expiresInSeconds: 120,

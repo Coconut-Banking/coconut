@@ -7,7 +7,10 @@ import { rateLimit } from "@/lib/rate-limit";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 
 export async function POST(request: NextRequest) {
-  const effectiveUserId = await getEffectiveUserId();
+  const [effectiveUserId, body] = await Promise.all([
+    getEffectiveUserId(),
+    request.json().catch(() => null),
+  ]);
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -17,16 +20,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  let body: { forceAll?: boolean } = {};
-  try {
-    body = await request.json();
-  } catch {
-    // default: only re-categorize generic ones
-  }
+  const typedBody: { forceAll?: boolean } = body ?? {};
 
   try {
     const updated = await enrichCategoriesForUser(effectiveUserId, {
-      forceAll: body.forceAll ?? false,
+      forceAll: typedBody.forceAll ?? false,
     });
     if (updated > 0) {
       revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");

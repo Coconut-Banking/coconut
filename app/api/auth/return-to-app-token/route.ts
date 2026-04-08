@@ -8,13 +8,12 @@ import { NextResponse } from "next/server";
  * Call after user signs in on web; returns a deep link that opens the app with the session.
  */
 export async function GET() {
-  const { userId } = await auth();
+  const [{ userId }, client] = await Promise.all([auth(), clerkClient()]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const client = await clerkClient();
     const signInToken = await client.signInTokens.createSignInToken({
       userId,
       expiresInSeconds: 120,

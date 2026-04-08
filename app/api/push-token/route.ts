@@ -8,7 +8,10 @@ interface PushTokenBody {
 }
 
 export async function POST(req: NextRequest) {
-  const clerkAuth = await loadClerkAuth();
+  const [clerkAuth, rawBody] = await Promise.all([
+    loadClerkAuth(),
+    req.json().catch(() => null) as Promise<PushTokenBody | null>,
+  ]);
   if (!clerkAuth.ok) {
     return NextResponse.json(
       { error: "Service temporarily unavailable" },
@@ -18,16 +21,13 @@ export async function POST(req: NextRequest) {
   if (!clerkAuth.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  let body: PushTokenBody;
-  try {
-    body = await req.json();
-  } catch {
+  if (!rawBody) {
     return NextResponse.json(
       { error: "Invalid request body" },
       { status: 400 }
     );
   }
+  const body = rawBody;
 
   const { token, platform } = body;
 
