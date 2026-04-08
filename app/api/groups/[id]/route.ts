@@ -270,12 +270,13 @@ export async function GET(
       ])
     );
 
+    const memberIdSet = new Set((members ?? []).map((m) => m.id));
     const paidRows: { member_id: string; amount: number; currency: string }[] = [];
     for (const s of splits) {
       const tid = s.transaction_id as string | null | undefined;
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const memberId =
-        payerMemberId && (members ?? []).some((m) => m.id === payerMemberId)
+        payerMemberId && memberIdSet.has(payerMemberId)
           ? payerMemberId
           : (() => {
               const ownerId2 = tid ? txOwnerById.get(tid) : undefined;
@@ -301,9 +302,9 @@ export async function GET(
       owedBySplitMember.set(key, (owedBySplitMember.get(key) ?? 0) + Number(sh.amount));
     }
     const owedRows = Array.from(owedBySplitMember.entries()).map(([key, amount]) => {
-      const splitId = key.split(":")[0];
+      const [splitId, member_id] = key.split(":");
       return {
-        member_id: key.split(":")[1],
+        member_id,
         amount,
         currency: splitCurrencyById.get(splitId) ?? "USD",
       };
@@ -383,6 +384,7 @@ export async function GET(
           : null;
 
     const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
+    const userIdToMemberObj = new Map((members ?? []).filter((m) => m.user_id).map((m) => [m.user_id, m]));
 
     const activity = splits.map((s) => {
       const shareList = sharesBySplitId.get(s.id) ?? [];
@@ -390,7 +392,7 @@ export async function GET(
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const payerMember = payerMemberId ? memberMap.get(payerMemberId) : null;
       const ownerId3 = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
-      const ownerMember = ownerId3 ? Array.from(memberMap.values()).find((m) => m.user_id === ownerId3) : null;
+      const ownerMember = ownerId3 ? (userIdToMemberObj.get(ownerId3) ?? null) : null;
       const paidByMember = payerMember ?? ownerMember;
       return {
         id: s.id,

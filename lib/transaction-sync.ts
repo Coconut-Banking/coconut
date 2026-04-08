@@ -588,16 +588,13 @@ export async function syncTransactionsForUser(
 
     const removedUuids = (toRemove ?? []).map(r => r.id as string);
 
-    // Clean up subscription_transactions references first
-    if (removedUuids.length > 0) {
-      await db
-        .from("subscription_transactions")
-        .delete()
-        .in("transaction_id", removedUuids);
-    }
-
-    // Plaid-removed rows are deleted outright (not merged); clear receipt FKs first
-    await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, removedUuids);
+    // Clean up subscription_transactions references and email receipt FKs in parallel
+    await Promise.all([
+      removedUuids.length > 0
+        ? db.from("subscription_transactions").delete().in("transaction_id", removedUuids)
+        : Promise.resolve(),
+      clearEmailReceiptLinksForTransactionIds(db, clerkUserId, removedUuids),
+    ]);
 
     // Now safe to delete transactions
     const BATCH = 100;
