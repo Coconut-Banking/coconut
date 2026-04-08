@@ -35,13 +35,16 @@ export async function GET() {
  * Body: { name, platform, balance, iso_currency_code? }
  */
 export async function POST(request: NextRequest) {
-  const effectiveUserId = await getEffectiveUserId();
+  const [effectiveUserId, body] = await Promise.all([
+    getEffectiveUserId(),
+    request.json().catch(() => null),
+  ]);
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const body = await request.json();
+    if (!body) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     const { name, platform, balance, iso_currency_code } = body as {
       name: string;
       platform: string;

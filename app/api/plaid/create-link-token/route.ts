@@ -23,14 +23,13 @@ function getTraceId(maybeTraceId: unknown): string {
 }
 
 export async function POST(request: NextRequest) {
-  let body: CreateLinkBody = {};
-  try {
-    body = (await request.json()) as CreateLinkBody;
-  } catch {
-    // Allow callers with an empty body.
-  }
+  // Parallelize auth + body parse (independent)
+  const [effectiveUserId, rawBody] = await Promise.all([
+    getEffectiveUserId(),
+    request.json().catch(() => ({})) as Promise<CreateLinkBody>,
+  ]);
+  const body: CreateLinkBody = rawBody;
   const traceId = getTraceId(body.trace_id);
-  const effectiveUserId = await getEffectiveUserId();
   console.log("[plaid][create-link-token] request_start", {
     trace_id: traceId,
     has_user: Boolean(effectiveUserId),

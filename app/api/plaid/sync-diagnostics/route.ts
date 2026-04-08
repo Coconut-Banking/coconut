@@ -22,53 +22,46 @@ export async function GET(request: Request) {
 
   const db = getSupabase();
 
-  const { data: items, error: itemsError } = await db
-    .from("plaid_items")
-    .select("plaid_item_id, institution_name, institution_id, needs_reauth, new_accounts_available")
-    .eq("clerk_user_id", effectiveUserId);
-
-  if (itemsError) {
-    return NextResponse.json(
-      { error: "Failed to load plaid_items", detail: itemsError.message },
-      { status: 500 }
-    );
-  }
-
   async function loadTxSnapshot() {
-    const { count: c, error: countErr } = await db
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("clerk_user_id", effectiveUserId)
-      .not("plaid_transaction_id", "like", "manual_%");
+    // Parallelize all 4 independent transaction queries
+    const [
+      { count: c, error: countErr },
+      { count: pend },
+      { data: latest },
+      { data: oldest },
+    ] = await Promise.all([
+      db
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("clerk_user_id", effectiveUserId)
+        .not("plaid_transaction_id", "like", "manual_%"),
+      db
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("clerk_user_id", effectiveUserId)
+        .eq("is_pending", true)
+        .not("plaid_transaction_id", "like", "manual_%"),
+      db
+        .from("transactions")
+        .select("date, merchant_name, raw_name, is_pending")
+        .eq("clerk_user_id", effectiveUserId)
+        .not("plaid_transaction_id", "like", "manual_%")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      db
+        .from("transactions")
+        .select("date")
+        .eq("clerk_user_id", effectiveUserId)
+        .not("plaid_transaction_id", "like", "manual_%")
+        .order("date", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
     if (countErr) {
       return { error: countErr.message as string };
     }
-
-    const { count: pend } = await db
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("clerk_user_id", effectiveUserId)
-      .eq("is_pending", true)
-      .not("plaid_transaction_id", "like", "manual_%");
-
-    const { data: latest } = await db
-      .from("transactions")
-      .select("date, merchant_name, raw_name, is_pending")
-      .eq("clerk_user_id", effectiveUserId)
-      .not("plaid_transaction_id", "like", "manual_%")
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const { data: oldest } = await db
-      .from("transactions")
-      .select("date")
-      .eq("clerk_user_id", effectiveUserId)
-      .not("plaid_transaction_id", "like", "manual_%")
-      .order("date", { ascending: true })
-      .limit(1)
-      .maybeSingle();
 
     return {
       txCount: c ?? 0,
@@ -78,7 +71,21 @@ export async function GET(request: Request) {
     };
   }
 
-  const first = await loadTxSnapshot();
+  // Parallelize plaid_items fetch with tx snapshot (both independent)
+  const [{ data: items, error: itemsError }, first] = await Promise.all([
+    db
+      .from("plaid_items")
+      .select("plaid_item_id, institution_name, institution_id, needs_reauth, new_accounts_available")
+      .eq("clerk_user_id", effectiveUserId),
+    loadTxSnapshot(),
+  ]);
+
+  if (itemsError) {
+    return NextResponse.json(
+      { error: "Failed to load plaid_items", detail: itemsError.message },
+      { status: 500 }
+    );
+  }
   if ("error" in first) {
     return NextResponse.json(
       { error: "Failed to count transactions", detail: first.error },

@@ -23,18 +23,15 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const userId = await getUserId();
+  const [userId, body] = await Promise.all([
+    getUserId(),
+    request.json().catch(() => null),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!body) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 
   const rl = rateLimit(`recurring:${userId}`, 20, 60_000);
   if (!rl.success) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
   const { action, groupId, personKey, amount, description, frequency, startDate, iso_currency_code } = body as {
     action?: string;
     groupId?: string;

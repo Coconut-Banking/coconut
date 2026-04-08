@@ -32,11 +32,12 @@ function getTraceId(maybeTraceId: unknown): string {
 
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
-  const effectiveUserId = await getEffectiveUserId();
-  let body: ExchangeTokenBody;
-  try {
-    body = (await request.json()) as ExchangeTokenBody;
-  } catch {
+  // Parallelize auth + body parse (independent)
+  const [effectiveUserId, body] = await Promise.all([
+    getEffectiveUserId(),
+    request.json().catch(() => null) as Promise<ExchangeTokenBody | null>,
+  ]);
+  if (!body) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const traceId = getTraceId(body.trace_id);
