@@ -153,28 +153,27 @@ function detectFromKnownMerchants(
   alreadyFound: Set<string>,
 ): DetectedSubscription[] {
   const results: DetectedSubscription[] = [];
-  const seenKnown = new Set<string>();
 
+  // Pre-group transactions by known subscription name — O(n) instead of O(n²)
+  type KnownEntry = { known: NonNullable<ReturnType<typeof matchKnownSubscription>>; txs: TxRow[]; normalized: string };
+  const txsByKnownName = new Map<string, KnownEntry>();
   for (const tx of txs) {
     const raw = tx.merchant_name || tx.raw_name || tx.normalized_merchant || "";
     const normalized = normalizeMerchantName(raw);
     if (!normalized || normalized.length < 2) continue;
-
     const known = matchKnownSubscription(raw) ?? matchKnownSubscription(normalized);
     if (!known) continue;
-
     const knownKey = known.name.toLowerCase();
-    if (seenKnown.has(knownKey) || alreadyFound.has(normalized)) continue;
-    seenKnown.add(knownKey);
+    const entry = txsByKnownName.get(knownKey);
+    if (entry) {
+      entry.txs.push(tx);
+    } else {
+      txsByKnownName.set(knownKey, { known, txs: [tx], normalized });
+    }
+  }
 
-    // Known merchant matches are never excluded by bill heuristics —
-    // the curated database is authoritative.
-
-    const allMatchingTxs = txs.filter((t) => {
-      const tRaw = t.merchant_name || t.raw_name || t.normalized_merchant || "";
-      const tKnown = matchKnownSubscription(tRaw) ?? matchKnownSubscription(normalizeMerchantName(tRaw));
-      return tKnown?.name === known.name;
-    });
+  for (const [, { known, txs: allMatchingTxs, normalized }] of txsByKnownName) {
+    if (alreadyFound.has(normalized)) continue;
 
     allMatchingTxs.sort((a, b) => b.date.localeCompare(a.date));
     const latest = allMatchingTxs[0];
