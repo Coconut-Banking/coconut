@@ -48,17 +48,17 @@ export async function GET(req: NextRequest) {
 
   if (!groups || groups.length === 0) return NextResponse.json([]);
 
-  const countByGroup = (memberCounts ?? []).reduce(
-    (acc, r) => ({ ...acc, [r.group_id]: Number((r as unknown as { group_id: string; count: number }).count) }),
-    {} as Record<string, number>
-  );
+  const countByGroup = new Map<string, number>();
+  for (const r of memberCounts ?? []) {
+    countByGroup.set(r.group_id, typeof (r as unknown as { group_id: string; count: number }).count === "number" ? (r as unknown as { group_id: string; count: number }).count : Number((r as unknown as { group_id: string; count: number }).count));
+  }
 
   return NextResponse.json(
     groups.map((g) => ({
       ...g,
       invite_token: g.invite_token ?? null,
       imageUrl: g.image_url ?? null,
-      memberCount: countByGroup[g.id] ?? 0,
+      memberCount: countByGroup.get(g.id) ?? 0,
     })),
     { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
   );
