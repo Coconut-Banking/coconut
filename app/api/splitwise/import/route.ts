@@ -61,15 +61,12 @@ function parseImportOptions(body: ImportRequestBody | null) {
 }
 
 export async function POST(req: NextRequest) {
-  const userId = await getUserId();
+  // Parallelize auth + body parse (body is optional)
+  const [userId, body] = await Promise.all([
+    getUserId(),
+    req.json().catch(() => null) as Promise<ImportRequestBody | null>,
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  let body: ImportRequestBody | null = null;
-  try {
-    body = await req.json();
-  } catch {
-    // Body is optional for this endpoint.
-  }
   const { dryRun, groupIds, expenseOptions } = parseImportOptions(body);
 
   const db = getSupabase();

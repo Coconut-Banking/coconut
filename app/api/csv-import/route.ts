@@ -18,13 +18,16 @@ function escapeLikePattern(s: string): string {
  * Accepts FormData with a CSV file. Parses, deduplicates, auto-links, and imports.
  */
 export async function POST(request: NextRequest) {
-  const effectiveUserId = await getEffectiveUserId();
+  // Parallelize auth + form data parsing (independent)
+  const [effectiveUserId, formData] = await Promise.all([
+    getEffectiveUserId(),
+    request.formData(),
+  ]);
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const forcePlatform = formData.get("platform") as string | null;
 

@@ -93,9 +93,12 @@ export async function GET(request: NextRequest) {
     // accounts that have no transactions and would otherwise never appear in the DB).
     if (forceRefresh) {
       const client = getPlaidClient();
-      const accessTokens = await getAllPlaidTokensForUser(effectiveUserId);
+      // Parallelize token + item fetches (both independent DB reads)
+      const [accessTokens, items] = await Promise.all([
+        getAllPlaidTokensForUser(effectiveUserId),
+        getPlaidItemsForUser(effectiveUserId),
+      ]);
       if (client && accessTokens && accessTokens.length > 0) {
-        const items = await getPlaidItemsForUser(effectiveUserId);
         const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
         const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
         for (const accessToken of accessTokens) {
