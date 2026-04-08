@@ -79,6 +79,16 @@ async function deduplicateAccounts(
   return result;
 }
 
+/** Run institution enrichment and account dedup in parallel, then merge results. */
+async function enrichAndDedup(db: SupabaseClient, userId: string, accounts: AccountRow[]): Promise<AccountRow[]> {
+  const [enriched, deduped] = await Promise.all([
+    enrichAccountsWithInstitution(db, accounts),
+    deduplicateAccounts(db, userId, accounts),
+  ]);
+  const instById = new Map(enriched.map((a) => [a.id, a.institution_name ?? null]));
+  return deduped.map((a) => ({ ...a, institution_name: instById.get(a.id) ?? null }));
+}
+
 export async function GET(request: NextRequest) {
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -150,8 +160,7 @@ export async function GET(request: NextRequest) {
         balance_available: (row.balance_available as number | null) ?? null,
         iso_currency_code: (row.iso_currency_code as string) ?? "USD",
       }));
-      const withInstitution = await enrichAccountsWithInstitution(db, accounts);
-      const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
+      const deduped = await enrichAndDedup(db, effectiveUserId, accounts);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -186,8 +195,7 @@ export async function GET(request: NextRequest) {
           iso_currency_code: row.iso_currency_code ?? "USD",
         };
         });
-        const withInstitution = await enrichAccountsWithInstitution(db, accounts);
-        const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
+        const deduped = await enrichAndDedup(db, effectiveUserId, accounts);
         return NextResponse.json(
           { accounts: deduped },
           { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -222,8 +230,7 @@ export async function GET(request: NextRequest) {
         ...a,
         nickname: nicknameById.get(a.id) ?? null,
       }));
-      const withInstitution = await enrichAccountsWithInstitution(db, accountRows as AccountRow[]);
-      const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
+      const deduped = await enrichAndDedup(db, effectiveUserId, accountRows as AccountRow[]);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -268,8 +275,7 @@ export async function GET(request: NextRequest) {
           iso_currency_code: row.iso_currency_code ?? "USD",
         };
       });
-      const withInstitution = await enrichAccountsWithInstitution(db, accounts);
-      const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
+      const deduped = await enrichAndDedup(db, effectiveUserId, accounts);
       return NextResponse.json(
         { accounts: deduped },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
@@ -335,8 +341,7 @@ export async function GET(request: NextRequest) {
       balance_available: (row.balance_available as number | null) ?? null,
       iso_currency_code: (row.iso_currency_code as string) ?? "USD",
     }));
-    const withInstitution = await enrichAccountsWithInstitution(db, plaidAccounts);
-    const deduped = await deduplicateAccounts(db, effectiveUserId, withInstitution);
+    const deduped = await enrichAndDedup(db, effectiveUserId, plaidAccounts);
     return NextResponse.json(
       { accounts: deduped },
       { headers: { "Cache-Control": "no-store, max-age=0" } }

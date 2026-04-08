@@ -151,12 +151,13 @@ export async function GET(
     ...shareHeaders,
   ].join(",");
 
+  const memberIdSet = new Set(members.map((m) => m.id));
   const dataRows: string[] = [];
   for (const s of splits) {
     const tid = s.transaction_id as string | null | undefined;
     const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
     const resolvedPayerId =
-      payerMemberId && members.some((m) => m.id === payerMemberId)
+      payerMemberId && memberIdSet.has(payerMemberId)
         ? payerMemberId
         : (() => {
             const ownerId = tid ? txOwnerById.get(tid) : undefined;
