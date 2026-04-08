@@ -38,9 +38,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ users: 0, scanned: 0, matched: 0 });
   }
 
-  const { scanGmailForReceipts } = await import("@/lib/receipt-parser");
-  const { matchReceiptsToTransactions } = await import("@/lib/receipt-matcher");
-  const { mapWithConcurrency } = await import("@/lib/retry");
+  const [
+    { scanGmailForReceipts },
+    { matchReceiptsToTransactions },
+    { mapWithConcurrency },
+  ] = await Promise.all([
+    import("@/lib/receipt-parser"),
+    import("@/lib/receipt-matcher"),
+    import("@/lib/retry"),
+  ]);
 
   // Process users in parallel with bounded concurrency (8) to avoid exhausting
   // Supabase connections and OpenAI rate limits while still beating the 5-min timeout.
