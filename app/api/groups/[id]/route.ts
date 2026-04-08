@@ -16,7 +16,7 @@ const BALANCE_EPS = 0.005;
 
 // Cache to prevent repeated Clerk email-enrichment calls for the same member within 5 minutes
 const _ownerEmailCache = new Map<string, number>();
-const OWNER_EMAIL_CACHE_TTL_MS = 5 * 60 * 1000;
+const OWNER_EMAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function GET(
   _req: NextRequest,

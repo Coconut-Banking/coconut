@@ -40,17 +40,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const canAccess = await canAccessGroup(userId, groupId);
-  if (!canAccess) return NextResponse.json({ error: "Group not found" }, { status: 404 });
-
   const db = getSupabase();
 
-  const { data: partyRows, error: partyErr } = await db
-    .from("group_members")
-    .select("id, display_name, email")
-    .eq("group_id", groupId)
-    .eq("user_id", userId)
-    .in("id", [payerMemberId, receiverMemberId]);
+  const [canAccess, { data: partyRows, error: partyErr }] = await Promise.all([
+    canAccessGroup(userId, groupId),
+    db.from("group_members").select("id, display_name, email").eq("group_id", groupId).eq("user_id", userId).in("id", [payerMemberId, receiverMemberId]),
+  ]);
+
+  if (!canAccess) return NextResponse.json({ error: "Group not found" }, { status: 404 });
 
   if (partyErr) {
     console.error("[settlements] party check:", partyErr.message);

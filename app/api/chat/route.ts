@@ -24,11 +24,11 @@ export async function POST(request: NextRequest) {
 
     const db = getSupabase();
 
-    const { data: subs } = await db
-      .from("subscriptions")
-      .select("merchant_name, amount, frequency")
-      .eq("clerk_user_id", userId)
-      .eq("status", "active");
+    const [{ data: subs }, searchResult] = await Promise.all([
+      db.from("subscriptions").select("merchant_name, amount, frequency").eq("clerk_user_id", userId).eq("status", "active"),
+      search(userId, message),
+    ]);
+    const txs = searchResult.transactions;
 
     const subsSummary =
       (subs ?? []).length > 0
@@ -36,9 +36,6 @@ export async function POST(request: NextRequest) {
             .map((s) => `${s.merchant_name}: $${s.amount}/${s.frequency}`)
             .join(", ")
         : "No subscriptions.";
-
-    const searchResult = await search(userId, message);
-    const txs = searchResult.transactions;
 
     const transactions = txs.map((t) => ({
       id: t.plaid_transaction_id,
