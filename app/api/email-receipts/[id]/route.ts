@@ -86,5 +86,5 @@ export async function GET(
         sort_order: index,
       };
     }),
-  });
+  }, { headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=600" } });
 }

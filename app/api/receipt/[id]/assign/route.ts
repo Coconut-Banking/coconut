@@ -35,23 +35,23 @@ export async function POST(
 
   const db = getSupabase();
 
-  // Verify ownership
-  const { data: receipt, error: receiptError } = await db
-    .from("receipt_scans")
-    .select("id")
-    .eq("id", id)
-    .eq("clerk_user_id", userId)
-    .single();
+  // Verify ownership and fetch item ids in parallel
+  const [{ data: receipt, error: receiptError }, { data: receiptItems }] = await Promise.all([
+    db
+      .from("receipt_scans")
+      .select("id")
+      .eq("id", id)
+      .eq("clerk_user_id", userId)
+      .single(),
+    db
+      .from("receipt_items")
+      .select("id")
+      .eq("receipt_id", id),
+  ]);
 
   if (receiptError || !receipt) {
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
-
-  // Get item ids for this receipt
-  const { data: receiptItems } = await db
-    .from("receipt_items")
-    .select("id")
-    .eq("receipt_id", id);
 
   const validItemIds = new Set((receiptItems ?? []).map((i) => i.id));
 
@@ -86,12 +86,10 @@ export async function POST(
     }
   }
 
-  if (rows.length > 0) {
-    await db.from("receipt_assignments").insert(rows);
-  }
-
-  // Update status
-  await db.from("receipt_scans").update({ status: "assigned" }).eq("id", id);
+  await Promise.all([
+    rows.length > 0 ? db.from("receipt_assignments").insert(rows) : Promise.resolve(null),
+    db.from("receipt_scans").update({ status: "assigned" }).eq("id", id),
+  ]);
 
   return NextResponse.json({ ok: true });
 }
