@@ -641,14 +641,14 @@ export async function syncTransactionsForUser(
         const staleCleared = await clearStaleReceiptMatches(clerkUserId);
         if (staleCleared > 0) console.log(`[sync] cleared ${staleCleared} stale receipt matches for user ${clerkUserId}`);
 
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const twentyFiveHoursAgo = new Date();
+        twentyFiveHoursAgo.setHours(twentyFiveHoursAgo.getHours() - 25);
         const { data: unmatched } = await db
           .from("email_receipts")
           .select("id")
           .eq("clerk_user_id", clerkUserId)
           .is("transaction_id", null)
-          .gte("parsed_at", thirtyDaysAgo.toISOString());
+          .gte("parsed_at", twentyFiveHoursAgo.toISOString());
         if (unmatched && unmatched.length > 0) {
           const matched = await matchReceiptsToTransactions(clerkUserId, unmatched.map((r) => r.id));
           if (matched > 0) console.log(`[sync] auto-matched ${matched} receipts for user ${clerkUserId}`);

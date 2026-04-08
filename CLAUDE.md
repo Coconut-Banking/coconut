@@ -19,6 +19,16 @@ Run these before creating any PR. All must pass:
 3. `npm run test` - Vitest unit tests
 4. `npm run build` - Next.js build
 
+## After Creating a PR
+
+**Always** do this automatically after every `gh pr create`, without waiting to be asked:
+
+1. Immediately spawn a **background** `/watch-ci` agent (using the Agent tool with `run_in_background: true`) passing the PR number as the argument
+2. Tell the user the PR URL and that CI is being monitored in the background
+3. The agent will poll CI, fix any failures with new commits, and notify when green
+
+This applies to every PR — no exceptions, no need for the user to ask.
+
 ## Bug Fixing Rules
 - Read AGENTS.md for full guardrails
 - Keep fixes minimal and targeted - don't refactor unrelated code

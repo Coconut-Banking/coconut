@@ -98,11 +98,22 @@ export function merchantsMatch(receiptMerchant: string, txMerchant: string): boo
 }
 
 function amountWithinTolerance(receiptAmount: number, txAmount: number): boolean {
-  const diff = Math.abs(txAmount - receiptAmount);
-  return (
-    diff <= RECEIPT_MATCH.AMOUNT_TOLERANCE_DOLLARS ||
-    (receiptAmount > 0 && diff / receiptAmount <= RECEIPT_MATCH.AMOUNT_TOLERANCE_PERCENT)
-  );
+  // Exact match only — $0.01 rounding buffer for floating-point representation.
+  // Loose dollar/percent tolerances caused too many false matches on small amounts.
+  return Math.abs(txAmount - receiptAmount) <= 0.01;
+}
+
+/**
+ * Returns true when both merchant strings resolve to known-distinct alias groups.
+ * Used to reject Strategy 3 amount-only matches where the merchants are clearly
+ * different entities (e.g. "Airbnb" vs "Clipper Transit Fare").
+ */
+function knownMerchantsConflict(m1: string, m2: string): boolean {
+  if (!m1 || !m2) return false;
+  const a1 = resolveAliases(m1);
+  const a2 = resolveAliases(m2);
+  // Both are recognised merchants and share no alias group → definitively different
+  return a1.length > 0 && a2.length > 0 && !a1.some((a) => a2.includes(a));
 }
 
 export function scoreCandidates(
@@ -287,6 +298,10 @@ export async function matchReceiptsToTransactions(
         const scored = tightCandidates
           .filter((tx) => {
             if (alreadyMatchedTxIds.has(tx.id as string)) return false;
+            // Reject if both merchants are known distinct entities — amount-only matching
+            // must not override clear merchant incompatibility (e.g. Airbnb vs Clipper)
+            const txMerch = (tx.normalized_merchant as string) || (tx.merchant_name as string) || "";
+            if (txMerch && knownMerchantsConflict(receipt.merchant, txMerch)) return false;
             return true;
           })
           .map((tx) => {
@@ -297,7 +312,7 @@ export async function matchReceiptsToTransactions(
               dateDiff: Math.abs(new Date(tx.date as string).getTime() - new Date(receiptDate).getTime()),
             };
           })
-          .filter((s) => s.amountDiff <= 0.50)
+          .filter((s) => s.amountDiff <= 0.01)
           .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
 
         if (scored.length > 0) {
@@ -396,10 +411,13 @@ export async function auditAndRematchAllReceipts(
       const txAmount = Math.abs(Number(tx.amount));
       const rcptAmount = Math.abs(Number(receipt.amount));
       // Keep the match if merchant names align, OR if the amount is very close
-      // (within $0.50) — covers cases where bank and email use very different names
+      // (within $0.50) — covers cases where bank and email use very different names.
+      // But if merchants are known-conflicting aliases (e.g. Airbnb vs Clipper),
+      // clear it regardless of how close the amounts are.
       const nameOk = merchantsMatch(receipt.merchant, txMerchant);
-      const tightAmountOk = Math.abs(txAmount - rcptAmount) <= 0.50;
-      if (!nameOk && !tightAmountOk) {
+      const tightAmountOk = Math.abs(txAmount - rcptAmount) <= 0.01;
+      const aliasConflict = knownMerchantsConflict(receipt.merchant, txMerchant);
+      if (!nameOk && (!tightAmountOk || aliasConflict)) {
         await db
           .from("email_receipts")
           .update({ transaction_id: null })
