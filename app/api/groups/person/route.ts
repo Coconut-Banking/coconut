@@ -41,12 +41,19 @@ export async function GET(req: NextRequest) {
     }
 
     // Parallel fetch of groups and members (both only need accessible ids)
-    const [{ data: groups }, { data: members }] = await Promise.all([
-      db.from("groups").select("id, name, owner_id, source, group_type").in("id", ids),
+    const [{ data: groupsRaw }, { data: membersRaw }] = await Promise.all([
+      db.from("groups").select("id, name, owner_id, source, group_type, archived_at").in("id", ids),
       db.from("group_members")
         .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
         .in("group_id", ids),
     ]);
+
+    // Exclude archived groups (matches summary endpoint behavior)
+    const activeGroupIds = new Set(
+      (groupsRaw ?? []).filter((g) => !(g as { archived_at?: string | null }).archived_at).map((g) => g.id)
+    );
+    const groups = (groupsRaw ?? []).filter((g) => activeGroupIds.has(g.id));
+    const members = (membersRaw ?? []).filter((m) => activeGroupIds.has(m.group_id));
 
     const directMatches = (members ?? []).filter((m) => {
       if (m.user_id === userId) return false;
@@ -159,7 +166,7 @@ export async function GET(req: NextRequest) {
         `)
         .in("group_id", sharedGroupIds)
         .order("created_at", { ascending: false })
-        .limit(500),
+        .limit(25000),
       db
         .from("settlements")
         .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
@@ -189,44 +196,25 @@ export async function GET(req: NextRequest) {
       const dedupeKey = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
       if (seen.has(dedupeKey)) return false;
       seen.add(dedupeKey);
-
-      // Secondary dedup: catch duplicate splits with different IDs but identical content
-      const desc = (s as { description?: string | null }).description ?? "";
-      const amt = String((s as { amount?: unknown }).amount ?? "");
-      const contentKey = `content:${desc}|${amt}|${s.payer_member_id ?? ""}|${s.created_at}`;
-      if (seen.has(contentKey)) return false;
-      seen.add(contentKey);
-
       seenByGroup.set(s.group_id, seen);
       return true;
     });
 
-    if (splits.length === 0) {
-      return NextResponse.json({
-        displayName,
-        balance: 0,
-        currencyBalances: [],
-        activity: [],
-        email,
-        key,
-        settlements: [],
-        sharedGroupIds,
-        sharedGroups,
-        p2pHandles,
-      });
-    }
-
-    // Stage 3: parallel fetch of shares and tx owners
+    // Stage 3: parallel fetch of shares and tx owners (skip if no splits)
     const splitIdList = splits.map((s) => s.id);
     const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-    const [sharesResult, txResult] = await Promise.all([
-      db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIdList),
-      txIds.length > 0
-        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
-        : Promise.resolve({ data: null }),
-    ]);
-    const { data: shares } = sharesResult;
-    const txRows: { id: string; clerk_user_id: string }[] = txResult.data ?? [];
+    let shares: { split_transaction_id: string; member_id: string; amount: number }[] | null = null;
+    let txRows: { id: string; clerk_user_id: string }[] = [];
+    if (splitIdList.length > 0) {
+      const [sharesResult, txResult] = await Promise.all([
+        db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIdList),
+        txIds.length > 0
+          ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+          : Promise.resolve({ data: null }),
+      ]);
+      shares = sharesResult.data;
+      txRows = txResult.data ?? [];
+    }
 
     const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
