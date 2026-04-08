@@ -40,50 +40,59 @@ export async function GET(req: NextRequest) {
 
   const { scanGmailForReceipts } = await import("@/lib/receipt-parser");
   const { matchReceiptsToTransactions } = await import("@/lib/receipt-matcher");
+  const { mapWithConcurrency } = await import("@/lib/retry");
 
-  let totalScanned = 0;
-  let totalMatched = 0;
-  const errors: string[] = [];
+  // Process users in parallel with bounded concurrency (8) to avoid exhausting
+  // Supabase connections and OpenAI rate limits while still beating the 5-min timeout.
+  const perUserResults = await mapWithConcurrency(
+    connections,
+    async ({ clerk_user_id }) => {
+      let scanned = 0;
+      let matched = 0;
+      try {
+        // Step 1: scan Gmail for the last 24 hours
+        const scanResult = await scanGmailForReceipts(clerk_user_id, 1, false, false);
+        scanned = scanResult.inserted;
 
-  for (const { clerk_user_id } of connections) {
-    try {
-      // Step 1: scan Gmail for the last 24 hours
-      const scanResult = await scanGmailForReceipts(clerk_user_id, 1, false, false);
-      totalScanned += scanResult.inserted;
+        // Step 2: match unmatched receipts from the last 25 hours (1h overlap buffer)
+        const cutoff = new Date();
+        cutoff.setHours(cutoff.getHours() - 25);
 
-      // Step 2: match unmatched receipts from the last 25 hours (1h overlap buffer)
-      const cutoff = new Date();
-      cutoff.setHours(cutoff.getHours() - 25);
+        const { data: unmatched } = await db
+          .from("email_receipts")
+          .select("id")
+          .eq("clerk_user_id", clerk_user_id)
+          .is("transaction_id", null)
+          .gte("parsed_at", cutoff.toISOString());
 
-      const { data: unmatched } = await db
-        .from("email_receipts")
-        .select("id")
-        .eq("clerk_user_id", clerk_user_id)
-        .is("transaction_id", null)
-        .gte("parsed_at", cutoff.toISOString());
-
-      if (unmatched && unmatched.length > 0) {
-        const matched = await matchReceiptsToTransactions(
-          clerk_user_id,
-          unmatched.map((r) => r.id)
-        );
-        totalMatched += matched;
+        if (unmatched && unmatched.length > 0) {
+          matched = await matchReceiptsToTransactions(
+            clerk_user_id,
+            unmatched.map((r) => r.id)
+          );
+        }
+        return { scanned, matched, failed: false };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[cron/receipt-match] user ${clerk_user_id} failed:`, msg);
+        return { scanned, matched, failed: true };
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[cron/receipt-match] user ${clerk_user_id} failed:`, msg);
-      errors.push(clerk_user_id);
-    }
-  }
+    },
+    8
+  );
+
+  const totalScanned = perUserResults.reduce((s, r) => s + r.scanned, 0);
+  const totalMatched = perUserResults.reduce((s, r) => s + r.matched, 0);
+  const errorCount = perUserResults.filter((r) => r.failed).length;
 
   console.log(
-    `[cron/receipt-match] done — ${connections.length} users, ${totalScanned} new receipts, ${totalMatched} matched, ${errors.length} errors`
+    `[cron/receipt-match] done — ${connections.length} users, ${totalScanned} new receipts, ${totalMatched} matched, ${errorCount} errors`
   );
 
   return NextResponse.json({
     users: connections.length,
     scanned: totalScanned,
     matched: totalMatched,
-    errors: errors.length,
+    errors: errorCount,
   });
 }

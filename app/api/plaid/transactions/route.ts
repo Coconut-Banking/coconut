@@ -9,7 +9,6 @@ import {
   loadClerkAuth,
 } from "@/lib/auth";
 import { CATEGORY_COLORS, MERCHANT_COLORS } from "@/lib/plaid-mappers";
-import { rateLimit } from "@/lib/rate-limit";
 import {
   merchantLlmResultKey,
   needsLLMNormalization,
@@ -59,37 +58,19 @@ export async function GET(request: NextRequest) {
       (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
     );
 
-    // Direct mitigation: if connected account exists but local table is empty, trigger one sync-on-read.
+    // If no cached transactions but user has a bank connection, return immediately with
+    // X-Needs-Sync: 1 so the client fires a POST sync in the background.
+    // This avoids blocking the GET for 3-6s on first load / cold cache.
     if (bankOnly.length === 0) {
-      const rl = rateLimit(`plaid-sync-on-read:${effectiveUserId}`, 1, 90_000);
-      if (rl.success) {
-        try {
-          const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
-          const synced = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
-          console.log("[transactions] sync-on-read for", effectiveUserId, ":", synced);
-          try {
-            revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
-          } catch (revalErr) {
-            console.warn("[transactions] revalidateTag failed:", revalErr);
-          }
-          const fresh = await db
-            .from("transactions")
-            .select(
-              "id, plaid_transaction_id, account_id, merchant_name, raw_name, normalized_merchant, merchant_display_llm, amount, date, primary_category, detailed_category, iso_currency_code, is_pending, pending_transaction_id, source, p2p_counterparty, p2p_note, p2p_platform, counterparty_logo_url"
-            )
-            .eq("clerk_user_id", effectiveUserId)
-            .order("date", { ascending: false })
-            .order("id", { ascending: false })
-            .limit(2000);
-          if (fresh.error) throw new Error(fresh.error.message);
-          const freshData = fresh.data;
-          bankOnly = (freshData ?? []).filter(
-            (tx) => !String(tx.plaid_transaction_id || "").startsWith("manual_")
-          );
-        } catch (e) {
-          console.warn("[transactions] sync-on-read failed:", e);
-        }
-      }
+      const { data: plaidItems } = await db
+        .from("plaid_items")
+        .select("id")
+        .eq("clerk_user_id", effectiveUserId)
+        .limit(1);
+      const hasBankConnection = (plaidItems?.length ?? 0) > 0;
+      const headers = new Headers({ "Cache-Control": "no-store, max-age=0" });
+      if (hasBankConnection) headers.set("X-Needs-Sync", "1");
+      return NextResponse.json([], { headers });
     }
 
     // ── Pending vs posted dedup ─────────────────────────────────────────────

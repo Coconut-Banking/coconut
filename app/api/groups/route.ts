@@ -59,7 +59,8 @@ export async function GET(req: NextRequest) {
       invite_token: g.invite_token ?? null,
       imageUrl: g.image_url ?? null,
       memberCount: countByGroup[g.id] ?? 0,
-    }))
+    })),
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
   );
 }
 

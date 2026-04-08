@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "crypto";
 import * as jose from "jose";
-import { revalidateTag } from "next/cache";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getSupabase } from "@/lib/supabase";
 import { decryptToken } from "@/lib/encryption";
-import { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } from "@/lib/transaction-sync";
-import { CACHE_TAGS } from "@/lib/cached-queries";
+import { syncTransactionsForUser } from "@/lib/transaction-sync";
 
 type PlaidWebhookPayload = {
   webhook_type?: string;
@@ -127,52 +125,57 @@ export async function POST(request: NextRequest) {
   ]);
 
   if (webhook_type === "TRANSACTIONS" && webhook_code && transactionWebhookSyncCodes.has(webhook_code)) {
-    try {
-      const r = await syncTransactionsForUser(clerkUserId);
-      console.log("[plaid][webhook] TRANSACTIONS sync", {
-        webhook_code,
-        item_id,
-        user_id: clerkUserId,
-        synced: r.synced,
+    // Deduplicate: skip insert if a pending/processing job already exists for this user.
+    // Plaid sends webhook bursts (e.g. DEFAULT_UPDATE + HISTORICAL_UPDATE) — without this
+    // guard, the old rateLimit() protection is gone and we'd run 2-5 redundant full syncs.
+    const { data: existing } = await db
+      .from("job_queue")
+      .select("id")
+      .eq("type", "plaid_sync")
+      .eq("clerk_user_id", clerkUserId)
+      .in("status", ["pending", "processing"])
+      .limit(1)
+      .maybeSingle();
+
+    if (!existing) {
+      // Queue background sync instead of running inline — returns 200 to Plaid in ~20ms.
+      const { error: queueErr } = await db.from("job_queue").insert({
+        type: "plaid_sync",
+        payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
+        clerk_user_id: clerkUserId,
       });
-      revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
-      embedTransactionsForUser(clerkUserId).catch((e) =>
-        console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
-      );
-      embedRichTransactionsForUser(clerkUserId).catch((e) =>
-        console.warn("[plaid][webhook] rich-embed failed:", e instanceof Error ? e.message : e)
-      );
-      enrichCategoriesForUser(clerkUserId).catch((e) =>
-        console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
-      );
-    } catch (e) {
-      console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
-      return NextResponse.json({ error: "Sync failed" }, { status: 500 });
+      if (queueErr) {
+        // DB failure: return 503 so Plaid retries the webhook (do NOT return 200)
+        console.error("[plaid][webhook] job_queue insert failed:", queueErr.message);
+        return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
+      }
+      console.log("[plaid][webhook] queued plaid_sync", { webhook_code, item_id, user: clerkUserId });
+    } else {
+      console.log("[plaid][webhook] deduplicated plaid_sync (already queued)", { webhook_code, user: clerkUserId });
     }
   } else if (webhook_type === "ITEM") {
     if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
       await db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id);
-      try {
-        const r = await syncTransactionsForUser(clerkUserId);
-        console.log("[plaid][webhook] NEW_ACCOUNTS_AVAILABLE synced", {
-          item_id,
-          user_id: clerkUserId,
-          synced: r.synced,
+      const { data: existingJob } = await db
+        .from("job_queue")
+        .select("id")
+        .eq("type", "plaid_sync")
+        .eq("clerk_user_id", clerkUserId)
+        .in("status", ["pending", "processing"])
+        .limit(1)
+        .maybeSingle();
+      if (!existingJob) {
+        const { error: queueErr } = await db.from("job_queue").insert({
+          type: "plaid_sync",
+          payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
+          clerk_user_id: clerkUserId,
         });
-        revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
-        embedTransactionsForUser(clerkUserId).catch((e) =>
-          console.warn("[plaid][webhook] embed failed:", e instanceof Error ? e.message : e)
-        );
-        embedRichTransactionsForUser(clerkUserId).catch((e) =>
-          console.warn("[plaid][webhook] rich-embed failed:", e instanceof Error ? e.message : e)
-        );
-        enrichCategoriesForUser(clerkUserId).catch((e) =>
-          console.warn("[plaid][webhook] categorize failed:", e instanceof Error ? e.message : e)
-        );
-      } catch (e) {
-        console.error("[plaid][webhook] sync failed:", e instanceof Error ? e.message : e);
-        return NextResponse.json({ error: "Sync failed" }, { status: 500 });
+        if (queueErr) {
+          console.error("[plaid][webhook] job_queue insert failed (NEW_ACCOUNTS):", queueErr.message);
+          return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
+        }
       }
+      console.log("[plaid][webhook] queued plaid_sync for NEW_ACCOUNTS_AVAILABLE", { item_id });
     } else if (webhook_code === "ERROR" && payload.error?.error_code === "ITEM_LOGIN_REQUIRED") {
       console.log("[plaid][webhook] ITEM_LOGIN_REQUIRED", { item_id, user_id: clerkUserId });
       await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
@@ -182,13 +185,14 @@ export async function POST(request: NextRequest) {
     } else if (webhook_code === "LOGIN_REPAIRED") {
       console.log("[plaid][webhook] LOGIN_REPAIRED", { item_id, user_id: clerkUserId });
       await db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id);
-      try {
-        await syncTransactionsForUser(clerkUserId);
-        revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max");
-      } catch (e) {
-        console.warn("[plaid][webhook] post-repair sync failed (non-fatal):", e instanceof Error ? e.message : e);
-        // Do NOT return 500 — reauth flag is already cleared; let Plaid not retry
-      }
+      // Queue the post-repair sync (non-critical — reauth flag is already cleared)
+      await db.from("job_queue").insert({
+        type: "plaid_sync",
+        payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
+        clerk_user_id: clerkUserId,
+      }).then(({ error }) => {
+        if (error) console.warn("[plaid][webhook] queue insert failed for LOGIN_REPAIRED (non-fatal):", error.message);
+      });
     } else if (
       webhook_code === "USER_PERMISSION_REVOKED" ||
       webhook_code === "USER_ACCOUNT_REVOKED"

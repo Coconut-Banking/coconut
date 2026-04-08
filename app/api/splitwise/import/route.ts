@@ -92,13 +92,13 @@ export async function POST(req: NextRequest) {
   const stats: ImportStats = { groups: 0, members: 0, expenses: 0, settlements: 0, skipped: 0, totalExpenses: 0 };
 
   try {
-    // 2. Get current Splitwise user (to know who "me" is)
-    const swUser = await getCurrentUser(token);
-    const clerkUser = await currentUser();
+    // 2+3. Fetch current user identity and all groups in parallel (independent calls)
+    const [swUser, clerkUser, swGroups] = await Promise.all([
+      getCurrentUser(token),
+      currentUser(),
+      getGroups(token),
+    ]);
     const myEmail = clerkUser?.primaryEmailAddress?.emailAddress ?? null;
-
-    // 3. Fetch all Splitwise groups
-    const swGroups = await getGroups(token);
     const filteredGroups = groupIds
       ? swGroups.filter((g) => groupIds.includes(g.id))
       : swGroups;
