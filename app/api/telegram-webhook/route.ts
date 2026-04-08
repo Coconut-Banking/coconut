@@ -298,18 +298,23 @@ async function sendTelegram(chatId: number, text: string, replyTo?: number) {
 async function getMultiRepoStatus(): Promise<string> {
   const sections: string[] = ["--- Coconut Bot Status ---\n"];
 
-  for (const [key, repoFullName] of Object.entries(REPOS)) {
-    const label = key === "coconut" ? "Web App (coconut)" : "Mobile App (coconut-app)";
-    sections.push(`== ${label} ==`);
+  // Fetch both repo statuses in parallel
+  const entries = Object.entries(REPOS) as [string, string][];
+  const results = await Promise.all(
+    entries.map(async ([key, repoFullName]) => {
+      const label = key === "coconut" ? "Web App (coconut)" : "Mobile App (coconut-app)";
+      try {
+        const status = await getRepoStatus(repoFullName);
+        return [`== ${label} ==`, status, ""];
+      } catch (err) {
+        console.error(`[telegram] getRepoStatus failed for ${repoFullName}:`, err);
+        return [`== ${label} ==`, `(failed to fetch status: ${err instanceof Error ? err.message : String(err)})`, ""];
+      }
+    })
+  );
 
-    try {
-      const status = await getRepoStatus(repoFullName);
-      sections.push(status);
-    } catch (err) {
-      console.error(`[telegram] getRepoStatus failed for ${repoFullName}:`, err);
-      sections.push(`(failed to fetch status: ${err instanceof Error ? err.message : String(err)})`);
-    }
-    sections.push("");
+  for (const lines of results) {
+    sections.push(...lines);
   }
 
   return sections.join("\n");
@@ -318,26 +323,21 @@ async function getMultiRepoStatus(): Promise<string> {
 async function getRepoStatus(repo: string): Promise<string> {
   const headers = { Authorization: `Bearer ${GITHUB_TOKEN}` };
 
-  // Fetch ai-fix labeled issues
-  const labeledRes = await fetch(
-    `https://api.github.com/repos/${repo}/issues?labels=ai-fix&state=open&sort=created&direction=desc&per_page=20`,
-    { headers }
-  );
-  const labeledIssues = labeledRes.ok ? await labeledRes.json() : [];
+  // Fetch all GitHub data in parallel
+  const [labeledRes, userReportedRes, allRes, prsRes] = await Promise.all([
+    fetch(`https://api.github.com/repos/${repo}/issues?labels=ai-fix&state=open&sort=created&direction=desc&per_page=20`, { headers }),
+    fetch(`https://api.github.com/repos/${repo}/issues?labels=user-reported&state=open&sort=created&direction=desc&per_page=20`, { headers }),
+    fetch(`https://api.github.com/repos/${repo}/issues?state=open&sort=created&direction=desc&per_page=20`, { headers }),
+    fetch(`https://api.github.com/repos/${repo}/pulls?state=open&sort=created&direction=desc&per_page=10`, { headers }),
+  ]);
 
-  // Fetch user-reported issues (in-app shake-to-report)
-  const userReportedRes = await fetch(
-    `https://api.github.com/repos/${repo}/issues?labels=user-reported&state=open&sort=created&direction=desc&per_page=20`,
-    { headers }
-  );
-  const userReportedIssues = userReportedRes.ok ? await userReportedRes.json() : [];
+  const [labeledIssues, userReportedIssues, allIssues, allPRs] = await Promise.all([
+    labeledRes.ok ? labeledRes.json() : Promise.resolve([]),
+    userReportedRes.ok ? userReportedRes.json() : Promise.resolve([]),
+    allRes.ok ? allRes.json() : Promise.resolve([]),
+    prsRes.ok ? prsRes.json() : Promise.resolve([]),
+  ]);
 
-  // Also fetch recent open issues and include any with "Bug:" title prefix
-  const allRes = await fetch(
-    `https://api.github.com/repos/${repo}/issues?state=open&sort=created&direction=desc&per_page=20`,
-    { headers }
-  );
-  const allIssues = allRes.ok ? await allRes.json() : [];
   const bugIssues = allIssues.filter(
     (i: { title: string }) => i.title.startsWith("Bug:")
   );
@@ -351,12 +351,6 @@ async function getRepoStatus(repo: string): Promise<string> {
       return true;
     }
   );
-
-  const prsRes = await fetch(
-    `https://api.github.com/repos/${repo}/pulls?state=open&sort=created&direction=desc&per_page=10`,
-    { headers }
-  );
-  const allPRs = prsRes.ok ? await prsRes.json() : [];
   const fixPRs = allPRs.filter(
     (pr: { head: { ref: string } }) =>
       pr.head.ref.startsWith("fix/ai-fix-") || pr.head.ref.startsWith("fix/bug-council-")
@@ -382,27 +376,31 @@ async function getRepoStatus(repo: string): Promise<string> {
 
   if (fixPRs.length > 0) {
     lines.push(`Active fix PRs: ${fixPRs.length}`);
-    for (const pr of fixPRs) {
-      const checksRes = await fetch(
-        `https://api.github.com/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=10`,
-        { headers }
-      );
-      let ciStatus = "unknown";
-      if (checksRes.ok) {
-        const checksData = await checksRes.json();
-        const runs = checksData.check_runs || [];
-        if (runs.length === 0) {
-          ciStatus = "pending";
-        } else if (runs.every((r: { conclusion: string }) => r.conclusion === "success")) {
-          ciStatus = "passing";
-        } else if (runs.some((r: { conclusion: string }) => r.conclusion === "failure")) {
-          ciStatus = "failing";
-        } else {
-          ciStatus = "in progress";
+    // Fetch CI status for all PRs in parallel
+    const prStatuses = await Promise.all(
+      fixPRs.map(async (pr: { number: number; title: string; html_url: string; head: { sha: string } }) => {
+        const checksRes = await fetch(
+          `https://api.github.com/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=10`,
+          { headers }
+        );
+        let ciStatus = "unknown";
+        if (checksRes.ok) {
+          const checksData = await checksRes.json();
+          const runs = checksData.check_runs || [];
+          if (runs.length === 0) {
+            ciStatus = "pending";
+          } else if (runs.every((r: { conclusion: string }) => r.conclusion === "success")) {
+            ciStatus = "passing";
+          } else if (runs.some((r: { conclusion: string }) => r.conclusion === "failure")) {
+            ciStatus = "failing";
+          } else {
+            ciStatus = "in progress";
+          }
         }
-      }
-      lines.push(`  PR #${pr.number}: ${pr.title} (CI: ${ciStatus})\n  ${pr.html_url}`);
-    }
+        return `  PR #${pr.number}: ${pr.title} (CI: ${ciStatus})\n  ${pr.html_url}`;
+      })
+    );
+    lines.push(...prStatuses);
   } else {
     lines.push("Active fix PRs: none");
   }
