@@ -13,17 +13,13 @@ export async function DELETE(
   const { id, memberId } = await params;
   const db = getSupabase();
 
-  const { data: group, error: groupError } = await db.from("groups").select("owner_id").eq("id", id).single();
+  const [{ data: group, error: groupError }, { data: member, error: memberError }] = await Promise.all([
+    db.from("groups").select("owner_id").eq("id", id).single(),
+    db.from("group_members").select("id, user_id").eq("id", memberId).eq("group_id", id).maybeSingle(),
+  ]);
   if (groupError || !group || group.owner_id !== userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-
-  const { data: member, error: memberError } = await db
-    .from("group_members")
-    .select("id, user_id")
-    .eq("id", memberId)
-    .eq("group_id", id)
-    .maybeSingle();
 
   if (memberError) {
     console.error("[members/memberId] lookup:", memberError.message);
