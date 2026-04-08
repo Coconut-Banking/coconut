@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
 import { getSuggestedSettlements } from "@/lib/split-balances";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { getAccessibleGroupIds } from "@/lib/group-access";
@@ -105,6 +105,14 @@ export async function GET(req: NextRequest) {
     }
 
     if (personMembers.length === 0) {
+      // Splitwise-only friends exist in cached_friend_balances but have no
+      // group_members row with a matching email. Return their cached balance
+      // so tapping them from the home page doesn't 404.
+      if (key.includes("@")) {
+        const swFallback = await getSplitwiseCachedFriend(userId, key);
+        if (swFallback) return NextResponse.json(swFallback);
+      }
+
       return NextResponse.json(
         {
           displayName: null,
@@ -528,5 +536,64 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     console.error("[person]", err);
     return NextResponse.json({ error: "Failed to load person" }, { status: 500 });
+  }
+}
+
+type CachedFriend = {
+  first_name?: string;
+  last_name?: string;
+  email: string | null;
+  balance: { currency_code: string; amount: string }[];
+};
+
+async function getSplitwiseCachedFriend(userId: string, email: string) {
+  try {
+    const db = getSupabaseAdmin();
+    const { data: tokenRow } = await db
+      .from("splitwise_tokens")
+      .select("cached_friend_balances")
+      .eq("clerk_user_id", userId)
+      .maybeSingle();
+
+    const cached = (tokenRow as Record<string, unknown> | null)
+      ?.cached_friend_balances as CachedFriend[] | null;
+    if (!cached || !Array.isArray(cached)) return null;
+
+    const match = cached.find(
+      (f) => (f.email ?? "").toLowerCase().trim() === email.toLowerCase().trim()
+    );
+    if (!match) return null;
+
+    const name = [match.first_name, match.last_name].filter(Boolean).join(" ") || email;
+    const currencyBalances = (match.balance ?? [])
+      .map((b) => ({
+        currency: normalizeSplitCurrency(b.currency_code),
+        amount: Math.round(parseFloat(b.amount) * 100) / 100,
+      }))
+      .filter((b) => Math.abs(b.amount) >= BALANCE_EPS);
+
+    const balance =
+      currencyBalances.length === 1
+        ? currencyBalances[0].amount
+        : currencyBalances.length === 0
+          ? 0
+          : null;
+
+    return {
+      displayName: name,
+      balance,
+      currencyBalances,
+      activity: [],
+      email,
+      key: email,
+      settlements: [],
+      sharedGroupIds: [],
+      sharedGroups: [],
+      p2pHandles: { venmo_username: null, cashapp_cashtag: null, paypal_username: null },
+      _source: "splitwise_cache",
+    };
+  } catch (err) {
+    console.warn("[person] splitwise cache fallback failed:", err);
+    return null;
   }
 }
