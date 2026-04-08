@@ -21,21 +21,23 @@ export async function POST() {
   try {
     const db = getSupabase();
 
-    // Call item/remove so Plaid stops billing
+    // Call item/remove so Plaid stops billing (fire all removes in parallel)
     const { data: items } = await db.from("plaid_items").select("access_token").eq("clerk_user_id", effectiveUserId);
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
-      for (const item of items) {
-        const raw = item.access_token as string;
-        if (!raw) continue;
-        const token = decryptToken(raw);
-        try {
-          await plaid.itemRemove({ access_token: token });
-          console.log("[disconnect] itemRemove ok", { user_id: effectiveUserId });
-        } catch (e) {
-          console.warn("[disconnect] itemRemove failed (token may be invalid):", e instanceof Error ? e.message : e);
-        }
-      }
+      await Promise.all(
+        items.map(async (item) => {
+          const raw = item.access_token as string;
+          if (!raw) return;
+          const token = decryptToken(raw);
+          try {
+            await plaid.itemRemove({ access_token: token });
+            console.log("[disconnect] itemRemove ok", { user_id: effectiveUserId });
+          } catch (e) {
+            console.warn("[disconnect] itemRemove failed (token may be invalid):", e instanceof Error ? e.message : e);
+          }
+        })
+      );
     }
 
     // Clear email_receipts FK before deleting transactions (prevents FK violation)
@@ -43,19 +45,15 @@ export async function POST() {
       await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
     } catch { /* table may not exist */ }
 
-    // Get all user's transaction IDs first
-    const { data: allTx } = await db
-      .from("transactions")
-      .select("id, plaid_transaction_id")
-      .eq("clerk_user_id", effectiveUserId);
+    // Get all user's transactions and subscriptions in parallel (independent reads)
+    const [{ data: allTx }, { data: userSubs }] = await Promise.all([
+      db.from("transactions").select("id, plaid_transaction_id").eq("clerk_user_id", effectiveUserId),
+      db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId),
+    ]);
     const userTxIds = (allTx ?? []).map((r) => r.id as string);
 
     // 1. Delete subscription_transactions before subscriptions to avoid FK violations,
     //    and before bank transactions so subscription FK refs are cleared first.
-    const { data: userSubs } = await db
-      .from("subscriptions")
-      .select("id")
-      .eq("clerk_user_id", effectiveUserId);
     if (userSubs && userSubs.length > 0) {
       await db
         .from("subscription_transactions")
@@ -99,9 +97,11 @@ export async function POST() {
       await db.from("transactions").delete().in("id", bankIds);
     }
 
-    // Delete accounts and plaid_items
-    await db.from("accounts").delete().eq("clerk_user_id", effectiveUserId);
-    const { error } = await db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId);
+    // Delete accounts and plaid_items in parallel (independent)
+    const [, { error }] = await Promise.all([
+      db.from("accounts").delete().eq("clerk_user_id", effectiveUserId),
+      db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId),
+    ]);
     if (error) {
       console.error("[disconnect] plaid_items delete error:", error);
       return NextResponse.json({ error: "Disconnect failed" }, { status: 500 });
