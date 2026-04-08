@@ -29,25 +29,22 @@ export async function GET(
   try {
     const db = getSupabase();
 
-    // Fetch group first, then check access inline — avoids canAccessGroup's redundant re-query
+    // Fetch group and member access check in parallel — avoids canAccessGroup's redundant re-query
     let group: Record<string, unknown> | null = null;
-    {
-      const res = await db.from("groups").select("id, name, owner_id, created_at, group_type, invite_token, archived_at, image_url, source, external_id").eq("id", id).single();
-      if (res.error?.code === "42703") {
-        const fallback = await db.from("groups").select("id, name, owner_id, created_at, group_type, invite_token, image_url, source, external_id").eq("id", id).single();
-        group = fallback.data;
-      } else {
-        group = res.error ? null : res.data;
-      }
+    const [groupResult, memberResult] = await Promise.all([
+      db.from("groups").select("id, name, owner_id, created_at, group_type, invite_token, archived_at, image_url, source, external_id").eq("id", id).single(),
+      db.from("group_members").select("id").eq("group_id", id).eq("user_id", userId).maybeSingle(),
+    ]);
+    if (groupResult.error?.code === "42703") {
+      const fallback = await db.from("groups").select("id, name, owner_id, created_at, group_type, invite_token, image_url, source, external_id").eq("id", id).single();
+      group = fallback.data;
+    } else {
+      group = groupResult.error ? null : groupResult.data;
     }
     if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    if (group.owner_id !== userId) {
-      const { data: member } = await db.from("group_members").select("id").eq("group_id", id).eq("user_id", userId).maybeSingle();
-      if (!member) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
     const isOwner = group.owner_id === userId;
+    if (!isOwner && !memberResult.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     // Lazy-migrate data URI to Supabase Storage if still using inline base64
     if ((group as Record<string, unknown>).image_url && typeof (group as Record<string, unknown>).image_url === "string" && ((group as Record<string, unknown>).image_url as string).startsWith("data:")) {
