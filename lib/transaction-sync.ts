@@ -248,19 +248,22 @@ export async function remapEmailReceiptsBeforeTxDedupeDelete(
     arr.push(dupId);
     byKept.set(kept, arr);
   }
-  for (const [keptId, dupIds] of byKept) {
-    for (let i = 0; i < dupIds.length; i += EMAIL_RECEIPT_TX_IN_CHUNK) {
-      const chunk = dupIds.slice(i, i + EMAIL_RECEIPT_TX_IN_CHUNK);
-      const { error } = await db
-        .from("email_receipts")
-        .update({ transaction_id: keptId })
-        .in("transaction_id", chunk)
-        .eq("clerk_user_id", clerkUserId);
-      if (error) {
-        console.warn("[transactions] receipt remap before dedupe delete failed:", error.message);
-      }
-    }
-  }
+  await Promise.all(
+    Array.from(byKept.entries()).flatMap(([keptId, dupIds]) =>
+      Array.from({ length: Math.ceil(dupIds.length / EMAIL_RECEIPT_TX_IN_CHUNK) }, (_, i) =>
+        db
+          .from("email_receipts")
+          .update({ transaction_id: keptId })
+          .in("transaction_id", dupIds.slice(i * EMAIL_RECEIPT_TX_IN_CHUNK, (i + 1) * EMAIL_RECEIPT_TX_IN_CHUNK))
+          .eq("clerk_user_id", clerkUserId)
+          .then(({ error }) => {
+            if (error) {
+              console.warn("[transactions] receipt remap before dedupe delete failed:", error.message);
+            }
+          })
+      )
+    )
+  );
   await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, duplicateIdsBeingDeleted);
 }
 
