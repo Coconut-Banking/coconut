@@ -102,19 +102,15 @@ export async function DELETE(
   try {
     const admin = getSupabaseAdmin();
 
-    // Remove both possible extensions
-    const { error: removeError } = await admin.storage
-      .from("group-icons")
-      .remove([`${id}.jpg`, `${id}.png`]);
+    // Remove storage files and clear DB in parallel — they are independent
+    const [{ error: removeError }, { error: updateError }] = await Promise.all([
+      admin.storage.from("group-icons").remove([`${id}.jpg`, `${id}.png`]),
+      admin.from("groups").update({ image_url: null }).eq("id", id),
+    ]);
 
     if (removeError) {
       console.error("[group-icon] storage remove error:", removeError);
     }
-
-    const { error: updateError } = await admin
-      .from("groups")
-      .update({ image_url: null })
-      .eq("id", id);
 
     if (updateError) {
       console.error("[group-icon] db update error:", updateError);
