@@ -32,10 +32,10 @@ export async function GET() {
   }
 
   const groupMap = new Map(groups.map((g) => [g.id, g]));
-  const memberCountByGroup = (members ?? []).reduce(
-    (acc, m) => ({ ...acc, [m.group_id]: (acc[m.group_id] ?? 0) + 1 }),
-    {} as Record<string, number>
-  );
+  const memberCountByGroup = new Map<string, number>();
+  for (const m of members ?? []) {
+    memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
+  }
 
   // People: other members (exclude self), deduped by user_id or email or (group_id + member_id)
   const peopleByKey = new Map<string, { displayName: string; email: string | null; groupId: string; groupName: string; memberId: string; memberCount: number }>();
@@ -45,7 +45,7 @@ export async function GET() {
     const group = groupMap.get(m.group_id);
     if (!group) continue;
 
-    const memberCount = memberCountByGroup[m.group_id] ?? 0;
+    const memberCount = memberCountByGroup.get(m.group_id) ?? 0;
     const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
 
     // Prefer 2-person groups for "split with person" when same person appears in multiple groups
@@ -67,8 +67,8 @@ export async function GET() {
     a.displayName.localeCompare(b.displayName)
   );
 
-  return NextResponse.json({
-    people,
-    groups: groups.map((g) => ({ id: g.id, name: g.name })),
-  });
+  return NextResponse.json(
+    { people, groups: groups.map((g) => ({ id: g.id, name: g.name })) },
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=120" } }
+  );
 }
