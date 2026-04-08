@@ -74,8 +74,11 @@ export async function canAccessGroup(
 export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
   const db = getSupabase();
 
-  const [, ownedRes, memberRes] = await Promise.all([
-    linkMemberByEmail(userId),
+  // Link first, THEN query — avoids race where linking completes after
+  // the member query, causing a new user to miss their groups on first load.
+  await linkMemberByEmail(userId);
+
+  const [ownedRes, memberRes] = await Promise.all([
     db.from("groups").select("id").eq("owner_id", userId),
     db.from("group_members").select("group_id").eq("user_id", userId),
   ]);
