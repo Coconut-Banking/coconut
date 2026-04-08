@@ -8,17 +8,17 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params + body parse (independent)
+  const [userId, { id }, bodyRaw] = await Promise.all([
+    getUserId(),
+    params,
+    req.json().catch(() => null),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (bodyRaw === null) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 
-  const { id } = await params;
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-  const displayName = (body.displayName ?? body.display_name ?? "").trim().slice(0, 100);
+  const body = bodyRaw as Record<string, unknown>;
+  const displayName = ((body.displayName ?? body.display_name ?? "") as string).trim().slice(0, 100);
   const email = (body.email as string)?.trim()?.toLowerCase() || null;
 
   if (!displayName) return NextResponse.json({ error: "displayName required" }, { status: 400 });
@@ -63,10 +63,10 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
   const db = getSupabase();
 
   // Single parallel access check: ownership OR membership
@@ -99,18 +99,22 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params + body parse (independent)
+  const [userId, { id }, bodyRaw] = await Promise.all([
+    getUserId(),
+    params,
+    req.json().catch(() => null),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (bodyRaw === null) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 
-  const { id } = await params;
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-
-  const { memberId, venmo_username, cashapp_cashtag, paypal_username } = body;
+  const body = bodyRaw as Record<string, unknown>;
+  const { memberId, venmo_username, cashapp_cashtag, paypal_username } = body as {
+    memberId?: string;
+    venmo_username?: string | null;
+    cashapp_cashtag?: string | null;
+    paypal_username?: string | null;
+  };
   if (!memberId) return NextResponse.json({ error: "memberId required" }, { status: 400 });
 
   const db = getSupabase();
@@ -173,10 +177,10 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
   const db = getSupabase();
 
   const [{ data: group, error: groupError }, { data: membership, error: membershipError }] = await Promise.all([

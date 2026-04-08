@@ -11,10 +11,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
+  // Parallelize auth + params (independent)
+  const [{ userId }, { id }] = await Promise.all([auth(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
   const db = getSupabase();
 
   const { data: split, error: splitError } = await db
@@ -71,16 +70,15 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
+  // Parallelize auth + params + body parse (independent)
+  const [{ userId }, { id }, bodyRaw] = await Promise.all([
+    auth(),
+    params,
+    req.json().catch(() => null),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
+  if (bodyRaw === null) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  const body = bodyRaw as Record<string, unknown>;
 
   const db = getSupabase();
 
