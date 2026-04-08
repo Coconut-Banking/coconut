@@ -311,6 +311,12 @@ async function detectFromEmailReceipts(
 
   const results: DetectedSubscription[] = [];
 
+  // Pre-normalize transaction keys once to avoid re-computing inside the loop
+  const normalizedTxPairs = txs.map((tx) => ({
+    tx,
+    txKey: normalizeMerchantName(tx.merchant_name || tx.raw_name || tx.normalized_merchant || ""),
+  }));
+
   for (const [key, list] of byMerchant) {
     if (list.length < MIN_OCCURRENCES) continue;
     list.sort((a, b) => b.date.localeCompare(a.date));
@@ -332,10 +338,9 @@ async function detectFromEmailReceipts(
     if (shouldExcludeAsSubscription(null, latest.merchant, "")) continue;
 
     // Find matching transactions for these email receipts
-    const matchingTxs = txs.filter((tx) => {
-      const txKey = normalizeMerchantName(tx.merchant_name || tx.raw_name || tx.normalized_merchant || "");
-      return txKey === key || txKey.includes(key) || key.includes(txKey);
-    });
+    const matchingTxs = normalizedTxPairs
+      .filter(({ txKey }) => txKey === key || txKey.includes(key) || key.includes(txKey))
+      .map(({ tx }) => tx);
     const avgDays = dayDiffs.reduce((s, d) => s + d, 0) / dayDiffs.length;
     const nextDue = addDays(latest.date, Math.round(avgDays));
 
