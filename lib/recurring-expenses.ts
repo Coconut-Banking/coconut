@@ -117,22 +117,22 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
         const targetMember = memberId ? members.find((m: { id: string }) => m.id === memberId) : null;
         const splitMemberIds = [payerMember, targetMember].filter(Boolean).map((m) => (m as { id: string }).id);
         const shares = computeEqualShares(Math.abs(rec.amount), splitMemberIds);
-        for (const s of shares) {
-          await db.from("split_shares").insert({
+        if (shares.length > 0) {
+          await db.from("split_shares").insert(shares.map((s) => ({
             split_transaction_id: splitRow.id,
             member_id: s.memberId,
             amount: s.amount,
-          });
+          })));
         }
       } else {
         const memberIds = members.map((m: { id: string }) => m.id);
         const shares = computeEqualShares(Math.abs(rec.amount), memberIds);
-        for (const s of shares) {
-          await db.from("split_shares").insert({
+        if (shares.length > 0) {
+          await db.from("split_shares").insert(shares.map((s) => ({
             split_transaction_id: splitRow.id,
             member_id: s.memberId,
             amount: s.amount,
-          });
+          })));
         }
       }
 

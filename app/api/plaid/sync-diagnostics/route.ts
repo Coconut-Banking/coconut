@@ -35,40 +35,21 @@ export async function GET(request: Request) {
   }
 
   async function loadTxSnapshot() {
-    const { count: c, error: countErr } = await db
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("clerk_user_id", effectiveUserId)
-      .not("plaid_transaction_id", "like", "manual_%");
+    const [
+      { count: c, error: countErr },
+      { count: pend },
+      { data: latest },
+      { data: oldest },
+    ] = await Promise.all([
+      db.from("transactions").select("id", { count: "exact", head: true }).eq("clerk_user_id", effectiveUserId).not("plaid_transaction_id", "like", "manual_%"),
+      db.from("transactions").select("id", { count: "exact", head: true }).eq("clerk_user_id", effectiveUserId).eq("is_pending", true).not("plaid_transaction_id", "like", "manual_%"),
+      db.from("transactions").select("date, merchant_name, raw_name, is_pending").eq("clerk_user_id", effectiveUserId).not("plaid_transaction_id", "like", "manual_%").order("date", { ascending: false }).limit(1).maybeSingle(),
+      db.from("transactions").select("date").eq("clerk_user_id", effectiveUserId).not("plaid_transaction_id", "like", "manual_%").order("date", { ascending: true }).limit(1).maybeSingle(),
+    ]);
 
     if (countErr) {
       return { error: countErr.message as string };
     }
-
-    const { count: pend } = await db
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("clerk_user_id", effectiveUserId)
-      .eq("is_pending", true)
-      .not("plaid_transaction_id", "like", "manual_%");
-
-    const { data: latest } = await db
-      .from("transactions")
-      .select("date, merchant_name, raw_name, is_pending")
-      .eq("clerk_user_id", effectiveUserId)
-      .not("plaid_transaction_id", "like", "manual_%")
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const { data: oldest } = await db
-      .from("transactions")
-      .select("date")
-      .eq("clerk_user_id", effectiveUserId)
-      .not("plaid_transaction_id", "like", "manual_%")
-      .order("date", { ascending: true })
-      .limit(1)
-      .maybeSingle();
 
     return {
       txCount: c ?? 0,

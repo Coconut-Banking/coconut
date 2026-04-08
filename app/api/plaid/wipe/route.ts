@@ -25,17 +25,16 @@ export async function POST() {
     const { data: items } = await db.from("plaid_items").select("access_token").eq("clerk_user_id", effectiveUserId);
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
-      for (const item of items) {
-        const raw = item.access_token as string;
-        if (!raw) continue;
-        const token = decryptToken(raw);
-        try {
-          await plaid.itemRemove({ access_token: token });
-          console.log("[wipe] itemRemove ok", { user_id: effectiveUserId });
-        } catch (e) {
-          console.warn("[wipe] itemRemove failed:", e instanceof Error ? e.message : e);
-        }
-      }
+      await Promise.allSettled(
+        items
+          .filter((item) => item.access_token)
+          .map((item) =>
+            plaid
+              .itemRemove({ access_token: decryptToken(item.access_token as string) })
+              .then(() => console.log("[wipe] itemRemove ok", { user_id: effectiveUserId }))
+              .catch((e) => console.warn("[wipe] itemRemove failed:", e instanceof Error ? e.message : e))
+          )
+      );
     }
 
     // Clear email_receipts FK before deleting transactions (prevents FK violation)
@@ -62,12 +61,11 @@ export async function POST() {
     const wipeUserTxIds = (userTxForWipe ?? []).map((r) => r.id as string);
     if (wipeUserTxIds.length > 0) {
       const CHUNK = 100;
-      for (let i = 0; i < wipeUserTxIds.length; i += CHUNK) {
-        await db
-          .from("subscription_transactions")
-          .delete()
-          .in("transaction_id", wipeUserTxIds.slice(i, i + CHUNK));
-      }
+      await Promise.all(
+        Array.from({ length: Math.ceil(wipeUserTxIds.length / CHUNK) }, (_, i) =>
+          db.from("subscription_transactions").delete().in("transaction_id", wipeUserTxIds.slice(i * CHUNK, (i + 1) * CHUNK))
+        )
+      );
     }
 
     // Delete ALL transactions (manual + bank)
