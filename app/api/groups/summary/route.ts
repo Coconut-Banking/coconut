@@ -146,7 +146,8 @@ async function handleSummary(req: NextRequest, userId: string) {
     db
       .from("group_members")
       .select("id, group_id, user_id, display_name, email")
-      .in("group_id", groupIds),
+      .in("group_id", groupIds)
+      .limit(50000),
     db
       .from("split_transactions")
       .select(`
@@ -161,7 +162,8 @@ async function handleSummary(req: NextRequest, userId: string) {
       .from("settlements")
       .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
       .in("group_id", groupIds)
-      .eq("status", "completed"),
+      .eq("status", "completed")
+      .limit(50000),
     db
       .from("splitwise_tokens")
       .select("cached_friend_balances, cached_group_balances")
@@ -177,16 +179,39 @@ async function handleSummary(req: NextRequest, userId: string) {
   let txRows: { id: string; clerk_user_id: string }[] = [];
 
   if (splitIds.length > 0 || txIds.length > 0) {
-    const [sharesResult, txResult] = await Promise.all([
-      splitIds.length > 0
-        ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds)
-        : Promise.resolve({ data: null }),
-      txIds.length > 0
-        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
-        : Promise.resolve({ data: null }),
+    type ShareRow = { split_transaction_id: string; member_id: string; amount: number };
+    type TxRow = { id: string; clerk_user_id: string };
+    const BATCH = 500;
+    const sharesBatches: Promise<ShareRow[]>[] = [];
+    for (let i = 0; i < splitIds.length; i += BATCH) {
+      const batch = splitIds.slice(i, i + BATCH);
+      sharesBatches.push(
+        Promise.resolve(
+          db.from("split_shares")
+            .select("split_transaction_id, member_id, amount")
+            .in("split_transaction_id", batch)
+            .limit(50000)
+        ).then((r) => (r.data ?? []) as ShareRow[])
+      );
+    }
+    const txBatches: Promise<TxRow[]>[] = [];
+    for (let i = 0; i < txIds.length; i += BATCH) {
+      const batch = txIds.slice(i, i + BATCH);
+      txBatches.push(
+        Promise.resolve(
+          db.from("transactions")
+            .select("id, clerk_user_id")
+            .in("id", batch)
+            .limit(50000)
+        ).then((r) => (r.data ?? []) as TxRow[])
+      );
+    }
+    const [sharesResults, txResults] = await Promise.all([
+      Promise.all(sharesBatches),
+      Promise.all(txBatches),
     ]);
-    shares = sharesResult.data ?? [];
-    txRows = txResult.data ?? [];
+    shares = sharesResults.flat();
+    txRows = txResults.flat();
   }
 
   const memberByGroup = new Map<string, { id: string; user_id: string | null; display_name: string; email: string | null }[]>();

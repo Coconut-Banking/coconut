@@ -151,18 +151,39 @@ export async function GET(
     const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
     const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
 
-    const [sharesResult, txResult, photoMap] = await Promise.all([
-      splitIdList.length > 0
-        ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIdList)
-        : Promise.resolve({ data: null }),
-      txIds.length > 0
-        ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
-        : Promise.resolve({ data: null }),
+    const BATCH = 500;
+    const sharesBatchPromises: Promise<{ split_transaction_id: string; member_id: string; amount: number }[]>[] = [];
+    for (let i = 0; i < splitIdList.length; i += BATCH) {
+      const batch = splitIdList.slice(i, i + BATCH);
+      sharesBatchPromises.push(
+        Promise.resolve(
+          db.from("split_shares")
+            .select("split_transaction_id, member_id, amount")
+            .in("split_transaction_id", batch)
+            .limit(50000)
+        ).then((r) => (r.data ?? []) as { split_transaction_id: string; member_id: string; amount: number }[])
+      );
+    }
+    const txBatchPromises: Promise<{ id: string; clerk_user_id: string }[]>[] = [];
+    for (let i = 0; i < txIds.length; i += BATCH) {
+      const batch = txIds.slice(i, i + BATCH);
+      txBatchPromises.push(
+        Promise.resolve(
+          db.from("transactions")
+            .select("id, clerk_user_id")
+            .in("id", batch)
+            .limit(50000)
+        ).then((r) => (r.data ?? []) as { id: string; clerk_user_id: string }[])
+      );
+    }
+    const [sharesBatchResults, txBatchResults, photoMap] = await Promise.all([
+      splitIdList.length > 0 ? Promise.all(sharesBatchPromises) : Promise.resolve([] as { split_transaction_id: string; member_id: string; amount: number }[][]),
+      txIds.length > 0 ? Promise.all(txBatchPromises) : Promise.resolve([] as { id: string; clerk_user_id: string }[][]),
       getClerkUserPhotos(memberUserIds),
     ]);
 
-    const shares = sharesResult.data;
-    const txRows: { id: string; clerk_user_id: string }[] = txResult.data ?? [];
+    const shares = sharesBatchResults.flat();
+    const txRows = txBatchResults.flat();
 
     members = (members ?? []).map((m) => ({
       ...m,

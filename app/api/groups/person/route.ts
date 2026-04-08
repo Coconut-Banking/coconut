@@ -219,14 +219,39 @@ export async function GET(req: NextRequest) {
     let shares: { split_transaction_id: string; member_id: string; amount: number }[] | null = null;
     let txRows: { id: string; clerk_user_id: string }[] = [];
     if (splitIdList.length > 0) {
-      const [sharesResult, txResult] = await Promise.all([
-        db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIdList),
-        txIds.length > 0
-          ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
-          : Promise.resolve({ data: null }),
+      const BATCH = 500;
+      type ShareRow = { split_transaction_id: string; member_id: string; amount: number };
+      type TxRow = { id: string; clerk_user_id: string };
+      const sharesBatches: Promise<ShareRow[]>[] = [];
+      for (let i = 0; i < splitIdList.length; i += BATCH) {
+        const batch = splitIdList.slice(i, i + BATCH);
+        sharesBatches.push(
+          Promise.resolve(
+            db.from("split_shares")
+              .select("split_transaction_id, member_id, amount")
+              .in("split_transaction_id", batch)
+              .limit(50000)
+          ).then((r) => (r.data ?? []) as ShareRow[])
+        );
+      }
+      const txBatches: Promise<TxRow[]>[] = [];
+      for (let i = 0; i < txIds.length; i += BATCH) {
+        const batch = txIds.slice(i, i + BATCH);
+        txBatches.push(
+          Promise.resolve(
+            db.from("transactions")
+              .select("id, clerk_user_id")
+              .in("id", batch)
+              .limit(50000)
+          ).then((r) => (r.data ?? []) as TxRow[])
+        );
+      }
+      const [sharesResults, txResults] = await Promise.all([
+        Promise.all(sharesBatches),
+        Promise.all(txBatches),
       ]);
-      shares = sharesResult.data;
-      txRows = txResult.data ?? [];
+      shares = sharesResults.flat();
+      txRows = txResults.flat();
     }
 
     const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
