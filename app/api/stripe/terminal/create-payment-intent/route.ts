@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
 
   let body: {
     amount: number;
+    currency?: string;
     groupId?: string;
     payerMemberId?: string;
     receiverMemberId?: string;
@@ -91,20 +92,30 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // card_present requires the currency matching the Stripe account's country
-  let currency = DEFAULT_CURRENCY;
-  try {
-    const acct = await stripe.accounts.retrieve();
-    const country = (acct.country ?? "").toUpperCase();
-    const countryToCurrency: Record<string, string> = {
-      CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
-      SG: "sgd", HK: "hkd", JP: "jpy", EU: "eur",
-      DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
-      IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
-    };
-    currency = countryToCurrency[country] ?? DEFAULT_CURRENCY;
-  } catch {
-    // Fallback to default
+  // Use the expense currency when provided; fall back to the Stripe account's
+  // country currency only as a last resort. The old behaviour always derived
+  // currency from the Stripe account country which mis-labelled USD amounts as
+  // CAD (or vice-versa), making Stripe reject small amounts below the converted
+  // minimum.
+  const clientCurrency = typeof body.currency === "string" && /^[a-zA-Z]{3}$/.test(body.currency)
+    ? body.currency.toLowerCase()
+    : null;
+
+  let currency = clientCurrency ?? DEFAULT_CURRENCY;
+  if (!clientCurrency) {
+    try {
+      const acct = await stripe.accounts.retrieve();
+      const country = (acct.country ?? "").toUpperCase();
+      const countryToCurrency: Record<string, string> = {
+        CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
+        SG: "sgd", HK: "hkd", JP: "jpy", EU: "eur",
+        DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
+        IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
+      };
+      currency = countryToCurrency[country] ?? DEFAULT_CURRENCY;
+    } catch {
+      // Fallback to default
+    }
   }
 
   try {
