@@ -155,7 +155,7 @@ export async function GET(req: NextRequest) {
 
     const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
-    const sharesBySplitId = new Map<string, typeof shares[number][]>();
+    const sharesBySplitId = new Map<string, NonNullable<typeof shares>[number][]>();
     for (const sh of shares ?? []) {
       const arr = sharesBySplitId.get(sh.split_transaction_id) ?? [];
       arr.push(sh);

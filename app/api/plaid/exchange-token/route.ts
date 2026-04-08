@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
           .delete()
           .eq("clerk_user_id", effectiveUserId)
           .in("id", idsToDelete);
-        if (process.env.NODE_ENV === 'development') console.log("[plaid][exchange-token] cleared_existing_transactions", {
+        console.log("[plaid][exchange-token] cleared_existing_transactions", {
           trace_id: traceId,
           user_id: effectiveUserId,
           count: idsToDelete.length,
