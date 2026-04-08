@@ -3,11 +3,19 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 
+const DEFAULT_ADDRESSES: Record<string, Stripe.Terminal.LocationCreateParams["address"]> = {
+  CA: { line1: "123 Main St", city: "Toronto", state: "ON", postal_code: "M5V 1A1", country: "CA" },
+  US: { line1: "123 Main St", city: "San Francisco", state: "CA", postal_code: "94102", country: "US" },
+  GB: { line1: "1 High Street", city: "London", postal_code: "EC1A 1BB", country: "GB" },
+  AU: { line1: "1 George St", city: "Sydney", state: "NSW", postal_code: "2000", country: "AU" },
+};
+
 /**
  * GET /api/stripe/terminal/location
- * Returns the first Stripe Terminal location ID for Tap to Pay.
- * Tap to Pay on iPhone requires a location when connecting the reader.
- * If no location exists, creates one.
+ * Returns a Stripe Terminal location whose country matches the Stripe
+ * account's country. Tap to Pay requires this match or processPaymentIntent
+ * fails with terminal_reader_invalid_location_for_payment.
+ * Creates one if none exist for the account's country.
  */
 export async function GET() {
   const { userId } = await auth();
@@ -21,22 +29,29 @@ export async function GET() {
   const stripe = new Stripe(key);
 
   try {
-    const { data: locations } = await stripe.terminal.locations.list({ limit: 1 });
+    const acct = await stripe.accounts.retrieve();
+    const accountCountry = (acct.country ?? "US").toUpperCase();
 
-    if (locations.length > 0) {
-      return NextResponse.json({ locationId: locations[0].id });
+    // Find an existing location in the account's country
+    const { data: locations } = await stripe.terminal.locations.list({ limit: 100 });
+    const match = locations.find(
+      (loc) => (loc.address?.country ?? "").toUpperCase() === accountCountry
+    );
+
+    if (match) {
+      return NextResponse.json({ locationId: match.id });
     }
 
-    // Create a default location if none exist (required for Tap to Pay)
+    // No location in the right country — create one
+    const address = DEFAULT_ADDRESSES[accountCountry] ?? {
+      line1: "1 Main St",
+      city: "Default",
+      postal_code: "00000",
+      country: accountCountry,
+    };
     const location = await stripe.terminal.locations.create({
-      display_name: "Default",
-      address: {
-        line1: "123 Main St",
-        city: "San Francisco",
-        state: "CA",
-        postal_code: "94102",
-        country: "US",
-      },
+      display_name: `Default (${accountCountry})`,
+      address,
     });
     return NextResponse.json({ locationId: location.id });
   } catch (e) {
