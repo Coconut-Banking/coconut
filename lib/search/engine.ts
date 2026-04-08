@@ -192,7 +192,17 @@ export async function searchV2(
     );
   }
 
-  const { data: allTxRows } = await merchantQuery.limit(5000);
+  // ── Steps 2–3: Run all retrieval strategies in parallel ──────────────
+  const [{ data: allTxRows }, vectorResults, fuzzyResults] = await Promise.all([
+    merchantQuery.limit(5000),
+    vectorSearch(clerkUserId, parsed, 80).catch((e) => {
+      console.warn("[search-v2] vector search failed:", e);
+      return [] as SearchTransaction[];
+    }),
+    parsed.merchant_search
+      ? fuzzyMerchantSearch(clerkUserId, parsed).catch(() => [] as SearchTransaction[])
+      : Promise.resolve([] as SearchTransaction[]),
+  ]);
 
   // Deduplicate to one sample per merchant
   const merchantMap = new Map<string, SearchTransaction>();
@@ -206,15 +216,7 @@ export async function searchV2(
   const uniqueMerchantSamples = [...merchantMap.values()];
   console.log(`[search-v2] unique merchants: ${uniqueMerchantSamples.length}`);
 
-  // ── Step 3: Also run vector search for semantic discovery ────────────
-  // Vector search helps surface merchants that are semantically relevant
-  // but might not be obvious from name alone (e.g. "Starbird Chicken"
-  // for "eating out"). Merge its merchants into the set.
-  const vectorResults = await vectorSearch(clerkUserId, parsed, 80).catch((e) => {
-    console.warn("[search-v2] vector search failed:", e);
-    return [] as SearchTransaction[];
-  });
-
+  // Also run vector search for semantic discovery
   for (const tx of vectorResults) {
     const key = (tx.normalized_merchant || tx.merchant_name || tx.raw_name || "").toLowerCase().trim();
     if (key && !merchantMap.has(key)) {
@@ -223,15 +225,12 @@ export async function searchV2(
     }
   }
 
-  // If merchant_search is set, also add fuzzy matches
-  if (parsed.merchant_search) {
-    const fuzzyResults = await fuzzyMerchantSearch(clerkUserId, parsed).catch(() => [] as SearchTransaction[]);
-    for (const tx of fuzzyResults) {
-      const key = (tx.normalized_merchant || tx.merchant_name || tx.raw_name || "").toLowerCase().trim();
-      if (key && !merchantMap.has(key)) {
-        merchantMap.set(key, tx);
-        uniqueMerchantSamples.push(tx);
-      }
+  // Merge fuzzy matches
+  for (const tx of fuzzyResults) {
+    const key = (tx.normalized_merchant || tx.merchant_name || tx.raw_name || "").toLowerCase().trim();
+    if (key && !merchantMap.has(key)) {
+      merchantMap.set(key, tx);
+      uniqueMerchantSamples.push(tx);
     }
   }
 
