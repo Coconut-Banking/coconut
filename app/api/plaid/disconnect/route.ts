@@ -25,17 +25,19 @@ export async function POST() {
     const { data: items } = await db.from("plaid_items").select("access_token").eq("clerk_user_id", effectiveUserId);
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
-      for (const item of items) {
-        const raw = item.access_token as string;
-        if (!raw) continue;
-        const token = decryptToken(raw);
-        try {
-          await plaid.itemRemove({ access_token: token });
-          console.log("[disconnect] itemRemove ok", { user_id: effectiveUserId });
-        } catch (e) {
-          console.warn("[disconnect] itemRemove failed (token may be invalid):", e instanceof Error ? e.message : e);
-        }
-      }
+      await Promise.all(
+        items.map(async (item) => {
+          const raw = item.access_token as string;
+          if (!raw) return;
+          const token = decryptToken(raw);
+          try {
+            await plaid.itemRemove({ access_token: token });
+            console.log("[disconnect] itemRemove ok", { user_id: effectiveUserId });
+          } catch (e) {
+            console.warn("[disconnect] itemRemove failed (token may be invalid):", e instanceof Error ? e.message : e);
+          }
+        })
+      );
     }
 
     // Clear email_receipts FK before deleting transactions (prevents FK violation)
@@ -43,19 +45,15 @@ export async function POST() {
       await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
     } catch { /* table may not exist */ }
 
-    // Get all user's transaction IDs first
-    const { data: allTx } = await db
-      .from("transactions")
-      .select("id, plaid_transaction_id")
-      .eq("clerk_user_id", effectiveUserId);
+    // Get all user's transaction IDs and subscriptions in parallel
+    const [{ data: allTx }, { data: userSubs }] = await Promise.all([
+      db.from("transactions").select("id, plaid_transaction_id").eq("clerk_user_id", effectiveUserId),
+      db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId),
+    ]);
     const userTxIds = (allTx ?? []).map((r) => r.id as string);
 
     // 1. Delete subscription_transactions before subscriptions to avoid FK violations,
     //    and before bank transactions so subscription FK refs are cleared first.
-    const { data: userSubs } = await db
-      .from("subscriptions")
-      .select("id")
-      .eq("clerk_user_id", effectiveUserId);
     if (userSubs && userSubs.length > 0) {
       await db
         .from("subscription_transactions")
@@ -72,12 +70,9 @@ export async function POST() {
     //     Must happen before deleting transactions to avoid ON DELETE RESTRICT FK violations.
     if (userTxIds.length > 0) {
       const CHUNK = 100;
-      for (let i = 0; i < userTxIds.length; i += CHUNK) {
-        await db
-          .from("subscription_transactions")
-          .delete()
-          .in("transaction_id", userTxIds.slice(i, i + CHUNK));
-      }
+      const chunks: string[][] = [];
+      for (let i = 0; i < userTxIds.length; i += CHUNK) chunks.push(userTxIds.slice(i, i + CHUNK));
+      await Promise.all(chunks.map((chunk) => db.from("subscription_transactions").delete().in("transaction_id", chunk)));
     }
 
     // 3. Protect bank transactions that are still referenced by split_transactions
