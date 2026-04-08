@@ -46,17 +46,16 @@ export async function DELETE(
     revalidateTag(CACHE_TAGS.transactions(linkedTxClerkUserId), "max");
   }
 
-  const { count } = await db
-    .from("split_transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("group_id", split.group_id);
+  const [countResult] = await Promise.all([
+    db.from("split_transactions").select("id", { count: "exact", head: true }).eq("group_id", split.group_id),
+    split.transaction_id
+      ? db.from("transactions").delete().eq("id", split.transaction_id)
+      : Promise.resolve(null),
+  ]);
+  const { count } = countResult;
 
   if (count === 0) {
     await db.from("settlements").delete().eq("group_id", split.group_id);
-  }
-
-  if (split.transaction_id) {
-    await db.from("transactions").delete().eq("id", split.transaction_id);
   }
 
   return NextResponse.json({ ok: true });
@@ -123,18 +122,11 @@ export async function PATCH(
     }
   }
 
-  if (description && split.transaction_id) {
-    await db
-      .from("transactions")
-      .update({ merchant_name: description, raw_name: description })
-      .eq("id", split.transaction_id);
-  }
-
-  if (newAmount && split.transaction_id) {
-    await db
-      .from("transactions")
-      .update({ amount: -newAmount })
-      .eq("id", split.transaction_id);
+  if (split.transaction_id && (description || newAmount)) {
+    const txUpdate: Record<string, string | number> = {};
+    if (description) { txUpdate.merchant_name = description; txUpdate.raw_name = description; }
+    if (newAmount) txUpdate.amount = -newAmount;
+    await db.from("transactions").update(txUpdate).eq("id", split.transaction_id);
   }
 
   const splitUpdates: Record<string, string | number | null> = {};
