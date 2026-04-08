@@ -8,47 +8,48 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getEffectiveUserId();
+  // Parallelize auth + params + body parse (independent)
+  const [userId, { id }, bodyRaw] = await Promise.all([
+    getEffectiveUserId(),
+    params,
+    req.json().catch(() => null),
+  ]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const { id } = await params;
-
-  let body;
-  try {
-    body = await req.json();
-  } catch {
+  if (bodyRaw === null) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { transactionId } = body;
+  const { transactionId } = bodyRaw as { transactionId?: string };
   if (!transactionId || typeof transactionId !== "string") {
     return NextResponse.json({ error: "transactionId is required" }, { status: 400 });
   }
 
   const db = getSupabase();
 
-  // Verify receipt ownership
-  const { data: receipt, error: receiptError } = await db
-    .from("email_receipts")
-    .select("id")
-    .eq("id", id)
-    .eq("clerk_user_id", userId)
-    .single();
+  // Verify receipt + transaction ownership in parallel
+  const [
+    { data: receipt, error: receiptError },
+    { data: transaction, error: txError },
+  ] = await Promise.all([
+    db
+      .from("email_receipts")
+      .select("id")
+      .eq("id", id)
+      .eq("clerk_user_id", userId)
+      .single(),
+    db
+      .from("transactions")
+      .select("id")
+      .eq("id", transactionId)
+      .eq("clerk_user_id", userId)
+      .single(),
+  ]);
 
   if (receiptError || !receipt) {
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
-
-  // Verify transaction ownership
-  const { data: transaction, error: txError } = await db
-    .from("transactions")
-    .select("id")
-    .eq("id", transactionId)
-    .eq("clerk_user_id", userId)
-    .single();
-
   if (txError || !transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
@@ -73,12 +74,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getEffectiveUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getEffectiveUserId(), params]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const { id } = await params;
   const db = getSupabase();
 
   // Verify receipt ownership

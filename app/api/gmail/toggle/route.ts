@@ -23,12 +23,14 @@ export async function POST(request: NextRequest) {
   const db = getSupabase();
 
   if (enabled) {
-    const hasGoogle = await hasClerkGoogleOAuth(userId);
-    const { data: existing } = await db
-      .from("gmail_connections")
-      .select("access_token")
-      .eq("clerk_user_id", userId)
-      .maybeSingle();
+    const [hasGoogle, { data: existing }] = await Promise.all([
+      hasClerkGoogleOAuth(userId),
+      db
+        .from("gmail_connections")
+        .select("access_token")
+        .eq("clerk_user_id", userId)
+        .maybeSingle(),
+    ]);
     const hasLegacyTokens = Boolean(existing?.access_token);
 
     if (!hasGoogle && !hasLegacyTokens) {

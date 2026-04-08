@@ -101,7 +101,7 @@ export interface SplitwiseExpense {
   created_by?: { id: number; first_name: string; last_name: string };
 }
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────────
+// ── Fetchers ────────────────────────────────────────────────────────────────
 
 async function swFetch<T>(token: string, path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -110,22 +110,6 @@ async function swFetch<T>(token: string, path: string): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Splitwise API ${path} failed (${res.status}): ${text}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-async function swPost<T>(token: string, path: string, body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Splitwise POST ${path} failed (${res.status}): ${text}`);
   }
   return res.json() as Promise<T>;
 }
@@ -199,141 +183,4 @@ export async function getExpenses(
   }
 
   return all;
-}
-
-// ── Read: single group ───────────────────────────────────────────────────────
-
-export async function getGroup(token: string, groupId: number): Promise<SplitwiseGroup> {
-  const data = await swFetch<{ group: SplitwiseGroup }>(token, `/get_group/${groupId}`);
-  return data.group;
-}
-
-// ── Write helpers ────────────────────────────────────────────────────────────
-
-export interface SwExpenseUserShare {
-  user_id: number;
-  paid_share: string;
-  owed_share: string;
-}
-
-export interface CreateSwExpenseParams {
-  group_id: number;
-  description: string;
-  cost: string;
-  currency_code: string;
-  date?: string;
-  payment?: boolean;
-  users: SwExpenseUserShare[];
-}
-
-/**
- * Create an expense (or payment/settlement) in Splitwise.
- * Returns the created expense ID, or throws on error.
- */
-export async function createSwExpense(
-  token: string,
-  params: CreateSwExpenseParams
-): Promise<{ id: number }> {
-  const body: Record<string, unknown> = {
-    group_id: params.group_id,
-    description: params.description,
-    cost: params.cost,
-    currency_code: params.currency_code,
-  };
-  if (params.date) body.date = params.date;
-  if (params.payment) body.payment = true;
-
-  for (let i = 0; i < params.users.length; i++) {
-    const u = params.users[i];
-    body[`users__${i}__user_id`] = u.user_id;
-    body[`users__${i}__paid_share`] = u.paid_share;
-    body[`users__${i}__owed_share`] = u.owed_share;
-  }
-
-  const res = await swPost<{ expenses: SplitwiseExpense[]; errors?: Record<string, string[]> }>(
-    token,
-    "/create_expense",
-    body
-  );
-
-  if (res.errors && Object.keys(res.errors).length > 0) {
-    throw new Error(`Splitwise create_expense errors: ${JSON.stringify(res.errors)}`);
-  }
-  const created = res.expenses?.[0];
-  if (!created) throw new Error("Splitwise create_expense returned no expense");
-  return { id: created.id };
-}
-
-/**
- * Update an expense in Splitwise. Only include fields that changed.
- */
-export async function updateSwExpense(
-  token: string,
-  expenseId: number,
-  params: Partial<CreateSwExpenseParams>
-): Promise<void> {
-  const body: Record<string, unknown> = {};
-  if (params.description !== undefined) body.description = params.description;
-  if (params.cost !== undefined) body.cost = params.cost;
-  if (params.currency_code !== undefined) body.currency_code = params.currency_code;
-  if (params.date !== undefined) body.date = params.date;
-
-  if (params.users) {
-    for (let i = 0; i < params.users.length; i++) {
-      const u = params.users[i];
-      body[`users__${i}__user_id`] = u.user_id;
-      body[`users__${i}__paid_share`] = u.paid_share;
-      body[`users__${i}__owed_share`] = u.owed_share;
-    }
-  }
-
-  const res = await swPost<{ expenses: SplitwiseExpense[]; errors?: Record<string, string[]> }>(
-    token,
-    `/update_expense/${expenseId}`,
-    body
-  );
-
-  if (res.errors && Object.keys(res.errors).length > 0) {
-    throw new Error(`Splitwise update_expense errors: ${JSON.stringify(res.errors)}`);
-  }
-}
-
-/**
- * Soft-delete an expense in Splitwise.
- */
-export async function deleteSwExpense(token: string, expenseId: number): Promise<void> {
-  await swPost<{ success: boolean }>(token, `/delete_expense/${expenseId}`, {});
-}
-
-/**
- * Create a group in Splitwise. Returns the new group ID.
- */
-export async function createSwGroup(
-  token: string,
-  name: string,
-  groupType?: string
-): Promise<{ id: number }> {
-  const body: Record<string, unknown> = { name };
-  if (groupType) body.group_type = groupType;
-  const res = await swPost<{ group: SplitwiseGroup }>(token, "/create_group", body);
-  return { id: res.group.id };
-}
-
-/**
- * Add a user to a Splitwise group.
- */
-export async function addUserToSwGroup(
-  token: string,
-  groupId: number,
-  user: { user_id?: number; email?: string; first_name?: string; last_name?: string }
-): Promise<void> {
-  const body: Record<string, unknown> = { group_id: groupId };
-  if (user.user_id) {
-    body.users__0__user_id = user.user_id;
-  } else {
-    if (user.email) body.users__0__email = user.email;
-    if (user.first_name) body.users__0__first_name = user.first_name;
-    if (user.last_name) body.users__0__last_name = user.last_name;
-  }
-  await swPost<unknown>(token, "/add_user_to_group", body);
 }

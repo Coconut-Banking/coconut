@@ -7,7 +7,11 @@ import { chatWithContext } from "@/lib/openai";
 import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
-  const { userId } = await auth();
+  // Parallelize auth + body parse (independent)
+  const [{ userId }, body] = await Promise.all([
+    auth(),
+    request.json().catch(() => null),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rl = rateLimit(`chat:${userId}`, 20, 60_000);
@@ -16,7 +20,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
+    if (!body) return NextResponse.json({ error: "message required" }, { status: 400 });
     const message = (body.message as string)?.trim()?.slice(0, 2000);
     if (!message) {
       return NextResponse.json({ error: "message required" }, { status: 400 });

@@ -18,19 +18,21 @@ async function getInviteData(token: string) {
 
   if (!group) return null;
 
-  const { count } = await db
-    .from("group_members")
-    .select("id", { count: "exact", head: true })
-    .eq("group_id", group.id);
-
-  let inviterName = "Someone";
-  try {
-    const clerk = await clerkClient();
-    const owner = await clerk.users.getUser(group.owner_id);
-    inviterName = owner.fullName || owner.firstName || "Someone";
-  } catch {
-    /* non-critical */
-  }
+  const [{ count }, inviterName] = await Promise.all([
+    db
+      .from("group_members")
+      .select("id", { count: "exact", head: true })
+      .eq("group_id", group.id),
+    (async () => {
+      try {
+        const clerk = await clerkClient();
+        const owner = await clerk.users.getUser(group.owner_id);
+        return owner.fullName || owner.firstName || "Someone";
+      } catch {
+        return "Someone";
+      }
+    })(),
+  ]);
 
   return {
     groupName: group.name,

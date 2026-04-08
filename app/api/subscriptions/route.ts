@@ -52,7 +52,9 @@ export async function GET() {
         detectedAt: s.price_change_detected_at,
       } : null,
     }));
-    return NextResponse.json(subs);
+    return NextResponse.json(subs, {
+      headers: { "Cache-Control": "private, max-age=120, stale-while-revalidate=300" },
+    });
   } catch (err) {
     console.error("[subscriptions] GET error:", err);
     return NextResponse.json({ error: "Failed to load subscriptions" }, { status: 500 });
@@ -60,10 +62,13 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await getEffectiveUserId();
+  // Parallelize auth + body parse (independent)
+  const [userId, body] = await Promise.all([
+    getEffectiveUserId(),
+    req.json().catch(() => ({})),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const body = await req.json().catch(() => ({}));
     const transactionId = body?.transactionId as string | undefined;
     if (transactionId) {
       const db = getSupabase();

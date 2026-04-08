@@ -364,20 +364,20 @@ export async function scanGmailForReceipts(
   let alreadyProcessed = 0;
 
   if (!forceRescan) {
-    const { data: existing } = await db
-      .from("email_receipts")
-      .select("gmail_message_id")
-      .eq("clerk_user_id", clerkUserId)
-      .in("gmail_message_id", messageIds);
+    const [{ data: existing }, { data: logged }] = await Promise.all([
+      db
+        .from("email_receipts")
+        .select("gmail_message_id")
+        .eq("clerk_user_id", clerkUserId)
+        .in("gmail_message_id", messageIds),
+      db
+        .from("gmail_scan_log")
+        .select("gmail_message_id")
+        .eq("clerk_user_id", clerkUserId)
+        .in("gmail_message_id", messageIds),
+    ]);
 
     const processedIds = new Set((existing || []).map((r: { gmail_message_id: string }) => r.gmail_message_id));
-
-    // Also check scan log for previously attempted (non-receipt, errors, etc.)
-    const { data: logged } = await db
-      .from("gmail_scan_log")
-      .select("gmail_message_id")
-      .eq("clerk_user_id", clerkUserId)
-      .in("gmail_message_id", messageIds);
     const loggedIds = new Set((logged || []).map((r: { gmail_message_id: string }) => r.gmail_message_id));
 
     newMessageIds = messageIds.filter((id) => !processedIds.has(id) && !loggedIds.has(id));
@@ -539,16 +539,16 @@ export async function scanGmailForReceipts(
     }
   }
 
-  // Match receipts to transactions
-  let matched = 0;
-  if (insertedReceiptIds.length > 0) {
-    matched = await matchReceiptsToTransactions(clerkUserId, insertedReceiptIds);
-  }
-
-  // Update last scan timestamp
-  await db.from("gmail_connections")
-    .update({ last_scan_at: new Date().toISOString() })
-    .eq("clerk_user_id", clerkUserId);
+  // Match receipts to transactions and update scan timestamp in parallel
+  const [matchedCount] = await Promise.all([
+    insertedReceiptIds.length > 0
+      ? matchReceiptsToTransactions(clerkUserId, insertedReceiptIds)
+      : Promise.resolve(0),
+    db.from("gmail_connections")
+      .update({ last_scan_at: new Date().toISOString() })
+      .eq("clerk_user_id", clerkUserId),
+  ]);
+  const matched = matchedCount;
 
   // Optionally return the inserted receipts
   let receipts: unknown[] = [];

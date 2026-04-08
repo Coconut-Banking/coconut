@@ -15,17 +15,16 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
     const { data: items } = await db.from("plaid_items").select("access_token").eq("clerk_user_id", clerkUserId);
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
-      for (const item of items) {
-        const raw = item.access_token as string;
-        if (!raw) continue;
-        const token = decryptToken(raw);
-        try {
-          await plaid.itemRemove({ access_token: token });
-          console.log("[offboard] itemRemove ok", { user_id: clerkUserId });
-        } catch (e) {
-          console.warn("[offboard] itemRemove failed:", e instanceof Error ? e.message : e);
-        }
-      }
+      await Promise.allSettled(
+        items
+          .filter((item) => item.access_token)
+          .map((item) =>
+            plaid
+              .itemRemove({ access_token: decryptToken(item.access_token as string) })
+              .then(() => console.log("[offboard] itemRemove ok", { user_id: clerkUserId }))
+              .catch((e) => console.warn("[offboard] itemRemove failed:", e instanceof Error ? e.message : e))
+          )
+      );
     }
   }
 
@@ -39,8 +38,10 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
     .eq("user_id", clerkUserId);
   if (foreignMemberRows?.length) {
     const memberIds = foreignMemberRows.map((m: { id: string }) => m.id);
-    await db.from("settlements").delete().in("payer_member_id", memberIds);
-    await db.from("settlements").delete().in("receiver_member_id", memberIds);
+    await Promise.all([
+      db.from("settlements").delete().in("payer_member_id", memberIds),
+      db.from("settlements").delete().in("receiver_member_id", memberIds),
+    ]);
   }
 
   // 3. Remove user from groups they're in but don't own

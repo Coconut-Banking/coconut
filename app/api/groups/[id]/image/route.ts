@@ -15,20 +15,16 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
-
-  const allowed = await canAccessGroup(userId, id);
+  const [allowed, rawBody] = await Promise.all([
+    canAccessGroup(userId, id),
+    req.json().catch(() => null) as Promise<{ image: string } | null>,
+  ]);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  let body: { image: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  if (!rawBody) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  const body = rawBody;
 
   const { image } = body;
   if (!image || typeof image !== "string") {

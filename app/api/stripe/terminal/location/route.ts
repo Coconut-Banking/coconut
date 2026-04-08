@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
+
 const DEFAULT_ADDRESSES: Record<string, Stripe.Terminal.LocationCreateParams["address"]> = {
   CA: { line1: "123 Main St", city: "Toronto", state: "ON", postal_code: "M5V 1A1", country: "CA" },
   US: { line1: "123 Main St", city: "San Francisco", state: "CA", postal_code: "94102", country: "US" },
@@ -21,19 +25,18 @@ export async function GET() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) {
+  if (!stripe) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
 
-  const stripe = new Stripe(key);
-
   try {
-    const acct = await stripe.accounts.retrieve();
+    const [acct, { data: locations }] = await Promise.all([
+      stripe.accounts.retrieve(),
+      stripe.terminal.locations.list({ limit: 100 }),
+    ]);
     const accountCountry = (acct.country ?? "US").toUpperCase();
 
     // Find an existing location in the account's country
-    const { data: locations } = await stripe.terminal.locations.list({ limit: 100 });
     const match = locations.find(
       (loc) => (loc.address?.country ?? "").toUpperCase() === accountCountry
     );

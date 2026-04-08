@@ -5,7 +5,6 @@ import { getEffectiveUserId } from "@/lib/demo";
 
 export async function GET() {
   const userId = await getEffectiveUserId();
-  console.log("[Gmail Status API] Checking status for user:", userId);
 
   if (!userId) {
     console.error("[Gmail Status API] No userId");
@@ -13,7 +12,8 @@ export async function GET() {
   }
 
   const status = await getGmailStatus(userId);
-  console.log("[Gmail Status API] Status result:", status);
 
-  return NextResponse.json(status);
+  return NextResponse.json(status, {
+    headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
+  });
 }

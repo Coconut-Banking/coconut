@@ -18,13 +18,16 @@ function escapeLikePattern(s: string): string {
  * Accepts FormData with a CSV file. Parses, deduplicates, auto-links, and imports.
  */
 export async function POST(request: NextRequest) {
-  const effectiveUserId = await getEffectiveUserId();
+  // Parallelize auth + form data parsing (independent)
+  const [effectiveUserId, formData] = await Promise.all([
+    getEffectiveUserId(),
+    request.formData(),
+  ]);
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const forcePlatform = formData.get("platform") as string | null;
 
@@ -81,64 +84,97 @@ export async function POST(request: NextRequest) {
     let skipped = 0;
     let enriched = 0;
 
-    for (const row of rows) {
-      const absAmount = Math.abs(row.amount);
+    // Phase 1: Run all Plaid match queries in parallel
+    const plaidMatchResults = await Promise.all(
+      rows.map((row) => {
+        const absAmount = Math.abs(row.amount);
+        const dateObj = new Date(row.date);
+        const dayBefore = new Date(dateObj);
+        dayBefore.setDate(dayBefore.getDate() - 1);
+        const dayAfter = new Date(dateObj);
+        dayAfter.setDate(dayAfter.getDate() + 1);
+        return db
+          .from("transactions")
+          .select("id, amount, date")
+          .eq("clerk_user_id", effectiveUserId)
+          .eq("source", "plaid")
+          .gte("date", dayBefore.toISOString().split("T")[0])
+          .lte("date", dayAfter.toISOString().split("T")[0])
+          .ilike("merchant_name", `%${escapeLikePattern(row.platform)}%`)
+          .then((r) =>
+            (r.data ?? []).filter(
+              (m) => Math.abs(Math.abs(Number(m.amount)) - absAmount) < 0.02
+            )
+          );
+      })
+    );
 
-      // Check for matching Plaid transaction to enrich
-      const dateObj = new Date(row.date);
-      const dayBefore = new Date(dateObj);
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      const dayAfter = new Date(dateObj);
-      dayAfter.setDate(dayAfter.getDate() + 1);
+    // Phase 2: Classify rows
+    const enrichUpdates: Array<{ id: string; row: typeof rows[number] }> = [];
+    const upsertRows: Array<{
+      clerk_user_id: string;
+      source: string;
+      external_id: string;
+      date: string;
+      amount: number;
+      merchant_name: string;
+      raw_name: string;
+      p2p_counterparty: string;
+      p2p_note: string | null;
+      p2p_platform: string;
+      primary_category: string;
+    }> = [];
 
-      const { data: matches } = await db
-        .from("transactions")
-        .select("id, amount, date")
-        .eq("clerk_user_id", effectiveUserId)
-        .eq("source", "plaid")
-        .gte("date", dayBefore.toISOString().split("T")[0])
-        .lte("date", dayAfter.toISOString().split("T")[0])
-        .ilike("merchant_name", `%${escapeLikePattern(row.platform)}%`);
-
-      const exactMatch = (matches ?? []).filter(
-        (m) => Math.abs(Math.abs(Number(m.amount)) - absAmount) < 0.02
-      );
-
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const exactMatch = plaidMatchResults[i];
       if (exactMatch.length === 1) {
-        // Enrich existing Plaid transaction
-        await db.from("transactions").update({
+        enrichUpdates.push({ id: exactMatch[0].id, row });
+      } else {
+        upsertRows.push({
+          clerk_user_id: effectiveUserId,
+          source: row.platform === "cashapp" ? "csv_import" : row.platform,
+          external_id: row.externalId,
+          date: row.date,
+          amount: row.amount,
+          merchant_name: row.counterpartyName,
+          raw_name: row.counterpartyName,
           p2p_counterparty: row.counterpartyName,
           p2p_note: row.note || null,
           p2p_platform: row.platform,
-        }).eq("id", exactMatch[0].id);
-        enriched++;
-        imported++;
-      } else {
-        // Insert as new P2P transaction
-        const { error } = await db.from("transactions").upsert(
-          {
-            clerk_user_id: effectiveUserId,
-            source: row.platform === "cashapp" ? "csv_import" : row.platform,
-            external_id: row.externalId,
-            date: row.date,
-            amount: row.amount,
-            merchant_name: row.counterpartyName,
-            raw_name: row.counterpartyName,
-            p2p_counterparty: row.counterpartyName,
-            p2p_note: row.note || null,
-            p2p_platform: row.platform,
-            primary_category: row.amount > 0 ? "TRANSFER_IN" : "TRANSFER_OUT",
-          },
-          { onConflict: "clerk_user_id,source,external_id" }
-        );
-
-        if (error) {
-          skipped++;
-        } else {
-          imported++;
-        }
+          primary_category: row.amount > 0 ? "TRANSFER_IN" : "TRANSFER_OUT",
+        });
       }
     }
+
+    // Phase 3: Execute updates + upserts in parallel
+    const BATCH = 500;
+    const [updateResults, upsertResults] = await Promise.all([
+      Promise.all(
+        enrichUpdates.map(({ id, row: r }) =>
+          db
+            .from("transactions")
+            .update({ p2p_counterparty: r.counterpartyName, p2p_note: r.note || null, p2p_platform: r.platform })
+            .eq("id", id)
+            .then((res) => !res.error)
+        )
+      ),
+      Promise.all(
+        Array.from({ length: Math.ceil(upsertRows.length / BATCH) || 1 }, (_, i) =>
+          upsertRows.length > 0
+            ? db
+                .from("transactions")
+                .upsert(upsertRows.slice(i * BATCH, (i + 1) * BATCH), { onConflict: "clerk_user_id,source,external_id" })
+                .then((res) => ({ error: res.error, count: upsertRows.slice(i * BATCH, (i + 1) * BATCH).length }))
+            : Promise.resolve({ error: null, count: 0 })
+        )
+      ),
+    ]);
+
+    enriched = updateResults.filter(Boolean).length;
+    const upsertedCount = upsertResults.reduce((sum, r) => sum + (r.error ? 0 : r.count), 0);
+    skipped = upsertResults.reduce((sum, r) => sum + (r.error ? r.count : 0), 0);
+    imported = enriched + upsertedCount;
 
     if (imported > 0) {
       revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");

@@ -50,14 +50,21 @@ function detectAnomalies(txRows: TxRow[]): Insight[] {
     byMerchant.set(key, arr);
   }
 
+  // Pre-compute mean and stdDev per merchant once (not per row)
+  const merchantStats = new Map<string, { mean: number; stdDev: number }>();
+  for (const [key, amounts] of byMerchant) {
+    if (amounts.length < 3) continue;
+    const mean = amounts.reduce((s, a) => s + a, 0) / amounts.length;
+    const stdDev = Math.sqrt(amounts.reduce((s, a) => s + (a - mean) ** 2, 0) / amounts.length);
+    if (stdDev >= 2) merchantStats.set(key, { mean, stdDev });
+  }
+
   const insights: Insight[] = [];
   for (const r of rows) {
     const key = (r.normalized_merchant || r.merchant_name || "").trim().toLowerCase();
-    const amounts = byMerchant.get(key);
-    if (!amounts || amounts.length < 3) continue;
-    const mean = amounts.reduce((s, a) => s + a, 0) / amounts.length;
-    const stdDev = Math.sqrt(amounts.reduce((s, a) => s + (a - mean) ** 2, 0) / amounts.length);
-    if (stdDev < 2) continue;
+    const stats = merchantStats.get(key);
+    if (!stats) continue;
+    const { mean, stdDev } = stats;
     const z = (Math.abs(r.amount) - mean) / stdDev;
     if (z > 2.5) {
       insights.push({

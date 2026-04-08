@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   }));
 
   const results = searchTransactions(transactions, q, limit);
-  return NextResponse.json(results);
+  return NextResponse.json(results, { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } });
   } catch (err) {
     console.error("[search]", err);
     return NextResponse.json({ error: "Search failed" }, { status: 500 });

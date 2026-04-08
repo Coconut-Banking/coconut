@@ -109,26 +109,24 @@ async function handleSummary(req: NextRequest, userId: string) {
   // will return the proper storage URL.
   const dataUriGroups = (groupsRaw ?? []).filter((g) => g.image_url?.startsWith("data:"));
   if (dataUriGroups.length > 0) {
-    void (async () => {
-      for (const g of dataUriGroups) {
-        try {
-          const match = g.image_url!.match(/^data:(image\/\w+);base64,(.+)$/);
-          if (!match) continue;
-          const contentType = match[1];
-          const base64Data = match[2];
-          const ext = contentType === "image/png" ? "png" : "jpg";
-          const buffer = Buffer.from(base64Data, "base64");
-          const path = `${g.id}.${ext}`;
-          const { error: upErr } = await db.storage.from("group-icons").upload(path, buffer, { contentType, upsert: true });
-          if (upErr) { console.warn("[summary] migrate image failed for", g.id, upErr.message); continue; }
-          const { data: urlData } = db.storage.from("group-icons").getPublicUrl(path);
-          await db.from("groups").update({ image_url: urlData.publicUrl }).eq("id", g.id);
-          console.log("[summary] migrated data URI to storage for group", g.id);
-        } catch (e) {
-          console.warn("[summary] migrate image error for", g.id, e);
-        }
+    void Promise.all(dataUriGroups.map(async (g) => {
+      try {
+        const match = g.image_url!.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (!match) return;
+        const contentType = match[1];
+        const base64Data = match[2];
+        const ext = contentType === "image/png" ? "png" : "jpg";
+        const buffer = Buffer.from(base64Data, "base64");
+        const path = `${g.id}.${ext}`;
+        const { error: upErr } = await db.storage.from("group-icons").upload(path, buffer, { contentType, upsert: true });
+        if (upErr) { console.warn("[summary] migrate image failed for", g.id, upErr.message); return; }
+        const { data: urlData } = db.storage.from("group-icons").getPublicUrl(path);
+        await db.from("groups").update({ image_url: urlData.publicUrl }).eq("id", g.id);
+        console.log("[summary] migrated data URI to storage for group", g.id);
+      } catch (e) {
+        console.warn("[summary] migrate image error for", g.id, e);
       }
-    })();
+    }));
     for (const g of dataUriGroups) g.image_url = null;
   }
 
@@ -322,6 +320,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     const memberByUserId = new Map(
       groupMembers.filter((m) => m.user_id).map((m) => [m.user_id!, m.id])
     );
+    const groupMemberIdSet = new Set(groupMembers.map((m) => m.id));
 
     if (groupSplits.length === 0) {
       const lastActivityAt = g.created_at;
@@ -349,7 +348,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       const sWithPayer = s as { payer_member_id?: string | null };
       const payerMemberId = sWithPayer.payer_member_id;
       const memberId =
-        payerMemberId && groupMembers.some((m) => m.id === payerMemberId)
+        payerMemberId && groupMemberIdSet.has(payerMemberId)
           ? payerMemberId
           : (() => {
               const tid = s.transaction_id as string | null | undefined;
@@ -697,9 +696,10 @@ async function handleSummary(req: NextRequest, userId: string) {
 
     if (cachedGroups && Array.isArray(cachedGroups) && cachedGroups.length > 0) {
       const groupCacheMap = new Map(cachedGroups.map((g) => [g.external_id, g.balances]));
+      const groupById = new Map((groups ?? []).map((gr) => [gr.id, gr]));
 
       for (const g of groupsWithBalance) {
-        const row = (groups ?? []).find((gr) => gr.id === g.id);
+        const row = groupById.get(g.id);
         if (row?.source !== "splitwise" || !row.external_id) continue;
         const cachedBals = groupCacheMap.get(row.external_id);
         if (!cachedBals) continue;

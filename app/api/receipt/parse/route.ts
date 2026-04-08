@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
         image_base64: imagePayload,
         status: "parsed",
       })
-      .select("id")
+      .select("*")
       .single();
 
     if (receiptErr || !receipt) {
@@ -131,7 +131,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Save items
+    // Save items and get back inserted rows (avoids a separate SELECT round trip)
+    let insertedItems: Array<{id: string; receipt_id: string; name: string; quantity: number | null; unit_price: number | null; total_price: number | null; sort_order: number}> = [];
     if (parsed.items.length > 0) {
       const itemRows = parsed.items.map((item, idx) => ({
         receipt_id: receipt.id,
@@ -142,22 +143,12 @@ export async function POST(req: NextRequest) {
         sort_order: idx,
       }));
 
-      await db.from("receipt_items").insert(itemRows);
+      const { data: itemsData } = await db.from("receipt_items").insert(itemRows).select("id, receipt_id, name, quantity, unit_price, total_price, sort_order");
+      insertedItems = (itemsData ?? []) as typeof insertedItems;
     }
 
-    // Fetch back the full receipt with items
-    const { data: full, error: fullError } = await db
-      .from("receipt_scans")
-      .select("*, receipt_items(*)")
-      .eq("id", receipt.id)
-      .single();
-
-    if (fullError || !full) {
-      console.error("[receipt] Failed to fetch created receipt:", fullError);
-      return NextResponse.json({ error: "Receipt saved but could not be retrieved" }, { status: 500 });
-    }
-
-    return NextResponse.json(full);
+    // Return directly without an extra SELECT round trip
+    return NextResponse.json({ ...receipt, receipt_items: insertedItems });
   } catch (error) {
     console.error("Error in receipt parse route:", error);
     return NextResponse.json(

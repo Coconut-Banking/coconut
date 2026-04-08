@@ -12,16 +12,15 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
+  const [{ userId }, { id }, body] = await Promise.all([
+    auth(),
+    params,
+    req.json().catch(() => null) as Promise<{ groupId?: string } | null>,
+  ]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const { id } = await params;
-  let body;
-  try {
-    body = await req.json();
-  } catch {
+  if (!body) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const { groupId } = body;
@@ -187,18 +186,14 @@ export async function POST(
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");
 
-  // Update receipt status to completed
-  await db
-    .from("receipt_scans")
-    .update({ status: "completed" })
-    .eq("id", id)
-    .eq("clerk_user_id", userId);
-
-  // Fetch updated balances for the group
-  const { computeBalances, getSuggestedSettlements } = await import("@/lib/split-balances");
-
-  // Fetch splits and settlements in parallel (both depend only on groupId)
-  const [splitsResult, settlementsResult] = await Promise.all([
+  // Run receipt status update, module import, and balance queries all in parallel
+  const [, { computeBalances, getSuggestedSettlements }, splitsResult, settlementsResult] = await Promise.all([
+    db
+      .from("receipt_scans")
+      .update({ status: "completed" })
+      .eq("id", id)
+      .eq("clerk_user_id", userId),
+    import("@/lib/split-balances"),
     db
       .from("split_transactions")
       .select(`

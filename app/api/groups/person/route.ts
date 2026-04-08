@@ -487,8 +487,15 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // Pre-index shares by split_id + member_id for O(1) lookups
+      const shareAmountBySplitMember = new Map<string, number>();
+      for (const [splitId, shareList] of sharesBySplitId) {
+        for (const sh of shareList) {
+          shareAmountBySplitMember.set(`${splitId}:${sh.member_id}`, Number(sh.amount));
+        }
+      }
+
       for (const s of groupSplits) {
-        const shareList = sharesBySplitId.get(s.id) ?? [];
         const txAmount = paidAmountFromSplitRow(
           s as { transactions?: unknown; amount?: number | string | null }
         );
@@ -497,10 +504,8 @@ export async function GET(req: NextRequest) {
 
         const paidByMe = payerMemberId === myMember.id;
         const paidByThem = payerMemberId === theirMember.id;
-        const myShareRow = shareList.find((sh) => sh.member_id === myMember.id);
-        const theirShareRow = shareList.find((sh) => sh.member_id === theirMember.id);
-        const myShare = myShareRow ? Number(myShareRow.amount) : 0;
-        const theirShare = theirShareRow ? Number(theirShareRow.amount) : 0;
+        const myShare = shareAmountBySplitMember.get(`${s.id}:${myMember.id}`) ?? 0;
+        const theirShare = shareAmountBySplitMember.get(`${s.id}:${theirMember.id}`) ?? 0;
 
         let effectOnBalance = 0;
         if (paidByMe && theirShare > 0) effectOnBalance = theirShare;
@@ -661,7 +666,7 @@ export async function GET(req: NextRequest) {
       sharedGroups,
       p2pHandles,
       _debug,
-    });
+    }, { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } });
   } catch (err) {
     console.error("[person]", err);
     return NextResponse.json({ error: "Failed to load person" }, { status: 500 });

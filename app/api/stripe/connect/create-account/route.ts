@@ -26,11 +26,14 @@ export async function POST(req: Request) {
     const stripe = new Stripe(key);
     const db = getSupabase();
 
-    const { data: existing, error: selectError } = await db
-      .from("stripe_connected_accounts")
-      .select("stripe_account_id, onboarding_complete")
-      .eq("clerk_user_id", userId)
-      .maybeSingle();
+    const [{ data: existing, error: selectError }, user] = await Promise.all([
+      db
+        .from("stripe_connected_accounts")
+        .select("stripe_account_id, onboarding_complete")
+        .eq("clerk_user_id", userId)
+        .maybeSingle(),
+      currentUser(),
+    ]);
 
     if (selectError) {
       console.error("[stripe-connect] db select failed:", selectError);
@@ -42,7 +45,6 @@ export async function POST(req: Request) {
     if (existing) {
       accountId = existing.stripe_account_id;
     } else {
-      const user = await currentUser();
       const email = user?.emailAddresses?.[0]?.emailAddress ?? undefined;
       const firstName = user?.firstName ?? undefined;
       const lastName = user?.lastName ?? undefined;

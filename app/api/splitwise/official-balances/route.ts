@@ -34,18 +34,25 @@ export async function GET() {
   try {
     const token = decryptToken(tokenRow.access_token);
     const friends = await getFriends(token);
-    return NextResponse.json({
-      friends: friends.map((f) => ({
-        id: f.id,
-        first_name: f.first_name,
-        last_name: f.last_name,
-        email: f.email ?? null,
-        balance: (f.balance ?? []).map((b) => ({
-          currency_code: b.currency_code,
-          amount: b.amount,
+    return NextResponse.json(
+      {
+        friends: friends.map((f) => ({
+          id: f.id,
+          first_name: f.first_name,
+          last_name: f.last_name,
+          email: f.email ?? null,
+          balance: (f.balance ?? []).map((b) => ({
+            currency_code: b.currency_code,
+            amount: b.amount,
+          })),
         })),
-      })),
-    });
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
+        },
+      }
+    );
   } catch (e) {
     console.error("[official-balances]", e);
     return NextResponse.json({ error: "Failed to load Splitwise balances" }, { status: 500 });

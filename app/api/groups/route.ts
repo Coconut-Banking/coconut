@@ -48,37 +48,37 @@ export async function GET(req: NextRequest) {
 
   if (!groups || groups.length === 0) return NextResponse.json([]);
 
-  const countByGroup = (memberCounts ?? []).reduce(
-    (acc, r) => ({ ...acc, [r.group_id]: Number((r as unknown as { group_id: string; count: number }).count) }),
-    {} as Record<string, number>
-  );
+  const countByGroup = new Map<string, number>();
+  for (const r of memberCounts ?? []) {
+    countByGroup.set(r.group_id, typeof (r as unknown as { group_id: string; count: number }).count === "number" ? (r as unknown as { group_id: string; count: number }).count : Number((r as unknown as { group_id: string; count: number }).count));
+  }
 
   return NextResponse.json(
     groups.map((g) => ({
       ...g,
       invite_token: g.invite_token ?? null,
       imageUrl: g.image_url ?? null,
-      memberCount: countByGroup[g.id] ?? 0,
+      memberCount: countByGroup.get(g.id) ?? 0,
     })),
     { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
   );
 }
 
 export async function POST(req: NextRequest) {
-  const userId = await getUserId();
+  // Parallelize auth + body parse (independent)
+  const [userId, bodyRaw] = await Promise.all([
+    getUserId(),
+    req.json().catch(() => null),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (bodyRaw === null) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  const body = bodyRaw as Record<string, unknown>;
   const name = (body.name as string)?.trim()?.slice(0, 100);
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
-  const groupType = ["home", "trip", "couple", "friend", "other"].includes(body.group_type)
-    ? body.group_type
+  const groupType = ["home", "trip", "couple", "friend", "other"].includes(body.group_type as string)
+    ? body.group_type as string
     : "other";
   const inviteToken = `inv_${randomUUID().replace(/-/g, "")}`;
 
@@ -87,12 +87,16 @@ export async function POST(req: NextRequest) {
   let group: { id: string; name: string; owner_id: string; created_at: string } | null = null;
   let groupErr: { message?: string } | null = null;
 
+  // Insert group + fetch currentUser in parallel (email not needed until after insert)
   const insertPayload = { owner_id: userId, name };
-  const { data: g1, error: e1 } = await db
-    .from("groups")
-    .insert({ ...insertPayload, group_type: groupType, invite_token: inviteToken })
-    .select("id, name, owner_id, created_at, invite_token")
-    .single();
+  const [{ data: g1, error: e1 }, ownerUser] = await Promise.all([
+    db
+      .from("groups")
+      .insert({ ...insertPayload, group_type: groupType, invite_token: inviteToken })
+      .select("id, name, owner_id, created_at, invite_token")
+      .single(),
+    currentUser(),
+  ]);
   if (e1 && e1.message?.includes("column")) {
     const { data: g2, error: e2 } = await db
       .from("groups")
@@ -110,7 +114,6 @@ export async function POST(req: NextRequest) {
   }
 
   const displayName = body.ownerDisplayName ?? "You";
-  const ownerUser = await currentUser();
   const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
   await db.from("group_members").insert({
     group_id: group.id,

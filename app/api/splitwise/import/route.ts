@@ -61,15 +61,12 @@ function parseImportOptions(body: ImportRequestBody | null) {
 }
 
 export async function POST(req: NextRequest) {
-  const userId = await getUserId();
+  // Parallelize auth + body parse (body is optional)
+  const [userId, body] = await Promise.all([
+    getUserId(),
+    req.json().catch(() => null) as Promise<ImportRequestBody | null>,
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  let body: ImportRequestBody | null = null;
-  try {
-    body = await req.json();
-  } catch {
-    // Body is optional for this endpoint.
-  }
   const { dryRun, groupIds, expenseOptions } = parseImportOptions(body);
 
   const db = getSupabase();
@@ -132,57 +129,58 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Cache authoritative Splitwise friend balances
-    try {
-      const friends = await getFriends(token);
-      const balancePayload = friends
-        .filter((f) => f.balance && f.balance.length > 0)
-        .map((f) => ({
-          id: f.id,
-          first_name: f.first_name,
-          last_name: f.last_name,
-          email: f.email ?? null,
-          balance: f.balance,
-        }));
-      await db
-        .from("splitwise_tokens")
-        .update({ cached_friend_balances: balancePayload } as Record<string, unknown>)
-        .eq("clerk_user_id", userId);
-    } catch (err) {
-      console.warn("[splitwise-import] failed to cache friend balances:", err);
-    }
-
-    // Cache authoritative Splitwise per-group balances from simplified_debts.
-    // This is the exact same number Splitwise shows — debt simplification, multi-payer,
-    // and rounding are all handled by their engine.
-    try {
-      const cachedGroupBalances = swGroups.map((g) => {
-        const byCurrency = new Map<string, number>();
-        for (const debt of g.simplified_debts ?? []) {
-          const cur = (debt.currency_code ?? "USD").trim().toUpperCase() || "USD";
-          const amount = parseFloat(debt.amount);
-          if (!Number.isFinite(amount)) continue;
-          if (debt.from === swUser.id) {
-            byCurrency.set(cur, (byCurrency.get(cur) ?? 0) - amount);
-          } else if (debt.to === swUser.id) {
-            byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + amount);
-          }
+    await Promise.all([
+      (async () => {
+        try {
+          const friends = await getFriends(token);
+          const balancePayload = friends
+            .filter((f) => f.balance && f.balance.length > 0)
+            .map((f) => ({
+              id: f.id,
+              first_name: f.first_name,
+              last_name: f.last_name,
+              email: f.email ?? null,
+              balance: f.balance,
+            }));
+          await db
+            .from("splitwise_tokens")
+            .update({ cached_friend_balances: balancePayload } as Record<string, unknown>)
+            .eq("clerk_user_id", userId);
+        } catch (err) {
+          console.warn("[splitwise-import] failed to cache friend balances:", err);
         }
-        return {
-          external_id: String(g.id),
-          balances: [...byCurrency.entries()].map(([currency_code, amount]) => ({
-            currency_code,
-            amount: String(Math.round(amount * 100) / 100),
-          })),
-        };
-      });
-      await db
-        .from("splitwise_tokens")
-        .update({ cached_group_balances: cachedGroupBalances } as Record<string, unknown>)
-        .eq("clerk_user_id", userId);
-    } catch (err) {
-      console.warn("[splitwise-import] failed to cache group balances:", err);
-    }
+      })(),
+      (async () => {
+        try {
+          const cachedGroupBalances = swGroups.map((g) => {
+            const byCurrency = new Map<string, number>();
+            for (const debt of g.simplified_debts ?? []) {
+              const cur = (debt.currency_code ?? "USD").trim().toUpperCase() || "USD";
+              const amount = parseFloat(debt.amount);
+              if (!Number.isFinite(amount)) continue;
+              if (debt.from === swUser.id) {
+                byCurrency.set(cur, (byCurrency.get(cur) ?? 0) - amount);
+              } else if (debt.to === swUser.id) {
+                byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + amount);
+              }
+            }
+            return {
+              external_id: String(g.id),
+              balances: [...byCurrency.entries()].map(([currency_code, amount]) => ({
+                currency_code,
+                amount: String(Math.round(amount * 100) / 100),
+              })),
+            };
+          });
+          await db
+            .from("splitwise_tokens")
+            .update({ cached_group_balances: cachedGroupBalances } as Record<string, unknown>)
+            .eq("clerk_user_id", userId);
+        } catch (err) {
+          console.warn("[splitwise-import] failed to cache group balances:", err);
+        }
+      })(),
+    ]);
 
     console.log("[splitwise-import] done", stats);
     if (!dryRun && (stats.expenses + stats.settlements) > 0) {
@@ -432,36 +430,39 @@ async function importGroup(
   const settlements = expenses.filter((e) => isSettlement(e));
   stats.totalExpenses += regularExpenses.length;
 
-  // Batch-check which expenses already exist FOR THIS USER'S GROUPS ONLY
+  // Batch-check which expenses and settlements already exist FOR THIS USER'S GROUPS ONLY (parallel)
   const allExtIds = regularExpenses.map((e) => String(e.id));
   const existingExpenseIds = new Set<string>();
-  if (allExtIds.length > 0) {
-    for (let i = 0; i < allExtIds.length; i += 500) {
-      const batch = allExtIds.slice(i, i + 500);
-      const { data } = await db
-        .from("split_transactions")
-        .select("external_id")
-        .eq("source", "splitwise")
-        .eq("group_id", groupId)
-        .in("external_id", batch);
-      for (const row of data ?? []) existingExpenseIds.add(row.external_id);
-    }
-  }
-
-  // Batch-check which settlements already exist FOR THIS USER'S GROUP ONLY
   const allSettlementRefs = settlements.map((e) => `splitwise:${e.id}`);
   const existingSettlementRefs = new Set<string>();
-  if (allSettlementRefs.length > 0) {
-    for (let i = 0; i < allSettlementRefs.length; i += 500) {
-      const batch = allSettlementRefs.slice(i, i + 500);
-      const { data } = await db
-        .from("settlements")
-        .select("external_reference")
-        .eq("group_id", groupId)
-        .in("external_reference", batch);
-      for (const row of data ?? []) existingSettlementRefs.add(row.external_reference);
-    }
-  }
+
+  const [expenseBatches, settlementBatches] = await Promise.all([
+    allExtIds.length > 0
+      ? Promise.all(
+          Array.from({ length: Math.ceil(allExtIds.length / 500) }, (_, i) =>
+            db.from("split_transactions")
+              .select("external_id")
+              .eq("source", "splitwise")
+              .eq("group_id", groupId)
+              .in("external_id", allExtIds.slice(i * 500, (i + 1) * 500))
+              .then((r) => r.data ?? [])
+          )
+        )
+      : Promise.resolve([]),
+    allSettlementRefs.length > 0
+      ? Promise.all(
+          Array.from({ length: Math.ceil(allSettlementRefs.length / 500) }, (_, i) =>
+            db.from("settlements")
+              .select("external_reference")
+              .eq("group_id", groupId)
+              .in("external_reference", allSettlementRefs.slice(i * 500, (i + 1) * 500))
+              .then((r) => r.data ?? [])
+          )
+        )
+      : Promise.resolve([]),
+  ]);
+  for (const batch of expenseBatches) for (const row of batch) existingExpenseIds.add(row.external_id);
+  for (const batch of settlementBatches) for (const row of batch) existingSettlementRefs.add(row.external_reference);
 
   // Import expenses in batches
   const newExpenses = regularExpenses.filter((e) => !existingExpenseIds.has(String(e.id)));
@@ -519,9 +520,11 @@ async function importGroup(
     }
 
     if (allShares.length > 0) {
-      for (let j = 0; j < allShares.length; j += 500) {
-        await db.from("split_shares").insert(allShares.slice(j, j + 500));
-      }
+      await Promise.all(
+        Array.from({ length: Math.ceil(allShares.length / 500) }, (_, j) =>
+          db.from("split_shares").insert(allShares.slice(j * 500, (j + 1) * 500))
+        )
+      );
     }
   }
 
@@ -566,9 +569,11 @@ async function importGroup(
   }
 
   if (settlementRows.length > 0) {
-    for (let i = 0; i < settlementRows.length; i += 500) {
-      await db.from("settlements").insert(settlementRows.slice(i, i + 500));
-    }
+    await Promise.all(
+      Array.from({ length: Math.ceil(settlementRows.length / 500) }, (_, i) =>
+        db.from("settlements").insert(settlementRows.slice(i * 500, (i + 1) * 500))
+      )
+    );
   }
 }
 

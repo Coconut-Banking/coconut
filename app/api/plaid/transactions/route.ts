@@ -280,18 +280,22 @@ export async function GET(request: NextRequest) {
             toPersist.push({ id: snap.id, value: trimmed });
           }
           const CHUNK = 40;
+          const chunkPromises: Promise<unknown>[] = [];
           for (let i = 0; i < toPersist.length; i += CHUNK) {
             const chunk = toPersist.slice(i, i + CHUNK);
-            await Promise.all(
-              chunk.map((u) =>
-                adminDbBg
-                  .from("transactions")
-                  .update({ merchant_display_llm: u.value })
-                  .eq("id", u.id)
-                  .eq("clerk_user_id", uid)
+            chunkPromises.push(
+              Promise.all(
+                chunk.map((u) =>
+                  adminDbBg
+                    .from("transactions")
+                    .update({ merchant_display_llm: u.value })
+                    .eq("id", u.id)
+                    .eq("clerk_user_id", uid)
+                )
               )
             );
           }
+          await Promise.all(chunkPromises);
         }).catch((e) => console.warn("[transactions] background LLM failed:", e));
       }
     }

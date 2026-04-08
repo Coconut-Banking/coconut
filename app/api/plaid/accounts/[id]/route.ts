@@ -7,11 +7,12 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getEffectiveUserId();
+  const [userId, { id }, body] = await Promise.all([
+    getEffectiveUserId(),
+    params,
+    request.json(),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-  const body = await request.json();
   const nickname = body.nickname;
 
   if (typeof nickname !== "string" && nickname !== null) {

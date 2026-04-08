@@ -5,9 +5,15 @@ import { getEffectiveUserId } from "@/lib/demo";
 import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
-  const effectiveUserId = await getEffectiveUserId();
+  const [effectiveUserId, body] = await Promise.all([
+    getEffectiveUserId(),
+    request.json().catch(() => null),
+  ]);
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!body) {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
   const rl = rateLimit(`nl-search:${effectiveUserId}`, 20, 60_000);
@@ -15,12 +21,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
   const { q: rawQ } = body as { q?: string };
   const q = rawQ?.trim()?.slice(0, 500);
 

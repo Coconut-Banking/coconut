@@ -58,6 +58,8 @@ export async function GET() {
     return NextResponse.json({
       receipts: filtered,
       count: filtered.length,
+    }, {
+      headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=120" },
     });
   } catch (e) {
     console.error("Error fetching receipts:", e);

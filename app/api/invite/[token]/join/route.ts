@@ -8,8 +8,8 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
-  const { token } = await params;
-  const userId = await getUserId();
+  // Parallelize params + auth (independent)
+  const [{ token }, userId] = await Promise.all([params, getUserId()]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -39,12 +39,15 @@ export async function POST(
     });
   }
 
-  const { data: existing } = await db
-    .from("group_members")
-    .select("id")
-    .eq("group_id", group.id)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const [{ data: existing }, user] = await Promise.all([
+    db
+      .from("group_members")
+      .select("id")
+      .eq("group_id", group.id)
+      .eq("user_id", userId)
+      .maybeSingle(),
+    currentUser(),
+  ]);
 
   if (existing) {
     return NextResponse.json({
@@ -55,7 +58,6 @@ export async function POST(
     });
   }
 
-  const user = await currentUser();
   const email = user?.primaryEmailAddress?.emailAddress ?? null;
   const displayName = user?.fullName || user?.firstName || "Member";
 

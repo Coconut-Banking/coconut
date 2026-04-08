@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
+
 /**
  * POST /api/stripe/terminal/connection-token
  * Creates a short-lived Stripe Terminal connection token for the mobile SDK.
@@ -12,12 +16,9 @@ export async function POST() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) {
+  if (!stripe) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
-
-  const stripe = new Stripe(key);
 
   try {
     const connectionToken = await stripe.terminal.connectionTokens.create();

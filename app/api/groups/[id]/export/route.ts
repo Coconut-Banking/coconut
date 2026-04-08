@@ -60,23 +60,39 @@ export async function GET(
 
   const db = getSupabase();
 
-  const { data: group, error: groupErr } = await db
-    .from("groups")
-    .select("name")
-    .eq("id", groupId)
-    .single();
+  const [
+    { data: group, error: groupErr },
+    { data: membersRaw, error: memErr },
+    { data: splitsRaw, error: splitErr },
+  ] = await Promise.all([
+    db.from("groups").select("name").eq("id", groupId).single(),
+    db
+      .from("group_members")
+      .select("id, display_name, user_id")
+      .eq("group_id", groupId)
+      .order("display_name", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: true }),
+    db
+      .from("split_transactions")
+      .select(
+        `
+      id, transaction_id, created_at, payer_member_id, amount, description,
+      iso_currency_code,
+      transactions(merchant_name, raw_name, amount, date)
+    `
+      )
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: true }),
+  ]);
+
   if (groupErr || !group) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const { data: membersRaw, error: memErr } = await db
-    .from("group_members")
-    .select("id, display_name, user_id")
-    .eq("group_id", groupId)
-    .order("display_name", { ascending: true, nullsFirst: false })
-    .order("id", { ascending: true });
-
   if (memErr) {
     console.error("[groups/export] members:", memErr.message);
     return NextResponse.json({ error: "Failed to load group" }, { status: 500 });
+  }
+  if (splitErr) {
+    console.error("[groups/export] splits:", splitErr.message);
+    return NextResponse.json({ error: "Failed to load expenses" }, { status: 500 });
   }
 
   const members = membersRaw ?? [];
@@ -84,23 +100,6 @@ export async function GET(
   const memberByUserId = new Map(
     members.filter((m) => m.user_id).map((m) => [m.user_id as string, m.id])
   );
-
-  const { data: splitsRaw, error: splitErr } = await db
-    .from("split_transactions")
-    .select(
-      `
-      id, transaction_id, created_at, payer_member_id, amount, description,
-      iso_currency_code,
-      transactions(merchant_name, raw_name, amount, date)
-    `
-    )
-    .eq("group_id", groupId)
-    .order("created_at", { ascending: true });
-
-  if (splitErr) {
-    console.error("[groups/export] splits:", splitErr.message);
-    return NextResponse.json({ error: "Failed to load expenses" }, { status: 500 });
-  }
 
   const seenTxIds = new Set<string>();
   const splits = (splitsRaw ?? []).filter((s) => {
@@ -111,26 +110,24 @@ export async function GET(
   });
 
   const txIds = splits.map((s) => s.transaction_id).filter(Boolean) as string[];
-  let txRows: { id: string; clerk_user_id: string }[] = [];
-  if (txIds.length > 0) {
-    const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-    txRows = data ?? [];
-  }
-  const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
-
   const splitIds = splits.map((s) => s.id);
-  let shares: { split_transaction_id: string; member_id: string; amount: number | string }[] = [];
-  if (splitIds.length > 0) {
-    const { data: sh, error: shErr } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splitIds);
-    if (shErr) {
-      console.error("[groups/export] shares:", shErr.message);
-      return NextResponse.json({ error: "Failed to load shares" }, { status: 500 });
-    }
-    shares = sh ?? [];
+
+  const [{ data: txData }, { data: sh, error: shErr }] = await Promise.all([
+    txIds.length > 0
+      ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+      : Promise.resolve({ data: [] as { id: string; clerk_user_id: string }[], error: null }),
+    splitIds.length > 0
+      ? db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds)
+      : Promise.resolve({ data: [] as { split_transaction_id: string; member_id: string; amount: number | string }[], error: null }),
+  ]);
+
+  if (shErr) {
+    console.error("[groups/export] shares:", shErr.message);
+    return NextResponse.json({ error: "Failed to load shares" }, { status: 500 });
   }
+  const txRows = txData ?? [];
+  const shares = sh ?? [];
+  const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
   const sharesBySplit = new Map<string, Map<string, number>>();
   for (const sh of shares) {
@@ -156,7 +153,7 @@ export async function GET(
     const tid = s.transaction_id as string | null | undefined;
     const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
     const resolvedPayerId =
-      payerMemberId && members.some((m) => m.id === payerMemberId)
+      payerMemberId && memberMap.has(payerMemberId)
         ? payerMemberId
         : (() => {
             const ownerId = tid ? txOwnerById.get(tid) : undefined;

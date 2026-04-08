@@ -248,19 +248,22 @@ export async function remapEmailReceiptsBeforeTxDedupeDelete(
     arr.push(dupId);
     byKept.set(kept, arr);
   }
-  for (const [keptId, dupIds] of byKept) {
-    for (let i = 0; i < dupIds.length; i += EMAIL_RECEIPT_TX_IN_CHUNK) {
-      const chunk = dupIds.slice(i, i + EMAIL_RECEIPT_TX_IN_CHUNK);
-      const { error } = await db
-        .from("email_receipts")
-        .update({ transaction_id: keptId })
-        .in("transaction_id", chunk)
-        .eq("clerk_user_id", clerkUserId);
-      if (error) {
-        console.warn("[transactions] receipt remap before dedupe delete failed:", error.message);
-      }
-    }
-  }
+  await Promise.all(
+    Array.from(byKept.entries()).flatMap(([keptId, dupIds]) =>
+      Array.from({ length: Math.ceil(dupIds.length / EMAIL_RECEIPT_TX_IN_CHUNK) }, (_, i) =>
+        db
+          .from("email_receipts")
+          .update({ transaction_id: keptId })
+          .in("transaction_id", dupIds.slice(i * EMAIL_RECEIPT_TX_IN_CHUNK, (i + 1) * EMAIL_RECEIPT_TX_IN_CHUNK))
+          .eq("clerk_user_id", clerkUserId)
+          .then(({ error }) => {
+            if (error) {
+              console.warn("[transactions] receipt remap before dedupe delete failed:", error.message);
+            }
+          })
+      )
+    )
+  );
   await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, duplicateIdsBeingDeleted);
 }
 
@@ -588,16 +591,13 @@ export async function syncTransactionsForUser(
 
     const removedUuids = (toRemove ?? []).map(r => r.id as string);
 
-    // Clean up subscription_transactions references first
-    if (removedUuids.length > 0) {
-      await db
-        .from("subscription_transactions")
-        .delete()
-        .in("transaction_id", removedUuids);
-    }
-
-    // Plaid-removed rows are deleted outright (not merged); clear receipt FKs first
-    await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, removedUuids);
+    // Clean up subscription_transactions references and email receipt FKs in parallel
+    await Promise.all([
+      removedUuids.length > 0
+        ? db.from("subscription_transactions").delete().in("transaction_id", removedUuids)
+        : Promise.resolve(),
+      clearEmailReceiptLinksForTransactionIds(db, clerkUserId, removedUuids),
+    ]);
 
     // Now safe to delete transactions
     const BATCH = 100;
@@ -906,14 +906,18 @@ export async function enrichCategoriesForUser(
     const batch = txs.slice(i, i + CATEGORIZE_BATCH);
     const categories = await categorizeBatch(batch);
 
-    for (const [id, category] of categories) {
-      const { error: updateErr } = await db
-        .from("transactions")
-        .update({ primary_category: category })
-        .eq("id", id)
-        .eq("clerk_user_id", clerkUserId);
+    const results = await Promise.all(
+      Array.from(categories).map(([id, category]) =>
+        db
+          .from("transactions")
+          .update({ primary_category: category })
+          .eq("id", id)
+          .eq("clerk_user_id", clerkUserId)
+      )
+    );
+    for (const { error: updateErr } of results) {
       if (updateErr) {
-        console.warn("[categorize] update failed for tx", id, ":", updateErr.message);
+        console.warn("[categorize] update failed:", updateErr.message);
       } else {
         updated++;
       }
@@ -1032,21 +1036,19 @@ export async function embedRichTransactionsForUser(clerkUserId: string): Promise
     });
 
     const embeddings = await embedBatch(texts);
-    for (let j = 0; j < batch.length; j++) {
-      const emb = embeddings[j];
-      if (emb) {
+    await Promise.all(
+      batch.map(async (tx, j) => {
+        const emb = embeddings[j];
+        if (!emb) return;
         const { error: updateErr } = await db
           .from("transactions")
-          .update({
-            rich_embedding: JSON.stringify(emb),
-            embed_text: texts[j],
-          })
-          .eq("id", batch[j].id);
+          .update({ rich_embedding: JSON.stringify(emb), embed_text: texts[j] })
+          .eq("id", tx.id);
         if (updateErr) {
-          console.warn("[embed-rich] update failed for tx", batch[j].id, ":", updateErr.message);
+          console.warn("[embed-rich] update failed for tx", tx.id, ":", updateErr.message);
         }
-      }
-    }
+      })
+    );
   }
   console.log(`[embed-rich] finished embedding ${rows.length} transactions for ${clerkUserId}`);
 }
@@ -1070,18 +1072,19 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
     const batch = rows.slice(i, i + EMBED_BATCH) as Array<EmbedRow & { id: string }>;
     const texts = batch.map((t) => buildEmbedText(t));
     const embeddings = await embedBatch(texts);
-    for (let j = 0; j < batch.length; j++) {
-      const emb = embeddings[j];
-      if (emb) {
+    await Promise.all(
+      batch.map(async (tx, j) => {
+        const emb = embeddings[j];
+        if (!emb) return;
         const { error: updateErr } = await db
           .from("transactions")
           .update({ embedding: JSON.stringify(emb) })
-          .eq("id", batch[j].id);
+          .eq("id", tx.id);
         if (updateErr) {
-          console.warn("[embed] update failed for tx", batch[j].id, ":", updateErr.message);
+          console.warn("[embed] update failed for tx", tx.id, ":", updateErr.message);
         }
-      }
-    }
+      })
+    );
   }
   console.log(`[embed] finished embedding ${rows.length} transactions for ${clerkUserId}`);
 }

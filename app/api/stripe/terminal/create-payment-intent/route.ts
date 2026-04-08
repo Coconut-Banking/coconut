@@ -44,6 +44,10 @@ export async function POST(req: NextRequest) {
   const db = getSupabase();
 
   const metadata: Record<string, string> = {};
+
+  // Fire stripe.accounts.retrieve() immediately — it's independent of all DB queries
+  const stripeAcctPromise = stripe.accounts.retrieve().catch(() => null);
+
   if (body.groupId && body.payerMemberId && body.receiverMemberId) {
     const allowed = await canAccessGroup(userId, body.groupId);
     if (!allowed) {
@@ -79,12 +83,15 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (receiverMember?.user_id) {
-      const { data: connectAccount } = await db
-        .from("stripe_connected_accounts")
-        .select("stripe_account_id")
-        .eq("clerk_user_id", receiverMember.user_id)
-        .eq("onboarding_complete", true)
-        .maybeSingle();
+      const [{ data: connectAccount }] = await Promise.all([
+        db
+          .from("stripe_connected_accounts")
+          .select("stripe_account_id")
+          .eq("clerk_user_id", receiverMember.user_id)
+          .eq("onboarding_complete", true)
+          .maybeSingle(),
+        stripeAcctPromise,
+      ]);
 
       if (connectAccount) {
         destinationAccountId = connectAccount.stripe_account_id;
@@ -109,12 +116,10 @@ export async function POST(req: NextRequest) {
   };
 
   let currency = DEFAULT_CURRENCY;
-  try {
-    const acct = await stripe.accounts.retrieve();
+  const acct = await stripeAcctPromise;
+  if (acct) {
     const country = (acct.country ?? "").toUpperCase();
     currency = COUNTRY_TO_CURRENCY[country] ?? DEFAULT_CURRENCY;
-  } catch {
-    // Fallback to default
   }
 
   if (clientCurrency && clientCurrency !== currency) {

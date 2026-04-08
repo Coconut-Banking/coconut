@@ -10,13 +10,15 @@ export async function GET() {
   if (!session.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const effectiveUserId = await getEffectiveUserId({ userId: session.userId });
+  const [effectiveUserId, token] = await Promise.all([
+    getEffectiveUserId({ userId: session.userId }),
+    session.userId ? getCachedSupabaseToken(session.getToken, session.userId) : Promise.resolve(null),
+  ]);
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const token = session.userId ? await getCachedSupabaseToken(session.getToken, session.userId) : null;
     const db = getSupabaseForUser(token) ?? getSupabaseAdmin();
 
     const [accountsResult, subsResult, walletsResult] = await Promise.all([

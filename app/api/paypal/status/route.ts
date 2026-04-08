@@ -11,7 +11,9 @@ export async function GET() {
 
   try {
     const status = await getPayPalStatus(effectiveUserId);
-    return NextResponse.json(status);
+    return NextResponse.json(status, {
+      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
+    });
   } catch (e) {
     console.error("[paypal/status]", e);
     return NextResponse.json({ connected: false, email: null, lastSyncAt: null });

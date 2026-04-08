@@ -249,14 +249,19 @@ export async function removePayPalConnection(clerkUserId: string) {
 
   const txIds = (paypalTxs ?? []).map(t => t.id);
 
-  // Clean up subscription_transactions references before deleting transactions
+  // Clear FK references to PayPal transactions in parallel
   if (txIds.length > 0) {
-    await db.from("subscription_transactions").delete().in("transaction_id", txIds);
-    await clearEmailReceiptLinksForTransactionIds(db, clerkUserId, txIds);
+    await Promise.all([
+      db.from("subscription_transactions").delete().in("transaction_id", txIds),
+      clearEmailReceiptLinksForTransactionIds(db, clerkUserId, txIds),
+    ]);
   }
 
-  await db.from("paypal_connections").delete().eq("clerk_user_id", clerkUserId);
-  await db.from("transactions").delete().eq("clerk_user_id", clerkUserId).eq("source", "paypal");
+  // Delete connection record and PayPal transactions in parallel
+  await Promise.all([
+    db.from("paypal_connections").delete().eq("clerk_user_id", clerkUserId),
+    db.from("transactions").delete().eq("clerk_user_id", clerkUserId).eq("source", "paypal"),
+  ]);
 }
 
 export { PAYPAL_BASE };

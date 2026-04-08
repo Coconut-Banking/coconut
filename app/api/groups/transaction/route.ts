@@ -84,21 +84,11 @@ async function buildResponse(
   category: string | null,
   receiptUrl: string | null,
 ) {
-  const { data: group } = await db
-    .from("groups")
-    .select("id, name, group_type")
-    .eq("id", tx.group_id)
-    .maybeSingle();
-
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, display_name, email, user_id")
-    .eq("group_id", tx.group_id);
-
-  const { data: shares } = await db
-    .from("split_shares")
-    .select("member_id, amount")
-    .eq("split_transaction_id", tx.id);
+  const [{ data: group }, { data: members }, { data: shares }] = await Promise.all([
+    db.from("groups").select("id, name, group_type").eq("id", tx.group_id).maybeSingle(),
+    db.from("group_members").select("id, display_name, email, user_id").eq("group_id", tx.group_id),
+    db.from("split_shares").select("member_id, amount").eq("split_transaction_id", tx.id),
+  ]);
 
   const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
   const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
@@ -140,5 +130,7 @@ async function buildResponse(
     category,
     receiptUrl,
     splitwiseUrl: null,
+  }, {
+    headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=120" },
   });
 }
