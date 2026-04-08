@@ -11,15 +11,12 @@ import { formatCurrency } from "@/lib/currency";
 import { notifyGroupMembers } from "@/lib/push-sender";
 
 export async function POST(req: NextRequest) {
-  const userId = await getUserId();
+  const [userId, body] = await Promise.all([
+    getUserId(),
+    req.json().catch(() => null) as Promise<Record<string, unknown> | null>,
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  if (body === null) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   const groupId = body.groupId ?? body.group_id;
   const payerMemberId = body.payerMemberId ?? body.payer_member_id;
   const receiverMemberId = body.receiverMemberId ?? body.receiver_member_id;

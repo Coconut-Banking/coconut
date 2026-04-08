@@ -16,6 +16,11 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
+// Short-lived cache for merchant context — avoids re-fetching 5000 rows on repeat searches
+type MerchantCtx = { merchants: Array<{ name: string; raw: string; category: string; count: number }> };
+const _merchantCtxCache = new Map<string, { ctx: MerchantCtx | undefined; ts: number }>();
+const MERCHANT_CTX_TTL_MS = 60_000;
+
 // ─── Intent schema ────────────────────────────────────────────────────────────
 
 export interface SearchIntent {
@@ -1241,36 +1246,44 @@ export async function search(
 
   // Step 1: Simple intent extraction — just dates, metric, amounts, and routing
   // Pass merchant context if available for better routing decisions
-  let merchantContext: Parameters<typeof extractIntent>[1];
+  let merchantContext: MerchantCtx | undefined;
   if (openai) {
-    try {
-      const db = getSupabase();
-      const { data } = await db
-        .from("transactions")
-        .select("merchant_name, raw_name, primary_category")
-        .eq("clerk_user_id", clerkUserId)
-        .limit(5000);
-      if (data && data.length > 0) {
-        const map = new Map<string, { name: string; raws: Set<string>; cats: Set<string>; count: number }>();
-        for (const row of data as { merchant_name: string | null; raw_name: string | null; primary_category: string | null }[]) {
-          const name = (row.merchant_name || row.raw_name || "").trim();
-          if (!name) continue;
-          const key = name.toLowerCase();
-          if (!map.has(key)) map.set(key, { name, raws: new Set(), cats: new Set(), count: 0 });
-          const entry = map.get(key)!;
-          if (row.raw_name) entry.raws.add(row.raw_name.trim());
-          if (row.primary_category) entry.cats.add(row.primary_category);
-          entry.count++;
+    const _cached = _merchantCtxCache.get(clerkUserId);
+    if (_cached && Date.now() - _cached.ts < MERCHANT_CTX_TTL_MS) {
+      merchantContext = _cached.ctx;
+    } else {
+      try {
+        const db = getSupabase();
+        const { data } = await db
+          .from("transactions")
+          .select("merchant_name, raw_name, primary_category")
+          .eq("clerk_user_id", clerkUserId)
+          .limit(5000);
+        if (data && data.length > 0) {
+          const map = new Map<string, { name: string; raws: Set<string>; cats: Set<string>; count: number }>();
+          for (const row of data as { merchant_name: string | null; raw_name: string | null; primary_category: string | null }[]) {
+            const name = (row.merchant_name || row.raw_name || "").trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (!map.has(key)) map.set(key, { name, raws: new Set(), cats: new Set(), count: 0 });
+            const entry = map.get(key)!;
+            if (row.raw_name) entry.raws.add(row.raw_name.trim());
+            if (row.primary_category) entry.cats.add(row.primary_category);
+            entry.count++;
+          }
+          merchantContext = {
+            merchants: [...map.values()].sort((a, b) => a.name.localeCompare(b.name)).map((m) => ({
+              name: m.name, raw: [...m.raws].slice(0, 2).join("; "),
+              category: [...m.cats].join(", "), count: m.count,
+            })),
+          };
+          _merchantCtxCache.set(clerkUserId, { ctx: merchantContext, ts: Date.now() });
+        } else {
+          _merchantCtxCache.set(clerkUserId, { ctx: undefined, ts: Date.now() });
         }
-        merchantContext = {
-          merchants: [...map.values()].sort((a, b) => a.name.localeCompare(b.name)).map((m) => ({
-            name: m.name, raw: [...m.raws].slice(0, 2).join("; "),
-            category: [...m.cats].join(", "), count: m.count,
-          })),
-        };
+      } catch (e) {
+        console.warn("[nl-search] merchant prefetch failed:", e instanceof Error ? e.message : e);
       }
-    } catch (e) {
-      console.warn("[nl-search] merchant prefetch failed:", e instanceof Error ? e.message : e);
     }
   }
 
