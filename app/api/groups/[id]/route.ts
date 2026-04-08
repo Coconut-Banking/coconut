@@ -254,6 +254,7 @@ export async function GET(
     const memberByUserId = new Map(
       (members ?? []).filter((m) => m.user_id).map((m) => [m.user_id, m.id])
     );
+    const memberIdSet = new Set((members ?? []).map((m) => m.id));
 
     // Pre-index shares by split_transaction_id for O(1) lookups
     const sharesBySplitId = new Map<string, NonNullable<typeof shares>>();
@@ -275,7 +276,7 @@ export async function GET(
       const tid = s.transaction_id as string | null | undefined;
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const memberId =
-        payerMemberId && (members ?? []).some((m) => m.id === payerMemberId)
+        payerMemberId && memberIdSet.has(payerMemberId)
           ? payerMemberId
           : (() => {
               const ownerId2 = tid ? txOwnerById.get(tid) : undefined;
@@ -390,7 +391,8 @@ export async function GET(
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const payerMember = payerMemberId ? memberMap.get(payerMemberId) : null;
       const ownerId3 = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
-      const ownerMember = ownerId3 ? Array.from(memberMap.values()).find((m) => m.user_id === ownerId3) : null;
+      const ownerMemberId3 = ownerId3 ? memberByUserId.get(ownerId3) : undefined;
+      const ownerMember = ownerMemberId3 ? memberMap.get(ownerMemberId3) : null;
       const paidByMember = payerMember ?? ownerMember;
       return {
         id: s.id,

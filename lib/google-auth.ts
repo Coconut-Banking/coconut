@@ -163,13 +163,14 @@ export async function hasClerkGoogleOAuth(clerkUserId: string): Promise<boolean>
 
 export async function getGmailStatus(clerkUserId: string) {
   const db = getSupabase();
-  const { data } = await db
-    .from("gmail_connections")
-    .select("email, last_scan_at, email_scan_enabled")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-
-  const hasGoogleOAuth = await hasClerkGoogleOAuth(clerkUserId);
+  const [{ data }, hasGoogleOAuth] = await Promise.all([
+    db
+      .from("gmail_connections")
+      .select("email, last_scan_at, email_scan_enabled")
+      .eq("clerk_user_id", clerkUserId)
+      .maybeSingle(),
+    hasClerkGoogleOAuth(clerkUserId),
+  ]);
   const hasLegacyTokens = Boolean(data?.email);
 
   return {
@@ -183,8 +184,11 @@ export async function getGmailStatus(clerkUserId: string) {
 
 export async function removeGmailConnection(clerkUserId: string) {
   const db = getSupabase();
-  // Clear email_receipts.transaction_id FK before deleting (prevents FK violation)
-  await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", clerkUserId);
-  await db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId);
+  // Clear email_receipts.transaction_id FK and delete gmail_connections in parallel
+  await Promise.all([
+    db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", clerkUserId),
+    db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId),
+  ]);
+  // Delete email_receipts after the FK is cleared (prevents FK violation)
   await db.from("email_receipts").delete().eq("clerk_user_id", clerkUserId);
 }
