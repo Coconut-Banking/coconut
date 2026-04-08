@@ -155,15 +155,17 @@ export async function POST(request: NextRequest) {
     }
   } else if (webhook_type === "ITEM") {
     if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
-      await db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id);
-      const { data: existingJob } = await db
-        .from("job_queue")
-        .select("id")
-        .eq("type", "plaid_sync")
-        .eq("clerk_user_id", clerkUserId)
-        .in("status", ["pending", "processing"])
-        .limit(1)
-        .maybeSingle();
+      const [, { data: existingJob }] = await Promise.all([
+        db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id),
+        db
+          .from("job_queue")
+          .select("id")
+          .eq("type", "plaid_sync")
+          .eq("clerk_user_id", clerkUserId)
+          .in("status", ["pending", "processing"])
+          .limit(1)
+          .maybeSingle(),
+      ]);
       if (!existingJob) {
         const { error: queueErr } = await db.from("job_queue").insert({
           type: "plaid_sync",
@@ -184,15 +186,17 @@ export async function POST(request: NextRequest) {
       await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
     } else if (webhook_code === "LOGIN_REPAIRED") {
       console.log("[plaid][webhook] LOGIN_REPAIRED", { item_id, user_id: clerkUserId });
-      await db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id);
       // Queue the post-repair sync (non-critical — reauth flag is already cleared)
-      await db.from("job_queue").insert({
-        type: "plaid_sync",
-        payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
-        clerk_user_id: clerkUserId,
-      }).then(({ error }) => {
-        if (error) console.warn("[plaid][webhook] queue insert failed for LOGIN_REPAIRED (non-fatal):", error.message);
-      });
+      await Promise.all([
+        db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id),
+        db.from("job_queue").insert({
+          type: "plaid_sync",
+          payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
+          clerk_user_id: clerkUserId,
+        }).then(({ error }) => {
+          if (error) console.warn("[plaid][webhook] queue insert failed for LOGIN_REPAIRED (non-fatal):", error.message);
+        }),
+      ]);
     } else if (
       webhook_code === "USER_PERMISSION_REVOKED" ||
       webhook_code === "USER_ACCOUNT_REVOKED"
