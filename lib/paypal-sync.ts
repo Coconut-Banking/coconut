@@ -168,56 +168,73 @@ async function upsertTransactions(
   clerkUserId: string,
   transactions: PayPalTransaction[]
 ): Promise<number> {
+  if (transactions.length === 0) return 0;
   let upserted = 0;
 
-  for (const tx of transactions) {
+  // Parse all transactions upfront and filter invalid ones
+  const parsed = transactions.map(tx => {
     const info = tx.transaction_info;
     const payerName = info.payer_info?.payer_name;
     const counterpartyName = payerName
       ? `${payerName.given_name ?? ""} ${payerName.surname ?? ""}`.trim()
       : info.shipping_info?.name ?? "Unknown";
-
     const note = tx.cart_info?.item_details?.[0]?.item_name ?? null;
-    const amount = info.transaction_amount?.value != null
-      ? parseFloat(info.transaction_amount.value)
-      : NaN;
+    const amount = info.transaction_amount?.value != null ? parseFloat(info.transaction_amount.value) : NaN;
     const date = info.transaction_initiation_date?.slice(0, 10);
+    return { info, counterpartyName, note, amount, date };
+  }).filter(p => p.date && !isNaN(p.amount));
 
-    if (!date || isNaN(amount)) continue;
+  // Pre-load all Plaid PayPal transactions covering the full date range in ONE query
+  // instead of N per-transaction queries
+  const dates = parsed.map(p => p.date as string);
+  const minDate = dates.reduce((a, b) => a < b ? a : b);
+  const maxDate = dates.reduce((a, b) => a > b ? a : b);
+  const rangeStart = new Date(minDate); rangeStart.setDate(rangeStart.getDate() - 1);
+  const rangeEnd = new Date(maxDate); rangeEnd.setDate(rangeEnd.getDate() + 1);
 
-    // Try to find a matching Plaid transaction to enrich
+  const { data: allPlaidPayPal } = await db
+    .from("transactions")
+    .select("id, amount, date")
+    .eq("clerk_user_id", clerkUserId)
+    .eq("source", "plaid")
+    .gte("date", rangeStart.toISOString().slice(0, 10))
+    .lte("date", rangeEnd.toISOString().slice(0, 10))
+    .ilike("merchant_name", "%paypal%");
+
+  // Group pre-loaded Plaid rows by date for fast in-memory matching
+  const plaidByDate = new Map<string, { id: string; amount: number }[]>();
+  for (const row of allPlaidPayPal ?? []) {
+    const d = (row.date as string).slice(0, 10);
+    const existing = plaidByDate.get(d) ?? [];
+    existing.push({ id: row.id as string, amount: Number(row.amount) });
+    plaidByDate.set(d, existing);
+  }
+
+  for (const p of parsed) {
+    const date = p.date as string;
     const txDate = new Date(date);
-    const dayBefore = new Date(txDate);
-    dayBefore.setDate(dayBefore.getDate() - 1);
-    const dayAfter = new Date(txDate);
-    dayAfter.setDate(dayAfter.getDate() + 1);
+    const dayBefore = new Date(txDate); dayBefore.setDate(dayBefore.getDate() - 1);
+    const dayAfter = new Date(txDate); dayAfter.setDate(dayAfter.getDate() + 1);
+    const dbStr = dayBefore.toISOString().slice(0, 10);
+    const daStr = dayAfter.toISOString().slice(0, 10);
 
-    const { data: plaidMatches } = await db
-      .from("transactions")
-      .select("id, amount")
-      .eq("clerk_user_id", clerkUserId)
-      .eq("source", "plaid")
-      .gte("date", dayBefore.toISOString().slice(0, 10))
-      .lte("date", dayAfter.toISOString().slice(0, 10))
-      .ilike("merchant_name", "%paypal%");
+    // Find Plaid matches in preloaded data (in-memory, no DB call)
+    const candidates: { id: string; amount: number }[] = [];
+    for (const [d, rows] of plaidByDate) {
+      if (d >= dbStr && d <= daStr) candidates.push(...rows);
+    }
 
-    // Filter by amount tolerance: Plaid amounts are negative for debits,
-    // so compare absolute values within $0.02
-    const amountMatches = (plaidMatches ?? []).filter(
-      (m) => Math.abs(Math.abs(m.amount) - Math.abs(amount)) <= 0.02
+    // Filter by amount tolerance: Plaid amounts are negative for debits
+    const amountMatches = candidates.filter(
+      (m) => Math.abs(Math.abs(m.amount) - Math.abs(p.amount)) <= 0.02
     );
 
     if (amountMatches.length === 1) {
       // Exactly one match — enrich the existing Plaid transaction
       const { error } = await db
         .from("transactions")
-        .update({
-          p2p_counterparty: counterpartyName,
-          p2p_note: note,
-          p2p_platform: "paypal",
-        })
+        .update({ p2p_counterparty: p.counterpartyName, p2p_note: p.note, p2p_platform: "paypal" })
         .eq("id", amountMatches[0].id);
-
       if (!error) upserted++;
     } else {
       // Zero or multiple matches — upsert as a PayPal-sourced transaction
@@ -225,19 +242,18 @@ async function upsertTransactions(
         {
           clerk_user_id: clerkUserId,
           source: "paypal",
-          external_id: info.transaction_id,
+          external_id: p.info.transaction_id,
           date,
-          amount,
-          merchant_name: counterpartyName,
-          raw_name: counterpartyName,
-          p2p_counterparty: counterpartyName,
-          p2p_note: note,
+          amount: p.amount,
+          merchant_name: p.counterpartyName,
+          raw_name: p.counterpartyName,
+          p2p_counterparty: p.counterpartyName,
+          p2p_note: p.note,
           p2p_platform: "paypal",
-          primary_category: amount > 0 ? "TRANSFER_IN" : "TRANSFER_OUT",
+          primary_category: p.amount > 0 ? "TRANSFER_IN" : "TRANSFER_OUT",
         },
         { onConflict: "clerk_user_id,source,external_id" }
       );
-
       if (!error) upserted++;
     }
   }
