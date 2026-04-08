@@ -13,6 +13,8 @@ const syne = Syne({
   subsets: ["latin"],
   variable: "--font-syne",
   display: "swap",
+  weight: ["700", "800"],
+  preload: false,
 });
 
 const siteUrl =

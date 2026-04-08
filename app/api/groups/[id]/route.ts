@@ -202,10 +202,23 @@ export async function GET(
         )
       );
     }
-    const [sharesBatchResults, txBatchResults, photoMap] = await Promise.all([
+    const isSplitwiseGroup =
+      (group as { source?: string }).source === "splitwise" &&
+      (group as { external_id?: string }).external_id;
+
+    const [sharesBatchResults, txBatchResults, photoMap, splitwiseTokenRow] = await Promise.all([
       splitIdList.length > 0 ? Promise.all(sharesBatchPromises) : Promise.resolve([] as { split_transaction_id: string; member_id: string; amount: number }[][]),
       txIds.length > 0 ? Promise.all(txBatchPromises) : Promise.resolve([] as { id: string; clerk_user_id: string }[][]),
       getClerkUserPhotos(memberUserIds),
+      isSplitwiseGroup
+        ? Promise.resolve(
+            getSupabaseAdmin()
+              .from("splitwise_tokens")
+              .select("cached_group_balances")
+              .eq("clerk_user_id", userId)
+              .maybeSingle()
+          ).then((r) => r.data).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
     const shares = sharesBatchResults.flat();
@@ -240,7 +253,7 @@ export async function GET(
       });
     }
 
-    const txOwnerById = new Map((txRows ?? []).map((t) => [t.id, t.clerk_user_id]));
+    const txOwnerById = new Map((txRows ?? []).map((t: { id: string; clerk_user_id: string }) => [t.id, t.clerk_user_id]));
     const memberByUserId = new Map(
       (members ?? []).filter((m) => m.user_id).map((m) => [m.user_id, m.id])
     );
@@ -404,17 +417,9 @@ export async function GET(
     // Override balances + suggestions for Splitwise groups with authoritative simplified_debts.
     let finalBalances = balancesFlat;
     let finalSuggestions = suggestions;
-    if (
-      (group as { source?: string }).source === "splitwise" &&
-      (group as { external_id?: string }).external_id
-    ) {
+    if (isSplitwiseGroup) {
       try {
-        const adminDb = getSupabaseAdmin();
-        const { data: tokenRow } = await adminDb
-          .from("splitwise_tokens")
-          .select("cached_group_balances")
-          .eq("clerk_user_id", userId)
-          .maybeSingle();
+        const tokenRow = splitwiseTokenRow;
 
         type CachedGroupBalance = {
           external_id: string;

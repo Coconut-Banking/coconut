@@ -22,7 +22,7 @@ export async function GET() {
 
     const { data: receipts, error } = await db
       .from("email_receipts")
-      .select("*")
+      .select("id, clerk_user_id, merchant, merchant_type, amount, currency, date, transaction_id, raw_from, parsed_at")
       .eq("clerk_user_id", userId)
       .order("parsed_at", { ascending: false })
       .limit(EMAIL_RECEIPTS.PAGE_SIZE);

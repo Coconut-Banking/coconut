@@ -7,7 +7,6 @@ import {
   TrendingDown, TrendingUp, RefreshCw, Users, DollarSign, ArrowRight,
   Wallet, CalendarClock, ArrowUpRight, ArrowDownRight, CreditCard, Building2, Sparkles,
 } from "lucide-react";
-import { motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGroupsSummary } from "@/hooks/useGroups";
@@ -508,12 +507,9 @@ export default function DashboardPage() {
                   <span className="text-gray-500 font-medium">{fc(cat.amount)}</span>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${cat.pct}%` }}
-                    transition={{ duration: 0.7, delay: 0.3 }}
-                    className="h-full rounded-full"
-                    style={{ backgroundColor: cat.color }}
+                  <div
+                    className="h-full rounded-full transition-[width] duration-700"
+                    style={{ width: `${cat.pct}%`, backgroundColor: cat.color }}
                   />
                 </div>
               </div>

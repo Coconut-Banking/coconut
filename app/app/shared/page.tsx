@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Wallet,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
@@ -584,7 +585,8 @@ function SharedPageContent() {
   }, [selectedId, selectedPersonKey, showRealUI, refetchSummary]);
 
   useEffect(() => {
-    if (showAdd || settleTarget) {
+    // Only re-fetch when modal closes to pick up newly created expenses/settlements
+    if (!showAdd && !settleTarget) {
       refetchActivity();
     }
   }, [showAdd, settleTarget, refetchActivity]);
@@ -1537,8 +1539,13 @@ function SharedPageContent() {
   );
 }
 
+const SharedPageContentLazy = dynamic(() => Promise.resolve(SharedPageContent), {
+  ssr: false,
+  loading: () => <div className="min-h-screen bg-[#FAF9F7] flex items-center justify-center"><div className="animate-pulse text-sm text-gray-400">Loading…</div></div>,
+});
+
 export default function SharedPage() {
-  return <SharedPageContent />;
+  return <SharedPageContentLazy />;
 }
 
 function PersonRow({

@@ -90,7 +90,7 @@ export function useGroupDetail(id: string | null) {
     if (!silent) setLoading(true);
     try {
       setError(null);
-      const res = await fetch(`/api/groups/${id}`, { cache: "no-store" });
+      const res = await fetch(`/api/groups/${id}`);
       if (isCancelled?.()) return;
       if (res.ok) {
         const data = await res.json();
@@ -211,7 +211,7 @@ export function useGroupsSummary() {
     setLoading(true);
     try {
       setError(null);
-      const res = await fetch("/api/groups/summary", { cache: "no-store" });
+      const res = await fetch("/api/groups/summary");
         if (res.ok) {
         const data = await res.json();
         setSummary(data && typeof data === "object" ? {
@@ -253,7 +253,7 @@ export function usePersonDetail(key: string | null) {
     }
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/groups/person?key=${encodeURIComponent(key)}`, { cache: "no-store" });
+      const res = await fetch(`/api/groups/person?key=${encodeURIComponent(key)}`);
       if (res.ok) {
         const data = await res.json();
         setError(null);
@@ -321,7 +321,7 @@ export function useRecentActivity(enabled = true) {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/groups/recent-activity", { cache: "no-store" });
+      const res = await fetch("/api/groups/recent-activity");
       if (res.ok) {
         const data = await res.json();
         setActivity(Array.isArray(data.activity) ? data.activity : []);
