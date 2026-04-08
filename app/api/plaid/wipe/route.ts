@@ -38,16 +38,17 @@ export async function POST() {
       }
     }
 
-    // Clear email_receipts FK before deleting transactions (prevents FK violation)
-    try {
-      await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId);
-      await db.from("email_receipts").delete().eq("clerk_user_id", effectiveUserId);
-    } catch { /* table may not exist */ }
+    // Parallelize email_receipts FK clear + subscriptions fetch (independent)
+    const [, { data: userSubs }] = await Promise.all([
+      db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", effectiveUserId),
+      db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId),
+    ]);
 
-    // Delete subscription_transactions before subscriptions to avoid orphaned rows
-    const { data: userSubs } = await db.from("subscriptions").select("id").eq("clerk_user_id", effectiveUserId);
+    // Clear email_receipts rows now that FK is nulled
+    await db.from("email_receipts").delete().eq("clerk_user_id", effectiveUserId);
+
     if (userSubs?.length) {
-      await db.from("subscription_transactions").delete().in("subscription_id", userSubs.map(s => s.id));
+      await db.from("subscription_transactions").delete().in("subscription_id", (userSubs as { id: string }[]).map((s) => s.id));
     }
     // Delete subscriptions
     await db.from("subscriptions").delete().eq("clerk_user_id", effectiveUserId);
@@ -80,11 +81,11 @@ export async function POST() {
     return NextResponse.json({ error: "Wipe failed" }, { status: 500 });
   }
 
-  // Delete accounts
-  await db.from("accounts").delete().eq("clerk_user_id", effectiveUserId);
-
-  // Delete plaid_items
-  await db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId);
+  // Parallelize accounts + plaid_items deletes (both independent after transactions removed)
+  await Promise.all([
+    db.from("accounts").delete().eq("clerk_user_id", effectiveUserId),
+    db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId),
+  ]);
 
   revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
   revalidateTag(CACHE_TAGS.splitTransactions(effectiveUserId), "max");

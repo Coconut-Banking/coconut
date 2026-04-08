@@ -170,19 +170,22 @@ export async function matchReceiptsToTransactions(
 ): Promise<number> {
   const db = getSupabase();
 
-  const { data: receipts } = await db
-    .from("email_receipts")
-    .select("id, merchant, amount, date")
-    .in("id", receiptIds)
-    .is("transaction_id", null);
+  // Parallelize receipts fetch + already-linked fetch (independent)
+  const [{ data: receipts }, { data: alreadyLinked }] = await Promise.all([
+    db
+      .from("email_receipts")
+      .select("id, merchant, amount, date")
+      .in("id", receiptIds)
+      .is("transaction_id", null),
+    db
+      .from("email_receipts")
+      .select("transaction_id")
+      .eq("clerk_user_id", clerkUserId)
+      .not("transaction_id", "is", null),
+  ]);
 
   if (!receipts || receipts.length === 0) return 0;
 
-  const { data: alreadyLinked } = await db
-    .from("email_receipts")
-    .select("transaction_id")
-    .eq("clerk_user_id", clerkUserId)
-    .not("transaction_id", "is", null);
   const alreadyMatchedTxIds = new Set(
     (alreadyLinked ?? []).map((r) => r.transaction_id as string).filter(Boolean)
   );
@@ -368,19 +371,20 @@ export async function clearStaleReceiptMatches(clerkUserId: string): Promise<num
     .eq("clerk_user_id", clerkUserId);
 
   const validTxIds = new Set((txRows ?? []).map((t) => t.id as string));
-  let cleared = 0;
 
-  for (const receipt of matchedReceipts) {
-    if (!validTxIds.has(receipt.transaction_id as string)) {
-      await db
-        .from("email_receipts")
-        .update({ transaction_id: null })
-        .eq("id", receipt.id);
-      cleared++;
-    }
+  const staleToClear = matchedReceipts
+    .filter((r) => !validTxIds.has(r.transaction_id as string))
+    .map((r) => r.id as string);
+
+  if (staleToClear.length > 0) {
+    // Single batch update instead of N sequential round-trips
+    await db
+      .from("email_receipts")
+      .update({ transaction_id: null })
+      .in("id", staleToClear);
   }
 
-  return cleared;
+  return staleToClear.length;
 }
 
 /**
