@@ -16,19 +16,19 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
-  const allowed = await canAccessGroup(userId, id);
+  // Parallelize access check + form data parse (independent)
+  const [allowed, formDataRaw] = await Promise.all([
+    canAccessGroup(userId, id),
+    req.formData().catch(() => null),
+  ]);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!formDataRaw) return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
 
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
-  }
+  const formData = formDataRaw;
 
   const file = formData.get("image");
   if (!file || !(file instanceof Blob)) {
@@ -92,10 +92,10 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
   const allowed = await canAccessGroup(userId, id);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

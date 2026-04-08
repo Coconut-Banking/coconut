@@ -8,8 +8,8 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
-  const { token } = await params;
-  const userId = await getUserId();
+  // Parallelize params + auth (independent)
+  const [{ token }, userId] = await Promise.all([params, getUserId()]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

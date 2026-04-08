@@ -60,10 +60,13 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const userId = await getEffectiveUserId();
+  // Parallelize auth + body parse (independent)
+  const [userId, body] = await Promise.all([
+    getEffectiveUserId(),
+    req.json().catch(() => ({})),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const body = await req.json().catch(() => ({}));
     const transactionId = body?.transactionId as string | undefined;
     if (transactionId) {
       const db = getSupabase();
