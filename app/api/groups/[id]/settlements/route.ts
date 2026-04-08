@@ -13,10 +13,8 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
+  const [{ userId }, { id }] = await Promise.all([auth(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
   const db = getSupabase();
 
   const { data: group, error: groupError } = await db.from("groups").select("owner_id").eq("id", id).single();

@@ -13,10 +13,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
+  const [{ userId }, { id }] = await Promise.all([auth(), params]);
   if (!userId) return new Response("Unauthorized", { status: 401 });
-
-  const { id } = await params;
   const allowed = await canAccessGroup(userId, id);
   if (!allowed) return new Response("Not found", { status: 404 });
 
