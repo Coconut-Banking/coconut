@@ -160,13 +160,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Parallel lookups: splits, receipts, subscriptions are independent.
-    // Use admin client for email_receipts to avoid RLS mismatch — the email_receipts
-    // API route uses admin, so the transactions route must too for consistency.
-    // Security: we filter by effectiveUserId explicitly.
+    // All independent lookups in a single parallel batch.
     const adminDb = getSupabaseAdmin();
     const txIds = bankOnly.map((tx) => tx.id);
-    const [{ data: inSplits }, receiptRows, { data: inSubscriptions }] = await Promise.all([
+    const acctIds = [...new Set((deduped as { account_id?: string }[]).map((t) => t.account_id).filter(Boolean))];
+
+    const [{ data: inSplits }, receiptRows, { data: inSubscriptions }, acctRows, { data: activeSubs }] = await Promise.all([
       db.from("split_transactions").select("transaction_id").in("transaction_id", txIds),
       fetchAllEmailReceiptsLinkedForUser(
         adminDb,
@@ -174,6 +173,10 @@ export async function GET(request: NextRequest) {
         "id, transaction_id, merchant, raw_subject, merchant_type, merchant_details"
       ),
       db.from("subscription_transactions").select("transaction_id").in("transaction_id", txIds),
+      acctIds.length > 0
+        ? db.from("accounts").select("id, plaid_account_id, name, mask").in("id", acctIds).then((r) => r.data ?? [])
+        : Promise.resolve([] as { id: string; plaid_account_id: string; name: string; mask: string }[]),
+      db.from("subscriptions").select("normalized_merchant").eq("clerk_user_id", effectiveUserId).eq("status", "active"),
     ]);
 
     const receiptMatchLineByTxId = new Map<string, string>();
@@ -187,7 +190,6 @@ export async function GET(request: NextRequest) {
       const details = r.merchant_details as Record<string, unknown> | null;
       const mType = r.merchant_type as string | null;
 
-      // Build a richer one-liner for merchant-specific receipts
       let line = merchant || (subj ? subj.slice(0, 72) : "") || "Email receipt";
       if (mType === "rideshare" && details?.pickup && details?.dropoff) {
         line = `${merchant}: ${details.pickup} → ${details.dropoff}`;
@@ -199,11 +201,24 @@ export async function GET(request: NextRequest) {
       if (line.length > 80) line = line.slice(0, 78) + "…";
       receiptMatchLineByTxId.set(tid, line);
     }
-    let receiptTxIds = new Set(receiptMatchLineByTxId.keys());
+    const receiptTxIds = new Set(receiptMatchLineByTxId.keys());
     const splitTxIds = new Set(
       (inSplits ?? []).map((r) => r.transaction_id as string).filter(Boolean)
     );
 
+    // Remap receipt maps for duplicates (in-memory only — fast)
+    for (const [dupId, keptId] of duplicateIdToKeptId) {
+      if (receiptMatchLineByTxId.has(dupId)) {
+        receiptMatchLineByTxId.set(keptId, receiptMatchLineByTxId.get(dupId)!);
+        receiptMatchLineByTxId.delete(dupId);
+      }
+      if (receiptIdByTxId.has(dupId)) {
+        receiptIdByTxId.set(keptId, receiptIdByTxId.get(dupId)!);
+        receiptIdByTxId.delete(dupId);
+      }
+    }
+
+    // Fire-and-forget: delete duplicate DB rows in the background
     const protectedIds = new Set(
       [
         ...(inSplits ?? []).map((r) => r.transaction_id as string),
@@ -214,37 +229,27 @@ export async function GET(request: NextRequest) {
       .map((tx) => tx.id as string)
       .filter((id) => !keptIds.has(id) && !protectedIds.has(id));
     if (idsToDelete.length > 0) {
-      const DEDUPE_BATCH = 100;
-      for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
-        const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
-        await remapEmailReceiptsBeforeTxDedupeDelete(adminDb, effectiveUserId, duplicateIdToKeptId, batch);
-        const { error: delErr } = await adminDb
-          .from("transactions")
-          .delete()
-          .eq("clerk_user_id", effectiveUserId)
-          .in("id", batch);
-        if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
-      }
-
-      // DB receipts now point to kept IDs — sync in-memory maps so the
-      // response reflects the remapping done by remapEmailReceiptsBeforeTxDedupeDelete.
-      for (const [dupId, keptId] of duplicateIdToKeptId) {
-        if (receiptMatchLineByTxId.has(dupId)) {
-          receiptMatchLineByTxId.set(keptId, receiptMatchLineByTxId.get(dupId)!);
-          receiptMatchLineByTxId.delete(dupId);
+      const uid = effectiveUserId;
+      const dupMap = duplicateIdToKeptId;
+      void (async () => {
+        try {
+          const bgAdmin = getSupabaseAdmin();
+          const DEDUPE_BATCH = 100;
+          for (let i = 0; i < idsToDelete.length; i += DEDUPE_BATCH) {
+            const batch = idsToDelete.slice(i, i + DEDUPE_BATCH);
+            await remapEmailReceiptsBeforeTxDedupeDelete(bgAdmin, uid, dupMap, batch);
+            const { error: delErr } = await bgAdmin
+              .from("transactions")
+              .delete()
+              .eq("clerk_user_id", uid)
+              .in("id", batch);
+            if (delErr) console.warn("[transactions] dedupe delete failed:", delErr.message);
+          }
+          try { revalidateTag(CACHE_TAGS.transactions(uid), "max"); } catch { /* ok */ }
+        } catch (e) {
+          console.warn("[transactions] background dedupe failed:", e);
         }
-        if (receiptIdByTxId.has(dupId)) {
-          receiptIdByTxId.set(keptId, receiptIdByTxId.get(dupId)!);
-          receiptIdByTxId.delete(dupId);
-        }
-      }
-      receiptTxIds = new Set(receiptMatchLineByTxId.keys());
-
-      try {
-        revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
-      } catch (e) {
-        console.warn("[transactions] revalidateTag after dedupe failed:", e);
-      }
+      })();
     }
 
     function hashColor(str: string): string {
@@ -259,8 +264,7 @@ export async function GET(request: NextRequest) {
       return `${months[d.getMonth()]} ${d.getDate()}`;
     }
 
-    // LLM normalization: fire-and-forget so it doesn't block the GET response.
-    // Results are persisted to DB and will appear on the next load.
+    // LLM normalization: fire-and-forget
     {
       const llmCandidates = deduped.filter((tx) => {
         if ((tx.merchant_display_llm as string | null)?.trim()) return false;
@@ -310,15 +314,6 @@ export async function GET(request: NextRequest) {
         }).catch((e) => console.warn("[transactions] background LLM failed:", e));
       }
     }
-
-    // Parallel: account masks + subscription merchants
-    const acctIds = [...new Set((deduped as { account_id?: string }[]).map((t) => t.account_id).filter(Boolean))];
-    const [acctRows, { data: activeSubs }] = await Promise.all([
-      acctIds.length > 0
-        ? db.from("accounts").select("id, plaid_account_id, name, mask").in("id", acctIds).then((r) => r.data ?? [])
-        : Promise.resolve([]),
-      db.from("subscriptions").select("normalized_merchant").eq("clerk_user_id", effectiveUserId).eq("status", "active"),
-    ]);
     const accountIdToMask = new Map<string, string>();
     for (const a of acctRows) {
       accountIdToMask.set(a.id, a.mask ?? "****");
