@@ -53,11 +53,13 @@ export async function POST(req: NextRequest) {
       const amountCents = pi.amount_received ?? pi.amount ?? 0;
       const amount = amountCents / 100;
 
+      const piCurrency = (pi.currency ?? pi.metadata?.original_currency ?? "usd").toUpperCase();
+
       const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
         group_id,
         payer_member_id,
         receiver_member_id,
-        "USD"
+        piCurrency
       );
 
       if (!allowed || maxAmount <= 0) {
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
           method: "stripe",
           status: "completed",
           external_reference: pi.id,
-          iso_currency_code: "USD",
+          iso_currency_code: piCurrency,
         });
 
         if (error) {
