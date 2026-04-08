@@ -25,15 +25,12 @@ let _hasPayerAndDateCols: boolean | null = null;
  * - payerMemberId: who paid (default: current user)
  */
 export async function POST(req: NextRequest) {
-  const userId = await getUserId();
+  const [userId, body] = await Promise.all([
+    getUserId(),
+    req.json().catch(() => null) as Promise<Record<string, unknown> | null>,
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  if (body === null) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   const groupId = body.groupId ?? body.group_id;
   const amount = Number(body.amount);
   if (!Number.isFinite(amount) || amount <= 0) {
