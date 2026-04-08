@@ -697,9 +697,10 @@ async function handleSummary(req: NextRequest, userId: string) {
 
     if (cachedGroups && Array.isArray(cachedGroups) && cachedGroups.length > 0) {
       const groupCacheMap = new Map(cachedGroups.map((g) => [g.external_id, g.balances]));
+      const groupById = new Map((groups ?? []).map((gr) => [gr.id, gr]));
 
       for (const g of groupsWithBalance) {
-        const row = (groups ?? []).find((gr) => gr.id === g.id);
+        const row = groupById.get(g.id);
         if (row?.source !== "splitwise" || !row.external_id) continue;
         const cachedBals = groupCacheMap.get(row.external_id);
         if (!cachedBals) continue;

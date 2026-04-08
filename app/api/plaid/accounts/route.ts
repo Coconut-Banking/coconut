@@ -97,33 +97,36 @@ export async function GET(request: NextRequest) {
       if (client && accessTokens && accessTokens.length > 0) {
         const items = await getPlaidItemsForUser(effectiveUserId);
         const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
-        const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
-        for (const accessToken of accessTokens) {
-          try {
-            const item = tokenToItem.get(accessToken);
-            const response = await client.accountsGet({ access_token: accessToken });
-            if (!response.data?.accounts || !Array.isArray(response.data.accounts)) continue;
-            const rows = response.data.accounts.map((acct) => {
-              const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-              const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
-                clerk_user_id: effectiveUserId,
-                plaid_account_id: acct.account_id,
-                name: acct.name,
-                type: acct.type,
-                subtype: acct.subtype ?? null,
-                mask: acct.mask ?? null,
-                balance_current: bal?.current ?? null,
-                balance_available: bal?.available ?? null,
-                iso_currency_code: bal?.iso_currency_code ?? "USD",
-              };
-              if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
-              return row;
-            });
-            allRows.push(...rows);
-          } catch (err) {
-            console.error("[plaid][accounts] refresh accountsGet failed:", err instanceof Error ? err.message : err);
-          }
-        }
+        type AccountUpsertRow = { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string };
+        const settled = await Promise.all(
+          accessTokens.map(async (accessToken) => {
+            try {
+              const item = tokenToItem.get(accessToken);
+              const response = await client.accountsGet({ access_token: accessToken });
+              if (!response.data?.accounts || !Array.isArray(response.data.accounts)) return [];
+              return response.data.accounts.map((acct) => {
+                const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+                const row: AccountUpsertRow = {
+                  clerk_user_id: effectiveUserId,
+                  plaid_account_id: acct.account_id,
+                  name: acct.name,
+                  type: acct.type,
+                  subtype: acct.subtype ?? null,
+                  mask: acct.mask ?? null,
+                  balance_current: bal?.current ?? null,
+                  balance_available: bal?.available ?? null,
+                  iso_currency_code: bal?.iso_currency_code ?? "USD",
+                };
+                if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
+                return row;
+              });
+            } catch (err) {
+              console.error("[plaid][accounts] refresh accountsGet failed:", err instanceof Error ? err.message : err);
+              return [];
+            }
+          })
+        );
+        const allRows: AccountUpsertRow[] = settled.flat();
         if (allRows.length > 0) {
           await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
         }
@@ -283,37 +286,39 @@ export async function GET(request: NextRequest) {
     const items = await getPlaidItemsForUser(effectiveUserId);
     const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
 
-    const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
-    for (const accessToken of accessTokens) {
-      try {
-        const item = tokenToItem.get(accessToken);
-        const response = await client.accountsGet({ access_token: accessToken });
-        if (!response.data?.accounts || !Array.isArray(response.data.accounts)) {
-          console.error("[plaid][accounts] accountsGet returned invalid data");
-          continue;
+    type LastResortRow = { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string };
+    const lastResortSettled = await Promise.all(
+      accessTokens.map(async (accessToken) => {
+        try {
+          const item = tokenToItem.get(accessToken);
+          const response = await client.accountsGet({ access_token: accessToken });
+          if (!response.data?.accounts || !Array.isArray(response.data.accounts)) {
+            console.error("[plaid][accounts] accountsGet returned invalid data");
+            return [];
+          }
+          return response.data.accounts.map((acct) => {
+            const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
+            const row: LastResortRow = {
+              clerk_user_id: effectiveUserId,
+              plaid_account_id: acct.account_id,
+              name: acct.name,
+              type: acct.type,
+              subtype: acct.subtype ?? null,
+              mask: acct.mask ?? null,
+              balance_current: bal?.current ?? null,
+              balance_available: bal?.available ?? null,
+              iso_currency_code: bal?.iso_currency_code ?? "USD",
+            };
+            if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
+            return row;
+          });
+        } catch (err) {
+          console.error("[plaid][accounts] accountsGet failed for token, skipping:", err instanceof Error ? err.message : err);
+          return [];
         }
-        const rows = response.data.accounts.map((acct) => {
-          const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
-          const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
-            clerk_user_id: effectiveUserId,
-            plaid_account_id: acct.account_id,
-            name: acct.name,
-            type: acct.type,
-            subtype: acct.subtype ?? null,
-            mask: acct.mask ?? null,
-            balance_current: bal?.current ?? null,
-            balance_available: bal?.available ?? null,
-            iso_currency_code: bal?.iso_currency_code ?? "USD",
-          };
-          if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
-          return row;
-        });
-        allRows.push(...rows);
-      } catch (err) {
-        console.error("[plaid][accounts] accountsGet failed for token, skipping:", err instanceof Error ? err.message : err);
-        continue;
-      }
-    }
+      })
+    );
+    const allRows: LastResortRow[] = lastResortSettled.flat();
     if (allRows.length > 0) {
       await db.from("accounts").upsert(allRows, { onConflict: "plaid_account_id" });
     }
