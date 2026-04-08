@@ -76,12 +76,13 @@ export async function getMaxSettlementAllowed(
     ])
   );
 
+  const memberIdSet = new Set((members ?? []).map((m) => m.id));
   const paidRows: { member_id: string; amount: number; currency: string }[] = [];
   for (const s of splits) {
     const tid = s.transaction_id as string | null | undefined;
     const payerM = (s as { payer_member_id?: string | null }).payer_member_id;
     const memberId =
-      payerM && (members ?? []).some((m) => m.id === payerM)
+      payerM && memberIdSet.has(payerM)
         ? payerM
         : (() => {
             const ownerId = tid ? txOwnerById.get(tid) : undefined;
@@ -107,9 +108,9 @@ export async function getMaxSettlementAllowed(
     owedBySplitMember.set(key, (owedBySplitMember.get(key) ?? 0) + Number(sh.amount));
   }
   const owedRows = Array.from(owedBySplitMember.entries()).map(([key, amount]) => {
-    const splitId = key.split(":")[0];
+    const [splitId, member_id] = key.split(":");
     return {
-      member_id: key.split(":")[1],
+      member_id,
       amount,
       currency: splitCurrencyById.get(splitId) ?? "USD",
     };

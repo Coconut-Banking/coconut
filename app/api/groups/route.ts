@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
   const inviteToken = `inv_${randomUUID().replace(/-/g, "")}`;
 
   const db = getSupabase();
+  const currentUserPromise = currentUser();
 
   let group: { id: string; name: string; owner_id: string; created_at: string } | null = null;
   let groupErr: { message?: string } | null = null;
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
   }
 
   const displayName = body.ownerDisplayName ?? "You";
-  const ownerUser = await currentUser();
+  const ownerUser = await currentUserPromise;
   const ownerEmail = ownerUser?.primaryEmailAddress?.emailAddress ?? null;
   await db.from("group_members").insert({
     group_id: group.id,
