@@ -215,6 +215,7 @@ export async function matchReceiptsToTransactions(
   }
 
   let matched = 0;
+  const pendingUpdates: Array<{ id: string; transaction_id: string }> = [];
 
   for (const receipt of receipts) {
     if (!receipt.merchant || !receipt.amount) continue;
@@ -331,13 +332,17 @@ export async function matchReceiptsToTransactions(
 
     if (!bestMatchId) continue;
 
-    await db
-      .from("email_receipts")
-      .update({ transaction_id: bestMatchId })
-      .eq("id", receipt.id);
-
+    pendingUpdates.push({ id: receipt.id as string, transaction_id: bestMatchId });
     alreadyMatchedTxIds.add(bestMatchId);
     matched++;
+  }
+
+  if (pendingUpdates.length > 0) {
+    await Promise.all(
+      pendingUpdates.map((u) =>
+        db.from("email_receipts").update({ transaction_id: u.transaction_id }).eq("id", u.id)
+      )
+    );
   }
 
   return matched;
@@ -368,19 +373,16 @@ export async function clearStaleReceiptMatches(clerkUserId: string): Promise<num
     .eq("clerk_user_id", clerkUserId);
 
   const validTxIds = new Set((txRows ?? []).map((t) => t.id as string));
-  let cleared = 0;
 
-  for (const receipt of matchedReceipts) {
-    if (!validTxIds.has(receipt.transaction_id as string)) {
-      await db
-        .from("email_receipts")
-        .update({ transaction_id: null })
-        .eq("id", receipt.id);
-      cleared++;
-    }
+  const toClear = matchedReceipts
+    .filter((r) => !validTxIds.has(r.transaction_id as string))
+    .map((r) => r.id as string);
+
+  if (toClear.length > 0) {
+    await db.from("email_receipts").update({ transaction_id: null }).in("id", toClear);
   }
 
-  return cleared;
+  return toClear.length;
 }
 
 /**
