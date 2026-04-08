@@ -179,7 +179,10 @@ export async function DELETE(
   const { id } = await params;
   const db = getSupabase();
 
-  const { data: group, error: groupError } = await db.from("groups").select("owner_id").eq("id", id).single();
+  const [{ data: group, error: groupError }, { data: membership, error: membershipError }] = await Promise.all([
+    db.from("groups").select("owner_id").eq("id", id).single(),
+    db.from("group_members").select("id").eq("group_id", id).eq("user_id", userId).maybeSingle(),
+  ]);
   if (groupError || !group) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -189,14 +192,6 @@ export async function DELETE(
       { status: 400 }
     );
   }
-
-  const { data: membership, error: membershipError } = await db
-    .from("group_members")
-    .select("id")
-    .eq("group_id", id)
-    .eq("user_id", userId)
-    .maybeSingle();
-
   if (membershipError) {
     console.error("[members] leave lookup:", membershipError.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
