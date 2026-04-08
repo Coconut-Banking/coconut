@@ -415,40 +415,51 @@ export async function detectSubscriptionsForUser(clerkUserId: string): Promise<D
 // ── Save to database ──────────────────────────────────────────────────────────
 
 export async function saveDetectedSubscriptions(clerkUserId: string, detected: DetectedSubscription[]): Promise<void> {
+  if (detected.length === 0) return;
   const db = getSupabase();
+  const now = new Date().toISOString();
+
+  // Phase 1: Batch-fetch all existing subscriptions in ONE query
+  const normalizedMerchants = detected.map((d) => d.normalizedMerchant);
+  const { data: existingAll } = await db
+    .from("subscriptions")
+    .select("id, status, amount, normalized_merchant")
+    .eq("clerk_user_id", clerkUserId)
+    .in("normalized_merchant", normalizedMerchants);
+  const existingByMerchant = new Map(
+    (existingAll ?? []).map((e) => [e.normalized_merchant as string, e as { id: string; status: string; amount: number | null; normalized_merchant: string }])
+  );
+
+  // Phase 2: Classify and execute updates + upserts in parallel
+  const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
+  const toUpsert: object[] = [];
+  const skipped = new Set<string>();
 
   for (const d of detected) {
-    const { data: existing } = await db
-      .from("subscriptions")
-      .select("id, status, amount")
-      .eq("clerk_user_id", clerkUserId)
-      .eq("normalized_merchant", d.normalizedMerchant)
-      .maybeSingle();
+    const existing = existingByMerchant.get(d.normalizedMerchant);
+    if (existing?.status === "dismissed") {
+      skipped.add(d.normalizedMerchant);
+      continue;
+    }
 
-    if (existing?.status === "dismissed") continue;
-
-    // Detect price changes: >$0.50 or >5% difference
     const priceChangeFields: Record<string, unknown> = {};
     if (existing?.amount != null) {
       const oldAmount = Number(existing.amount);
       const diff = d.amount - oldAmount;
       const absDiff = Math.abs(diff);
       const pctChange = oldAmount > 0 ? absDiff / oldAmount : 0;
-      // Only flag if: (absolute change > $0.50) OR (percentage > 5% AND amount >= $1.00)
       const isSignificant = absDiff > 0.50 || (pctChange > 0.05 && oldAmount >= 1.00);
       if (isSignificant) {
         priceChangeFields.previous_amount = oldAmount;
         priceChangeFields.price_change_amount = diff;
-        priceChangeFields.price_change_detected_at = new Date().toISOString();
+        priceChangeFields.price_change_detected_at = now;
       }
     }
 
-    let error: { message: string } | null = null;
     if (existing) {
-      // UPDATE — never reactivate dismissed subscriptions
-      const { error: updateError } = await db
-        .from("subscriptions")
-        .update({
+      toUpdate.push({
+        id: existing.id,
+        data: {
           merchant_name: d.merchantName,
           amount: d.amount,
           frequency: d.frequency,
@@ -457,67 +468,88 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
           primary_category: d.primaryCategory,
           transaction_count: d.transactionCount,
           confidence: d.confidence,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
           ...priceChangeFields,
-        })
-        .eq("id", existing.id)
-        .neq("status", "dismissed"); // guard: never reactivate dismissed subscriptions
-      error = updateError;
+        },
+      });
     } else {
-      const { error: insertError } = await db
-        .from("subscriptions")
-        .upsert(
-          {
-            clerk_user_id: clerkUserId,
-            merchant_name: d.merchantName,
-            normalized_merchant: d.normalizedMerchant,
-            amount: d.amount,
-            frequency: d.frequency,
-            last_charge_date: d.lastChargeDate,
-            next_due_date: d.nextDueDate,
-            primary_category: d.primaryCategory,
-            transaction_count: d.transactionCount,
-            confidence: d.confidence,
-            status: "active",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "clerk_user_id,normalized_merchant", ignoreDuplicates: true }
-        );
-      error = insertError;
+      toUpsert.push({
+        clerk_user_id: clerkUserId,
+        merchant_name: d.merchantName,
+        normalized_merchant: d.normalizedMerchant,
+        amount: d.amount,
+        frequency: d.frequency,
+        last_charge_date: d.lastChargeDate,
+        next_due_date: d.nextDueDate,
+        primary_category: d.primaryCategory,
+        transaction_count: d.transactionCount,
+        confidence: d.confidence,
+        status: "active",
+        updated_at: now,
+      });
     }
+  }
 
-    if (error) continue;
-
-    if (d.transactionDetails.length > 0) {
-      const { data: sub } = await db
+  // Execute updates + upserts in parallel
+  await Promise.all([
+    ...toUpdate.map((u) =>
+      db
         .from("subscriptions")
-        .select("id")
-        .eq("clerk_user_id", clerkUserId)
-        .eq("normalized_merchant", d.normalizedMerchant)
-        .maybeSingle();
+        .update(u.data)
+        .eq("id", u.id)
+        .neq("status", "dismissed")
+    ),
+    toUpsert.length > 0
+      ? db
+          .from("subscriptions")
+          .upsert(toUpsert, { onConflict: "clerk_user_id,normalized_merchant", ignoreDuplicates: true })
+      : Promise.resolve(),
+  ]);
 
-      if (sub && d.transactionDetails.length > 0) {
-        try {
-          const idsToLink = d.transactionDetails.slice(0, 10).map(td => td.id);
-          // Verify these IDs still exist in the DB
-          const { data: validTxs } = await db
-            .from("transactions")
-            .select("id")
-            .eq("clerk_user_id", clerkUserId)
-            .in("id", idsToLink);
-          const validIds = new Set((validTxs ?? []).map((r: { id: string }) => r.id));
+  // Phase 3: Batch-fetch subscription IDs and link transactions
+  const detectedWithTxs = detected.filter(
+    (d) => !skipped.has(d.normalizedMerchant) && d.transactionDetails.length > 0
+  );
+  if (detectedWithTxs.length === 0) return;
 
-          for (const td of d.transactionDetails.slice(0, 10)) {
-            if (!validIds.has(td.id)) continue;  // skip if transaction no longer exists
-            await db.from("subscription_transactions").upsert(
-              { subscription_id: sub.id, transaction_id: td.id, amount: td.amount, date: td.date },
-              { onConflict: "subscription_id,transaction_id" }
-            );
-          }
-        } catch (linkErr) {
-          console.warn("[subscription-detect] subscription_transactions link failed for", d.normalizedMerchant, ":", linkErr instanceof Error ? linkErr.message : linkErr);
-        }
-      }
+  const { data: subRows } = await db
+    .from("subscriptions")
+    .select("id, normalized_merchant")
+    .eq("clerk_user_id", clerkUserId)
+    .in("normalized_merchant", detectedWithTxs.map((d) => d.normalizedMerchant));
+  const subIdByMerchant = new Map(
+    (subRows ?? []).map((s) => [s.normalized_merchant as string, s.id as string])
+  );
+
+  // Batch-verify all transaction IDs at once
+  const allTxIdsToVerify = [...new Set(
+    detectedWithTxs.flatMap((d) => d.transactionDetails.slice(0, 10).map((td) => td.id))
+  )];
+  const { data: validTxRows } = await db
+    .from("transactions")
+    .select("id")
+    .eq("clerk_user_id", clerkUserId)
+    .in("id", allTxIdsToVerify);
+  const validTxIds = new Set((validTxRows ?? []).map((r: { id: string }) => r.id));
+
+  // Build all subscription_transactions rows
+  const linkRows: Array<{ subscription_id: string; transaction_id: string; amount: number; date: string }> = [];
+  for (const d of detectedWithTxs) {
+    const subId = subIdByMerchant.get(d.normalizedMerchant);
+    if (!subId) continue;
+    for (const td of d.transactionDetails.slice(0, 10)) {
+      if (!validTxIds.has(td.id)) continue;
+      linkRows.push({ subscription_id: subId, transaction_id: td.id, amount: td.amount, date: td.date });
+    }
+  }
+
+  if (linkRows.length > 0) {
+    try {
+      await db
+        .from("subscription_transactions")
+        .upsert(linkRows, { onConflict: "subscription_id,transaction_id" });
+    } catch (linkErr) {
+      console.warn("[subscription-detect] batch subscription_transactions link failed:", linkErr instanceof Error ? linkErr.message : linkErr);
     }
   }
 }
