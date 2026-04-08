@@ -412,6 +412,7 @@ export async function auditAndRematchAllReceipts(
 
     const txMap = new Map((txRows ?? []).map((t) => [t.id as string, t]));
 
+    const toClear: string[] = [];
     for (const receipt of matchedReceipts) {
       const tx = txMap.get(receipt.transaction_id as string);
       if (!tx) continue;
@@ -426,12 +427,12 @@ export async function auditAndRematchAllReceipts(
       const tightAmountOk = Math.abs(txAmount - rcptAmount) <= 0.01;
       const aliasConflict = knownMerchantsConflict(receipt.merchant, txMerchant);
       if (!nameOk && (!tightAmountOk || aliasConflict)) {
-        await db
-          .from("email_receipts")
-          .update({ transaction_id: null })
-          .eq("id", receipt.id);
+        toClear.push(receipt.id as string);
         cleared++;
       }
+    }
+    if (toClear.length > 0) {
+      await db.from("email_receipts").update({ transaction_id: null }).in("id", toClear);
     }
   }
 

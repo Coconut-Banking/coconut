@@ -91,7 +91,7 @@ export async function GET(
   }
   return NextResponse.json(
     { members: members ?? [] },
-    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
   );
 }
 
