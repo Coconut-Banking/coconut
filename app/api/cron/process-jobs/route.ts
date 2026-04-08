@@ -56,56 +56,55 @@ export async function GET(req: NextRequest) {
   const { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } =
     await import("@/lib/transaction-sync");
 
-  let processed = 0;
-  let failed = 0;
+  const jobResults = await Promise.all(
+    jobs.map(async (job) => {
+      const payload = job.payload as Record<string, string>;
+      try {
+        if (job.type === "plaid_sync") {
+          const clerkUserId = payload.clerk_user_id ?? (job.clerk_user_id as string);
+          if (!clerkUserId) throw new Error("missing clerk_user_id in payload");
 
-  for (const job of jobs) {
-    const payload = job.payload as Record<string, string>;
-    try {
-      if (job.type === "plaid_sync") {
-        const clerkUserId = payload.clerk_user_id ?? (job.clerk_user_id as string);
-        if (!clerkUserId) throw new Error("missing clerk_user_id in payload");
+          const r = await syncTransactionsForUser(clerkUserId);
+          console.log("[process-jobs] plaid_sync done", {
+            user: clerkUserId,
+            synced: r.synced,
+            webhook_code: payload.webhook_code,
+          });
 
-        const r = await syncTransactionsForUser(clerkUserId);
-        console.log("[process-jobs] plaid_sync done", {
-          user: clerkUserId,
-          synced: r.synced,
-          webhook_code: payload.webhook_code,
-        });
+          try { revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max"); } catch { /* ok */ }
 
-        try { revalidateTag(CACHE_TAGS.transactions(clerkUserId), "max"); } catch { /* ok */ }
+          embedTransactionsForUser(clerkUserId).catch((e) =>
+            console.warn("[process-jobs] embed failed:", e instanceof Error ? e.message : e)
+          );
+          embedRichTransactionsForUser(clerkUserId).catch((e) =>
+            console.warn("[process-jobs] rich-embed failed:", e instanceof Error ? e.message : e)
+          );
+          enrichCategoriesForUser(clerkUserId).catch((e) =>
+            console.warn("[process-jobs] categorize failed:", e instanceof Error ? e.message : e)
+          );
+        } else {
+          throw new Error(`unknown job type: ${job.type}`);
+        }
 
-        // Fire-and-forget enrichment (same pattern as POST /api/plaid/transactions)
-        embedTransactionsForUser(clerkUserId).catch((e) =>
-          console.warn("[process-jobs] embed failed:", e instanceof Error ? e.message : e)
-        );
-        embedRichTransactionsForUser(clerkUserId).catch((e) =>
-          console.warn("[process-jobs] rich-embed failed:", e instanceof Error ? e.message : e)
-        );
-        enrichCategoriesForUser(clerkUserId).catch((e) =>
-          console.warn("[process-jobs] categorize failed:", e instanceof Error ? e.message : e)
-        );
-      } else {
-        // Unknown type: throw so the job lands in `failed` and is visible in the queue.
-        // Silently marking it `done` would hide misconfiguration bugs.
-        throw new Error(`unknown job type: ${job.type}`);
+        await db
+          .from("job_queue")
+          .update({ status: "done", processed_at: new Date().toISOString() })
+          .eq("id", job.id);
+        return true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[process-jobs] job failed:", { id: job.id, type: job.type, error: msg });
+        await db
+          .from("job_queue")
+          .update({ status: "failed", error: msg, processed_at: new Date().toISOString() })
+          .eq("id", job.id);
+        return false;
       }
+    })
+  );
 
-      await db
-        .from("job_queue")
-        .update({ status: "done", processed_at: new Date().toISOString() })
-        .eq("id", job.id);
-      processed++;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[process-jobs] job failed:", { id: job.id, type: job.type, error: msg });
-      await db
-        .from("job_queue")
-        .update({ status: "failed", error: msg, processed_at: new Date().toISOString() })
-        .eq("id", job.id);
-      failed++;
-    }
-  }
+  const processed = jobResults.filter(Boolean).length;
+  const failed = jobResults.filter((r) => !r).length;
 
   return NextResponse.json({ processed, failed, total: jobs.length });
 }
