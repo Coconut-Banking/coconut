@@ -259,6 +259,23 @@ async function handleSummary(req: NextRequest, userId: string) {
     else sharesBySplitId.set(sh.split_transaction_id, [sh]);
   }
 
+  // Pre-index settlements by group_id for O(1) lookups inside groups.map() (O(n²) → O(1)).
+  const settlementsByGroup = new Map<string, typeof settlements>();
+  for (const s of settlements) {
+    const list = settlementsByGroup.get(s.group_id) ?? [];
+    list.push(s);
+    settlementsByGroup.set(s.group_id, list);
+  }
+
+  // Pre-compute myMember for each group to avoid repeated find() inside groups.map().
+  const myMemberByGroupId = new Map<
+    string,
+    { id: string; user_id: string | null; display_name: string; email: string | null } | null
+  >();
+  for (const [gid, gMembers] of memberByGroup) {
+    myMemberByGroupId.set(gid, gMembers.find((m) => m.user_id === userId) ?? null);
+  }
+
   const splitByGroup = new Map<string, NonNullable<typeof splits>>();
   const seenByGroup = new Map<string, Set<string>>();
   for (const s of splits ?? []) {
@@ -301,7 +318,7 @@ async function handleSummary(req: NextRequest, userId: string) {
   const groupsWithBalance = (groups ?? []).map((g) => {
     const groupSplits = splitByGroup.get(g.id) ?? [];
     const groupMembers = memberByGroup.get(g.id) ?? [];
-    const myMember = groupMembers.find((m) => m.user_id === userId);
+    const myMember = myMemberByGroupId.get(g.id) ?? null;
     const memberByUserId = new Map(
       groupMembers.filter((m) => m.user_id).map((m) => [m.user_id!, m.id])
     );
@@ -364,7 +381,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       }
     }
 
-    const groupSettlements = (settlements ?? []).filter((s) => s.group_id === g.id);
+    const groupSettlements = settlementsByGroup.get(g.id) ?? [];
     const paidSettlements = groupSettlements.map((s) => ({
       payer_member_id: s.payer_member_id,
       amount: Number(s.amount),
