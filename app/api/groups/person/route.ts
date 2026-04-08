@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { clerkClient } from "@clerk/nextjs/server";
 import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
 import { getSuggestedSettlements } from "@/lib/split-balances";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
@@ -105,12 +106,16 @@ export async function GET(req: NextRequest) {
     }
 
     if (personMembers.length === 0) {
-      // Splitwise-only friends exist in cached_friend_balances but have no
-      // group_members row with a matching email. Return their cached balance
-      // so tapping them from the home page doesn't 404.
+      // Splitwise-only friends: check cached_friend_balances
       if (key.includes("@")) {
         const swFallback = await getSplitwiseCachedFriend(userId, key);
         if (swFallback) return NextResponse.json(swFallback);
+      }
+
+      // Clerk users with no shared groups yet (e.g. device contacts)
+      if (key.startsWith("user_")) {
+        const clerkFallback = await getClerkUserStub(key);
+        if (clerkFallback) return NextResponse.json(clerkFallback);
       }
 
       return NextResponse.json(
@@ -594,6 +599,34 @@ async function getSplitwiseCachedFriend(userId: string, email: string) {
     };
   } catch (err) {
     console.warn("[person] splitwise cache fallback failed:", err);
+    return null;
+  }
+}
+
+async function getClerkUserStub(clerkUserId: string) {
+  try {
+    const client = await clerkClient();
+    const user = await client.users.getUser(clerkUserId);
+    const first = user.firstName ?? "";
+    const last = user.lastName ?? "";
+    const name = [first, last].filter(Boolean).join(" ") || null;
+    const email = user.primaryEmailAddress?.emailAddress ?? null;
+
+    return {
+      displayName: name,
+      balance: 0,
+      currencyBalances: [],
+      activity: [],
+      email,
+      key: clerkUserId,
+      settlements: [],
+      sharedGroupIds: [],
+      sharedGroups: [],
+      p2pHandles: { venmo_username: null, cashapp_cashtag: null, paypal_username: null },
+      _source: "clerk_user",
+    };
+  } catch (err) {
+    console.warn("[person] clerk user fallback failed:", err);
     return null;
   }
 }
