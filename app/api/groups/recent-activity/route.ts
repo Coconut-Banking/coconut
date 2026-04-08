@@ -159,6 +159,7 @@ export async function GET() {
     currency: string;
     time: string;
     sortDate: string;
+    createdAt: string;
     receiptUrl: string | null;
   };
 
@@ -219,6 +220,7 @@ export async function GET() {
       currency,
       time: formatTimeAgo(expenseDate),
       sortDate: expenseDate,
+      createdAt: s.created_at,
       receiptUrl: (s as { receipt_url?: string | null }).receipt_url ?? null,
     });
   }
@@ -247,6 +249,7 @@ export async function GET() {
         currency,
         time: formatTimeAgo(st.created_at),
         sortDate: st.created_at,
+        createdAt: st.created_at,
         receiptUrl: null,
       });
     } else if (iAmReceiver) {
@@ -261,14 +264,19 @@ export async function GET() {
         currency,
         time: formatTimeAgo(st.created_at),
         sortDate: st.created_at,
+        createdAt: st.created_at,
         receiptUrl: null,
       });
     }
   }
 
-  // Sort all activity by date descending, take top 30
-  activity.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
-  const trimmed = activity.slice(0, 200).map(({ sortDate: _, ...rest }) => rest);
+  // Sort by date descending; when dates match, most recently created first
+  activity.sort((a, b) => {
+    const cmp = b.sortDate.localeCompare(a.sortDate);
+    if (cmp !== 0) return cmp;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+  const trimmed = activity.slice(0, 200).map(({ sortDate: _, createdAt: _c, ...rest }) => rest);
 
   return NextResponse.json(
     { activity: trimmed },

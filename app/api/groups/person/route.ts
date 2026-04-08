@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     // Parallel fetch of groups and members (both only need accessible ids)
     const [groupsRaw, membersRaw] = await Promise.all([
       paginateAll(() =>
-        db.from("groups").select("id, name, owner_id, source, group_type, archived_at, external_id").in("id", ids)
+        db.from("groups").select("id, name, owner_id, source, group_type, external_id").in("id", ids)
       ),
       paginateAll(() =>
         db.from("group_members")
@@ -72,11 +72,8 @@ export async function GET(req: NextRequest) {
       ),
     ]);
 
-    // Exclude archived groups and deduplicate Splitwise imports (same logic as summary)
-    const activeGroupIds = new Set(
-      (groupsRaw ?? []).filter((g) => !(g as { archived_at?: string | null }).archived_at).map((g) => g.id)
-    );
-    const activeGroups = (groupsRaw ?? []).filter((g) => activeGroupIds.has(g.id));
+    // Deduplicate Splitwise imports (same logic as summary)
+    const activeGroups = [...(groupsRaw ?? [])];
     activeGroups.sort((a, b) => (a.owner_id === userId ? 0 : 1) - (b.owner_id === userId ? 0 : 1));
     const seenExtIds = new Set<string>();
     const groups = activeGroups.filter((g) => {
