@@ -427,10 +427,6 @@ export async function GET(
 
         if (cachedBals && cachedBals.length > 0) {
           const myMember = (members ?? []).find((m) => m.user_id === userId);
-          // Rebuild per-member balances from simplified_debts cached at import time.
-          // The cache stores the current user's net per-currency. For individual member
-          // breakdowns we still use the computed values, but override the "total" so the
-          // group-level headline matches Splitwise exactly.
           const cachedMyByCurrency = new Map(
             cachedBals.map((b) => [
               normalizeSplitCurrency(b.currency_code),
@@ -443,6 +439,29 @@ export async function GET(
               const cached = cachedMyByCurrency.get(b.currency);
               if (cached !== undefined) b.total = cached;
             }
+
+            // Rebuild suggestions from the authoritative cached balance so the
+            // "settle up" section matches Splitwise instead of showing amounts
+            // derived from incomplete imported data.
+            const newSuggestions: typeof finalSuggestions = [];
+            for (const [cur, amt] of cachedMyByCurrency) {
+              if (Math.abs(amt) < BALANCE_EPS) continue;
+              const existingForCur = suggestions.find((s) => s.currency === cur);
+              if (amt < 0) {
+                const toId = existingForCur?.toMemberId
+                  ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
+                if (toId) {
+                  newSuggestions.push({ currency: cur, fromMemberId: myMember.id, toMemberId: toId, amount: Math.abs(amt) });
+                }
+              } else {
+                const fromId = existingForCur?.fromMemberId
+                  ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
+                if (fromId) {
+                  newSuggestions.push({ currency: cur, fromMemberId: fromId, toMemberId: myMember.id, amount: amt });
+                }
+              }
+            }
+            finalSuggestions = newSuggestions;
           }
         }
       } catch (err) {
