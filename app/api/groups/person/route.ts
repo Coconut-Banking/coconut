@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   if (!key) return NextResponse.json({ error: "key required" }, { status: 400 });
 
   try {
-    const db = getSupabase();
+    const db = getSupabaseAdmin();
     const ids = await getAccessibleGroupIds(userId);
 
     if (ids.length === 0) {
@@ -169,22 +169,38 @@ export async function GET(req: NextRequest) {
       email: string | null;
       balance: { currency_code: string; amount: string }[];
     };
-    const [{ data: splitsRaw }, { data: settlements }, swTokenResult] = await Promise.all([
-      db
-        .from("split_transactions")
-        .select(`
-          id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-          iso_currency_code, receipt_url,
-          transactions(merchant_name, raw_name, amount, date)
-        `)
-        .in("group_id", sharedGroupIds)
-        .order("created_at", { ascending: false })
-        .limit(25000),
-      db
-        .from("settlements")
-        .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-        .in("group_id", sharedGroupIds)
-        .eq("status", "completed"),
+    async function paginate<T>(
+      buildQuery: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }> & { range?: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
+      pageSize = 1000,
+    ): Promise<T[]> {
+      const first = buildQuery();
+      if (typeof first.range !== "function") { const { data } = await first; return data ?? []; }
+      const all: T[] = [];
+      let offset = 0;
+      for (;;) {
+        const q = offset === 0 ? first : buildQuery();
+        const { data, error } = await q.range!(offset, offset + pageSize - 1);
+        if (error || !data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < pageSize) break;
+        offset += pageSize;
+      }
+      return all;
+    }
+
+    const [splitsRaw, settlements, swTokenResult] = await Promise.all([
+      paginate(() =>
+        db.from("split_transactions")
+          .select(`id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, receipt_url, transactions(merchant_name, raw_name, amount, date)`)
+          .in("group_id", sharedGroupIds)
+          .order("created_at", { ascending: false })
+      ),
+      paginate(() =>
+        db.from("settlements")
+          .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
+          .in("group_id", sharedGroupIds)
+          .eq("status", "completed")
+      ),
       swGroupIds.size > 0
         ? db.from("splitwise_tokens").select("cached_friend_balances").eq("clerk_user_id", userId).maybeSingle()
         : Promise.resolve({ data: null }),
@@ -219,31 +235,27 @@ export async function GET(req: NextRequest) {
     let shares: { split_transaction_id: string; member_id: string; amount: number }[] | null = null;
     let txRows: { id: string; clerk_user_id: string }[] = [];
     if (splitIdList.length > 0) {
-      const BATCH = 500;
-      type ShareRow = { split_transaction_id: string; member_id: string; amount: number };
-      type TxRow = { id: string; clerk_user_id: string };
-      const sharesBatches: Promise<ShareRow[]>[] = [];
+      const BATCH = 200;
+      const sharesBatches: Promise<{ split_transaction_id: string; member_id: string; amount: number }[]>[] = [];
       for (let i = 0; i < splitIdList.length; i += BATCH) {
         const batch = splitIdList.slice(i, i + BATCH);
         sharesBatches.push(
-          Promise.resolve(
+          paginate(() =>
             db.from("split_shares")
               .select("split_transaction_id, member_id, amount")
               .in("split_transaction_id", batch)
-              .limit(50000)
-          ).then((r) => (r.data ?? []) as ShareRow[])
+          )
         );
       }
-      const txBatches: Promise<TxRow[]>[] = [];
+      const txBatches: Promise<{ id: string; clerk_user_id: string }[]>[] = [];
       for (let i = 0; i < txIds.length; i += BATCH) {
         const batch = txIds.slice(i, i + BATCH);
         txBatches.push(
-          Promise.resolve(
+          paginate(() =>
             db.from("transactions")
               .select("id, clerk_user_id")
               .in("id", batch)
-              .limit(50000)
-          ).then((r) => (r.data ?? []) as TxRow[])
+          )
         );
       }
       const [sharesResults, txResults] = await Promise.all([
@@ -484,6 +496,13 @@ export async function GET(req: NextRequest) {
 
     activity.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+    console.log("[person]", key, {
+      sharedGroupIds,
+      totalSplits: splits.length,
+      totalShares: (shares ?? []).length,
+      activityCount: activity.length,
+    });
+
     // Merge: start with non-Splitwise pairwise (byCurrency), then add
     // cached Splitwise balance on top (authoritative for SW groups).
     const mergedByCurrency = new Map(byCurrency);
@@ -551,6 +570,49 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
+    const _debug = {
+      sharedGroupIds,
+      totalSplits: splits.length,
+      totalShares: (shares ?? []).length,
+      activityBeforeFilter: activity.length,
+      activityAfterFilter: dedupedActivity.length,
+      perGroup: sharedGroupIds.map((gid) => {
+        const gs = splits.filter((s) => s.group_id === gid);
+        const gm = (members ?? []).filter((m) => m.group_id === gid);
+        const myM = gm.find((m) => m.user_id === userId);
+        const theirM = gm.find((m) => personMemberIds.has(m.id));
+        const splitIds = gs.map((s) => s.id);
+        const sharesForGroup = (shares ?? []).filter((sh) => splitIds.includes(sh.split_transaction_id));
+        const payersFound = gs.filter((s) => {
+          const pmid = (s as { payer_member_id?: string | null }).payer_member_id;
+          if (pmid && gm.some((m) => m.id === pmid)) return true;
+          const oid = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
+          const memberByUid = new Map(gm.filter((m) => m.user_id).map((m) => [m.user_id!, m.id]));
+          return oid ? !!memberByUid.get(oid) : false;
+        });
+        return {
+          groupId: gid,
+          groupName: groupNameById.get(gid),
+          splitCount: gs.length,
+          shareCount: sharesForGroup.length,
+          memberCount: gm.length,
+          hasMyMember: !!myM,
+          hasTheirMember: !!theirM,
+          payerFoundCount: payersFound.length,
+          splitDetails: gs.slice(0, 5).map((s) => ({
+            id: s.id,
+            transaction_id: s.transaction_id,
+            payer_member_id: (s as { payer_member_id?: string | null }).payer_member_id,
+            sharesCount: (sharesBySplitId.get(s.id) ?? []).length,
+            shares: (sharesBySplitId.get(s.id) ?? []).map((sh) => ({
+              member_id: sh.member_id,
+              amount: sh.amount,
+            })),
+          })),
+        };
+      }),
+    };
+
     return NextResponse.json({
       displayName,
       balance,
@@ -562,6 +624,7 @@ export async function GET(req: NextRequest) {
       sharedGroupIds,
       sharedGroups,
       p2pHandles,
+      _debug,
     });
   } catch (err) {
     console.error("[person]", err);

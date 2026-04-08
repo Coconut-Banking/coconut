@@ -151,29 +151,46 @@ export async function GET(
     const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
     const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
 
-    const BATCH = 500;
+    async function paginate<T>(
+      buildQuery: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }> & { range?: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
+      pageSize = 1000,
+    ): Promise<T[]> {
+      const first = buildQuery();
+      if (typeof first.range !== "function") { const { data } = await first; return data ?? []; }
+      const all: T[] = [];
+      let offset = 0;
+      for (;;) {
+        const q = offset === 0 ? first : buildQuery();
+        const { data, error } = await q.range!(offset, offset + pageSize - 1);
+        if (error || !data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < pageSize) break;
+        offset += pageSize;
+      }
+      return all;
+    }
+
+    const BATCH = 200;
     const sharesBatchPromises: Promise<{ split_transaction_id: string; member_id: string; amount: number }[]>[] = [];
     for (let i = 0; i < splitIdList.length; i += BATCH) {
       const batch = splitIdList.slice(i, i + BATCH);
       sharesBatchPromises.push(
-        Promise.resolve(
+        paginate(() =>
           db.from("split_shares")
             .select("split_transaction_id, member_id, amount")
             .in("split_transaction_id", batch)
-            .limit(50000)
-        ).then((r) => (r.data ?? []) as { split_transaction_id: string; member_id: string; amount: number }[])
+        )
       );
     }
     const txBatchPromises: Promise<{ id: string; clerk_user_id: string }[]>[] = [];
     for (let i = 0; i < txIds.length; i += BATCH) {
       const batch = txIds.slice(i, i + BATCH);
       txBatchPromises.push(
-        Promise.resolve(
+        paginate(() =>
           db.from("transactions")
             .select("id, clerk_user_id")
             .in("id", batch)
-            .limit(50000)
-        ).then((r) => (r.data ?? []) as { id: string; clerk_user_id: string }[])
+        )
       );
     }
     const [sharesBatchResults, txBatchResults, photoMap] = await Promise.all([

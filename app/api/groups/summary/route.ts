@@ -132,78 +132,106 @@ async function handleSummary(req: NextRequest, userId: string) {
     for (const g of dataUriGroups) g.image_url = null;
   }
 
-  const groups = (groupsRaw ?? []).filter((g) => !g.archived_at);
+  // Deduplicate Splitwise-imported groups: when multiple users import the same
+  // SW group, linkMemberByEmail makes all copies accessible. Keep only the
+  // user's own copy (by external_id), falling back to the first encountered.
+  const deduped = (groupsRaw ?? []).filter((g) => !g.archived_at);
+  deduped.sort((a, b) => {
+    const aOwned = a.owner_id === userId ? 0 : 1;
+    const bOwned = b.owner_id === userId ? 0 : 1;
+    return aOwned - bOwned;
+  });
+  const seenExtIds = new Set<string>();
+  const groups = deduped.filter((g) => {
+    if (g.source === "splitwise" && g.external_id) {
+      if (seenExtIds.has(g.external_id)) return false;
+      seenExtIds.add(g.external_id);
+    }
+    return true;
+  });
 
-  const groupIds = (groups ?? []).map((g) => g.id);
+  const groupIds = groups.map((g) => g.id);
+
+  // Paginate through Supabase results to bypass PostgREST max_rows (default 1000).
+  // buildQuery returns a query builder; paginate calls .range() on it in pages.
+  // Falls back to a single query if .range() is unavailable (e.g. in test mocks).
+  async function paginate<T>(
+    buildQuery: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }> & { range?: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
+    pageSize = 1000,
+  ): Promise<T[]> {
+    const first = buildQuery();
+    if (typeof first.range !== "function") {
+      const { data } = await first;
+      return data ?? [];
+    }
+    const all: T[] = [];
+    let offset = 0;
+    for (;;) {
+      const q = offset === 0 ? first : buildQuery();
+      const { data, error } = await q.range!(offset, offset + pageSize - 1);
+      if (error) { console.warn("[summary] paginate error:", error.message); break; }
+      if (!data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < pageSize) break;
+      offset += pageSize;
+    }
+    return all;
+  }
 
   // Stage 1: parallel fetch of members, splits, settlements, and SW tokens
-  const [
-    { data: members },
-    { data: splits },
-    { data: settlements },
-    swTokenResult,
-  ] = await Promise.all([
-    db
-      .from("group_members")
-      .select("id, group_id, user_id, display_name, email")
-      .in("group_id", groupIds)
-      .limit(50000),
-    db
-      .from("split_transactions")
-      .select(`
-        id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-        iso_currency_code,
-        transactions(amount)
-      `)
-      .in("group_id", groupIds)
-      .order("created_at", { ascending: false })
-      .limit(25000),
-    db
-      .from("settlements")
-      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-      .in("group_id", groupIds)
-      .eq("status", "completed")
-      .limit(50000),
-    db
-      .from("splitwise_tokens")
+  const [members, splits, settlements, swTokenResult] = await Promise.all([
+    paginate(() =>
+      db.from("group_members")
+        .select("id, group_id, user_id, display_name, email")
+        .in("group_id", groupIds)
+    ),
+    paginate(() =>
+      db.from("split_transactions")
+        .select(`id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, transactions(amount)`)
+        .in("group_id", groupIds)
+        .order("created_at", { ascending: false })
+    ),
+    paginate(() =>
+      db.from("settlements")
+        .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
+        .in("group_id", groupIds)
+        .eq("status", "completed")
+    ),
+    db.from("splitwise_tokens")
       .select("cached_friend_balances, cached_group_balances")
       .eq("clerk_user_id", userId)
       .maybeSingle(),
   ]);
 
   // Stage 2: parallel fetch of shares and tx owners (depend on splits)
-  const splitIds = (splits ?? []).map((s) => s.id);
-  const txIds = (splits ?? []).map((s) => s.transaction_id).filter(Boolean);
+  const splitIds = splits.map((s: { id: string }) => s.id);
+  const txIds = splits.map((s: { transaction_id?: string }) => s.transaction_id).filter(Boolean) as string[];
 
   let shares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
   let txRows: { id: string; clerk_user_id: string }[] = [];
 
   if (splitIds.length > 0 || txIds.length > 0) {
-    type ShareRow = { split_transaction_id: string; member_id: string; amount: number };
-    type TxRow = { id: string; clerk_user_id: string };
-    const BATCH = 500;
-    const sharesBatches: Promise<ShareRow[]>[] = [];
+    const BATCH = 200;
+    const sharesBatches: Promise<{ split_transaction_id: string; member_id: string; amount: number }[]>[] = [];
     for (let i = 0; i < splitIds.length; i += BATCH) {
       const batch = splitIds.slice(i, i + BATCH);
       sharesBatches.push(
-        Promise.resolve(
+        paginate(() =>
           db.from("split_shares")
             .select("split_transaction_id, member_id, amount")
             .in("split_transaction_id", batch)
-            .limit(50000)
-        ).then((r) => (r.data ?? []) as ShareRow[])
+        )
       );
     }
-    const txBatches: Promise<TxRow[]>[] = [];
+    const txBatches: Promise<{ id: string; clerk_user_id: string }[]>[] = [];
     for (let i = 0; i < txIds.length; i += BATCH) {
       const batch = txIds.slice(i, i + BATCH);
       txBatches.push(
-        Promise.resolve(
+        paginate(() =>
           db.from("transactions")
             .select("id, clerk_user_id")
             .in("id", batch)
-            .limit(50000)
-        ).then((r) => (r.data ?? []) as TxRow[])
+        )
       );
     }
     const [sharesResults, txResults] = await Promise.all([
