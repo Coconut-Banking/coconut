@@ -41,7 +41,7 @@ async function linkMemberByEmail(userId: string) {
   console.log(
     `[group-access] linked ${candidates.length} member row(s) for ${email}`
   );
-  _linkedUserIds.add(userId);
+  _linkedUserIds.set(userId, Date.now());
 }
 
 /**
@@ -94,7 +94,7 @@ export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
   const { data: owned, error: ownedErr } = ownedRes;
   const { data: memberRows, error: memberErr } = memberRes;
 
-  console.log("[group-access] userId:", userId, "owned:", owned?.length ?? 0, "ownedErr:", ownedErr?.message, "memberRows:", memberRows?.length ?? 0, "memberErr:", memberErr?.message);
+  if (process.env.NODE_ENV === 'development') console.log("[group-access] userId:", userId, "owned:", owned?.length ?? 0, "ownedErr:", ownedErr?.message, "memberRows:", memberRows?.length ?? 0, "memberErr:", memberErr?.message);
 
   const ids = new Set<string>();
   for (const g of owned ?? []) ids.add(g.id);

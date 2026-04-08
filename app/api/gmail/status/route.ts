@@ -5,15 +5,14 @@ import { getEffectiveUserId } from "@/lib/demo";
 
 export async function GET() {
   const userId = await getEffectiveUserId();
-  console.log("[Gmail Status API] Checking status for user:", userId);
+  if (process.env.NODE_ENV === 'development') console.log("[Gmail Status API] Checking status for user:", userId);
 
   if (!userId) {
-    console.error("[Gmail Status API] No userId");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const status = await getGmailStatus(userId);
-  console.log("[Gmail Status API] Status result:", status);
+  if (process.env.NODE_ENV === 'development') console.log("[Gmail Status API] Status result:", status);
 
   return NextResponse.json(status);
 }

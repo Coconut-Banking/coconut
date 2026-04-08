@@ -40,13 +40,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const traceId = getTraceId(body.trace_id);
-  console.log("[plaid][exchange-token] request_start", {
+  if (process.env.NODE_ENV === 'development') console.log("[plaid][exchange-token] request_start", {
     trace_id: traceId,
     has_user: Boolean(effectiveUserId),
     has_public_token: Boolean(body.public_token),
   });
   if (!effectiveUserId) {
-    console.warn("[plaid][exchange-token] unauthorized", { trace_id: traceId });
+    if (process.env.NODE_ENV === 'development') console.warn("[plaid][exchange-token] unauthorized", { trace_id: traceId });
     return NextResponse.json({ error: "Sign in to connect your bank", trace_id: traceId }, { status: 401 });
   }
 
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   if (!client) return NextResponse.json({ error: "Plaid is not configured", trace_id: traceId }, { status: 503 });
 
   try {
-    console.log("[plaid][exchange-token] exchanging_public_token", {
+    if (process.env.NODE_ENV === 'development') console.log("[plaid][exchange-token] exchanging_public_token", {
       trace_id: traceId,
       user_id: effectiveUserId,
       public_token: maskToken(public_token),
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       console.error("[plaid][exchange-token] exchange returned null credentials", { trace_id: traceId, response: response.data });
       return NextResponse.json({ error: "Failed to exchange token. Please try connecting again.", trace_id: traceId }, { status: 500 });
     }
-    console.log("[plaid][exchange-token] exchange_ok", {
+    if (process.env.NODE_ENV === 'development') console.log("[plaid][exchange-token] exchange_ok", {
       trace_id: traceId,
       user_id: effectiveUserId,
       item_id,
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
       .select("id")
       .eq("clerk_user_id", effectiveUserId);
     const isFirstConnection = !existingItems || existingItems.length <= 1;
-    console.log("[plaid][exchange-token] token_saved", {
+    if (process.env.NODE_ENV === 'development') console.log("[plaid][exchange-token] token_saved", {
       trace_id: traceId,
       user_id: effectiveUserId,
       item_id,
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
           .delete()
           .eq("clerk_user_id", effectiveUserId)
           .in("id", idsToDelete);
-        console.log("[plaid][exchange-token] cleared_existing_transactions", {
+        if (process.env.NODE_ENV === 'development') console.log("[plaid][exchange-token] cleared_existing_transactions", {
           trace_id: traceId,
           user_id: effectiveUserId,
           count: idsToDelete.length,
@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    console.log("[plaid][exchange-token] request_ok", {
+    if (process.env.NODE_ENV === 'development') console.log("[plaid][exchange-token] request_ok", {
       trace_id: traceId,
       user_id: effectiveUserId,
       item_id,

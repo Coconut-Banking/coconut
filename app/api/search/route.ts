@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       .eq("clerk_user_id", userId)
       .order("date", { ascending: false })
       .order("id", { ascending: false })
-      .limit(bypassCache ? 2000 : 2000);
+      .limit(bypassCache ? 2000 : 500);
     if (error) throw new Error(error.message);
 
     const transactions = (rows ?? []).map((r) => ({
@@ -46,7 +46,9 @@ export async function GET(request: NextRequest) {
   }));
 
   const results = searchTransactions(transactions, q, limit);
-  return NextResponse.json(results);
+  const response = NextResponse.json(results);
+  if (!bypassCache) response.headers.set("Cache-Control", "private, max-age=30");
+  return response;
   } catch (err) {
     console.error("[search]", err);
     return NextResponse.json({ error: "Search failed" }, { status: 500 });

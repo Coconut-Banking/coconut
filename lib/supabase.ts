@@ -4,6 +4,8 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+let _adminClient: SupabaseClient | null = null;
+
 /**
  * Returns a Supabase client using the **service role key**.
  * This bypasses Row Level Security — only use for operations that
@@ -14,13 +16,19 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
  * but are only enforced when using the anon key with a user JWT.
  * For user-facing API routes, prefer {@link getSupabaseForUser} when you have
  * a Clerk session token so RLS can enforce row-level access.
+ *
+ * The client is created once per serverless instance and reused across requests
+ * to avoid the overhead of re-initialising the connection pool on every call.
  */
 export function getSupabaseAdmin(): SupabaseClient {
   if (!url || !serviceKey)
     throw new Error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+  if (!_adminClient) {
+    _adminClient = createClient(url, serviceKey, {
+      auth: { persistSession: false },
+    });
+  }
+  return _adminClient;
 }
 
 /**

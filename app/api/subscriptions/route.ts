@@ -52,7 +52,9 @@ export async function GET() {
         detectedAt: s.price_change_detected_at,
       } : null,
     }));
-    return NextResponse.json(subs);
+    return NextResponse.json(subs, {
+      headers: { "Cache-Control": "private, max-age=30" },
+    });
   } catch (err) {
     console.error("[subscriptions] GET error:", err);
     return NextResponse.json({ error: "Failed to load subscriptions" }, { status: 500 });

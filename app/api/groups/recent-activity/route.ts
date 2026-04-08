@@ -99,27 +99,35 @@ export async function GET() {
 
   const splitIds = splits.map((s) => s.id);
 
-  // Batch the shares query — large .in() calls can exceed URL length limits
+  // Batch the shares and transactions queries — large .in() calls can exceed URL length limits.
+  // Both batch groups are independent, so run them concurrently.
   const BATCH = 200;
-  const shareBatches = await Promise.all(
-    Array.from({ length: Math.ceil(splitIds.length / BATCH) }, (_, i) =>
-      db
-        .from("split_shares")
-        .select("split_transaction_id, member_id, amount")
-        .in("split_transaction_id", splitIds.slice(i * BATCH, (i + 1) * BATCH))
-    )
-  );
-  const shares = shareBatches.flatMap((b) => b.data ?? []);
-
   const txIds = splits.map((s) => s.transaction_id).filter(Boolean) as string[];
-  const txBatches = await Promise.all(
-    Array.from({ length: Math.ceil(txIds.length / BATCH) || 1 }, (_, i) =>
-      db
-        .from("transactions")
-        .select("id, clerk_user_id")
-        .in("id", txIds.slice(i * BATCH, (i + 1) * BATCH))
-    )
-  );
+  const splitBatchCount = Math.ceil(splitIds.length / BATCH);
+  const txBatchCount = Math.ceil(txIds.length / BATCH) || 0;
+
+  const [shareBatches, txBatches] = await Promise.all([
+    Promise.all(
+      Array.from({ length: splitBatchCount }, (_, i) =>
+        db
+          .from("split_shares")
+          .select("split_transaction_id, member_id, amount")
+          .in("split_transaction_id", splitIds.slice(i * BATCH, (i + 1) * BATCH))
+      )
+    ),
+    txIds.length > 0
+      ? Promise.all(
+          Array.from({ length: txBatchCount }, (_, i) =>
+            db
+              .from("transactions")
+              .select("id, clerk_user_id")
+              .in("id", txIds.slice(i * BATCH, (i + 1) * BATCH))
+          )
+        )
+      : Promise.resolve([]),
+  ]);
+
+  const shares = shareBatches.flatMap((b) => b.data ?? []);
   const txRows = txBatches.flatMap((b) => b.data ?? []);
   const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
@@ -150,6 +158,25 @@ export async function GET() {
     receiptUrl: string | null;
   };
 
+  // Pre-build per-group member-by-ID Map for O(1) member lookups inside the loop
+  const memberByGroupAndId = new Map<string, Map<string, { id: string; user_id: string | null; display_name: string }>>();
+  for (const m of members ?? []) {
+    let inner = memberByGroupAndId.get(m.group_id);
+    if (!inner) {
+      inner = new Map();
+      memberByGroupAndId.set(m.group_id, inner);
+    }
+    inner.set(m.id, { id: m.id, user_id: m.user_id, display_name: m.display_name });
+  }
+
+  // Pre-build Map for O(1) share lookups per split (replaces O(n×m) filter inside the loop)
+  const sharesBySplitId = new Map<string, typeof shares[number][]>();
+  for (const sh of shares) {
+    const arr = sharesBySplitId.get(sh.split_transaction_id) ?? [];
+    arr.push(sh);
+    sharesBySplitId.set(sh.split_transaction_id, arr);
+  }
+
   const activity: ActivityItem[] = [];
 
   for (const s of splits) {
@@ -157,18 +184,21 @@ export async function GET() {
       s as { transactions?: unknown; description?: string | null }
     );
     const groupMembers = membersByGroup.get(s.group_id) ?? [];
+    const groupMemberById = memberByGroupAndId.get(s.group_id);
     const myMember = groupMembers.find((m) => m.user_id === userId);
     const explicitPayerId = (s as { payer_member_id?: string | null }).payer_member_id;
     const payerByMemberRow =
-      explicitPayerId && groupMembers.some((m) => m.id === explicitPayerId)
-        ? groupMembers.find((m) => m.id === explicitPayerId) ?? null
+      explicitPayerId && groupMemberById?.has(explicitPayerId)
+        ? groupMemberById.get(explicitPayerId) ?? null
         : null;
     const payerUserIdFromTx = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
     const paidByMember =
       payerByMemberRow ??
-      (payerUserIdFromTx ? groupMembers.find((m) => m.user_id === payerUserIdFromTx) : null) ??
+      (payerUserIdFromTx
+        ? (memberByUserId.get(payerUserIdFromTx) ?? []).find((m) => m.group_id === s.group_id) ?? null
+        : null) ??
       null;
-    const shareList = shares.filter((sh) => sh.split_transaction_id === s.id);
+    const shareList = sharesBySplitId.get(s.id) ?? [];
     const myShareRow = myMember ? shareList.find((sh) => sh.member_id === myMember.id) : null;
     const myShare = myShareRow ? Number(myShareRow.amount) : 0;
     const currency = ((s as { iso_currency_code?: string | null }).iso_currency_code ?? "USD").trim().toUpperCase() || "USD";
@@ -192,7 +222,14 @@ export async function GET() {
       direction = "owe";
     }
 
-    const who = iAmPayer ? "You" : paidByMember?.display_name ?? "Someone";
+    // "who" = who created/added the expense (Splitwise convention), fall back to payer
+    const createdById = (s as { created_by?: string | null }).created_by;
+    const createdByMember = createdById
+      ? (memberByUserId.get(createdById) ?? []).find((m) => m.group_id === s.group_id) ?? null
+      : null;
+    const displayMember = createdByMember ?? paidByMember;
+    const iAmDisplay = displayMember && myMember && displayMember.id === myMember.id;
+    const who = iAmDisplay ? "You" : displayMember?.display_name ?? "Someone";
     const groupName = groupNames.get(s.group_id) ?? "";
     const expenseDate = (s as { date?: string }).date ?? s.created_at;
 

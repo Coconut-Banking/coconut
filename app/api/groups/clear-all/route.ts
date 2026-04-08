@@ -18,7 +18,7 @@ export async function POST() {
   const user = await currentUser().catch(() => null);
   const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase().trim();
   if (!email) {
-    console.warn("[clear-all] Could not fetch Clerk user email for step 5 — email-matched members will not be unlinked for userId:", userId);
+    if (process.env.NODE_ENV === 'development') console.warn("[clear-all] Could not fetch Clerk user email for step 5 — email-matched members will not be unlinked for userId:", userId);
   }
 
   const db = getSupabaseAdmin();
@@ -89,7 +89,7 @@ export async function POST() {
     .eq("clerk_user_id", userId);
   log.push(`receipt_scans: ${receiptCount ?? 0}`);
 
-  console.log("[clear-all]", userId, log.join(" | "));
+  if (process.env.NODE_ENV === 'development') console.log("[clear-all]", userId, log.join(" | "));
 
   return NextResponse.json({
     ok: true,

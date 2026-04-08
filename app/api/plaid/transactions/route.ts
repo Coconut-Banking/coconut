@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   }
 
   const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
-  console.log("[pipeline:tx] GET start", { userId: effectiveUserId, refresh: bypassCache });
+  if (process.env.NODE_ENV === 'development') console.log("[pipeline:tx] GET start", { userId: effectiveUserId, refresh: bypassCache });
 
   try {
     const token = clerkUserId ? await getCachedSupabaseToken(getToken, clerkUserId) : null;
@@ -66,11 +66,11 @@ export async function GET(request: NextRequest) {
         try {
           const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
           const synced = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
-          console.log("[transactions] sync-on-read for", effectiveUserId, ":", synced);
+          if (process.env.NODE_ENV === 'development') console.log("[transactions] sync-on-read for", effectiveUserId, ":", synced);
           try {
             revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");
           } catch (revalErr) {
-            console.warn("[transactions] revalidateTag failed:", revalErr);
+            if (process.env.NODE_ENV === 'development') console.warn("[transactions] revalidateTag failed:", revalErr);
           }
           const fresh = await db
             .from("transactions")
@@ -367,9 +367,9 @@ export async function GET(request: NextRequest) {
     });
 
     const receiptCount = mapped.filter((t) => t.hasReceipt).length;
-    console.log("[pipeline:tx] GET output", { count: mapped.length, withReceipt: receiptCount, deduped: idsToDelete.length });
+    if (process.env.NODE_ENV === 'development') console.log("[pipeline:tx] GET output", { count: mapped.length, withReceipt: receiptCount, deduped: idsToDelete.length });
     return NextResponse.json(mapped, {
-      headers: { "Cache-Control": "no-store, max-age=0" },
+      headers: { "Cache-Control": "private, max-age=0, stale-while-revalidate=30" },
     });
   } catch (err) {
     console.error("[pipeline:tx] GET error:", err);

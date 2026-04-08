@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Missing user id" }, { status: 400 });
       }
       await offboardUser(userId);
-      console.log("[clerk-webhook] user.deleted offboarded", { user_id: userId });
+      if (process.env.NODE_ENV === 'development') console.log("[clerk-webhook] user.deleted offboarded", { user_id: userId });
     }
 
     return NextResponse.json({ received: true });

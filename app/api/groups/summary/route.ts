@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
   try {
   return await handleSummary(req, userId);
   } catch (err) {
-    console.error("[summary] unhandled error:", err);
+    if (process.env.NODE_ENV === 'development') console.error("[summary] unhandled error:", err);
     return NextResponse.json({ error: "Failed to load summary" }, { status: 500 });
   }
 }
@@ -108,46 +108,59 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   const groupIds = (groups ?? []).map((g) => g.id);
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, group_id, user_id, display_name, email")
-    .in("group_id", groupIds);
-
-  const { data: splits } = await db
-    .from("split_transactions")
-    .select(`
-      id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-      iso_currency_code,
-      transactions(amount)
-    `)
-    .in("group_id", groupIds)
-    .order("created_at", { ascending: false })
-    .limit(5000);
+  // Tier 2: members, splits, settlements, and splitwise_tokens are all independent
+  // once groupIds/userId are known — run them in parallel.
+  const [
+    { data: members },
+    { data: splits },
+    { data: settlements },
+    splitwiseTokenRes,
+  ] = await Promise.all([
+    db
+      .from("group_members")
+      .select("id, group_id, user_id, display_name, email")
+      .in("group_id", groupIds),
+    db
+      .from("split_transactions")
+      .select(`
+        id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description,
+        iso_currency_code,
+        transactions(amount)
+      `)
+      .in("group_id", groupIds)
+      .order("created_at", { ascending: false })
+      .limit(5000),
+    db
+      .from("settlements")
+      .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
+      .in("group_id", groupIds)
+      .eq("status", "completed"),
+    db
+      .from("splitwise_tokens")
+      .select("cached_friend_balances, cached_group_balances")
+      .eq("clerk_user_id", userId)
+      .maybeSingle(),
+  ]);
 
   const splitIds = (splits ?? []).map((s) => s.id);
-
-  let shares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
-  let txRows: { id: string; clerk_user_id: string }[] = [];
-
-  if (splitIds.length > 0) {
-    const { data: sharesData } = await db
-      .from("split_shares")
-      .select("split_transaction_id, member_id, amount")
-      .in("split_transaction_id", splitIds);
-    shares = sharesData ?? [];
-  }
-
   const txIds = (splits ?? []).map((s) => s.transaction_id).filter(Boolean);
-  if (txIds.length > 0) {
-    const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-    txRows = data ?? [];
-  }
 
-  const { data: settlements } = await db
-    .from("settlements")
-    .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
-    .in("group_id", groupIds)
-    .eq("status", "completed");
+  // Tier 3: split_shares and transactions are independent of each other but both
+  // depend on splits — run them in parallel.
+  const [sharesResult, txResult] = await Promise.all([
+    splitIds.length > 0
+      ? db
+          .from("split_shares")
+          .select("split_transaction_id, member_id, amount")
+          .in("split_transaction_id", splitIds)
+      : Promise.resolve({ data: [] as { split_transaction_id: string; member_id: string; amount: number }[], error: null }),
+    txIds.length > 0
+      ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+      : Promise.resolve({ data: [] as { id: string; clerk_user_id: string }[], error: null }),
+  ]);
+
+  const shares: { split_transaction_id: string; member_id: string; amount: number }[] = sharesResult.data ?? [];
+  const txRows: { id: string; clerk_user_id: string }[] = txResult.data ?? [];
 
   const memberByGroup = new Map<string, { id: string; user_id: string | null; display_name: string; email: string | null }[]>();
   for (const m of members ?? []) {
@@ -168,6 +181,29 @@ async function handleSummary(req: NextRequest, userId: string) {
     const list = splitByGroup.get(s.group_id) ?? [];
     list.push(s);
     splitByGroup.set(s.group_id, list);
+  }
+
+  // Pre-build a settlement map keyed by group_id to avoid O(n²) filter inside the group loop.
+  const settlementsByGroupId = new Map<string, NonNullable<typeof settlements>>();
+  for (const s of settlements ?? []) {
+    const list = settlementsByGroupId.get(s.group_id) ?? [];
+    list.push(s);
+    settlementsByGroupId.set(s.group_id, list);
+  }
+
+  // Pre-build a Set of all split_transaction_ids per group for O(1) membership test
+  // (used when filtering shares for a group's splits).
+  const splitIdSetByGroup = new Map<string, Set<string>>();
+  for (const [groupId, groupSplitsArr] of splitByGroup) {
+    splitIdSetByGroup.set(groupId, new Set(groupSplitsArr.map((s) => s.id)));
+  }
+
+  // Pre-build a flat Map from split_transaction_id → shares for O(1) share lookup.
+  const sharesBySplitId = new Map<string, { split_transaction_id: string; member_id: string; amount: number }[]>();
+  for (const sh of shares) {
+    const list = sharesBySplitId.get(sh.split_transaction_id) ?? [];
+    list.push(sh);
+    sharesBySplitId.set(sh.split_transaction_id, list);
   }
 
   const personBalances = new Map<string, PersonAgg>();
@@ -201,12 +237,15 @@ async function handleSummary(req: NextRequest, userId: string) {
       ])
     );
 
+    // O(1) membership test for group member IDs (replaces .some() inside loops).
+    const groupMemberIdSet = new Set(groupMembers.map((m) => m.id));
+
     const paidRows: { member_id: string; amount: number; currency: string }[] = [];
     for (const s of groupSplits) {
       const sWithPayer = s as { payer_member_id?: string | null };
       const payerMemberId = sWithPayer.payer_member_id;
       const memberId =
-        payerMemberId && groupMembers.some((m) => m.id === payerMemberId)
+        payerMemberId && groupMemberIdSet.has(payerMemberId)
           ? payerMemberId
           : (() => {
               const tid = s.transaction_id as string | null | undefined;
@@ -227,16 +266,22 @@ async function handleSummary(req: NextRequest, userId: string) {
       }
     }
 
-    const groupShareIds = groupSplits.map((x) => x.id);
-    const owedRows = shares
-      .filter((sh) => groupShareIds.includes(sh.split_transaction_id))
-      .map((s) => ({
-        member_id: s.member_id,
-        amount: Number(s.amount),
-        currency: splitCurrencyById.get(s.split_transaction_id) ?? "USD",
-      }));
+    // Use the pre-built Set/Map for O(1) lookups instead of O(n) includes/filter.
+    const groupSplitIdSet = splitIdSetByGroup.get(g.id) ?? new Set<string>();
+    const owedRows: { member_id: string; amount: number; currency: string }[] = [];
+    for (const splitId of groupSplitIdSet) {
+      const splitShares = sharesBySplitId.get(splitId);
+      if (!splitShares) continue;
+      for (const s of splitShares) {
+        owedRows.push({
+          member_id: s.member_id,
+          amount: Number(s.amount),
+          currency: splitCurrencyById.get(s.split_transaction_id) ?? "USD",
+        });
+      }
+    }
 
-    const groupSettlements = (settlements ?? []).filter((s) => s.group_id === g.id);
+    const groupSettlements = settlementsByGroupId.get(g.id) ?? [];
     const paidSettlements = groupSettlements.map((s) => ({
       payer_member_id: s.payer_member_id,
       amount: Number(s.amount),
@@ -272,17 +317,23 @@ async function handleSummary(req: NextRequest, userId: string) {
     // For each expense: if I paid, they owe me their share; if they paid, I owe them my share.
     // (Using group-level totals would be wrong for 3+ person groups.)
     if (myMember) {
+      // Build sharesByTx using the pre-built sharesBySplitId Map — O(1) per split instead of O(n) filter.
       const sharesByTx = new Map<string, Map<string, number>>();
-      for (const sh of shares.filter((s) => groupShareIds.includes(s.split_transaction_id))) {
-        let txMap = sharesByTx.get(sh.split_transaction_id);
-        if (!txMap) { txMap = new Map(); sharesByTx.set(sh.split_transaction_id, txMap); }
-        txMap.set(sh.member_id, Number(sh.amount));
+      for (const splitId of groupSplitIdSet) {
+        const splitShares = sharesBySplitId.get(splitId);
+        if (!splitShares) continue;
+        const txMap = new Map<string, number>();
+        for (const sh of splitShares) {
+          txMap.set(sh.member_id, Number(sh.amount));
+        }
+        sharesByTx.set(splitId, txMap);
       }
 
       const payerBySplit = new Map<string, string>();
       for (const s of groupSplits) {
         const sWithPayer = s as { payer_member_id?: string | null };
-        const pid = sWithPayer.payer_member_id && groupMembers.some((m) => m.id === sWithPayer.payer_member_id)
+        // Use groupMemberIdSet (O(1)) instead of groupMembers.some() (O(n)).
+        const pid = sWithPayer.payer_member_id && groupMemberIdSet.has(sWithPayer.payer_member_id)
           ? sWithPayer.payer_member_id
           : (() => { const tid = s.transaction_id as string | null | undefined; const oid = tid ? txOwnerById.get(tid) : undefined; return oid ? memberByUserId.get(oid) ?? null : null; })();
         if (pid) payerBySplit.set(s.id, pid);
@@ -337,14 +388,10 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   // Try to use cached Splitwise balances (authoritative) instead of recalculated ones.
   // Splitwise's balance engine handles multi-payer, debt simplification, etc. correctly.
+  // splitwiseTokenRes was already fetched in Tier 2 above in parallel with the other queries.
   {
-    const tokenRes = await db
-      .from("splitwise_tokens")
-      .select("cached_friend_balances, cached_group_balances")
-      .eq("clerk_user_id", userId)
-      .maybeSingle();
     // Gracefully handle missing column (pre-migration)
-    const tokenRow = tokenRes.error?.code === "PGRST204" ? null : tokenRes.data;
+    const tokenRow = splitwiseTokenRes.error?.code === "PGRST204" ? null : splitwiseTokenRes.data;
 
     type CachedFriend = {
       id: number;
@@ -385,13 +432,21 @@ async function handleSummary(req: NextRequest, userId: string) {
 
       // Build per-person local settlement deltas (Coconut settlements not yet reflected in Splitwise cache).
       // These must be subtracted from the cached balance so "mark as paid" works immediately.
+      // Pre-build myMember lookup per group to avoid .find() inside the member loop.
+      const myMemberByGroupId = new Map<string, { id: string; user_id: string | null; display_name: string; email: string | null }>();
+      for (const [gid, gMembers] of memberByGroup) {
+        const mm = gMembers.find((m) => m.user_id === userId);
+        if (mm) myMemberByGroupId.set(gid, mm);
+      }
+
       const localSettlementDeltas = new Map<string, Map<string, number>>();
       for (const m of members ?? []) {
         if (m.user_id === userId || !m.email) continue;
-        const myMember = memberByGroup.get(m.group_id)?.find((mm) => mm.user_id === userId);
+        const myMember = myMemberByGroupId.get(m.group_id);
         if (!myMember) continue;
-        const gSettlements = (settlements ?? []).filter(
-          (s) => s.group_id === m.group_id && (s as { method?: string }).method !== "splitwise"
+        // Use the pre-built settlementsByGroupId map (O(1)) and filter by method inline.
+        const gSettlements = (settlementsByGroupId.get(m.group_id) ?? []).filter(
+          (s) => (s as { method?: string }).method !== "splitwise"
         );
         for (const st of gSettlements) {
           const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
@@ -435,14 +490,23 @@ async function handleSummary(req: NextRequest, userId: string) {
 
       // For members ONLY in Splitwise groups who are NOT in the cache,
       // their Splitwise balance is $0 — zero out the bad recalculated value.
+
+      // Build email → group IDs map once (O(n)) to avoid the inner filter (O(n²)).
+      const emailToGroupIds = new Map<string, string[]>();
+      for (const mm of members ?? []) {
+        if (mm.email && mm.user_id !== userId) {
+          const arr = emailToGroupIds.get(mm.email) ?? [];
+          arr.push(mm.group_id);
+          emailToGroupIds.set(mm.email, arr);
+        }
+      }
+
       for (const m of members ?? []) {
         if (m.user_id === userId || !m.email) continue;
         const email = m.email.toLowerCase().trim();
         if (cachedEmailSet.has(email)) continue; // already handled above
         // Check if this member ONLY appears in Splitwise groups
-        const memberGroups = (members ?? [])
-          .filter((mm) => mm.email === m.email && mm.user_id !== userId)
-          .map((mm) => mm.group_id);
+        const memberGroups = m.email ? (emailToGroupIds.get(m.email) ?? []) : [];
         const allSw = memberGroups.every((gid) => swGroupIds.has(gid));
         if (allSw) {
           const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
@@ -481,9 +545,11 @@ async function handleSummary(req: NextRequest, userId: string) {
 
     if (cachedGroups && Array.isArray(cachedGroups) && cachedGroups.length > 0) {
       const groupCacheMap = new Map(cachedGroups.map((g) => [g.external_id, g.balances]));
+      // Pre-build O(1) lookup to avoid .find() inside the loop below.
+      const groupsRawById = new Map((groups ?? []).map((gr) => [gr.id, gr]));
 
       for (const g of groupsWithBalance) {
-        const row = (groups ?? []).find((gr) => gr.id === g.id);
+        const row = groupsRawById.get(g.id);
         if (row?.source !== "splitwise" || !row.external_id) continue;
         const cachedBals = groupCacheMap.get(row.external_id);
         if (!cachedBals) continue;
@@ -589,7 +655,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     netBalance = null;
   }
 
-  console.log("[summary] response", {
+  if (process.env.NODE_ENV === 'development') console.log("[summary] response", {
     groups: groupsOut.length,
     friends: friends.length,
     showAll,

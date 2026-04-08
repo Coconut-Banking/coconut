@@ -31,14 +31,14 @@ export async function POST(request: Request) {
     const forceRescan = body.forceRescan === true; // Default to false
 
     if (forceRescan) {
-      console.log("[Gmail Scan] Force rescan requested - will reprocess all emails");
+      if (process.env.NODE_ENV === 'development') console.log("[Gmail Scan] Force rescan requested - will reprocess all emails");
     }
 
     const result = await scanGmailForReceipts(userId, daysBack, detailed, forceRescan);
 
     // If there's an error in the result (like missing OpenAI key), pass it through
     if (result.error) {
-      console.log("[Gmail Scan] Error:", result.error);
+      if (process.env.NODE_ENV === 'development') console.log("[Gmail Scan] Error:", result.error);
     }
 
     return NextResponse.json(result);

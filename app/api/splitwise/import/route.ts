@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     const filteredGroups = groupIds
       ? swGroups.filter((g) => groupIds.includes(g.id))
       : swGroups;
-    console.log(`[splitwise-import] found ${swGroups.length} groups for user ${swUser.id}`);
+    if (process.env.NODE_ENV === 'development') console.log(`[splitwise-import] found ${swGroups.length} groups for user ${swUser.id}`);
 
     // Batch look up all member emails to link existing Coconut users
     const allMemberEmails = new Set<string>();
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
       ? new Map<string, string>()
       : await findClerkUserIdsByEmails([...allMemberEmails]);
     if (emailToClerkId.size > 0) {
-      console.log(`[splitwise-import] found ${emailToClerkId.size} existing Coconut user(s) among Splitwise members`);
+      if (process.env.NODE_ENV === 'development') console.log(`[splitwise-import] found ${emailToClerkId.size} existing Coconut user(s) among Splitwise members`);
     }
 
     for (const swGroup of filteredGroups) {
@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
       console.warn("[splitwise-import] failed to cache group balances:", err);
     }
 
-    console.log("[splitwise-import] done", stats);
+    if (process.env.NODE_ENV === 'development') console.log("[splitwise-import] done", stats);
     if (!dryRun && (stats.expenses + stats.settlements) > 0) {
       revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
       revalidateTag(CACHE_TAGS.transactions(userId), "max");

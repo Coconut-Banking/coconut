@@ -31,9 +31,9 @@ export async function POST(request: NextRequest) {
   const debug = request.headers.get("X-NL-Search-Debug") === "true";
 
   try {
-    console.log("[pipeline:nl] INPUT", { userId: effectiveUserId, query: q, debug });
+    if (process.env.NODE_ENV === 'development') console.log("[pipeline:nl] INPUT", { userId: effectiveUserId, query: q, debug });
     const result = await search(effectiveUserId, q, { debug });
-    console.log("[pipeline:nl] OUTPUT", {
+    if (process.env.NODE_ENV === 'development') console.log("[pipeline:nl] OUTPUT", {
       metric: result.metric,
       count: result.transactions.length,
       total: result.total ?? null,
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (err) {
-    console.error("[pipeline:nl] ERROR", err);
+    if (process.env.NODE_ENV === 'development') console.error("[pipeline:nl] ERROR", err);
     return NextResponse.json(
       { transactions: [], answer: "Search failed.", metric: "list" },
       { status: 500 }

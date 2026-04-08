@@ -27,7 +27,7 @@ export async function DELETE(
   const { error } = await db.from("settlements").delete().eq("group_id", id);
 
   if (error) {
-    console.error("[settlements] delete:", error.message);
+    if (process.env.NODE_ENV === 'development') console.error("[settlements] delete:", error.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
 

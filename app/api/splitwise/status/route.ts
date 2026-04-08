@@ -31,7 +31,7 @@ export async function GET() {
   const data = tokenRes.data;
   const importCount = importCountRes.count ?? 0;
 
-  return NextResponse.json({
+  const resp = NextResponse.json({
     configured: true,
     /** Stored OAuth token exists (Splitwise authorized Coconut on the server). */
     connected: !!data,
@@ -39,6 +39,8 @@ export async function GET() {
     /** Groups created from Splitwise import — 0 if you authorized but never imported or cleared data. */
     importedSplitwiseGroupCount: importCount,
   });
+  resp.headers.set("Cache-Control", "private, max-age=120");
+  return resp;
 }
 
 /** Disconnect — delete the stored token. */

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/auth";
 import { searchV2 } from "@/lib/search/engine";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { embedRichTransactionsForUser } from "@/lib/transaction-sync";
@@ -19,7 +19,7 @@ async function ensureRichEmbeddings(userId: string): Promise<void> {
     .is("rich_embedding", null);
 
   if (count && count > 0) {
-    console.log(`[search-v2] auto-backfilling ${count} transactions for ${userId}`);
+    if (process.env.NODE_ENV === 'development') console.log(`[search-v2] auto-backfilling ${count} transactions for ${userId}`);
     const MAX_PASSES = Math.ceil(count / 1000) + 1;
     (async () => {
       for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -31,8 +31,8 @@ async function ensureRichEmbeddings(userId: string): Promise<void> {
           .is("rich_embedding", null);
         if (!left || left === 0) break;
       }
-      console.log(`[search-v2] auto-backfill complete for ${userId}`);
-    })().catch((e) => console.warn("[search-v2] auto-backfill error:", e));
+      if (process.env.NODE_ENV === 'development') console.log(`[search-v2] auto-backfill complete for ${userId}`);
+    })().catch((e) => { if (process.env.NODE_ENV === 'development') console.warn("[search-v2] auto-backfill error:", e); });
   }
 }
 
@@ -50,7 +50,7 @@ async function ensureRichEmbeddings(userId: string): Promise<void> {
  * calendar UI full control over the date window.
  */
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (err) {
-    console.error("[search-v2]", err);
+    if (process.env.NODE_ENV === 'development') console.error("[search-v2]", err);
     return NextResponse.json({ error: "Search failed" }, { status: 500 });
   }
 }

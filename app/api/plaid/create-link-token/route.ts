@@ -31,20 +31,20 @@ export async function POST(request: NextRequest) {
   }
   const traceId = getTraceId(body.trace_id);
   const effectiveUserId = await getEffectiveUserId();
-  console.log("[plaid][create-link-token] request_start", {
+  if (process.env.NODE_ENV === 'development') console.log("[plaid][create-link-token] request_start", {
     trace_id: traceId,
     has_user: Boolean(effectiveUserId),
     app_url: process.env.APP_URL || null,
     vercel_url: process.env.VERCEL_URL || null,
   });
   if (!effectiveUserId) {
-    console.warn("[plaid][create-link-token] unauthorized", { trace_id: traceId });
+    if (process.env.NODE_ENV === 'development') console.warn("[plaid][create-link-token] unauthorized", { trace_id: traceId });
     return NextResponse.json({ error: "Sign in to connect your bank", trace_id: traceId }, { status: 401 });
   }
 
   const rl = rateLimit(`plaid-link:${effectiveUserId}`, 30, 60_000);
   if (!rl.success) {
-    console.warn("[plaid][create-link-token] rate_limited", { trace_id: traceId, user_id: effectiveUserId });
+    if (process.env.NODE_ENV === 'development') console.warn("[plaid][create-link-token] rate_limited", { trace_id: traceId, user_id: effectiveUserId });
     return NextResponse.json({ error: "Too many requests", trace_id: traceId }, { status: 429 });
   }
 
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
           webhook: webhookUrl,
         });
     const plaidRequestId = (response.data as { request_id?: string }).request_id;
-    console.log("[plaid][create-link-token] request_ok", {
+    if (process.env.NODE_ENV === 'development') console.log("[plaid][create-link-token] request_ok", {
       trace_id: traceId,
       user_id: effectiveUserId,
       plaid_env: env,

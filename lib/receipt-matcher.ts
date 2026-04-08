@@ -268,8 +268,10 @@ export async function matchReceiptsToTransactions(
     }
 
     // ── Strategy 3: tight amount match without merchant validation ──
-    // Only within 3 days and $0.50 — high confidence the amounts are the same charge.
-    if (!bestMatchId && receiptDate) {
+    // Only within 3 days and very tight amount — high confidence the amounts are the same charge.
+    // Skip for small receipts (< $5): at low amounts the $0.50 tolerance is too loose
+    // (e.g. $2.82 Airbnb vs $2.55 Clipper is only $0.27 diff but totally different merchants).
+    if (!bestMatchId && receiptDate && receiptAmount >= 5) {
       const tightDateObj = new Date(receiptDate);
       const tightStart = new Date(tightDateObj);
       tightStart.setDate(tightStart.getDate() - 3);

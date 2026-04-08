@@ -36,7 +36,12 @@ export async function POST(
   const { data: receipt, error: receiptError } = await db
     .from("receipt_scans")
     .select(`
-      *,
+      id,
+      merchant_name,
+      total,
+      subtotal,
+      tax,
+      tip,
       receipt_items(
         id,
         name,
@@ -62,21 +67,21 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: group, error: groupError } = await db
-    .from("groups")
-    .select("id, name")
-    .eq("id", groupId)
-    .single();
+  const [{ data: group, error: groupError }, { data: members }] = await Promise.all([
+    db
+      .from("groups")
+      .select("id, name")
+      .eq("id", groupId)
+      .single(),
+    db
+      .from("group_members")
+      .select("id, display_name, user_id, email")
+      .eq("group_id", groupId),
+  ]);
 
   if (groupError || !group) {
     return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
-
-  // Get group members (include email for payment requests)
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, display_name, user_id, email")
-    .eq("group_id", groupId);
 
   if (!members || members.length === 0) {
     return NextResponse.json({ error: "No members in group" }, { status: 400 });
@@ -102,7 +107,7 @@ export async function POST(
       primary_category: "Food & Drink",
       detailed_category: null,
     })
-    .select()
+    .select("id")
     .single();
 
   if (txError || !transaction) {
@@ -121,7 +126,7 @@ export async function POST(
       amount: receipt.total || 0,
       payer_member_id: payerMember.id,
     })
-    .select()
+    .select("id")
     .single();
 
   if (splitError || !splitTx) {
@@ -205,17 +210,24 @@ export async function POST(
   // Fetch updated balances for the group
   const { computeBalances, getSuggestedSettlements } = await import("@/lib/split-balances");
 
-  // Get all splits for this group
-  const { data: allSplits } = await db
-    .from("split_transactions")
-    .select(`
-      id,
-      transaction_id,
-      transactions(amount)
-    `)
-    .eq("group_id", groupId);
+  // Get all splits and settlements in parallel (settlements is independent)
+  const [{ data: allSplits }, { data: settlements }] = await Promise.all([
+    db
+      .from("split_transactions")
+      .select(`
+        id,
+        transaction_id,
+        transactions(amount)
+      `)
+      .eq("group_id", groupId),
+    db
+      .from("settlements")
+      .select("payer_member_id, receiver_member_id, amount")
+      .eq("group_id", groupId)
+      .eq("status", "completed"),
+  ]);
 
-  // Get all shares
+  // Get all shares (depends on allSplits for IDs)
   const allSplitIds = (allSplits ?? []).map(s => s.id);
   const { data: allShares } = allSplitIds.length > 0
     ? await db
@@ -223,13 +235,6 @@ export async function POST(
         .select("split_transaction_id, member_id, amount")
         .in("split_transaction_id", allSplitIds)
     : { data: [] as { split_transaction_id: string; member_id: string; amount: number }[] };
-
-  // Get settlements
-  const { data: settlements } = await db
-    .from("settlements")
-    .select("payer_member_id, receiver_member_id, amount")
-    .eq("group_id", groupId)
-    .eq("status", "completed");
 
   // Build paid rows (who paid for transactions)
   const paidRows: { member_id: string; amount: number }[] = [];

@@ -276,7 +276,7 @@ export async function POST(req: NextRequest) {
         revalidateTag(CACHE_TAGS.transactions(userId), "max");
       }
     })
-    .catch((err) => console.error("[recurring] background process failed:", err));
+    .catch((err) => { if (process.env.NODE_ENV === 'development') console.error("[recurring] background process failed:", err); });
 
   return NextResponse.json({ id: splitTx.id });
 }

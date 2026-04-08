@@ -40,12 +40,18 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const { data: groups } = await db.from("groups").select("id, name, owner_id").in("id", ids);
-
-    const { data: members } = await db
-      .from("group_members")
-      .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
-      .in("group_id", ids);
+    const [{ data: groups }, { data: members }, { data: spwTokenRow }] = await Promise.all([
+      db.from("groups").select("id, name, owner_id").in("id", ids),
+      db
+        .from("group_members")
+        .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
+        .in("group_id", ids),
+      db
+        .from("splitwise_tokens")
+        .select("cached_friend_balances")
+        .eq("clerk_user_id", userId)
+        .maybeSingle(),
+    ]);
 
     const personMembers = (members ?? []).filter((m) => {
       if (m.user_id === userId) return false;
@@ -148,6 +154,13 @@ export async function GET(req: NextRequest) {
     ]);
 
     const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
+
+    const sharesBySplitId = new Map<string, typeof shares[number][]>();
+    for (const sh of shares ?? []) {
+      const arr = sharesBySplitId.get(sh.split_transaction_id) ?? [];
+      arr.push(sh);
+      sharesBySplitId.set(sh.split_transaction_id, arr);
+    }
 
     const byCurrency = new Map<string, number>();
     const personSettlements: Array<{
@@ -276,7 +289,7 @@ export async function GET(req: NextRequest) {
       }
 
       for (const s of groupSplits) {
-        const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
+        const shareList = sharesBySplitId.get(s.id) ?? [];
         const txAmount = paidAmountFromSplitRow(
           s as { transactions?: unknown; amount?: number | string | null }
         );
@@ -325,18 +338,12 @@ export async function GET(req: NextRequest) {
     // Try cached Splitwise friend balance (authoritative) for the headline
     let currencyBalances: { currency: string; amount: number }[] = [];
     try {
-      const { data: tokenRow } = await db
-        .from("splitwise_tokens")
-        .select("cached_friend_balances")
-        .eq("clerk_user_id", userId)
-        .maybeSingle();
-
       type CachedFriend = {
         email: string | null;
         balance: { currency_code: string; amount: string }[];
       };
       const cached: CachedFriend[] | null =
-        (tokenRow as Record<string, unknown> | null)?.cached_friend_balances as CachedFriend[] | null;
+        (spwTokenRow as Record<string, unknown> | null)?.cached_friend_balances as CachedFriend[] | null;
 
       if (cached && Array.isArray(cached) && email) {
         const match = cached.find(

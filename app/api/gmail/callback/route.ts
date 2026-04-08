@@ -15,12 +15,12 @@ function isAllowedRedirect(url: string): boolean {
 }
 
 export async function GET(request: NextRequest) {
-  console.log("[Gmail Callback] Starting OAuth callback processing");
+  if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Starting OAuth callback processing");
 
   const code = request.nextUrl.searchParams.get("code");
   const rawState = request.nextUrl.searchParams.get("state");
 
-  console.log("[Gmail Callback] Received:", {
+  if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Received:", {
     hasCode: !!code,
     hasState: !!rawState,
     stateLength: rawState?.length,
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   });
 
   if (!code || !rawState) {
-    console.error("[Gmail Callback] Missing code or state");
+    if (process.env.NODE_ENV === 'development') console.error("[Gmail Callback] Missing code or state");
     return NextResponse.redirect(new URL("/app/email-receipts?error=missing_params", request.url));
   }
 
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
   // Verify HMAC-signed state (BUG-AUTH-1 fix). Reject tampered or expired states.
   const stateResult = verifyOAuthState(signedPart);
   if (!stateResult.valid) {
-    console.error("[Gmail Callback] Invalid or expired OAuth state");
+    if (process.env.NODE_ENV === 'development') console.error("[Gmail Callback] Invalid or expired OAuth state");
     return NextResponse.redirect(new URL("/app/email-receipts?error=invalid_state", request.url));
   }
   const clerkUserId = stateResult.userId;
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
   //   sufficient proof of identity, so we allow requests where authedUserId is null.
   const { userId: authedUserId } = await auth();
   if (authedUserId && authedUserId !== clerkUserId) {
-    console.error("[Gmail Callback] Auth mismatch: session userId does not match state userId", {
+    if (process.env.NODE_ENV === 'development') console.error("[Gmail Callback] Auth mismatch: session userId does not match state userId", {
       stateUserId: clerkUserId,
       authedUserId,
     });
@@ -73,9 +73,9 @@ export async function GET(request: NextRequest) {
     : undefined;
 
   try {
-    console.log("[Gmail Callback] Exchanging code for tokens...");
+    if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Exchanging code for tokens...");
     const tokens = await exchangeCode(code);
-    console.log("[Gmail Callback] Token exchange successful:", {
+    if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Token exchange successful:", {
       hasAccessToken: !!tokens.access_token,
       hasRefreshToken: !!tokens.refresh_token,
       expiryDate: tokens.expiry_date
@@ -83,38 +83,38 @@ export async function GET(request: NextRequest) {
 
     let email: string | undefined;
     try {
-      console.log("[Gmail Callback] Fetching user email...");
+      if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Fetching user email...");
       const client = getOAuth2Client();
       client.setCredentials(tokens);
       const gmail = google.gmail({ version: "v1", auth: client });
       const profile = await gmail.users.getProfile({ userId: "me" });
       email = profile.data.emailAddress ?? undefined;
-      console.log("[Gmail Callback] Got email:", email);
+      if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Got email:", email);
     } catch (e) {
-      console.warn("[Gmail Callback] Failed to get email (non-critical):", e);
+      if (process.env.NODE_ENV === 'development') console.warn("[Gmail Callback] Failed to get email (non-critical):", e);
     }
 
-    console.log("[Gmail Callback] Saving tokens to database...");
+    if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Saving tokens to database...");
     await saveGmailTokens(clerkUserId, tokens, email);
-    console.log("[Gmail Callback] Tokens saved successfully");
+    if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Tokens saved successfully");
 
     // Fire-and-forget: scan last 90 days of receipts on first connect
     import("@/lib/receipt-parser")
       .then(({ scanGmailForReceipts }) => scanGmailForReceipts(clerkUserId, 90, true, false))
-      .then((result) => console.log("[Gmail Callback] Initial scan complete:", result))
-      .catch((err) => console.warn("[Gmail Callback] Initial scan failed (non-blocking):", err));
+      .then((result) => { if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Initial scan complete:", result); })
+      .catch((err) => { if (process.env.NODE_ENV === 'development') console.warn("[Gmail Callback] Initial scan failed (non-blocking):", err); });
 
     if (sanitizedRedirect) {
       const url = sanitizedRedirect.startsWith("/")
         ? new URL(`${sanitizedRedirect}?connected=true`, request.url)
         : `${sanitizedRedirect}?connected=true`;
-      console.log("[Gmail Callback] Redirecting:", url);
+      if (process.env.NODE_ENV === 'development') console.log("[Gmail Callback] Redirecting:", url);
       return NextResponse.redirect(url);
     }
 
     return NextResponse.redirect(new URL("/app/email-receipts?connected=true", request.url));
   } catch (e) {
-    console.error("[Gmail Callback] Token exchange failed:", e);
+    if (process.env.NODE_ENV === 'development') console.error("[Gmail Callback] Token exchange failed:", e);
 
     if (sanitizedRedirect) {
       const url = sanitizedRedirect.startsWith("/")

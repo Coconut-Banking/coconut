@@ -52,8 +52,8 @@ export async function POST(request: NextRequest) {
   if (enabled) {
     import("@/lib/receipt-parser")
       .then(({ scanGmailForReceipts }) => scanGmailForReceipts(userId, 90, true, false))
-      .then((result) => console.log("[gmail/toggle] Initial scan:", result))
-      .catch((err) => console.warn("[gmail/toggle] Initial scan failed (non-blocking):", err));
+      .then((result) => { if (process.env.NODE_ENV === 'development') console.log("[gmail/toggle] Initial scan:", result); })
+      .catch((err) => { if (process.env.NODE_ENV === 'development') console.warn("[gmail/toggle] Initial scan failed (non-blocking):", err); });
   }
 
   return NextResponse.json({ ok: true, emailScanEnabled: enabled });

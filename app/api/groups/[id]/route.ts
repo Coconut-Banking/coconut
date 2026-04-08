@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
-import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { getSuggestedSettlements } from "@/lib/split-balances";
 import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { getUserId } from "@/lib/auth";
@@ -26,7 +26,7 @@ export async function GET(
     const db = getSupabase();
 
     // Fetch group first, then check access inline — avoids canAccessGroup's redundant re-query
-    const { data: group, error: groupError } = await db.from("groups").select("*").eq("id", id).single();
+    const { data: group, error: groupError } = await db.from("groups").select("id, name, owner_id, created_at, group_type, source, external_id, archived_at, image_url, invite_token").eq("id", id).single();
     if (groupError || !group) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (group.owner_id !== userId) {
@@ -165,12 +165,15 @@ export async function GET(
       ])
     );
 
+    // Pre-built Set for O(1) member ID existence checks inside loops
+    const memberIdSet = new Set((members ?? []).map((m) => m.id));
+
     const paidRows: { member_id: string; amount: number; currency: string }[] = [];
     for (const s of splits) {
       const tid = s.transaction_id as string | null | undefined;
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const memberId =
-        payerMemberId && (members ?? []).some((m) => m.id === payerMemberId)
+        payerMemberId && memberIdSet.has(payerMemberId)
           ? payerMemberId
           : (() => {
               const ownerId2 = tid ? txOwnerById.get(tid) : undefined;
@@ -278,14 +281,30 @@ export async function GET(
           : null;
 
     const memberMap = new Map((members ?? []).map((m) => [m.id, m]));
+    const memberByUserIdMap = new Map(
+      (members ?? [])
+        .filter((m): m is typeof m & { user_id: string } => m.user_id != null)
+        .map((m) => [m.user_id, m])
+    );
+
+    // Pre-built Map for O(1) share lookup per split, replacing O(n) inner filter
+    const sharesBySplitId = new Map<string, typeof shares>();
+    for (const sh of shares ?? []) {
+      const existing = sharesBySplitId.get(sh.split_transaction_id);
+      if (existing) {
+        existing.push(sh);
+      } else {
+        sharesBySplitId.set(sh.split_transaction_id, [sh]);
+      }
+    }
 
     const activity = splits.map((s) => {
-      const shareList = (shares ?? []).filter((sh) => sh.split_transaction_id === s.id);
+      const shareList = sharesBySplitId.get(s.id) ?? [];
       const totalShares = shareList.length;
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const payerMember = payerMemberId ? memberMap.get(payerMemberId) : null;
       const ownerId3 = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
-      const ownerMember = ownerId3 ? Array.from(memberMap.values()).find((m) => m.user_id === ownerId3) : null;
+      const ownerMember = ownerId3 ? (memberByUserIdMap.get(ownerId3) ?? null) : null;
       const paidByMember = payerMember ?? ownerMember;
       return {
         id: s.id,
@@ -314,8 +333,7 @@ export async function GET(
       (group as { external_id?: string }).external_id
     ) {
       try {
-        const adminDb = getSupabaseAdmin();
-        const { data: tokenRow } = await adminDb
+        const { data: tokenRow } = await db
           .from("splitwise_tokens")
           .select("cached_group_balances")
           .eq("clerk_user_id", userId)
@@ -417,7 +435,7 @@ export async function GET(
       mySpendByCurrency: mySpendArr,
       categoryBreakdown,
     });
-    resp.headers.set("Cache-Control", "private, max-age=10");
+    resp.headers.set("Cache-Control", "private, max-age=30, stale-while-revalidate=30");
     return resp;
   } catch (err) {
     console.error("[groups/id]", err);

@@ -20,6 +20,7 @@ export async function POST(
   }
   const displayName = (body.displayName ?? body.display_name ?? "").trim().slice(0, 100);
   const email = (body.email as string)?.trim()?.toLowerCase() || null;
+  const phone = (body.phone as string)?.trim()?.slice(0, 30) || null;
 
   if (!displayName) return NextResponse.json({ error: "displayName required" }, { status: 400 });
 
@@ -47,6 +48,7 @@ export async function POST(
       user_id: linkedUserId,
       email,
       display_name: displayName,
+      ...(phone ? { phone } : {}),
     })
     .select()
     .single();
@@ -91,7 +93,9 @@ export async function GET(
     console.error("[members] list:", error.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
-  return NextResponse.json(members);
+  return NextResponse.json(members, {
+    headers: { "Cache-Control": "private, max-age=30" },
+  });
 }
 
 export async function PATCH(

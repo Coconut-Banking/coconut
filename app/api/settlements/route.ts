@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     .in("id", [payerMemberId, receiverMemberId]);
 
   if (partyErr) {
-    console.error("[settlements] party check:", partyErr.message);
+    if (process.env.NODE_ENV === 'development') console.error("[settlements] party check:", partyErr.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
   if (!partyRows?.length) {
@@ -90,11 +90,11 @@ export async function POST(req: NextRequest) {
       status: "completed",
       iso_currency_code: currency,
     })
-    .select()
+    .select("id, group_id, payer_member_id, receiver_member_id, amount, method, status, iso_currency_code, created_at")
     .single();
 
   if (error) {
-    console.error("[settlements] insert:", error.message);
+    if (process.env.NODE_ENV === 'development') console.error("[settlements] insert:", error.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
 

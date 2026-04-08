@@ -65,6 +65,8 @@ export async function GET(req: NextRequest) {
   );
 }
 
+const CACHE_HEADERS = { "Cache-Control": "private, max-age=30" } as const;
+
 async function buildResponse(
   db: ReturnType<typeof getSupabaseAdmin>,
   userId: string,
@@ -139,5 +141,5 @@ async function buildResponse(
     category,
     receiptUrl,
     splitwiseUrl: null,
-  });
+  }, { headers: CACHE_HEADERS });
 }
