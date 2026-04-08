@@ -92,7 +92,9 @@ export async function GET(
     console.error("[members] list:", error.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
-  return NextResponse.json(members);
+  return NextResponse.json(members, {
+    headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
+  });
 }
 
 export async function PATCH(

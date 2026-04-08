@@ -18,6 +18,20 @@ const BALANCE_EPS = 0.005;
 const _ownerEmailCache = new Map<string, number>();
 const OWNER_EMAIL_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// TTL cache for Clerk profile photos (keyed by sorted user ID list)
+const _photoCache = new Map<string, { photos: Map<string, string>; ts: number }>();
+const PHOTO_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getCachedClerkPhotos(userIds: string[]): Promise<Map<string, string>> {
+  if (userIds.length === 0) return new Map();
+  const key = [...userIds].sort().join(",");
+  const cached = _photoCache.get(key);
+  if (cached && Date.now() - cached.ts < PHOTO_CACHE_TTL_MS) return cached.photos;
+  const photos = await getClerkUserPhotos(userIds);
+  _photoCache.set(key, { photos, ts: Date.now() });
+  return photos;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -205,7 +219,7 @@ export async function GET(
     const [sharesBatchResults, txBatchResults, photoMap] = await Promise.all([
       splitIdList.length > 0 ? Promise.all(sharesBatchPromises) : Promise.resolve([] as { split_transaction_id: string; member_id: string; amount: number }[][]),
       txIds.length > 0 ? Promise.all(txBatchPromises) : Promise.resolve([] as { id: string; clerk_user_id: string }[][]),
-      getClerkUserPhotos(memberUserIds),
+      getCachedClerkPhotos(memberUserIds),
     ]);
 
     const shares = sharesBatchResults.flat();

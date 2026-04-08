@@ -186,7 +186,64 @@ export async function matchReceiptsToTransactions(
   let matched = 0;
   const windowDays = RECEIPT_MATCH.DATE_WINDOW_DAYS;
 
-  for (const receipt of receipts) {
+  // Helper to compute date range for a receipt date
+  function getDateRange(receiptDate: string): { start: string; end: string } {
+    const dateObj = new Date(receiptDate);
+    const start = new Date(dateObj);
+    start.setDate(start.getDate() - windowDays);
+    const end = new Date(dateObj);
+    end.setDate(end.getDate() + windowDays);
+    return {
+      start: start.toISOString().split("T")[0],
+      end: end.toISOString().split("T")[0],
+    };
+  }
+
+  // ── Strategy 1: build ALL keyword queries upfront, then fire in parallel ──
+  type ReceiptType = typeof receipts[0];
+  type TxRow = { id: string; amount: number; date: string; normalized_merchant?: string; merchant_name?: string };
+  type QueryResult = { receipt: ReceiptType; candidates: TxRow[] };
+
+  const queryPromises: Promise<QueryResult>[] = [];
+  const eligibleReceipts = receipts.filter((r) => r.merchant && r.amount);
+
+  for (const receipt of eligibleReceipts) {
+    const keywords = extractKeywords(receipt.merchant as string);
+    const dateStart = receipt.date ? getDateRange(receipt.date as string).start : null;
+    const dateEnd = receipt.date ? getDateRange(receipt.date as string).end : null;
+
+    for (const keyword of keywords) {
+      for (const col of ["normalized_merchant", "merchant_name"] as const) {
+        let q = db
+          .from("transactions")
+          .select("id, amount, date, normalized_merchant, merchant_name")
+          .eq("clerk_user_id", clerkUserId)
+          .ilike(col, `%${keyword}%`);
+        if (dateStart && dateEnd) q = q.gte("date", dateStart).lte("date", dateEnd);
+        queryPromises.push(
+          Promise.resolve(q).then(({ data }) => ({ receipt, candidates: (data ?? []) as TxRow[] }))
+        );
+      }
+    }
+  }
+
+  const allKeywordResults = await Promise.all(queryPromises);
+
+  // Group keyword results by receipt.id
+  const candidatesByReceiptId = new Map<string, TxRow[]>();
+  for (const { receipt, candidates } of allKeywordResults) {
+    const existing = candidatesByReceiptId.get(receipt.id as string) ?? [];
+    const seen = new Set(existing.map((c) => c.id));
+    for (const c of candidates) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        existing.push(c);
+      }
+    }
+    candidatesByReceiptId.set(receipt.id as string, existing);
+  }
+
+  for (const receipt of eligibleReceipts) {
     if (!receipt.merchant || !receipt.amount) continue;
 
     const receiptAmount = Math.abs(Number(receipt.amount));
@@ -195,48 +252,23 @@ export async function matchReceiptsToTransactions(
     let dateStart: string | undefined;
     let dateEnd: string | undefined;
     if (receiptDate) {
-      const dateObj = new Date(receiptDate);
-      const start = new Date(dateObj);
-      start.setDate(start.getDate() - windowDays);
-      const end = new Date(dateObj);
-      end.setDate(end.getDate() + windowDays);
-      dateStart = start.toISOString().split("T")[0];
-      dateEnd = end.toISOString().split("T")[0];
+      const range = getDateRange(receiptDate as string);
+      dateStart = range.start;
+      dateEnd = range.end;
     }
 
-    // ── Strategy 1: keyword ilike on normalized_merchant + merchant_name ──
-    const keywords = extractKeywords(receipt.merchant);
+    // ── Strategy 1: use pre-fetched keyword candidates ──
     let bestMatchId: string | null = null;
 
-    if (keywords.length > 0) {
-      for (const keyword of keywords) {
-        // Try normalized_merchant first
-        for (const col of ["normalized_merchant", "merchant_name"] as const) {
-          let query = db
-            .from("transactions")
-            .select("id, amount, date, normalized_merchant, merchant_name")
-            .eq("clerk_user_id", clerkUserId)
-            .ilike(col, `%${keyword}%`);
-
-          if (dateStart && dateEnd) {
-            query = query.gte("date", dateStart).lte("date", dateEnd);
-          }
-
-          const { data: candidates } = await query;
-          if (candidates && candidates.length > 0) {
-            const available = (candidates as Array<{ id: string; amount: number; date: string; normalized_merchant?: string; merchant_name?: string }>)
-              .filter((tx) => !alreadyMatchedTxIds.has(tx.id));
-            bestMatchId = scoreCandidates(
-              available,
-              receiptAmount,
-              receiptDate,
-              receipt.merchant
-            );
-            if (bestMatchId) break;
-          }
-        }
-        if (bestMatchId) break;
-      }
+    const keywordCandidates = candidatesByReceiptId.get(receipt.id as string) ?? [];
+    if (keywordCandidates.length > 0) {
+      const available = keywordCandidates.filter((tx) => !alreadyMatchedTxIds.has(tx.id));
+      bestMatchId = scoreCandidates(
+        available,
+        receiptAmount,
+        receiptDate as string | null,
+        receipt.merchant as string
+      );
     }
 
     // ── Strategy 2: date-window scan + merchant validation + full tolerance ──
@@ -360,19 +392,18 @@ export async function clearStaleReceiptMatches(clerkUserId: string): Promise<num
     .eq("clerk_user_id", clerkUserId);
 
   const validTxIds = new Set((txRows ?? []).map((t) => t.id as string));
-  let cleared = 0;
 
-  for (const receipt of matchedReceipts) {
-    if (!validTxIds.has(receipt.transaction_id as string)) {
-      await db
-        .from("email_receipts")
-        .update({ transaction_id: null })
-        .eq("id", receipt.id);
-      cleared++;
-    }
+  // Collect all IDs that need clearing and batch update in one query
+  const idsToClean = matchedReceipts
+    .filter(r => !validTxIds.has(r.transaction_id as string))
+    .map(r => r.id as string);
+
+  if (idsToClean.length > 0) {
+    await db.from("email_receipts")
+      .update({ transaction_id: null })
+      .in("id", idsToClean);
   }
-
-  return cleared;
+  return idsToClean.length;
 }
 
 /**
@@ -404,6 +435,7 @@ export async function auditAndRematchAllReceipts(
 
     const txMap = new Map((txRows ?? []).map((t) => [t.id as string, t]));
 
+    const idsToInvalidate: string[] = [];
     for (const receipt of matchedReceipts) {
       const tx = txMap.get(receipt.transaction_id as string);
       if (!tx) continue;
@@ -418,12 +450,15 @@ export async function auditAndRematchAllReceipts(
       const tightAmountOk = Math.abs(txAmount - rcptAmount) <= 0.01;
       const aliasConflict = knownMerchantsConflict(receipt.merchant, txMerchant);
       if (!nameOk && (!tightAmountOk || aliasConflict)) {
-        await db
-          .from("email_receipts")
-          .update({ transaction_id: null })
-          .eq("id", receipt.id);
-        cleared++;
+        idsToInvalidate.push(receipt.id as string);
       }
+    }
+    if (idsToInvalidate.length > 0) {
+      await db
+        .from("email_receipts")
+        .update({ transaction_id: null })
+        .in("id", idsToInvalidate);
+      cleared += idsToInvalidate.length;
     }
   }
 

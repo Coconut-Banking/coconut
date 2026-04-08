@@ -82,15 +82,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const allowed = await canAccessGroup(userId, groupId);
-  if (!allowed) return NextResponse.json({ error: "Group not found" }, { status: 404 });
-
   const db = getSupabase();
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, user_id, display_name, email")
-    .eq("group_id", groupId);
+  const [allowed, { data: members }] = await Promise.all([
+    canAccessGroup(userId, groupId),
+    db
+      .from("group_members")
+      .select("id, user_id, display_name, email")
+      .eq("group_id", groupId),
+  ]);
+
+  if (!allowed) return NextResponse.json({ error: "Group not found" }, { status: 404 });
 
   if (!members || members.length === 0) {
     return NextResponse.json({ error: "Group has no members" }, { status: 400 });
