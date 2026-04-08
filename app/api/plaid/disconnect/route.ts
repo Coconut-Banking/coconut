@@ -25,17 +25,19 @@ export async function POST() {
     const { data: items } = await db.from("plaid_items").select("access_token").eq("clerk_user_id", effectiveUserId);
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
-      for (const item of items) {
-        const raw = item.access_token as string;
-        if (!raw) continue;
-        const token = decryptToken(raw);
-        try {
-          await plaid.itemRemove({ access_token: token });
-          console.log("[disconnect] itemRemove ok", { user_id: effectiveUserId });
-        } catch (e) {
-          console.warn("[disconnect] itemRemove failed (token may be invalid):", e instanceof Error ? e.message : e);
-        }
-      }
+      await Promise.allSettled(
+        items
+          .filter((item) => item.access_token)
+          .map(async (item) => {
+            const token = decryptToken(item.access_token as string);
+            try {
+              await plaid.itemRemove({ access_token: token });
+              console.log("[disconnect] itemRemove ok", { user_id: effectiveUserId });
+            } catch (e) {
+              console.warn("[disconnect] itemRemove failed (token may be invalid):", e instanceof Error ? e.message : e);
+            }
+          })
+      );
     }
 
     // Clear email_receipts FK before deleting transactions (prevents FK violation)
@@ -72,12 +74,14 @@ export async function POST() {
     //     Must happen before deleting transactions to avoid ON DELETE RESTRICT FK violations.
     if (userTxIds.length > 0) {
       const CHUNK = 100;
-      for (let i = 0; i < userTxIds.length; i += CHUNK) {
-        await db
-          .from("subscription_transactions")
-          .delete()
-          .in("transaction_id", userTxIds.slice(i, i + CHUNK));
-      }
+      await Promise.all(
+        Array.from({ length: Math.ceil(userTxIds.length / CHUNK) }, (_, i) =>
+          db
+            .from("subscription_transactions")
+            .delete()
+            .in("transaction_id", userTxIds.slice(i * CHUNK, (i + 1) * CHUNK))
+        )
+      );
     }
 
     // 3. Protect bank transactions that are still referenced by split_transactions
@@ -99,9 +103,11 @@ export async function POST() {
       await db.from("transactions").delete().in("id", bankIds);
     }
 
-    // Delete accounts and plaid_items
-    await db.from("accounts").delete().eq("clerk_user_id", effectiveUserId);
-    const { error } = await db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId);
+    // Delete accounts and plaid_items in parallel
+    const [, { error }] = await Promise.all([
+      db.from("accounts").delete().eq("clerk_user_id", effectiveUserId),
+      db.from("plaid_items").delete().eq("clerk_user_id", effectiveUserId),
+    ]);
     if (error) {
       console.error("[disconnect] plaid_items delete error:", error);
       return NextResponse.json({ error: "Disconnect failed" }, { status: 500 });
