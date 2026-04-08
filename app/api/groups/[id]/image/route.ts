@@ -15,21 +15,19 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
-
-  const allowed = await canAccessGroup(userId, id);
+  // Parallelize access check + body parse (independent)
+  const [allowed, bodyRaw] = await Promise.all([
+    canAccessGroup(userId, id),
+    req.json().catch(() => null),
+  ]);
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (bodyRaw === null) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 
-  let body: { image: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-
+  const body = bodyRaw as { image: string };
   const { image } = body;
   if (!image || typeof image !== "string") {
     return NextResponse.json({ error: "image (base64 data URI) required" }, { status: 400 });

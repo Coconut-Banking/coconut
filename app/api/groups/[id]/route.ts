@@ -22,10 +22,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
   try {
     const db = getSupabase();
 
@@ -543,23 +542,23 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
   const db = getSupabase();
-  // Single query — owner check is sufficient for PATCH (members can't archive)
-  const { data: row, error: loadErr } = await db.from("groups").select("owner_id").eq("id", id).single();
+  // Parallelize owner check + body parse (independent — body doesn't affect access check)
+  const [{ data: row, error: loadErr }, bodyRaw] = await Promise.all([
+    db.from("groups").select("owner_id").eq("id", id).single(),
+    req.json().catch(() => null),
+  ]);
   if (loadErr || !row || row.owner_id !== userId) {
     return NextResponse.json({ error: "Only the group owner can update this group" }, { status: 403 });
   }
-
-  let body: { archived?: boolean; name?: unknown };
-  try {
-    body = await req.json();
-  } catch {
+  if (bodyRaw === null) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  const body = bodyRaw as { archived?: boolean; name?: unknown };
 
   const updates: { archived_at?: string | null; name?: string } = {};
 
