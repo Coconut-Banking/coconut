@@ -185,7 +185,7 @@ export async function POST(req: NextRequest) {
 // ── Telegram helpers ──────────────────────────────────────────────────────────
 
 async function sendMainMenu(chatId: number) {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -201,17 +201,22 @@ async function sendMainMenu(chatId: number) {
       },
     }),
   });
+  if (!res.ok) {
+    console.error(`[telegram] sendMainMenu failed: ${res.status} ${await res.text()}`);
+  }
 }
 
 /** Send a message AND include the main menu buttons below it */
 async function sendTelegramWithMenu(chatId: number, text: string) {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  // Telegram hard limit is 4096 chars — truncate to avoid silent 400 failures
+  const safeText = text.length > 3900 ? text.slice(0, 3900) + "\n…(truncated)" : text;
+  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text,
-      disable_web_page_preview: true,
+      text: safeText,
+      link_preview_options: { is_disabled: true },
       reply_markup: {
         inline_keyboard: [
           [
@@ -222,6 +227,9 @@ async function sendTelegramWithMenu(chatId: number, text: string) {
       },
     }),
   });
+  if (!res.ok) {
+    console.error(`[telegram] sendTelegramWithMenu failed: ${res.status} ${await res.text()}`);
+  }
 }
 
 async function sendRepoSelector(chatId: number) {
@@ -269,16 +277,20 @@ async function answerCallbackQuery(callbackQueryId: string) {
 }
 
 async function sendTelegram(chatId: number, text: string, replyTo?: number) {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const safeText = text.length > 3900 ? text.slice(0, 3900) + "\n…(truncated)" : text;
+  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text,
+      text: safeText,
       reply_to_message_id: replyTo,
-      disable_web_page_preview: true,
+      link_preview_options: { is_disabled: true },
     }),
   });
+  if (!res.ok) {
+    console.error(`[telegram] sendTelegram failed: ${res.status} ${await res.text()}`);
+  }
 }
 
 // ── Multi-repo status ─────────────────────────────────────────────────────────
@@ -290,8 +302,13 @@ async function getMultiRepoStatus(): Promise<string> {
     const label = key === "coconut" ? "Web App (coconut)" : "Mobile App (coconut-app)";
     sections.push(`== ${label} ==`);
 
-    const status = await getRepoStatus(repoFullName);
-    sections.push(status);
+    try {
+      const status = await getRepoStatus(repoFullName);
+      sections.push(status);
+    } catch (err) {
+      console.error(`[telegram] getRepoStatus failed for ${repoFullName}:`, err);
+      sections.push(`(failed to fetch status: ${err instanceof Error ? err.message : String(err)})`);
+    }
     sections.push("");
   }
 
