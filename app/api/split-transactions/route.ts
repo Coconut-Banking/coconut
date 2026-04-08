@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const db = getSupabase();
 
   // Fetch group members and transaction in parallel (independent reads)
-  const [membersResult, txResult] = await Promise.all([
+  const [membersResult, txResult, existingResult] = await Promise.all([
     db
       .from("group_members")
       .select("id, user_id, display_name, email")
@@ -47,6 +47,12 @@ export async function POST(req: NextRequest) {
       .eq("id", transactionId)
       .eq("clerk_user_id", userId)
       .single(),
+    db
+      .from("split_transactions")
+      .select("id")
+      .eq("group_id", groupId)
+      .eq("transaction_id", transactionId)
+      .maybeSingle(),
   ]);
 
   const groupMembers = membersResult.data;
@@ -62,12 +68,7 @@ export async function POST(req: NextRequest) {
   const { data: tx, error: txError } = txResult;
   if (txError || !tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
 
-  const { data: existing } = await db
-    .from("split_transactions")
-    .select("id")
-    .eq("group_id", groupId)
-    .eq("transaction_id", transactionId)
-    .maybeSingle();
+  const { data: existing } = existingResult;
 
   if (existing) {
     return NextResponse.json(
