@@ -10,22 +10,24 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
   const db = getSupabase();
   const doPlaidRemove = options?.plaidItemRemove !== false;
 
-  // 1. Plaid item/remove to stop billing
+  // 1. Plaid item/remove to stop billing (fire all removes in parallel)
   if (doPlaidRemove) {
     const { data: items } = await db.from("plaid_items").select("access_token").eq("clerk_user_id", clerkUserId);
     const plaid = getPlaidClient();
     if (plaid && items?.length) {
-      for (const item of items) {
-        const raw = item.access_token as string;
-        if (!raw) continue;
-        const token = decryptToken(raw);
-        try {
-          await plaid.itemRemove({ access_token: token });
-          console.log("[offboard] itemRemove ok", { user_id: clerkUserId });
-        } catch (e) {
-          console.warn("[offboard] itemRemove failed:", e instanceof Error ? e.message : e);
-        }
-      }
+      await Promise.all(
+        items.map(async (item) => {
+          const raw = item.access_token as string;
+          if (!raw) return;
+          const token = decryptToken(raw);
+          try {
+            await plaid.itemRemove({ access_token: token });
+            console.log("[offboard] itemRemove ok", { user_id: clerkUserId });
+          } catch (e) {
+            console.warn("[offboard] itemRemove failed:", e instanceof Error ? e.message : e);
+          }
+        })
+      );
     }
   }
 
@@ -39,8 +41,11 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
     .eq("user_id", clerkUserId);
   if (foreignMemberRows?.length) {
     const memberIds = foreignMemberRows.map((m: { id: string }) => m.id);
-    await db.from("settlements").delete().in("payer_member_id", memberIds);
-    await db.from("settlements").delete().in("receiver_member_id", memberIds);
+    // Delete payer and receiver settlements in parallel (independent filters)
+    await Promise.all([
+      db.from("settlements").delete().in("payer_member_id", memberIds),
+      db.from("settlements").delete().in("receiver_member_id", memberIds),
+    ]);
   }
 
   // 3. Remove user from groups they're in but don't own
@@ -49,9 +54,12 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
   // 4. Gmail / email — must clear email_receipts.transaction_id FK before deleting transactions
   try {
     await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", clerkUserId);
-    await db.from("email_receipts").delete().eq("clerk_user_id", clerkUserId);
-    await db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId);
-    await db.from("gmail_scan_log").delete().eq("clerk_user_id", clerkUserId);
+    // After FK cleared: delete receipts, gmail_connections, and gmail_scan_log in parallel
+    await Promise.all([
+      db.from("email_receipts").delete().eq("clerk_user_id", clerkUserId),
+      db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId),
+      db.from("gmail_scan_log").delete().eq("clerk_user_id", clerkUserId),
+    ]);
   } catch {
     // Tables may not exist
   }
@@ -78,10 +86,12 @@ export async function offboardUser(clerkUserId: string, options?: { plaidItemRem
       .in("transaction_id", userTxIds.map((r: { id: string }) => r.id));
   }
 
-  // 6. Delete transactions, accounts, plaid_items
-  await db.from("transactions").delete().eq("clerk_user_id", clerkUserId);
-  await db.from("accounts").delete().eq("clerk_user_id", clerkUserId);
-  await db.from("plaid_items").delete().eq("clerk_user_id", clerkUserId);
+  // 6. Delete transactions, accounts, plaid_items in parallel (all FKs already cleared above)
+  await Promise.all([
+    db.from("transactions").delete().eq("clerk_user_id", clerkUserId),
+    db.from("accounts").delete().eq("clerk_user_id", clerkUserId),
+    db.from("plaid_items").delete().eq("clerk_user_id", clerkUserId),
+  ]);
 
   console.log("[offboard] completed", { user_id: clerkUserId });
 }
