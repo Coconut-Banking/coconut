@@ -85,6 +85,9 @@ export function useTransactions() {
 
         setLinked(true);
 
+        // Read header before consuming body (headers remain readable after body consumed)
+        const needsSync = txRes.headers.get("X-Needs-Sync") === "1";
+
         // Show initial data immediately from the parallel fetch
         if (txRes.ok) {
           const initialData = await txRes.json().catch(() => null);
@@ -93,12 +96,17 @@ export function useTransactions() {
           }
         }
 
-        setLoading(false);
+        // Keep spinner if bank is connected but has no cached data yet (first-time user)
+        if (needsSync && !cancelled) {
+          setLoading(true);
+        } else {
+          setLoading(false);
+        }
 
-        // On hard refresh, trigger a background sync then re-fetch fresh data
+        // On hard refresh OR first-time needs-sync, trigger a background sync then re-fetch
         const nav = typeof performance !== "undefined" && performance.getEntriesByType?.("navigation")?.[0];
         const isReload = nav && (nav as PerformanceNavigationTiming).type === "reload";
-        if (isReload && !cancelled) {
+        if ((isReload || needsSync) && !cancelled) {
           try {
             await fetch("/api/plaid/transactions", {
               method: "POST",
@@ -116,6 +124,8 @@ export function useTransactions() {
             }
           } catch {
             // ignore — already showing initial data
+          } finally {
+            if (!cancelled) setLoading(false);
           }
         }
       })

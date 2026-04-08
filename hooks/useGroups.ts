@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useGroupListen } from "./useGroupListen";
 
 export interface Group {
@@ -30,8 +30,10 @@ export interface GroupDetail extends Group {
     merchant: string;
     amount: number;
     paidBy: string;
+    paidByDisplayName?: string;
     splitCount: number;
     createdAt: string;
+    _optimistic?: true;
   }>;
   balances: Array<{ memberId: string; paid: number; owed: number; total: number }>;
   suggestions: Array<{
@@ -75,6 +77,7 @@ export function useGroups() {
 
 export function useGroupDetail(id: string | null) {
   const [detail, setDetail] = useState<GroupDetail | null>(null);
+  const [pendingActivity, setPendingActivity] = useState<GroupDetail["activity"]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,7 +119,44 @@ export function useGroupDetail(id: string | null) {
 
   useGroupListen(id, () => fetchDetail(true));
 
-  return { detail, loading, error, refetch: fetchDetail };
+  // Optimistic expense creation — show new expense immediately while API call is in flight.
+  // Balances are NOT optimistically updated (requires server-side math); only activity list.
+  const addOptimisticExpense = useCallback(
+    (item: Omit<GroupDetail["activity"][0], "id" | "_optimistic">) => {
+      const tempId = `optimistic-${Date.now()}`;
+      setPendingActivity((prev) => [{ ...item, id: tempId, _optimistic: true }, ...prev]);
+      return tempId;
+    },
+    []
+  );
+
+  const confirmOptimisticExpense = useCallback(
+    (tempId: string) => {
+      setPendingActivity((prev) => prev.filter((e) => e.id !== tempId));
+      fetchDetail(true); // silent refetch to get authoritative balances
+    },
+    [fetchDetail]
+  );
+
+  const rollbackOptimisticExpense = useCallback((tempId: string) => {
+    setPendingActivity((prev) => prev.filter((e) => e.id !== tempId));
+  }, []);
+
+  const mergedDetail = useMemo<GroupDetail | null>(() => {
+    if (!detail) return null;
+    if (pendingActivity.length === 0) return detail;
+    return { ...detail, activity: [...pendingActivity, ...detail.activity] };
+  }, [detail, pendingActivity]);
+
+  return {
+    detail: mergedDetail,
+    loading,
+    error,
+    refetch: fetchDetail,
+    addOptimisticExpense,
+    confirmOptimisticExpense,
+    rollbackOptimisticExpense,
+  };
 }
 
 export interface GroupSummary {

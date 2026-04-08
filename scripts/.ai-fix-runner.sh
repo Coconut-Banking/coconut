@@ -322,6 +322,57 @@ PROMPT_EOF
 
   echo "PR #$pr_number created for $name."
 
+  # ── Bug Council PR Review — grade each fix as real bug vs false positive ───
+  echo "Spawning PR reviewer for #$pr_number..."
+  "$CLAUDE" -p "$(cat <<REVIEW_EOF
+You are a senior engineer doing a skeptical peer review of an AI-generated bug fix PR for $name ($app_description).
+
+## Your job
+For every issue fixed in PR #$pr_number on $full_repo, grade whether it was a genuine bug or whether the Bug Council over-reached.
+
+## Step 1: Gather context
+Run these commands (use --repo $full_repo for all gh calls):
+  gh pr view $pr_number --repo $full_repo --json number,title,body,url
+  gh pr diff $pr_number --repo $full_repo
+
+Parse all "Fixes #N" lines from the PR body. For each issue number, fetch:
+  gh issue view <N> --repo $full_repo --json title,body,comments
+
+## Step 2: Grade each fix
+Read the original issue + the actual diff lines. Assign one of three grades:
+
+✅ Real bug — genuine defect: incorrect logic, missing null check that would actually throw, wrong API usage, data race
+⚠️ Marginal — not clearly broken but adds robustness; defensible but not urgent
+❌ False positive — code was fine; the Bug Council flagged a style preference, an impossible edge-case, or a refactor disguised as a bug fix
+
+## Step 3: Post exactly ONE PR comment
+gh pr comment $pr_number --repo $full_repo --body "$(cat <<'COMMENT'
+## 🔍 Bug Council PR Review
+
+| # | Issue | Grade | Reasoning |
+|---|-------|-------|-----------|
+FILL_IN_ROWS
+
+**Overall signal quality: X/Y genuine bugs (Z%)**
+
+### Notes
+FILL_IN_NOTES
+COMMENT
+)"
+
+Rules:
+- Read the actual diff — don't trust issue descriptions alone
+- Be skeptical: "potential null" is not a bug if the value is always set
+- Do NOT change any code — only post the comment
+- Keep each reasoning cell to 1 sentence
+- If no "Fixes #N" lines, check commit messages for issue numbers
+REVIEW_EOF
+)" \
+    --dangerously-skip-permissions \
+    --max-turns 30 \
+    --verbose > "$LOG_DIR/pr-review-$name-$TIMESTAMP.log" 2>&1 || true
+  echo "PR review complete for $name — see $LOG_DIR/pr-review-$name-$TIMESTAMP.log"
+
   # ── Auto-resolve merge conflicts ──────────────────────────────────────────
   local mergeable
   mergeable=$(gh pr view "$pr_number" --repo "$full_repo" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
