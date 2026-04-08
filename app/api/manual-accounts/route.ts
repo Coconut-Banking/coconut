@@ -22,7 +22,10 @@ export async function GET() {
       .order("created_at", { ascending: true });
 
     if (error) throw error;
-    return NextResponse.json({ accounts: data ?? [] });
+    return NextResponse.json(
+      { accounts: data ?? [] },
+      { headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" } }
+    );
   } catch (err) {
     console.error("[manual-accounts] GET error:", err);
     return NextResponse.json({ error: "Failed to fetch accounts" }, { status: 500 });

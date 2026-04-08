@@ -19,7 +19,10 @@ export async function GET() {
     .eq("is_active", true)
     .order("next_due_date", { ascending: true });
 
-  return NextResponse.json({ recurring: data ?? [] });
+  return NextResponse.json(
+    { recurring: data ?? [] },
+    { headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" } }
+  );
 }
 
 export async function POST(request: NextRequest) {

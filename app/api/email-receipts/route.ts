@@ -55,10 +55,10 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({
-      receipts: filtered,
-      count: filtered.length,
-    });
+    return NextResponse.json(
+      { receipts: filtered, count: filtered.length },
+      { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=30" } }
+    );
   } catch (e) {
     console.error("Error fetching receipts:", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
