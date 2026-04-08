@@ -69,18 +69,15 @@ export async function GET(
   const { id } = await params;
   const db = getSupabase();
 
-  // Check the user owns the group or is a member
-  const { data: group } = await db.from("groups").select("owner_id").eq("id", id).single();
-  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // Single parallel access check: ownership OR membership
+  const [{ data: group }, { data: membership }] = await Promise.all([
+    db.from("groups").select("owner_id").eq("id", id).maybeSingle(),
+    db.from("group_members").select("id").eq("group_id", id).eq("user_id", userId).maybeSingle(),
+  ]);
 
-  if (group.owner_id !== userId) {
-    const { data: membership } = await db
-      .from("group_members")
-      .select("id")
-      .eq("group_id", id)
-      .eq("user_id", userId)
-      .single();
-    if (!membership) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (group.owner_id !== userId && !membership) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const { data: members, error } = await db
@@ -92,7 +89,10 @@ export async function GET(
     console.error("[members] list:", error.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
-  return NextResponse.json(members);
+  return NextResponse.json(
+    { members: members ?? [] },
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+  );
 }
 
 export async function PATCH(

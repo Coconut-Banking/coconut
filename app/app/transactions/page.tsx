@@ -152,7 +152,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
 
   const loadGroupMembers = async (groupId: string) => {
     setMembers([]);
-    const res = await fetch(`/api/groups/${groupId}`);
+    const res = await fetch(`/api/groups/${groupId}/members`);
     if (res.ok) {
       const data = await res.json();
       setMembers(Array.isArray(data.members) ? data.members : []);

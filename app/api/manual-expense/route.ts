@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
-import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { randomUUID } from "crypto";
 import {
@@ -82,23 +81,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const allowed = await canAccessGroup(userId, groupId);
-  if (!allowed) return NextResponse.json({ error: "Group not found" }, { status: 404 });
-
   const db = getSupabase();
 
+  // Single query: fetch all members and use current user's presence as access check
   const { data: members } = await db
     .from("group_members")
     .select("id, user_id, display_name, email")
     .eq("group_id", groupId);
 
   if (!members || members.length === 0) {
-    return NextResponse.json({ error: "Group has no members" }, { status: 400 });
+    return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
 
   const currentUserMember = members.find((m) => m.user_id === userId);
   if (!currentUserMember) {
-    return NextResponse.json({ error: "You are not a member of this group" }, { status: 400 });
+    return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
 
   const memberIds = new Set(members.map((m) => m.id));
@@ -269,18 +266,10 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-  // Verify shares actually persisted by reading them back
-  const { data: verifyShares, error: verifyErr } = await db
-    .from("split_shares")
-    .select("id, split_transaction_id, member_id, amount")
-    .eq("split_transaction_id", splitTx.id);
   console.log("[manual-expense] shares created:", {
     splitTxId: splitTx.id,
     groupId,
     insertedCount: insertedShares?.length ?? 0,
-    verifiedCount: verifyShares?.length ?? 0,
-    verifyErr: verifyErr?.message ?? null,
-    verified: verifyShares,
   });
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");

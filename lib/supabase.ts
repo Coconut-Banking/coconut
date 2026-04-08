@@ -4,6 +4,11 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+// Singleton admin client — service-role key never changes at runtime so it is safe to
+// cache at module level. This avoids the overhead of calling createClient() on every
+// request (connection pool setup, option object allocation, etc.).
+let _adminClient: SupabaseClient | null = null;
+
 /**
  * Returns a Supabase client using the **service role key**.
  * This bypasses Row Level Security — only use for operations that
@@ -18,9 +23,12 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 export function getSupabaseAdmin(): SupabaseClient {
   if (!url || !serviceKey)
     throw new Error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+  if (!_adminClient) {
+    _adminClient = createClient(url, serviceKey, {
+      auth: { persistSession: false },
+    });
+  }
+  return _adminClient;
 }
 
 /**

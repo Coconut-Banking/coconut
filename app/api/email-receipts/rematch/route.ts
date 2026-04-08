@@ -15,30 +15,34 @@ export async function POST() {
 
   const db = getSupabase();
 
-  const { count: beforeMatched } = await db
-    .from("email_receipts")
-    .select("id", { count: "exact", head: true })
-    .eq("clerk_user_id", userId)
-    .not("transaction_id", "is", null);
-
-  const { count: beforeTotal } = await db
-    .from("email_receipts")
-    .select("id", { count: "exact", head: true })
-    .eq("clerk_user_id", userId);
+  // Parallelize before-counts
+  const [{ count: beforeMatched }, { count: beforeTotal }] = await Promise.all([
+    db
+      .from("email_receipts")
+      .select("id", { count: "exact", head: true })
+      .eq("clerk_user_id", userId)
+      .not("transaction_id", "is", null),
+    db
+      .from("email_receipts")
+      .select("id", { count: "exact", head: true })
+      .eq("clerk_user_id", userId),
+  ]);
 
   const result = await auditAndRematchAllReceipts(userId);
 
-  const { count: afterMatched } = await db
-    .from("email_receipts")
-    .select("id", { count: "exact", head: true })
-    .eq("clerk_user_id", userId)
-    .not("transaction_id", "is", null);
-
-  const { count: afterUnmatched } = await db
-    .from("email_receipts")
-    .select("id", { count: "exact", head: true })
-    .eq("clerk_user_id", userId)
-    .is("transaction_id", null);
+  // Parallelize after-counts
+  const [{ count: afterMatched }, { count: afterUnmatched }] = await Promise.all([
+    db
+      .from("email_receipts")
+      .select("id", { count: "exact", head: true })
+      .eq("clerk_user_id", userId)
+      .not("transaction_id", "is", null),
+    db
+      .from("email_receipts")
+      .select("id", { count: "exact", head: true })
+      .eq("clerk_user_id", userId)
+      .is("transaction_id", null),
+  ]);
 
   const afterTotal = (afterMatched ?? 0) + (afterUnmatched ?? 0);
 
