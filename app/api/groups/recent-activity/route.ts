@@ -157,6 +157,14 @@ export async function GET() {
     myMemberByGroup.set(gid, gMembers.find((m) => m.user_id === userId) ?? null);
   }
 
+  // Pre-index members by [groupId:memberId] and [groupId:userId] for O(1) lookups in the splits loop
+  const memberByGroupMemberId = new Map<string, { id: string; user_id: string | null; display_name: string }>();
+  const memberByGroupUserId = new Map<string, { id: string; user_id: string | null; display_name: string }>();
+  for (const m of members ?? []) {
+    memberByGroupMemberId.set(`${m.group_id}:${m.id}`, { id: m.id, user_id: m.user_id, display_name: m.display_name });
+    if (m.user_id) memberByGroupUserId.set(`${m.group_id}:${m.user_id}`, { id: m.id, user_id: m.user_id, display_name: m.display_name });
+  }
+
   type ActivityItem = {
     id: string;
     who: string;
@@ -178,18 +186,15 @@ export async function GET() {
     const merchant = merchantLabelFromSplitRow(
       s as { transactions?: unknown; description?: string | null }
     );
-    const groupMembers = membersByGroup.get(s.group_id) ?? [];
     const myMember = myMemberByGroup.get(s.group_id) ?? null;
     const explicitPayerId = (s as { payer_member_id?: string | null }).payer_member_id;
-    const payerByMemberRow =
-      explicitPayerId && groupMembers.some((m) => m.id === explicitPayerId)
-        ? groupMembers.find((m) => m.id === explicitPayerId) ?? null
-        : null;
+    const payerByMemberRow = explicitPayerId
+      ? (memberByGroupMemberId.get(`${s.group_id}:${explicitPayerId}`) ?? null)
+      : null;
     const payerUserIdFromTx = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
     const paidByMember =
       payerByMemberRow ??
-      (payerUserIdFromTx ? groupMembers.find((m) => m.user_id === payerUserIdFromTx) : null) ??
-      null;
+      (payerUserIdFromTx ? memberByGroupUserId.get(`${s.group_id}:${payerUserIdFromTx}`) ?? null : null);
     const shareList = sharesBySplitId.get(s.id) ?? [];
     const myShareRow = myMember ? shareList.find((sh) => sh.member_id === myMember.id) : null;
     const myShare = myShareRow ? Number(myShareRow.amount) : 0;
