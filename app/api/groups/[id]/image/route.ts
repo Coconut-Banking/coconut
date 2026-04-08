@@ -6,6 +6,11 @@ import { canAccessGroup } from "@/lib/group-access";
 
 const MAX_BASE64_LENGTH = 2_000_000;
 
+/**
+ * Legacy endpoint — accepts a base64 data URI, uploads to Supabase Storage,
+ * and stores the public URL (not the raw data URI) in groups.image_url.
+ * New clients should use /api/groups/:id/icon (FormData upload) instead.
+ */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

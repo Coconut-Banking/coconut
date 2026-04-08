@@ -8,7 +8,7 @@ import { getSupabase } from "@/lib/supabase";
  * POST /api/stripe/connect/onboarding-link
  * Generates a fresh Stripe Account Link for users who started but didn't finish onboarding.
  */
-export async function POST() {
+export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -17,29 +17,43 @@ export async function POST() {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
 
-  const db = getSupabase();
-  const { data: row } = await db
-    .from("stripe_connected_accounts")
-    .select("stripe_account_id")
-    .eq("clerk_user_id", userId)
-    .maybeSingle();
+  const body = await req.json().catch(() => ({}));
+  const scheme = (body as { scheme?: string }).scheme ?? "coconut";
 
-  if (!row) {
-    return NextResponse.json(
-      { error: "No connected account. Use create-account first." },
-      { status: 404 }
-    );
+  try {
+    const db = getSupabase();
+    const { data: row, error: selectError } = await db
+      .from("stripe_connected_accounts")
+      .select("stripe_account_id")
+      .eq("clerk_user_id", userId)
+      .maybeSingle();
+
+    if (selectError) {
+      console.error("[stripe-connect] db select failed:", selectError);
+      return NextResponse.json({ error: "Database error: " + selectError.message }, { status: 500 });
+    }
+
+    if (!row) {
+      return NextResponse.json(
+        { error: "No connected account. Use create-account first." },
+        { status: 404 }
+      );
+    }
+
+    const stripe = new Stripe(key);
+    const appUrl = process.env.APP_URL ?? "https://coconut-app.dev";
+
+    const accountLink = await stripe.accountLinks.create({
+      account: row.stripe_account_id,
+      refresh_url: `${appUrl}/api/stripe/connect/onboarding-refresh?account_id=${row.stripe_account_id}&scheme=${scheme}`,
+      return_url: `${appUrl}/api/stripe/connect/onboarding-return?account_id=${row.stripe_account_id}&scheme=${scheme}`,
+      type: "account_onboarding",
+    });
+
+    return NextResponse.json({ url: accountLink.url });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[stripe-connect] onboarding-link error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  const stripe = new Stripe(key);
-  const appUrl = process.env.APP_URL ?? "https://coconut-app.dev";
-
-  const accountLink = await stripe.accountLinks.create({
-    account: row.stripe_account_id,
-    refresh_url: `${appUrl}/api/stripe/connect/onboarding-refresh?account_id=${row.stripe_account_id}`,
-    return_url: `${appUrl}/api/stripe/connect/onboarding-return?account_id=${row.stripe_account_id}`,
-    type: "account_onboarding",
-  });
-
-  return NextResponse.json({ url: accountLink.url });
 }

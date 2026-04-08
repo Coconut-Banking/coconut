@@ -4,6 +4,9 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+// Singleton admin client — service-role key never changes at runtime so it is safe to
+// cache at module level. This avoids the overhead of calling createClient() on every
+// request (connection pool setup, option object allocation, etc.).
 let _adminClient: SupabaseClient | null = null;
 
 /**

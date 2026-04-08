@@ -170,7 +170,7 @@ export async function PATCH(
 
   if (customShares && customShares.length > 0) {
     await db.from("split_shares").delete().eq("split_transaction_id", id);
-    await db.from("split_shares").insert(
+    const { error: sharesErr } = await db.from("split_shares").insert(
       customShares
         .filter((s) => Number(s.amount) > 0)
         .map((s) => ({
@@ -179,6 +179,9 @@ export async function PATCH(
           amount: Math.round(Number(s.amount) * 100) / 100,
         }))
     );
+    if (sharesErr) {
+      return NextResponse.json({ error: sharesErr.message ?? "Failed to update shares" }, { status: 500 });
+    }
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");

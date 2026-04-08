@@ -33,21 +33,13 @@ function fmt(amount: number): string {
   return Math.abs(amount).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-async function detectAnomalies(userId: string, db: ReturnType<typeof getSupabase>): Promise<Insight[]> {
+function detectAnomalies(txRows: TxRow[]): Insight[] {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const cutoff = thirtyDaysAgo.toISOString().split("T")[0];
 
-  const { data } = await db
-    .from("transactions")
-    .select("id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category")
-    .eq("clerk_user_id", userId)
-    .lt("amount", 0)
-    .gte("date", thirtyDaysAgo.toISOString().split("T")[0])
-    .order("date", { ascending: false })
-    .limit(2000);
-
-  if (!data?.length) return [];
-  const rows = data as TxRow[];
+  const rows = txRows.filter((r) => r.amount < 0 && r.date >= cutoff);
+  if (!rows.length) return [];
 
   const byMerchant = new Map<string, number[]>();
   for (const r of rows) {
@@ -81,21 +73,14 @@ async function detectAnomalies(userId: string, db: ReturnType<typeof getSupabase
   return insights.slice(0, 5);
 }
 
-async function detectDuplicates(userId: string, db: ReturnType<typeof getSupabase>): Promise<Insight[]> {
+function detectDuplicates(txRows: TxRow[]): Insight[] {
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const cutoff = sevenDaysAgo.toISOString().split("T")[0];
 
-  const { data } = await db
-    .from("transactions")
-    .select("id, merchant_name, raw_name, normalized_merchant, amount, date")
-    .eq("clerk_user_id", userId)
-    .lt("amount", 0)
-    .gte("date", sevenDaysAgo.toISOString().split("T")[0])
-    .order("date", { ascending: false })
-    .limit(500);
+  const rows = txRows.filter((r) => r.amount < 0 && r.date >= cutoff);
+  if (!rows.length) return [];
 
-  if (!data?.length) return [];
-  const rows = data as TxRow[];
   const insights: Insight[] = [];
   const seen = new Map<string, TxRow>();
 
@@ -123,18 +108,16 @@ async function detectDuplicates(userId: string, db: ReturnType<typeof getSupabas
   return insights.slice(0, 3);
 }
 
-async function detectSpendingTrends(userId: string, db: ReturnType<typeof getSupabase>): Promise<Insight[]> {
+function detectSpendingTrends(txRows: TxRow[]): Insight[] {
   const now = new Date();
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split("T")[0];
   const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split("T")[0];
 
-  const [{ data: thisMonth }, { data: lastMonth }] = await Promise.all([
-    db.from("transactions").select("primary_category, amount").eq("clerk_user_id", userId).lt("amount", 0).gte("date", thisMonthStart),
-    db.from("transactions").select("primary_category, amount").eq("clerk_user_id", userId).lt("amount", 0).gte("date", lastMonthStart).lte("date", lastMonthEnd),
-  ]);
+  const thisMonth = txRows.filter((r) => r.amount < 0 && r.date >= thisMonthStart);
+  const lastMonth = txRows.filter((r) => r.amount < 0 && r.date >= lastMonthStart && r.date <= lastMonthEnd);
 
-  if (!thisMonth?.length || !lastMonth?.length) return [];
+  if (!thisMonth.length || !lastMonth.length) return [];
 
   const sumByCategory = (rows: Array<{ primary_category: string | null; amount: number }>) => {
     const map = new Map<string, number>();
@@ -145,8 +128,8 @@ async function detectSpendingTrends(userId: string, db: ReturnType<typeof getSup
     return map;
   };
 
-  const thisCats = sumByCategory(thisMonth as Array<{ primary_category: string | null; amount: number }>);
-  const lastCats = sumByCategory(lastMonth as Array<{ primary_category: string | null; amount: number }>);
+  const thisCats = sumByCategory(thisMonth);
+  const lastCats = sumByCategory(lastMonth);
 
   const dayOfMonth = now.getDate();
   if (dayOfMonth < 7) return [];
@@ -245,22 +228,14 @@ async function detectNewSubscriptions(userId: string, db: ReturnType<typeof getS
   });
 }
 
-async function detectRefunds(userId: string, db: ReturnType<typeof getSupabase>): Promise<Insight[]> {
+function detectRefunds(txRows: TxRow[]): Insight[] {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const cutoff = thirtyDaysAgo.toISOString().split("T")[0];
 
-  const { data } = await db
-    .from("transactions")
-    .select("id, merchant_name, raw_name, amount, date, primary_category")
-    .eq("clerk_user_id", userId)
-    .gt("amount", 0)
-    .gte("date", thirtyDaysAgo.toISOString().split("T")[0])
-    .order("date", { ascending: false })
-    .limit(500);
+  const rows = txRows.filter((r) => r.amount > 0 && r.date >= cutoff);
+  if (!rows.length) return [];
 
-  if (!data?.length) return [];
-
-  const rows = data as Array<TxRow & { amount: number }>;
   const excludeCategories = new Set(["TRANSFER_IN", "INCOME", "BANK_FEES"]);
   const excludeMerchant = /credit\s*card|card\s*payment|payment\s*to|autopay|pay\s*\d|payment\s*[- ]?credit|^payment$/i;
 
@@ -287,13 +262,27 @@ async function detectRefunds(userId: string, db: ReturnType<typeof getSupabase>)
 export async function generateInsights(userId: string): Promise<Insight[]> {
   const db = getSupabase();
 
+  // Fetch a single combined transaction window (last 60 days, limit 2000) once,
+  // then pass the in-memory slice to each detector instead of each querying the DB independently.
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+  const { data: txData } = await db
+    .from("transactions")
+    .select("id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category")
+    .eq("clerk_user_id", userId)
+    .gte("date", sixtyDaysAgo.toISOString().split("T")[0])
+    .order("date", { ascending: false })
+    .limit(2000);
+
+  const txRows = (txData ?? []) as TxRow[];
+
   const results = await Promise.allSettled([
-    detectAnomalies(userId, db),
-    detectDuplicates(userId, db),
-    detectSpendingTrends(userId, db),
+    Promise.resolve(detectAnomalies(txRows)),
+    Promise.resolve(detectDuplicates(txRows)),
+    Promise.resolve(detectSpendingTrends(txRows)),
     detectSubscriptionPriceChanges(userId, db),
     detectNewSubscriptions(userId, db),
-    detectRefunds(userId, db),
+    Promise.resolve(detectRefunds(txRows)),
   ]);
 
   const names = ["anomalies", "duplicates", "trends", "priceChanges", "newSubs", "refunds"];

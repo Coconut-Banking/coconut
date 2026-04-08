@@ -142,7 +142,7 @@ export async function GET() {
       accounts: accountList,
       wallets,
     }, {
-      headers: { "Cache-Control": "no-store, max-age=0" },
+      headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=3600" },
     });
   } catch (err) {
     console.error("[dashboard] error:", err instanceof Error ? err.message : err);

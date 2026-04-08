@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useGroupListen } from "./useGroupListen";
 
 export interface Group {
@@ -30,8 +30,10 @@ export interface GroupDetail extends Group {
     merchant: string;
     amount: number;
     paidBy: string;
+    paidByDisplayName?: string;
     splitCount: number;
     createdAt: string;
+    _optimistic?: true;
   }>;
   balances: Array<{ memberId: string; paid: number; owed: number; total: number }>;
   suggestions: Array<{
@@ -75,6 +77,7 @@ export function useGroups() {
 
 export function useGroupDetail(id: string | null) {
   const [detail, setDetail] = useState<GroupDetail | null>(null);
+  const [pendingActivity, setPendingActivity] = useState<GroupDetail["activity"]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,7 +90,7 @@ export function useGroupDetail(id: string | null) {
     if (!silent) setLoading(true);
     try {
       setError(null);
-      const res = await fetch(`/api/groups/${id}`, { cache: "no-store" });
+      const res = await fetch(`/api/groups/${id}`);
       if (isCancelled?.()) return;
       if (res.ok) {
         const data = await res.json();
@@ -116,7 +119,44 @@ export function useGroupDetail(id: string | null) {
 
   useGroupListen(id, () => fetchDetail(true));
 
-  return { detail, loading, error, refetch: fetchDetail };
+  // Optimistic expense creation — show new expense immediately while API call is in flight.
+  // Balances are NOT optimistically updated (requires server-side math); only activity list.
+  const addOptimisticExpense = useCallback(
+    (item: Omit<GroupDetail["activity"][0], "id" | "_optimistic">) => {
+      const tempId = `optimistic-${Date.now()}`;
+      setPendingActivity((prev) => [{ ...item, id: tempId, _optimistic: true }, ...prev]);
+      return tempId;
+    },
+    []
+  );
+
+  const confirmOptimisticExpense = useCallback(
+    (tempId: string) => {
+      setPendingActivity((prev) => prev.filter((e) => e.id !== tempId));
+      fetchDetail(true); // silent refetch to get authoritative balances
+    },
+    [fetchDetail]
+  );
+
+  const rollbackOptimisticExpense = useCallback((tempId: string) => {
+    setPendingActivity((prev) => prev.filter((e) => e.id !== tempId));
+  }, []);
+
+  const mergedDetail = useMemo<GroupDetail | null>(() => {
+    if (!detail) return null;
+    if (pendingActivity.length === 0) return detail;
+    return { ...detail, activity: [...pendingActivity, ...detail.activity] };
+  }, [detail, pendingActivity]);
+
+  return {
+    detail: mergedDetail,
+    loading,
+    error,
+    refetch: fetchDetail,
+    addOptimisticExpense,
+    confirmOptimisticExpense,
+    rollbackOptimisticExpense,
+  };
 }
 
 export interface GroupSummary {
@@ -168,9 +208,10 @@ export function useGroupsSummary() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchSummary = useCallback(async () => {
+    setLoading(true);
     try {
       setError(null);
-      const res = await fetch("/api/groups/summary", { cache: "no-store" });
+      const res = await fetch("/api/groups/summary");
         if (res.ok) {
         const data = await res.json();
         setSummary(data && typeof data === "object" ? {
@@ -198,12 +239,11 @@ export function useGroupsSummary() {
   return { summary, loading, error, refetch: fetchSummary };
 }
 
-const PERSON_POLL_MS = 30000; // Person view spans multiple groups — poll every 30s
-
 export function usePersonDetail(key: string | null) {
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastFetchRef = useRef<number>(0);
 
   const fetchDetail = useCallback(async (silent = false) => {
     if (!key) {
@@ -214,7 +254,8 @@ export function usePersonDetail(key: string | null) {
     }
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/groups/person?key=${encodeURIComponent(key)}`, { cache: "no-store" });
+      const res = await fetch(`/api/groups/person?key=${encodeURIComponent(key)}`);
+      lastFetchRef.current = Date.now();
       if (res.ok) {
         const data = await res.json();
         setError(null);
@@ -242,10 +283,25 @@ export function usePersonDetail(key: string | null) {
   const fetchDetailRef = useRef(fetchDetail);
   fetchDetailRef.current = fetchDetail;
 
+  // Refetch on tab visibility restore or window focus — debounced to 30s to avoid excessive API calls
   useEffect(() => {
     if (!key) return;
-    const interval = setInterval(() => fetchDetailRef.current(true), PERSON_POLL_MS);
-    return () => clearInterval(interval);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastFetchRef.current > 30000) {
+        fetchDetailRef.current(true);
+      }
+    };
+    const onFocus = () => {
+      if (Date.now() - lastFetchRef.current > 30000) {
+        fetchDetailRef.current(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [key]);
 
   return { detail, loading, error, refetch: fetchDetail };
@@ -271,8 +327,9 @@ export function useRecentActivity(enabled = true) {
       setLoading(false);
       return;
     }
+    setLoading(true);
     try {
-      const res = await fetch("/api/groups/recent-activity", { cache: "no-store" });
+      const res = await fetch("/api/groups/recent-activity");
       if (res.ok) {
         const data = await res.json();
         setActivity(Array.isArray(data.activity) ? data.activity : []);

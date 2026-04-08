@@ -50,28 +50,19 @@ export async function getMaxSettlementAllowed(
     return { maxAmount: 0, allowed: false, reason: "No expenses in this group" };
   }
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, user_id")
-    .eq("group_id", groupId);
-
-  const { data: shares } = await db
-    .from("split_shares")
-    .select("split_transaction_id, member_id, amount")
-    .in("split_transaction_id", splits.map((s) => s.id));
-
-  const { data: settlements } = await db
-    .from("settlements")
-    .select("payer_member_id, receiver_member_id, amount, iso_currency_code")
-    .eq("group_id", groupId)
-    .eq("status", "completed");
-
+  const splitIds = splits.map((s) => s.id);
   const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
-  let txRows: { id: string; clerk_user_id: string }[] = [];
-  if (txIds.length > 0) {
-    const { data } = await db.from("transactions").select("id, clerk_user_id").in("id", txIds);
-    txRows = data ?? [];
-  }
+
+  // Run queries 2-5 in parallel — none depend on each other, only on splitIds/txIds
+  const [{ data: members }, { data: shares }, { data: settlements }, txResult] = await Promise.all([
+    db.from("group_members").select("id, user_id").eq("group_id", groupId),
+    db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds),
+    db.from("settlements").select("payer_member_id, receiver_member_id, amount, iso_currency_code").eq("group_id", groupId).eq("status", "completed"),
+    txIds.length > 0
+      ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
+      : Promise.resolve({ data: [] as { id: string; clerk_user_id: string }[] }),
+  ]);
+  const txRows = txResult.data ?? [];
 
   const txOwnerById = new Map((txRows ?? []).map((t) => [t.id, t.clerk_user_id]));
   const memberByUserId = new Map(

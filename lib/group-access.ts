@@ -46,24 +46,19 @@ async function linkMemberByEmail(userId: string) {
 
 /**
  * Check if user can access a group (owner or member with user_id).
+ * Uses a single parallel round trip instead of two sequential queries.
  */
 export async function canAccessGroup(
   userId: string,
   groupId: string
 ): Promise<boolean> {
   const db = getSupabase();
-  const { data: group, error } = await db.from("groups").select("owner_id").eq("id", groupId).single();
-  if (error || !group) return false;
-  if (group.owner_id === userId) return true;
-
-  const { data: member } = await db
-    .from("group_members")
-    .select("id")
-    .eq("group_id", groupId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  return !!member;
+  // Single round trip: check ownership OR membership in parallel
+  const [{ data: owned }, { data: member }] = await Promise.all([
+    db.from("groups").select("id").eq("id", groupId).eq("owner_id", userId).maybeSingle(),
+    db.from("group_members").select("id").eq("group_id", groupId).eq("user_id", userId).maybeSingle(),
+  ]);
+  return !!(owned || member);
 }
 
 const _idsCache = new Map<string, { ids: string[]; ts: number }>();
@@ -73,6 +68,7 @@ const IDS_CACHE_TTL_MS = 60_000;
  * Get all group IDs the user can access (as owner or member).
  * Links members by email when they first sign in (so invited users see groups).
  * Results are cached for 60s per userId.
+ * Tries the get_accessible_group_ids RPC first; falls back to two-query path.
  */
 export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
   const now = Date.now();
@@ -81,10 +77,32 @@ export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
     return cached.ids;
   }
 
-  // Link member by email (cached per-user with TTL)
+  // Link first, THEN query — avoids race where linking completes after
+  // the member query, causing a new user to miss their groups on first load.
   await linkMemberByEmail(userId);
 
   const db = getSupabase();
+
+  // Single RPC call replaces two parallel queries (owned + member).
+  // Falls back to the two-query path if the function doesn't exist yet
+  // or if the test mock doesn't implement .rpc().
+  try {
+    const { data: rpcRows, error: rpcErr } = await db.rpc(
+      "get_accessible_group_ids",
+      { p_user_id: userId }
+    );
+
+    if (!rpcErr && Array.isArray(rpcRows)) {
+      if (process.env.NODE_ENV === 'development') console.log("[group-access] userId:", userId, "rpc ids:", rpcRows.length);
+      const result = rpcRows as string[];
+      _idsCache.set(userId, { ids: result, ts: now });
+      return result;
+    }
+
+    if (rpcErr) console.warn("[group-access] RPC fallback:", rpcErr.message);
+  } catch {
+    // db.rpc not available (e.g. test mocks) — fall through to two-query path
+  }
 
   const [ownedRes, memberRes] = await Promise.all([
     db.from("groups").select("id").eq("owner_id", userId),

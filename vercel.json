@@ -1,3 +1,13 @@
 {
-  "ignoreCommand": "bash scripts/vercel-should-skip-build.sh"
+  "ignoreCommand": "bash scripts/vercel-should-skip-build.sh",
+  "crons": [
+    {
+      "path": "/api/cron/receipt-match",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/process-jobs",
+      "schedule": "* * * * *"
+    }
+  ]
 }

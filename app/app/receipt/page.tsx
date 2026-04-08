@@ -231,15 +231,18 @@ function UploadStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
 /* ─────────────────── Step 2: Review Items ─────────────────── */
 
+function getOtherFeesSum(fees: Array<{ name: string; amount: number }>): number {
+  return fees.reduce((s, f) => s + f.amount, 0);
+}
+
 function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
-  const otherFeesSum = rs.editOtherFees.reduce((s, f) => s + f.amount, 0);
   const computedTotal = () =>
-    Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100;
+    Math.round((rs.editSubtotal + rs.editTax + rs.editTip + getOtherFeesSum(rs.editOtherFees)) * 100) / 100;
 
   const syncSubtotalFromItems = (items: typeof rs.editItems) => {
     const sum = Math.round(items.reduce((s, i) => s + i.totalPrice, 0) * 100) / 100;
     rs.setEditSubtotal(sum);
-    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
+    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + getOtherFeesSum(rs.editOtherFees)) * 100) / 100);
   };
 
   const updateItem = (index: number, field: keyof ReceiptItem, value: string) => {
@@ -289,12 +292,12 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
   const recalcSubtotal = () => {
     const sum = rs.editItems.reduce((s, i) => s + i.totalPrice, 0);
     rs.setEditSubtotal(Math.round(sum * 100) / 100);
-    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
+    rs.setEditTotal(Math.round((sum + rs.editTax + rs.editTip + getOtherFeesSum(rs.editOtherFees)) * 100) / 100);
   };
 
   // Keep Total in sync when Subtotal, Tax, Tip, or Other fees change
   useEffect(() => {
-    const total = Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100;
+    const total = Math.round((rs.editSubtotal + rs.editTax + rs.editTip + getOtherFeesSum(rs.editOtherFees)) * 100) / 100;
     rs.setEditTotal(total);
   }, [rs.editSubtotal, rs.editTax, rs.editTip, rs.editOtherFees]);
 
@@ -406,7 +409,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               onChange={(e) => {
                 const v = Number(e.target.value) || 0;
                 rs.setEditSubtotal(v);
-                rs.setEditTotal(Math.round((v + rs.editTax + rs.editTip + otherFeesSum) * 100) / 100);
+                rs.setEditTotal(Math.round((v + rs.editTax + rs.editTip + getOtherFeesSum(rs.editOtherFees)) * 100) / 100);
               }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               step={0.01}
@@ -425,7 +428,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               onChange={(e) => {
                 const v = Number(e.target.value) || 0;
                 rs.setEditTax(v);
-                rs.setEditTotal(Math.round((rs.editSubtotal + v + rs.editTip + otherFeesSum) * 100) / 100);
+                rs.setEditTotal(Math.round((rs.editSubtotal + v + rs.editTip + getOtherFeesSum(rs.editOtherFees)) * 100) / 100);
               }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               step={0.01}
@@ -444,7 +447,7 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
               onChange={(e) => {
                 const v = Number(e.target.value) || 0;
                 rs.setEditTip(v);
-                rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + v + otherFeesSum) * 100) / 100);
+                rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + v + getOtherFeesSum(rs.editOtherFees)) * 100) / 100);
               }}
               className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20 focus:border-[#1e2021]"
               step={0.01}
@@ -485,17 +488,20 @@ function ReviewStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
                       rs.setEditOtherFees((prev) => {
                         const next = [...prev];
                         next[idx] = { ...next[idx], amount: v };
+                        rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + getOtherFeesSum(next)) * 100) / 100);
                         return next;
                       });
-                      rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount + v) * 100) / 100);
                     }}
                     className="w-full text-right text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20"
                     step={0.01}
                   />
                   <button
                     onClick={() => {
-                      rs.setEditOtherFees((prev) => prev.filter((_, i) => i !== idx));
-                      rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + otherFeesSum - fee.amount) * 100) / 100);
+                      rs.setEditOtherFees((prev) => {
+                        const next = prev.filter((_, i) => i !== idx);
+                        rs.setEditTotal(Math.round((rs.editSubtotal + rs.editTax + rs.editTip + getOtherFeesSum(next)) * 100) / 100);
+                        return next;
+                      });
                     }}
                     aria-label={`Remove ${fee.name || "fee"}`}
                     className="w-6 h-6 flex shrink-0 items-center justify-center rounded hover:bg-red-50 text-gray-300 hover:text-red-500"
@@ -759,6 +765,7 @@ function SummaryStep({ rs }: { rs: ReturnType<typeof useReceiptSplit> }) {
 
       if (res.ok) {
         setFinished(true);
+        setFinishing(false);
         setGroupBalances(Array.isArray(data.balances) ? data.balances : []);
         setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
         // Don't redirect immediately - let user see the balances

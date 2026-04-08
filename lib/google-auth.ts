@@ -71,17 +71,32 @@ export async function saveGmailTokens(
 /**
  * Get a Gmail client using the Google OAuth token stored in Clerk.
  * Returns null if the user has no Google external account or the token lacks Gmail scopes.
+ * Validates with a lightweight getProfile call to catch scope mismatches early.
  */
 async function getGmailClientViaClerk(clerkUserId: string) {
   try {
     const client = await clerkClient();
     const tokens = await client.users.getUserOauthAccessToken(clerkUserId, "oauth_google");
-    const accessToken = tokens.data?.[0]?.token;
-    if (!accessToken) return null;
+    const tokenData = tokens.data?.[0];
+    if (!tokenData?.token) return null;
+
+    const scopes = (tokenData as { scopes?: string[] }).scopes ?? [];
+    if (scopes.length > 0 && !scopes.some((s) => s.includes("gmail"))) {
+      return null;
+    }
+
     const oauth2 = new google.auth.OAuth2();
-    oauth2.setCredentials({ access_token: accessToken });
-    return google.gmail({ version: "v1", auth: oauth2 });
+    oauth2.setCredentials({ access_token: tokenData.token });
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+    await gmail.users.getProfile({ userId: "me" });
+    return gmail;
   } catch (e) {
+    const status = (e as { code?: number }).code ?? (e as { status?: number }).status;
+    if (status === 403 || status === 401) {
+      if (__DEV__) console.log("[getGmailClientViaClerk] token lacks Gmail scope, falling back");
+      return null;
+    }
     if (__DEV__) console.warn("[getGmailClientViaClerk] failed:", e);
     return null;
   }

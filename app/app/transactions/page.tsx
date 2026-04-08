@@ -152,7 +152,7 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
 
   const loadGroupMembers = async (groupId: string) => {
     setMembers([]);
-    const res = await fetch(`/api/groups/${groupId}`);
+    const res = await fetch(`/api/groups/${groupId}/members`);
     if (res.ok) {
       const data = await res.json();
       setMembers(Array.isArray(data.members) ? data.members : []);
@@ -864,11 +864,9 @@ function TxRow({
 }) {
   return (
     <div>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: index * 0.03 }}
-        className={`flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0 ${compactView ? "px-4 py-2" : "px-5 py-3.5"}`}
+      <div
+        className={`animate-fade-in-up flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-b-0 ${compactView ? "px-4 py-2" : "px-5 py-3.5"}`}
+        style={{ animationDelay: `${index * 0.03}s` }}
         onClick={onSelect}
       >
         <MerchantLogo name={tx.merchant} color={tx.merchantColor} />
@@ -915,7 +913,7 @@ function TxRow({
             {expandedId === tx.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
         </div>
-      </motion.div>
+      </div>
       <AnimatePresence>
         {expandedId === tx.id && (
           <motion.div

@@ -3,6 +3,7 @@ import { getPlaidClient } from "./plaid-client";
 import { getSupabase } from "./supabase";
 import { encryptToken, decryptToken } from "./encryption";
 import { rateLimit } from "./rate-limit";
+import { mapWithConcurrency } from "./retry";
 
 /** Min interval between Plaid /transactions/refresh calls per Item (Plaid also enforces daily limits). */
 const PLAID_TX_REFRESH_WINDOW_MS = 120_000;
@@ -543,26 +544,37 @@ export async function syncTransactionsForUser(
   const allRemovedIds: string[] = [];
   const errors: string[] = [];
 
-  for (const token of accessTokens) {
-    const item = tokenToItem.get(token);
-    const plaidItemId = item?.plaid_item_id ?? "";
-    try {
-      const { synced, removedIds, skipped } = await syncSingleToken(
-        clerkUserId,
-        token,
-        plaidItemId,
-        plaid,
-        db,
-        requestPlaidRefresh
-      );
-      totalSynced += synced;
-      totalSkipped += skipped;
-      allRemovedIds.push(...removedIds);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[sync] error syncing token:", msg);
-      errors.push(msg);
-    }
+  // Sync all banks in parallel (max 3 concurrent) to avoid sequential per-bank waterfall.
+  // Hard cap at 3 to prevent Supabase connection pool exhaustion.
+  const syncResults = await mapWithConcurrency(
+    accessTokens,
+    async (token) => {
+      const item = tokenToItem.get(token);
+      const plaidItemId = item?.plaid_item_id ?? "";
+      try {
+        const { synced, removedIds, skipped } = await syncSingleToken(
+          clerkUserId,
+          token,
+          plaidItemId,
+          plaid,
+          db,
+          requestPlaidRefresh
+        );
+        return { ok: true as const, synced, removedIds, skipped };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("[sync] error syncing token:", msg);
+        return { ok: false as const, synced: 0, removedIds: [] as string[], skipped: 0, error: msg };
+      }
+    },
+    Math.min(accessTokens.length, 3)
+  );
+
+  for (const r of syncResults) {
+    totalSynced += r.synced;
+    totalSkipped += r.skipped;
+    allRemovedIds.push(...r.removedIds);
+    if (!r.ok) errors.push(r.error);
   }
 
   // Delete removed transactions across all banks (batch to avoid URL length limit)
@@ -641,14 +653,14 @@ export async function syncTransactionsForUser(
         const staleCleared = await clearStaleReceiptMatches(clerkUserId);
         if (staleCleared > 0) console.log(`[sync] cleared ${staleCleared} stale receipt matches for user ${clerkUserId}`);
 
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const twentyFiveHoursAgo = new Date();
+        twentyFiveHoursAgo.setHours(twentyFiveHoursAgo.getHours() - 25);
         const { data: unmatched } = await db
           .from("email_receipts")
           .select("id")
           .eq("clerk_user_id", clerkUserId)
           .is("transaction_id", null)
-          .gte("parsed_at", thirtyDaysAgo.toISOString());
+          .gte("parsed_at", twentyFiveHoursAgo.toISOString());
         if (unmatched && unmatched.length > 0) {
           const matched = await matchReceiptsToTransactions(clerkUserId, unmatched.map((r) => r.id));
           if (matched > 0) console.log(`[sync] auto-matched ${matched} receipts for user ${clerkUserId}`);

@@ -7,9 +7,9 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 
 /**
  * POST /api/groups/clear-all
- * Nuclear option: deletes ALL the user's data — owned groups (with children),
- * foreign memberships, email-based member rows in other users' groups,
- * Splitwise tokens/cache, and receipt scans.
+ * Nuclear reset: wipes ALL user data — groups, splits, settlements, memberships,
+ * Splitwise, PayPal, Gmail, subscriptions, receipts, push tokens, recurring
+ * expenses, manual accounts, p2p annotations, and scan logs.
  */
 export async function POST() {
   const userId = await getUserId();
@@ -18,20 +18,28 @@ export async function POST() {
   const user = await currentUser().catch(() => null);
   const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase().trim();
   if (!email) {
-    if (process.env.NODE_ENV === 'development') console.warn("[clear-all] Could not fetch Clerk user email for step 5 — email-matched members will not be unlinked for userId:", userId);
+    console.warn("[clear-all] Could not fetch Clerk user email — email-matched members will not be unlinked for userId:", userId);
   }
 
   const db = getSupabaseAdmin();
   const log: string[] = [];
 
-  // 1. Delete Splitwise tokens FIRST (prevents cached balances from re-appearing)
-  const { error: tokenErr, count: tokenCount } = await db
-    .from("splitwise_tokens")
-    .delete({ count: "exact" })
-    .eq("clerk_user_id", userId);
-  log.push(`splitwise_tokens: deleted ${tokenCount ?? 0}${tokenErr ? ` (err: ${tokenErr.message})` : ""}`);
+  const safeDelete = async (table: string, filter: { col: string; val: string }) => {
+    try {
+      const { count, error } = await db.from(table).delete({ count: "exact" }).eq(filter.col, filter.val);
+      if (error) log.push(`${table}: err ${error.message}`);
+      else log.push(`${table}: ${count ?? 0}`);
+      return count ?? 0;
+    } catch {
+      log.push(`${table}: skipped (table may not exist)`);
+      return 0;
+    }
+  };
 
-  // 2. Find all groups this user owns
+  // 1. Splitwise tokens
+  await safeDelete("splitwise_tokens", { col: "clerk_user_id", val: userId });
+
+  // 2. Find + delete owned groups (with all children)
   const { data: ownedGroups } = await db
     .from("groups")
     .select("id")
@@ -39,35 +47,29 @@ export async function POST() {
   const ownedIds = (ownedGroups ?? []).map((g) => g.id);
   log.push(`owned groups: ${ownedIds.length}`);
 
-  // 3. Delete children of owned groups
   let deletedGroups = 0;
   for (const gid of ownedIds) {
     const { data: splitRows } = await db.from("split_transactions").select("id").eq("group_id", gid);
     const sids = (splitRows ?? []).map((r) => r.id);
     if (sids.length > 0) {
-      const { error: shareErr } = await db.from("split_shares").delete().in("split_transaction_id", sids);
-      if (shareErr) log.push(`split_shares err (group ${gid}): ${shareErr.message}`);
+      await db.from("split_shares").delete().in("split_transaction_id", sids);
     }
     await db.from("split_transactions").delete().eq("group_id", gid);
     await db.from("settlements").delete().eq("group_id", gid);
     await db.from("group_members").delete().eq("group_id", gid);
     const { error: delG } = await db.from("groups").delete().eq("id", gid);
-    if (delG) log.push(`group delete err ${gid}: ${delG.message}`);
-    else deletedGroups += 1;
+    if (!delG) deletedGroups += 1;
   }
   log.push(`groups deleted: ${deletedGroups}`);
 
-  // 4. Remove ALL member rows where user_id = userId (foreign groups)
+  // 3. Remove from foreign groups
   const { count: foreignByUserId } = await db
     .from("group_members")
     .delete({ count: "exact" })
     .eq("user_id", userId);
-  log.push(`foreign members (by user_id): ${foreignByUserId ?? 0}`);
+  log.push(`foreign members: ${foreignByUserId ?? 0}`);
 
-  // 5. Also null-out user_id on member rows matching user's email in
-  //    non-owned groups. This prevents linkMemberByEmail from re-linking
-  //    on the next request. We set user_id to null so the row stays for
-  //    the group owner but stops being accessible to this user.
+  // 4. Unlink email-matched members in other users' groups
   if (email) {
     const { data: emailMembers } = await db
       .from("group_members")
@@ -82,12 +84,15 @@ export async function POST() {
     log.push(`email members nulled: ${emailMemberIds.length}`);
   }
 
-  // 6. Clear receipt scans
-  const { count: receiptCount } = await db
-    .from("receipt_scans")
-    .delete({ count: "exact" })
-    .eq("clerk_user_id", userId);
-  log.push(`receipt_scans: ${receiptCount ?? 0}`);
+  // 5. All remaining data tables (order matters for FK constraints)
+  await safeDelete("receipt_scans", { col: "clerk_user_id", val: userId });
+  await safeDelete("recurring_expenses", { col: "clerk_user_id", val: userId });
+  await safeDelete("manual_accounts", { col: "clerk_user_id", val: userId });
+  await safeDelete("p2p_annotations", { col: "clerk_user_id", val: userId });
+  await safeDelete("push_tokens", { col: "clerk_user_id", val: userId });
+  await safeDelete("stripe_connected_accounts", { col: "clerk_user_id", val: userId });
+  await safeDelete("gmail_scan_log", { col: "clerk_user_id", val: userId });
+  await safeDelete("paypal_connections", { col: "clerk_user_id", val: userId });
 
   if (process.env.NODE_ENV === 'development') console.log("[clear-all]", userId, log.join(" | "));
 

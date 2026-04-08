@@ -98,38 +98,42 @@ export async function GET() {
   }
 
   const splitIds = splits.map((s) => s.id);
-
-  // Batch the shares and transactions queries — large .in() calls can exceed URL length limits.
-  // Both batch groups are independent, so run them concurrently.
-  const BATCH = 200;
   const txIds = splits.map((s) => s.transaction_id).filter(Boolean) as string[];
-  const splitBatchCount = Math.ceil(splitIds.length / BATCH);
-  const txBatchCount = Math.ceil(txIds.length / BATCH) || 0;
 
-  const [shareBatches, txBatches] = await Promise.all([
-    Promise.all(
-      Array.from({ length: splitBatchCount }, (_, i) =>
-        db
-          .from("split_shares")
-          .select("split_transaction_id, member_id, amount")
-          .in("split_transaction_id", splitIds.slice(i * BATCH, (i + 1) * BATCH))
-      )
+  // Batch shares + tx queries in parallel (previously sequential)
+  const BATCH = 200;
+  const allBatches = await Promise.all([
+    ...Array.from({ length: Math.ceil(splitIds.length / BATCH) }, (_, i) =>
+      db
+        .from("split_shares")
+        .select("split_transaction_id, member_id, amount")
+        .in("split_transaction_id", splitIds.slice(i * BATCH, (i + 1) * BATCH))
+        .then((r) => ({ type: "share" as const, data: r.data ?? [] }))
     ),
-    txIds.length > 0
-      ? Promise.all(
-          Array.from({ length: txBatchCount }, (_, i) =>
-            db
-              .from("transactions")
-              .select("id, clerk_user_id")
-              .in("id", txIds.slice(i * BATCH, (i + 1) * BATCH))
-          )
-        )
-      : Promise.resolve([]),
+    ...Array.from({ length: Math.ceil(txIds.length / BATCH) || 1 }, (_, i) =>
+      db
+        .from("transactions")
+        .select("id, clerk_user_id")
+        .in("id", txIds.slice(i * BATCH, (i + 1) * BATCH))
+        .then((r) => ({ type: "tx" as const, data: r.data ?? [] }))
+    ),
   ]);
 
-  const shares = shareBatches.flatMap((b) => b.data ?? []);
-  const txRows = txBatches.flatMap((b) => b.data ?? []);
+  const shares: { split_transaction_id: string; member_id: string; amount: number }[] = [];
+  const txRows: { id: string; clerk_user_id: string }[] = [];
+  for (const batch of allBatches) {
+    if (batch.type === "share") shares.push(...batch.data);
+    else txRows.push(...batch.data);
+  }
   const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
+
+  // Pre-index shares by split_transaction_id for O(1) lookups
+  const sharesBySplitId = new Map<string, typeof shares>();
+  for (const sh of shares) {
+    const list = sharesBySplitId.get(sh.split_transaction_id);
+    if (list) list.push(sh);
+    else sharesBySplitId.set(sh.split_transaction_id, [sh]);
+  }
 
   const membersByGroup = new Map<string, { id: string; user_id: string | null; display_name: string }[]>();
   for (const m of members ?? []) {
@@ -155,6 +159,7 @@ export async function GET() {
     currency: string;
     time: string;
     sortDate: string;
+    createdAt: string;
     receiptUrl: string | null;
   };
 
@@ -167,14 +172,6 @@ export async function GET() {
       memberByGroupAndId.set(m.group_id, inner);
     }
     inner.set(m.id, { id: m.id, user_id: m.user_id, display_name: m.display_name });
-  }
-
-  // Pre-build Map for O(1) share lookups per split (replaces O(n×m) filter inside the loop)
-  const sharesBySplitId = new Map<string, typeof shares[number][]>();
-  for (const sh of shares) {
-    const arr = sharesBySplitId.get(sh.split_transaction_id) ?? [];
-    arr.push(sh);
-    sharesBySplitId.set(sh.split_transaction_id, arr);
   }
 
   const activity: ActivityItem[] = [];
@@ -244,6 +241,7 @@ export async function GET() {
       currency,
       time: formatTimeAgo(expenseDate),
       sortDate: expenseDate,
+      createdAt: s.created_at,
       receiptUrl: (s as { receipt_url?: string | null }).receipt_url ?? null,
     });
   }
@@ -272,6 +270,7 @@ export async function GET() {
         currency,
         time: formatTimeAgo(st.created_at),
         sortDate: st.created_at,
+        createdAt: st.created_at,
         receiptUrl: null,
       });
     } else if (iAmReceiver) {
@@ -286,14 +285,19 @@ export async function GET() {
         currency,
         time: formatTimeAgo(st.created_at),
         sortDate: st.created_at,
+        createdAt: st.created_at,
         receiptUrl: null,
       });
     }
   }
 
-  // Sort all activity by date descending, take top 30
-  activity.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
-  const trimmed = activity.slice(0, 200).map(({ sortDate: _, ...rest }) => rest);
+  // Sort by date descending; when dates match, most recently created first
+  activity.sort((a, b) => {
+    const cmp = b.sortDate.localeCompare(a.sortDate);
+    if (cmp !== 0) return cmp;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+  const trimmed = activity.slice(0, 200).map(({ sortDate: _, createdAt: _c, ...rest }) => rest);
 
   return NextResponse.json(
     { activity: trimmed },

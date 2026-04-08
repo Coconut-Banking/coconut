@@ -35,9 +35,10 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // If the member has an email, check if they already have a Coconut account
-  let linkedUserId: string | null = null;
-  if (email) {
+  // Link by explicit user_id hint first, then fall back to email lookup
+  const hintUserId = typeof body.userId === "string" ? body.userId.trim() : null;
+  let linkedUserId: string | null = hintUserId || null;
+  if (!linkedUserId && email) {
     linkedUserId = await findClerkUserIdByEmail(email);
   }
 
@@ -70,18 +71,15 @@ export async function GET(
   const { id } = await params;
   const db = getSupabase();
 
-  // Check the user owns the group or is a member
-  const { data: group } = await db.from("groups").select("owner_id").eq("id", id).single();
-  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // Single parallel access check: ownership OR membership
+  const [{ data: group }, { data: membership }] = await Promise.all([
+    db.from("groups").select("owner_id").eq("id", id).maybeSingle(),
+    db.from("group_members").select("id").eq("group_id", id).eq("user_id", userId).maybeSingle(),
+  ]);
 
-  if (group.owner_id !== userId) {
-    const { data: membership } = await db
-      .from("group_members")
-      .select("id")
-      .eq("group_id", id)
-      .eq("user_id", userId)
-      .single();
-    if (!membership) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (group.owner_id !== userId && !membership) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const { data: members, error } = await db
@@ -93,9 +91,10 @@ export async function GET(
     console.error("[members] list:", error.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
-  return NextResponse.json(members, {
-    headers: { "Cache-Control": "private, max-age=30" },
-  });
+  return NextResponse.json(
+    { members: members ?? [] },
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
+  );
 }
 
 export async function PATCH(

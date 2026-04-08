@@ -39,7 +39,7 @@ function getAppScheme(): string {
   return sessionStorage.getItem(SCHEME_STORAGE_KEY) || DEFAULT_APP_SCHEME;
 }
 
-function ConnectedStep() {
+function ConnectedStep({ onAddAnother }: { onAddAnother?: () => void }) {
   const router = useRouter();
   const fromApp = isFromApp();
   const scheme = getAppScheme();
@@ -115,6 +115,14 @@ function ConnectedStep() {
           View your dashboard
           <ChevronRight size={15} />
         </button>
+        {onAddAnother && (
+          <button
+            onClick={onAddAnother}
+            className="w-full mt-2 border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          >
+            Connect another bank
+          </button>
+        )}
       </div>
     </motion.div>
   );
@@ -125,6 +133,7 @@ function ConnectBankContent() {
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("link");
   const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [linkTokenFetchKey, setLinkTokenFetchKey] = useState(0);
   const [isSandbox, setIsSandbox] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
@@ -276,7 +285,7 @@ function ConnectBankContent() {
         }
       });
     return () => { cancelled = true; };
-  }, [searchParams, traceId, logPlaidEvent]);
+  }, [searchParams, traceId, logPlaidEvent, linkTokenFetchKey]);
 
   const isUpdateMode = searchParams.get("update") === "1";
 
@@ -620,7 +629,13 @@ function ConnectBankContent() {
             )}
 
             {step === "connected" && (
-              <ConnectedStep />
+              <ConnectedStep
+                onAddAnother={() => {
+                  setStep("link");
+                  setLinkToken(null);
+                  setLinkTokenFetchKey((k) => k + 1);
+                }}
+              />
             )}
           </AnimatePresence>
         </div>

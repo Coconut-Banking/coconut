@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
-import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { randomUUID } from "crypto";
 import {
@@ -82,23 +81,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const allowed = await canAccessGroup(userId, groupId);
-  if (!allowed) return NextResponse.json({ error: "Group not found" }, { status: 404 });
-
   const db = getSupabase();
 
+  // Single query: fetch all members and use current user's presence as access check
   const { data: members } = await db
     .from("group_members")
     .select("id, user_id, display_name, email")
     .eq("group_id", groupId);
 
   if (!members || members.length === 0) {
-    return NextResponse.json({ error: "Group has no members" }, { status: 400 });
+    return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
 
   const currentUserMember = members.find((m) => m.user_id === userId);
   if (!currentUserMember) {
-    return NextResponse.json({ error: "You are not a member of this group" }, { status: 400 });
+    return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
 
   const memberIds = new Set(members.map((m) => m.id));
@@ -130,13 +127,38 @@ export async function POST(req: NextRequest) {
   } else if (personKey) {
     const memberIdFromKey =
       personKey.length > 37 && personKey[36] === "-" ? personKey.slice(37) : null;
-    const otherMember = members.find((m) => {
+    const sourceGroupId =
+      personKey.length > 37 && personKey[36] === "-" ? personKey.slice(0, 36) : null;
+    let otherMember = members.find((m) => {
       if (m.user_id === userId) return false;
       if (memberIdFromKey && m.id === memberIdFromKey) return true;
       if (m.user_id === personKey) return true;
       if (m.email === personKey) return true;
       return false;
     });
+    // When the personKey references a member in a DIFFERENT group (e.g. after
+    // auto-creating a 1:1 group), look up the original member and match by
+    // display_name or email. As a last resort, pick the only other member.
+    if (!otherMember && memberIdFromKey && sourceGroupId && sourceGroupId !== groupId) {
+      const { data: srcMembers } = await db
+        .from("group_members")
+        .select("display_name, email")
+        .eq("id", memberIdFromKey)
+        .limit(1);
+      const src = srcMembers?.[0];
+      if (src) {
+        otherMember = members.find((m) => {
+          if (m.user_id === userId) return false;
+          if (src.email && m.email === src.email) return true;
+          if (src.display_name && m.display_name === src.display_name) return true;
+          return false;
+        });
+      }
+    }
+    if (!otherMember) {
+      const others = members.filter((m) => m.user_id !== userId);
+      if (others.length === 1) otherMember = others[0];
+    }
     if (!otherMember) {
       return NextResponse.json({ error: "Person not found in group" }, { status: 404 });
     }
@@ -231,8 +253,12 @@ export async function POST(req: NextRequest) {
     amount: s.amount,
   }));
 
-  const { error: shareErr } = await db.from("split_shares").insert(shareRows);
+  const { data: insertedShares, error: shareErr } = await db
+    .from("split_shares")
+    .insert(shareRows)
+    .select("id, split_transaction_id, member_id, amount");
   if (shareErr) {
+    console.error("[manual-expense] split_shares insert failed:", shareErr.message, { shareRows });
     await db.from("split_transactions").delete().eq("id", splitTx.id);
     await db.from("transactions").delete().eq("id", transaction.id);
     return NextResponse.json(
@@ -240,6 +266,11 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+  console.log("[manual-expense] shares created:", {
+    splitTxId: splitTx.id,
+    groupId,
+    insertedCount: insertedShares?.length ?? 0,
+  });
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");

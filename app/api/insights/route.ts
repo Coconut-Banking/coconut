@@ -13,9 +13,9 @@ export async function GET() {
 
   try {
     const insights = await generateInsights(userId);
-    const resp = NextResponse.json({ insights });
-    resp.headers.set("Cache-Control", "private, max-age=300, stale-while-revalidate=60");
-    return resp;
+    return NextResponse.json({ insights }, {
+      headers: { "Cache-Control": "private, max-age=600, stale-while-revalidate=120" },
+    });
   } catch (e) {
     console.error("[insights]", e);
     return NextResponse.json(

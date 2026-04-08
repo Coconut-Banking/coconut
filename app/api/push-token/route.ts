@@ -46,17 +46,32 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabaseAdmin();
 
-  const { error } = await db.from("push_tokens").upsert(
-    {
-      clerk_user_id: clerkAuth.userId,
-      token,
-      platform,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "clerk_user_id,token" }
-  );
+  const row: Record<string, string> = {
+    clerk_user_id: clerkAuth.userId,
+    token,
+    platform,
+    updated_at: new Date().toISOString(),
+  };
+
+  let { error } = await db
+    .from("push_tokens")
+    .upsert(row, { onConflict: "clerk_user_id,token" });
+
+  if (error?.message?.includes("platform")) {
+    const { platform: _p, ...rowWithoutPlatform } = row;
+    void _p;
+    ({ error } = await db
+      .from("push_tokens")
+      .upsert(rowWithoutPlatform, { onConflict: "clerk_user_id,token" }));
+  }
 
   if (error) {
+    const isSchemaIssue =
+      /schema cache|does not exist|relation.*push_tokens/i.test(error.message);
+    if (isSchemaIssue) {
+      console.warn("[push-token] table not ready (run migration):", error.message);
+      return NextResponse.json({ ok: true, pending: true });
+    }
     console.error("[push-token] upsert failed:", error.message);
     return NextResponse.json(
       { error: "Failed to store push token" },

@@ -73,7 +73,14 @@ export function useTransactions() {
         if (cancelled) return;
         if (!statusRes.ok) throw new Error("status check failed");
 
-        const status = await statusRes.json();
+        // Read header before consuming body (headers are always accessible independently of body)
+        const needsSync = txRes.headers.get("X-Needs-Sync") === "1";
+
+        // Parallelize JSON parsing for both responses
+        const [status, initialData] = await Promise.all([
+          statusRes.json(),
+          txRes.ok ? txRes.json().catch(() => null) : Promise.resolve(null),
+        ]);
         if (cancelled) return;
 
         if (!status.linked) {
@@ -86,19 +93,29 @@ export function useTransactions() {
         setLinked(true);
 
         // Show initial data immediately from the parallel fetch
+        let initialTxCount = 0;
         if (txRes.ok) {
-          const initialData = await txRes.json().catch(() => null);
           if (!cancelled && Array.isArray(initialData)) {
             setTransactions(initialData as UITransaction[]);
+            initialTxCount = initialData.length;
           }
         }
 
-        setLoading(false);
+        // Keep spinner if bank is connected but has no cached data yet (first-time user)
+        if (needsSync && !cancelled) {
+          setLoading(true);
+        } else {
+          setLoading(false);
+        }
 
-        // On hard refresh, trigger a background sync then re-fetch fresh data
+        // On hard refresh OR first-time needs-sync, trigger a background sync then re-fetch.
+        // Fallback: if status.linked is true but we got 0 transactions AND no X-Needs-Sync
+        // (race where plaid_items row wasn't written yet when the parallel GET fired),
+        // still attempt one background sync so the user doesn't see a permanently blank page.
         const nav = typeof performance !== "undefined" && performance.getEntriesByType?.("navigation")?.[0];
         const isReload = nav && (nav as PerformanceNavigationTiming).type === "reload";
-        if (isReload && !cancelled) {
+        const linkedButEmpty = !needsSync && initialTxCount === 0;
+        if ((isReload || needsSync || linkedButEmpty) && !cancelled) {
           try {
             await fetch("/api/plaid/transactions", {
               method: "POST",
@@ -116,6 +133,8 @@ export function useTransactions() {
             }
           } catch {
             // ignore — already showing initial data
+          } finally {
+            if (!cancelled) setLoading(false);
           }
         }
       })
