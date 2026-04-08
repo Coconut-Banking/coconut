@@ -532,7 +532,7 @@ export async function GET(
       mySpend,
       mySpendByCurrency: mySpendArr,
       categoryBreakdown,
-    });
+    }, { headers: { "Cache-Control": "private, max-age=0, stale-while-revalidate=30" } });
   } catch (err) {
     console.error("[groups/id]", err);
     return NextResponse.json({ error: "Failed to load group" }, { status: 500 });

@@ -29,26 +29,15 @@ export async function POST(
 
   const db = getSupabase();
 
-  // Verify receipt ownership
-  const { data: receipt, error: receiptError } = await db
-    .from("email_receipts")
-    .select("id")
-    .eq("id", id)
-    .eq("clerk_user_id", userId)
-    .single();
+  // Verify receipt and transaction ownership in parallel
+  const [{ data: receipt, error: receiptError }, { data: transaction, error: txError }] = await Promise.all([
+    db.from("email_receipts").select("id").eq("id", id).eq("clerk_user_id", userId).single(),
+    db.from("transactions").select("id").eq("id", transactionId).eq("clerk_user_id", userId).single(),
+  ]);
 
   if (receiptError || !receipt) {
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
-
-  // Verify transaction ownership
-  const { data: transaction, error: txError } = await db
-    .from("transactions")
-    .select("id")
-    .eq("id", transactionId)
-    .eq("clerk_user_id", userId)
-    .single();
-
   if (txError || !transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }

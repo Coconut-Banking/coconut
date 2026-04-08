@@ -21,5 +21,7 @@ export async function GET() {
     .eq("clerk_user_id", clerkAuth.userId)
     .single();
 
-  return NextResponse.json({ tier: data?.tier ?? "free" });
+  return NextResponse.json({ tier: data?.tier ?? "free" }, {
+    headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=600" },
+  });
 }
