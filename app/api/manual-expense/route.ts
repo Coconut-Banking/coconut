@@ -256,8 +256,12 @@ export async function POST(req: NextRequest) {
     amount: s.amount,
   }));
 
-  const { error: shareErr } = await db.from("split_shares").insert(shareRows);
+  const { data: insertedShares, error: shareErr } = await db
+    .from("split_shares")
+    .insert(shareRows)
+    .select("id, split_transaction_id, member_id, amount");
   if (shareErr) {
+    console.error("[manual-expense] split_shares insert failed:", shareErr.message, { shareRows });
     await db.from("split_transactions").delete().eq("id", splitTx.id);
     await db.from("transactions").delete().eq("id", transaction.id);
     return NextResponse.json(
@@ -265,6 +269,19 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+  // Verify shares actually persisted by reading them back
+  const { data: verifyShares, error: verifyErr } = await db
+    .from("split_shares")
+    .select("id, split_transaction_id, member_id, amount")
+    .eq("split_transaction_id", splitTx.id);
+  console.log("[manual-expense] shares created:", {
+    splitTxId: splitTx.id,
+    groupId,
+    insertedCount: insertedShares?.length ?? 0,
+    verifiedCount: verifyShares?.length ?? 0,
+    verifyErr: verifyErr?.message ?? null,
+    verified: verifyShares,
+  });
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");
