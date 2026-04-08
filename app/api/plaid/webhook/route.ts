@@ -125,30 +125,55 @@ export async function POST(request: NextRequest) {
   ]);
 
   if (webhook_type === "TRANSACTIONS" && webhook_code && transactionWebhookSyncCodes.has(webhook_code)) {
-    // Queue background sync instead of running inline — returns 200 to Plaid in ~20ms.
-    // The worker cron (/api/cron/process-jobs) picks this up within 1 minute.
-    const { error: queueErr } = await db.from("job_queue").insert({
-      type: "plaid_sync",
-      payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
-      clerk_user_id: clerkUserId,
-    });
-    if (queueErr) {
-      // DB failure: return 503 so Plaid retries the webhook (do NOT return 200)
-      console.error("[plaid][webhook] job_queue insert failed:", queueErr.message);
-      return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
-    }
-    console.log("[plaid][webhook] queued plaid_sync", { webhook_code, item_id, user: clerkUserId });
-  } else if (webhook_type === "ITEM") {
-    if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
-      await db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id);
+    // Deduplicate: skip insert if a pending/processing job already exists for this user.
+    // Plaid sends webhook bursts (e.g. DEFAULT_UPDATE + HISTORICAL_UPDATE) — without this
+    // guard, the old rateLimit() protection is gone and we'd run 2-5 redundant full syncs.
+    const { data: existing } = await db
+      .from("job_queue")
+      .select("id")
+      .eq("type", "plaid_sync")
+      .eq("clerk_user_id", clerkUserId)
+      .in("status", ["pending", "processing"])
+      .limit(1)
+      .maybeSingle();
+
+    if (!existing) {
+      // Queue background sync instead of running inline — returns 200 to Plaid in ~20ms.
       const { error: queueErr } = await db.from("job_queue").insert({
         type: "plaid_sync",
         payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
         clerk_user_id: clerkUserId,
       });
       if (queueErr) {
-        console.error("[plaid][webhook] job_queue insert failed (NEW_ACCOUNTS):", queueErr.message);
+        // DB failure: return 503 so Plaid retries the webhook (do NOT return 200)
+        console.error("[plaid][webhook] job_queue insert failed:", queueErr.message);
         return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
+      }
+      console.log("[plaid][webhook] queued plaid_sync", { webhook_code, item_id, user: clerkUserId });
+    } else {
+      console.log("[plaid][webhook] deduplicated plaid_sync (already queued)", { webhook_code, user: clerkUserId });
+    }
+  } else if (webhook_type === "ITEM") {
+    if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
+      await db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id);
+      const { data: existingJob } = await db
+        .from("job_queue")
+        .select("id")
+        .eq("type", "plaid_sync")
+        .eq("clerk_user_id", clerkUserId)
+        .in("status", ["pending", "processing"])
+        .limit(1)
+        .maybeSingle();
+      if (!existingJob) {
+        const { error: queueErr } = await db.from("job_queue").insert({
+          type: "plaid_sync",
+          payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
+          clerk_user_id: clerkUserId,
+        });
+        if (queueErr) {
+          console.error("[plaid][webhook] job_queue insert failed (NEW_ACCOUNTS):", queueErr.message);
+          return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
+        }
       }
       console.log("[plaid][webhook] queued plaid_sync for NEW_ACCOUNTS_AVAILABLE", { item_id });
     } else if (webhook_code === "ERROR" && payload.error?.error_code === "ITEM_LOGIN_REQUIRED") {

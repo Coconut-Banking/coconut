@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Cap at 55s — the cron fires every 60s. Keeping under the interval prevents two
+// invocations from overlapping and double-processing the same claimed jobs.
+export const maxDuration = 55;
 
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
@@ -84,7 +86,9 @@ export async function GET(req: NextRequest) {
           console.warn("[process-jobs] categorize failed:", e instanceof Error ? e.message : e)
         );
       } else {
-        console.warn("[process-jobs] unknown job type:", job.type);
+        // Unknown type: throw so the job lands in `failed` and is visible in the queue.
+        // Silently marking it `done` would hide misconfiguration bugs.
+        throw new Error(`unknown job type: ${job.type}`);
       }
 
       await db
