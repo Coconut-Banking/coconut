@@ -18,13 +18,15 @@ export async function GET() {
     .eq("clerk_user_id", userId)
     .maybeSingle();
 
+  const cacheHeaders = { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } };
+
   if (!row) {
     return NextResponse.json({
       hasAccount: false,
       onboardingComplete: false,
       chargesEnabled: false,
       payoutsEnabled: false,
-    });
+    }, cacheHeaders);
   }
 
   return NextResponse.json({
@@ -34,5 +36,5 @@ export async function GET() {
     chargesEnabled: row.charges_enabled,
     payoutsEnabled: row.payouts_enabled,
     createdAt: row.created_at,
-  });
+  }, cacheHeaders);
 }

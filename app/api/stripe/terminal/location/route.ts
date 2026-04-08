@@ -29,11 +29,13 @@ export async function GET() {
   const stripe = new Stripe(key);
 
   try {
-    const acct = await stripe.accounts.retrieve();
+    const [acct, { data: locations }] = await Promise.all([
+      stripe.accounts.retrieve(),
+      stripe.terminal.locations.list({ limit: 100 }),
+    ]);
     const accountCountry = (acct.country ?? "US").toUpperCase();
 
     // Find an existing location in the account's country
-    const { data: locations } = await stripe.terminal.locations.list({ limit: 100 });
     const match = locations.find(
       (loc) => (loc.address?.country ?? "").toUpperCase() === accountCountry
     );
