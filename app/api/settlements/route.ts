@@ -9,6 +9,7 @@ import { getUserId } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { formatCurrency } from "@/lib/currency";
 import { notifyGroupMembers } from "@/lib/push-sender";
+import { shadowRecordSettlement, isShadowWriteEnabled } from "@/lib/splitwise-shadow";
 
 export async function POST(req: NextRequest) {
   const userId = await getUserId();
@@ -102,6 +103,26 @@ export async function POST(req: NextRequest) {
       { error: "Settlement race detected \u2014 already settled" },
       { status: 409 }
     );
+  }
+
+  if (isShadowWriteEnabled()) {
+    try {
+      await shadowRecordSettlement({
+        clerkUserId: userId,
+        groupId,
+        payerMemberId,
+        receiverMemberId,
+        amount: amountToInsert,
+        currency,
+      });
+    } catch (e) {
+      console.error("[settlements] shadow write failed, rolling back:", e);
+      await db.from("settlements").delete().eq("id", settlement.id);
+      return NextResponse.json(
+        { error: `Splitwise shadow write failed: ${e instanceof Error ? e.message : String(e)}` },
+        { status: 502 }
+      );
+    }
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");

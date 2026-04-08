@@ -6,6 +6,7 @@ import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 import { toCents } from "@/lib/expense-shares";
+import { shadowDeleteExpense, shadowUpdateExpense, isShadowWriteEnabled } from "@/lib/splitwise-shadow";
 
 export async function DELETE(
   _req: NextRequest,
@@ -36,6 +37,18 @@ export async function DELETE(
       .eq("id", split.transaction_id)
       .maybeSingle();
     linkedTxClerkUserId = (tx?.clerk_user_id as string | undefined) ?? null;
+  }
+
+  if (isShadowWriteEnabled()) {
+    try {
+      await shadowDeleteExpense(userId, id);
+    } catch (e) {
+      console.error("[split-tx/delete] shadow delete failed:", e);
+      return NextResponse.json(
+        { error: `Splitwise shadow delete failed: ${e instanceof Error ? e.message : String(e)}` },
+        { status: 502 }
+      );
+    }
   }
 
   await db.from("split_transactions").delete().eq("id", id);
@@ -181,6 +194,29 @@ export async function PATCH(
     );
     if (sharesErr) {
       return NextResponse.json({ error: sharesErr.message ?? "Failed to update shares" }, { status: 500 });
+    }
+  }
+
+  if (isShadowWriteEnabled()) {
+    try {
+      await shadowUpdateExpense({
+        clerkUserId: userId,
+        splitTransactionId: id,
+        groupId: split.group_id,
+        description: description ?? undefined,
+        amount: newAmount ?? undefined,
+        payerMemberId: payerMemberId ?? (split.payer_member_id as string | undefined) ?? undefined,
+        shares: customShares?.filter((s) => Number(s.amount) > 0).map((s) => ({
+          memberId: s.memberId,
+          amount: Math.round(Number(s.amount) * 100) / 100,
+        })) ?? undefined,
+      });
+    } catch (e) {
+      console.error("[split-tx/patch] shadow update failed:", e);
+      return NextResponse.json(
+        { error: `Splitwise shadow update failed: ${e instanceof Error ? e.message : String(e)}` },
+        { status: 502 }
+      );
     }
   }
 

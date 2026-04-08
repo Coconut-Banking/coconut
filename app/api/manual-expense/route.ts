@@ -13,6 +13,7 @@ import {
 import { createRecurringExpense, processRecurringExpenses } from "@/lib/recurring-expenses";
 import { formatCurrency } from "@/lib/currency";
 import { notifyGroupMembers } from "@/lib/push-sender";
+import { shadowCreateExpense, isShadowWriteEnabled } from "@/lib/splitwise-shadow";
 
 let _hasPayerAndDateCols: boolean | null = null;
 
@@ -271,6 +272,32 @@ export async function POST(req: NextRequest) {
     groupId,
     insertedCount: insertedShares?.length ?? 0,
   });
+
+  // Shadow write to Splitwise (blocking — fails the whole request on error)
+  if (isShadowWriteEnabled()) {
+    try {
+      await shadowCreateExpense({
+        clerkUserId: userId,
+        groupId,
+        splitTransactionId: splitTx.id,
+        amount,
+        description,
+        currency,
+        date: expenseDate,
+        payerMemberId: effectivePayer,
+        shares,
+      });
+    } catch (e) {
+      console.error("[manual-expense] shadow write failed, rolling back:", e);
+      await db.from("split_shares").delete().eq("split_transaction_id", splitTx.id);
+      await db.from("split_transactions").delete().eq("id", splitTx.id);
+      await db.from("transactions").delete().eq("id", transaction.id);
+      return NextResponse.json(
+        { error: `Splitwise shadow write failed: ${e instanceof Error ? e.message : String(e)}` },
+        { status: 502 }
+      );
+    }
+  }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");
