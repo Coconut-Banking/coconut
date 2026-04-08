@@ -109,26 +109,24 @@ async function handleSummary(req: NextRequest, userId: string) {
   // will return the proper storage URL.
   const dataUriGroups = (groupsRaw ?? []).filter((g) => g.image_url?.startsWith("data:"));
   if (dataUriGroups.length > 0) {
-    void (async () => {
-      for (const g of dataUriGroups) {
-        try {
-          const match = g.image_url!.match(/^data:(image\/\w+);base64,(.+)$/);
-          if (!match) continue;
-          const contentType = match[1];
-          const base64Data = match[2];
-          const ext = contentType === "image/png" ? "png" : "jpg";
-          const buffer = Buffer.from(base64Data, "base64");
-          const path = `${g.id}.${ext}`;
-          const { error: upErr } = await db.storage.from("group-icons").upload(path, buffer, { contentType, upsert: true });
-          if (upErr) { console.warn("[summary] migrate image failed for", g.id, upErr.message); continue; }
-          const { data: urlData } = db.storage.from("group-icons").getPublicUrl(path);
-          await db.from("groups").update({ image_url: urlData.publicUrl }).eq("id", g.id);
-          console.log("[summary] migrated data URI to storage for group", g.id);
-        } catch (e) {
-          console.warn("[summary] migrate image error for", g.id, e);
-        }
+    void Promise.all(dataUriGroups.map(async (g) => {
+      try {
+        const match = g.image_url!.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (!match) return;
+        const contentType = match[1];
+        const base64Data = match[2];
+        const ext = contentType === "image/png" ? "png" : "jpg";
+        const buffer = Buffer.from(base64Data, "base64");
+        const path = `${g.id}.${ext}`;
+        const { error: upErr } = await db.storage.from("group-icons").upload(path, buffer, { contentType, upsert: true });
+        if (upErr) { console.warn("[summary] migrate image failed for", g.id, upErr.message); return; }
+        const { data: urlData } = db.storage.from("group-icons").getPublicUrl(path);
+        await db.from("groups").update({ image_url: urlData.publicUrl }).eq("id", g.id);
+        console.log("[summary] migrated data URI to storage for group", g.id);
+      } catch (e) {
+        console.warn("[summary] migrate image error for", g.id, e);
       }
-    })();
+    }));
     for (const g of dataUriGroups) g.image_url = null;
   }
 

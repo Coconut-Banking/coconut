@@ -113,17 +113,18 @@ export async function notifyGroupMembers(
 ): Promise<void> {
   const db = getSupabaseAdmin();
 
-  const { data: group } = await db
-    .from("groups")
-    .select("owner_id")
-    .eq("id", groupId)
-    .single();
-
-  const { data: members } = await db
-    .from("group_members")
-    .select("user_id")
-    .eq("group_id", groupId)
-    .not("user_id", "is", null);
+  const [{ data: group }, { data: members }] = await Promise.all([
+    db
+      .from("groups")
+      .select("owner_id")
+      .eq("id", groupId)
+      .single(),
+    db
+      .from("group_members")
+      .select("user_id")
+      .eq("group_id", groupId)
+      .not("user_id", "is", null),
+  ]);
 
   const userIds = new Set<string>();
   if (group?.owner_id) userIds.add(group.owner_id);

@@ -661,7 +661,7 @@ export async function GET(req: NextRequest) {
       sharedGroups,
       p2pHandles,
       _debug,
-    });
+    }, { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } });
   } catch (err) {
     console.error("[person]", err);
     return NextResponse.json({ error: "Failed to load person" }, { status: 500 });

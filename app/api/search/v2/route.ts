@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       accountId,
       location,
     });
-    return NextResponse.json(result);
+    return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } });
   } catch (err) {
     console.error("[search-v2]", err);
     return NextResponse.json({ error: "Search failed" }, { status: 500 });
