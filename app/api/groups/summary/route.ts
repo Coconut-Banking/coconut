@@ -251,6 +251,32 @@ async function handleSummary(req: NextRequest, userId: string) {
 
   const txOwnerById = new Map(txRows.map((t) => [t.id, t.clerk_user_id]));
 
+  // Pre-index shares by split_transaction_id for O(1) lookups
+  const sharesBySplitId = new Map<string, typeof shares>();
+  for (const sh of shares) {
+    const list = sharesBySplitId.get(sh.split_transaction_id);
+    if (list) list.push(sh);
+    else sharesBySplitId.set(sh.split_transaction_id, [sh]);
+  }
+
+  // Pre-index settlements by group_id for O(1) lookups inside groups.map() (O(n²) → O(1)).
+  const settlementsByGroup = new Map<string, typeof settlements>();
+  for (const s of settlements) {
+    const list = settlementsByGroup.get(s.group_id) ?? [];
+    list.push(s);
+    settlementsByGroup.set(s.group_id, list);
+  }
+
+  // Pre-compute myMember for each group to avoid repeated find() inside groups.map().
+  const myMemberByGroupId = new Map<
+    string,
+    { id: string; user_id: string | null; display_name: string; email: string | null } | null
+  >();
+  for (const [gid, gMembers] of memberByGroup) {
+    myMemberByGroupId.set(gid, gMembers.find((m) => m.user_id === userId) ?? null);
+  }
+
+
   const splitByGroup = new Map<string, NonNullable<typeof splits>>();
   const seenByGroup = new Map<string, Set<string>>();
   for (const s of splits ?? []) {
@@ -262,29 +288,6 @@ async function handleSummary(req: NextRequest, userId: string) {
     const list = splitByGroup.get(s.group_id) ?? [];
     list.push(s);
     splitByGroup.set(s.group_id, list);
-  }
-
-  // Pre-build a settlement map keyed by group_id to avoid O(n²) filter inside the group loop.
-  const settlementsByGroupId = new Map<string, NonNullable<typeof settlements>>();
-  for (const s of settlements ?? []) {
-    const list = settlementsByGroupId.get(s.group_id) ?? [];
-    list.push(s);
-    settlementsByGroupId.set(s.group_id, list);
-  }
-
-  // Pre-build a Set of all split_transaction_ids per group for O(1) membership test
-  // (used when filtering shares for a group's splits).
-  const splitIdSetByGroup = new Map<string, Set<string>>();
-  for (const [groupId, groupSplitsArr] of splitByGroup) {
-    splitIdSetByGroup.set(groupId, new Set(groupSplitsArr.map((s) => s.id)));
-  }
-
-  // Pre-build a flat Map from split_transaction_id → shares for O(1) share lookup.
-  const sharesBySplitId = new Map<string, { split_transaction_id: string; member_id: string; amount: number }[]>();
-  for (const sh of shares) {
-    const list = sharesBySplitId.get(sh.split_transaction_id) ?? [];
-    list.push(sh);
-    sharesBySplitId.set(sh.split_transaction_id, list);
   }
 
   const swGroupIds = new Set(
@@ -316,7 +319,7 @@ async function handleSummary(req: NextRequest, userId: string) {
   const groupsWithBalance = (groups ?? []).map((g) => {
     const groupSplits = splitByGroup.get(g.id) ?? [];
     const groupMembers = memberByGroup.get(g.id) ?? [];
-    const myMember = groupMembers.find((m) => m.user_id === userId);
+    const myMember = myMemberByGroupId.get(g.id) ?? null;
     const memberByUserId = new Map(
       groupMembers.filter((m) => m.user_id).map((m) => [m.user_id!, m.id])
     );
@@ -382,7 +385,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       }
     }
 
-    const groupSettlements = settlementsByGroupId.get(g.id) ?? [];
+    const groupSettlements = settlementsByGroup.get(g.id) ?? [];
     const paidSettlements = groupSettlements.map((s) => ({
       payer_member_id: s.payer_member_id,
       amount: Number(s.amount),
@@ -562,20 +565,13 @@ async function handleSummary(req: NextRequest, userId: string) {
 
       // Build per-person local settlement deltas (Coconut settlements not yet reflected in Splitwise cache).
       // These must be subtracted from the cached balance so "mark as paid" works immediately.
-      // Pre-build myMember lookup per group to avoid .find() inside the member loop.
-      const myMemberByGroupId = new Map<string, { id: string; user_id: string | null; display_name: string; email: string | null }>();
-      for (const [gid, gMembers] of memberByGroup) {
-        const mm = gMembers.find((m) => m.user_id === userId);
-        if (mm) myMemberByGroupId.set(gid, mm);
-      }
-
       const localSettlementDeltas = new Map<string, Map<string, number>>();
       for (const m of members ?? []) {
         if (m.user_id === userId || !m.email) continue;
         const myMember = myMemberByGroupId.get(m.group_id);
         if (!myMember) continue;
-        // Use the pre-built settlementsByGroupId map (O(1)) and filter by method inline.
-        const gSettlements = (settlementsByGroupId.get(m.group_id) ?? []).filter(
+        // Use the pre-built settlementsByGroup map (O(1)) and filter by method inline.
+        const gSettlements = (settlementsByGroup.get(m.group_id) ?? []).filter(
           (s) => (s as { method?: string }).method !== "splitwise"
         );
         for (const st of gSettlements) {

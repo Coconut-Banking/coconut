@@ -15,45 +15,43 @@ export function computeBalancesByCurrency(
   paidSettlements: { payer_member_id: string; amount: number; currency: string }[],
   receivedSettlements: { receiver_member_id: string; amount: number; currency: string }[]
 ): Map<string, Map<string, MemberBalance>> {
-  // Single-pass: group all rows by normalized currency
+  // Pre-bucket each row into its currency group in a single pass (O(n) total).
   const paidByCur = new Map<string, { member_id: string; amount: number }[]>();
-  for (const r of paidRows) {
-    const cur = normalizeSplitCurrency(r.currency);
-    let list = paidByCur.get(cur);
-    if (!list) { list = []; paidByCur.set(cur, list); }
-    list.push({ member_id: r.member_id, amount: r.amount });
-  }
-
   const owedByCur = new Map<string, { member_id: string; amount: number }[]>();
+  const paidSetByCur = new Map<string, { payer_member_id: string; amount: number }[]>();
+  const recvSetByCur = new Map<string, { receiver_member_id: string; amount: number }[]>();
+
+  for (const r of paidRows) {
+    const c = normalizeSplitCurrency(r.currency);
+    const arr = paidByCur.get(c) ?? [];
+    arr.push({ member_id: r.member_id, amount: r.amount });
+    paidByCur.set(c, arr);
+  }
   for (const r of owedRows) {
-    const cur = normalizeSplitCurrency(r.currency);
-    let list = owedByCur.get(cur);
-    if (!list) { list = []; owedByCur.set(cur, list); }
-    list.push({ member_id: r.member_id, amount: r.amount });
+    const c = normalizeSplitCurrency(r.currency);
+    const arr = owedByCur.get(c) ?? [];
+    arr.push({ member_id: r.member_id, amount: r.amount });
+    owedByCur.set(c, arr);
   }
-
-  const paidSettByCur = new Map<string, { payer_member_id: string; amount: number }[]>();
   for (const r of paidSettlements) {
-    const cur = normalizeSplitCurrency(r.currency);
-    let list = paidSettByCur.get(cur);
-    if (!list) { list = []; paidSettByCur.set(cur, list); }
-    list.push({ payer_member_id: r.payer_member_id, amount: r.amount });
+    const c = normalizeSplitCurrency(r.currency);
+    const arr = paidSetByCur.get(c) ?? [];
+    arr.push({ payer_member_id: r.payer_member_id, amount: r.amount });
+    paidSetByCur.set(c, arr);
   }
-
-  const recvSettByCur = new Map<string, { receiver_member_id: string; amount: number }[]>();
   for (const r of receivedSettlements) {
-    const cur = normalizeSplitCurrency(r.currency);
-    let list = recvSettByCur.get(cur);
-    if (!list) { list = []; recvSettByCur.set(cur, list); }
-    list.push({ receiver_member_id: r.receiver_member_id, amount: r.amount });
+    const c = normalizeSplitCurrency(r.currency);
+    const arr = recvSetByCur.get(c) ?? [];
+    arr.push({ receiver_member_id: r.receiver_member_id, amount: r.amount });
+    recvSetByCur.set(c, arr);
   }
 
-  // Collect all currencies
-  const currencies = new Set<string>();
-  for (const k of paidByCur.keys()) currencies.add(k);
-  for (const k of owedByCur.keys()) currencies.add(k);
-  for (const k of paidSettByCur.keys()) currencies.add(k);
-  for (const k of recvSettByCur.keys()) currencies.add(k);
+  const currencies = new Set([
+    ...paidByCur.keys(),
+    ...owedByCur.keys(),
+    ...paidSetByCur.keys(),
+    ...recvSetByCur.keys(),
+  ]);
 
   const out = new Map<string, Map<string, MemberBalance>>();
   for (const cur of currencies) {
@@ -62,8 +60,8 @@ export function computeBalancesByCurrency(
       computeBalances(
         paidByCur.get(cur) ?? [],
         owedByCur.get(cur) ?? [],
-        paidSettByCur.get(cur) ?? [],
-        recvSettByCur.get(cur) ?? [],
+        paidSetByCur.get(cur) ?? [],
+        recvSetByCur.get(cur) ?? []
       )
     );
   }
