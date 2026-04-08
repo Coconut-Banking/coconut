@@ -8,21 +8,20 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getEffectiveUserId();
+  // Parallelize auth + params + body parse (independent)
+  const [userId, { id }, bodyRaw] = await Promise.all([
+    getEffectiveUserId(),
+    params,
+    req.json().catch(() => null),
+  ]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const { id } = await params;
-
-  let body;
-  try {
-    body = await req.json();
-  } catch {
+  if (bodyRaw === null) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { transactionId } = body;
+  const { transactionId } = bodyRaw as { transactionId?: string };
   if (!transactionId || typeof transactionId !== "string") {
     return NextResponse.json({ error: "transactionId is required" }, { status: 400 });
   }
@@ -76,12 +75,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getEffectiveUserId();
+  // Parallelize auth + params (independent)
+  const [userId, { id }] = await Promise.all([getEffectiveUserId(), params]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const { id } = await params;
   const db = getSupabase();
 
   // Verify receipt ownership

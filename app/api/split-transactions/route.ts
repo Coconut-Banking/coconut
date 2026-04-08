@@ -10,17 +10,17 @@ import { toCents } from "@/lib/expense-shares";
 import { notifyGroupMembers } from "@/lib/push-sender";
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  // Parallelize auth + body parse (independent)
+  const [{ userId }, bodyRaw] = await Promise.all([
+    auth(),
+    req.json().catch(() => null),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (bodyRaw === null) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
 
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-  const groupId = body.groupId ?? body.group_id;
-  const transactionId = body.transactionId ?? body.transaction_id;
+  const body = bodyRaw as Record<string, unknown>;
+  const groupId = (body.groupId ?? body.group_id) as string;
+  const transactionId = (body.transactionId ?? body.transaction_id) as string;
   const shares = body.shares as Array<{ memberId: string; amount: number }>;
 
   if (!groupId || !transactionId || !Array.isArray(shares) || shares.length === 0) {
