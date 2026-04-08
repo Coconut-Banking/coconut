@@ -41,12 +41,17 @@ export async function findClerkUserIdsByEmails(
     const client = await clerkClient();
     // Clerk supports up to 100 email addresses per getUserList call
     const BATCH_SIZE = 100;
-    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-      const batch = unique.slice(i, i + BATCH_SIZE);
-      const res = await client.users.getUserList({
-        emailAddress: batch,
-        limit: BATCH_SIZE,
-      });
+    const batches = Array.from(
+      { length: Math.ceil(unique.length / BATCH_SIZE) },
+      (_, i) => unique.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE)
+    );
+    // Run all batches in parallel (independent Clerk API calls)
+    const batchResults = await Promise.all(
+      batches.map((batch) =>
+        client.users.getUserList({ emailAddress: batch, limit: BATCH_SIZE })
+      )
+    );
+    for (const res of batchResults) {
       for (const user of res.data) {
         const primaryEmail =
           user.primaryEmailAddress?.emailAddress?.toLowerCase();
@@ -82,12 +87,17 @@ export async function getClerkUserPhotos(
   try {
     const client = await clerkClient();
     const BATCH_SIZE = 100;
-    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-      const batch = unique.slice(i, i + BATCH_SIZE);
-      const res = await client.users.getUserList({
-        userId: batch,
-        limit: BATCH_SIZE,
-      });
+    const batches = Array.from(
+      { length: Math.ceil(unique.length / BATCH_SIZE) },
+      (_, i) => unique.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE)
+    );
+    // Run all batches in parallel (independent Clerk API calls)
+    const batchResults = await Promise.all(
+      batches.map((batch) =>
+        client.users.getUserList({ userId: batch, limit: BATCH_SIZE })
+      )
+    );
+    for (const res of batchResults) {
       for (const user of res.data) {
         if (user.imageUrl) {
           result.set(user.id, user.imageUrl);
