@@ -35,7 +35,8 @@ export async function GET(req: NextRequest) {
     .eq("clerk_user_id", member.user_id)
     .maybeSingle();
 
-  return NextResponse.json({
-    payoutsEnabled: connectAccount?.onboarding_complete && connectAccount?.payouts_enabled,
-  });
+  return NextResponse.json(
+    { payoutsEnabled: connectAccount?.onboarding_complete && connectAccount?.payouts_enabled },
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=30" } }
+  );
 }

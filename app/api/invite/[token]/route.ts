@@ -33,22 +33,25 @@ export async function GET(
   const recentSplits = recentSplitsRes.data;
   const ownerMember = (members ?? []).find((m) => m.user_id === group.owner_id);
 
-  return NextResponse.json({
-    groupId: group.id,
-    groupName: group.name,
-    groupType: group.group_type ?? "other",
-    memberCount: (members ?? []).length,
-    inviterName: ownerMember?.display_name ?? "Someone",
-    members: (members ?? []).map((m) => ({
-      display_name: m.display_name,
-      initial: m.display_name?.charAt(0)?.toUpperCase() ?? "?",
-      is_owner: m.user_id === group.owner_id,
-    })),
-    recentExpenses: (recentSplits ?? [])
-      .filter((s) => s.description && s.amount != null)
-      .map((s) => ({
-        description: s.description,
-        amount: Number(s.amount),
+  return NextResponse.json(
+    {
+      groupId: group.id,
+      groupName: group.name,
+      groupType: group.group_type ?? "other",
+      memberCount: (members ?? []).length,
+      inviterName: ownerMember?.display_name ?? "Someone",
+      members: (members ?? []).map((m) => ({
+        display_name: m.display_name,
+        initial: m.display_name?.charAt(0)?.toUpperCase() ?? "?",
+        is_owner: m.user_id === group.owner_id,
       })),
-  });
+      recentExpenses: (recentSplits ?? [])
+        .filter((s) => s.description && s.amount != null)
+        .map((s) => ({
+          description: s.description,
+          amount: Number(s.amount),
+        })),
+    },
+    { headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=120" } }
+  );
 }
