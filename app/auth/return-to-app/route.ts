@@ -7,13 +7,13 @@ import { NextResponse } from "next/server";
  * user taps "Open in app" → immediate redirect to coconut://auth-handoff.
  */
 export async function GET() {
-  const { userId } = await auth();
+  // Parallelize auth + clerkClient initialization (independent)
+  const [{ userId }, client] = await Promise.all([auth(), clerkClient()]);
   if (!userId) {
     return NextResponse.redirect("/login?redirect_url=/auth/return-to-app");
   }
 
   try {
-    const client = await clerkClient();
     const signInToken = await client.signInTokens.createSignInToken({
       userId,
       expiresInSeconds: 120,
