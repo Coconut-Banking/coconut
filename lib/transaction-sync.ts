@@ -906,14 +906,18 @@ export async function enrichCategoriesForUser(
     const batch = txs.slice(i, i + CATEGORIZE_BATCH);
     const categories = await categorizeBatch(batch);
 
-    for (const [id, category] of categories) {
-      const { error: updateErr } = await db
-        .from("transactions")
-        .update({ primary_category: category })
-        .eq("id", id)
-        .eq("clerk_user_id", clerkUserId);
-      if (updateErr) {
-        console.warn("[categorize] update failed for tx", id, ":", updateErr.message);
+    const updateResults = await Promise.all(
+      Array.from(categories).map(([id, category]) =>
+        db
+          .from("transactions")
+          .update({ primary_category: category })
+          .eq("id", id)
+          .eq("clerk_user_id", clerkUserId)
+      )
+    );
+    for (const r of updateResults) {
+      if (r.error) {
+        console.warn("[categorize] update failed:", r.error.message);
       } else {
         updated++;
       }
