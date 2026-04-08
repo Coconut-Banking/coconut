@@ -9,7 +9,10 @@ import { getSupabase } from "@/lib/supabase";
  * Generates a fresh Stripe Account Link for users who started but didn't finish onboarding.
  */
 export async function POST(req: Request) {
-  const { userId } = await auth();
+  const [{ userId }, body] = await Promise.all([
+    auth(),
+    req.json().catch(() => ({})),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const key = process.env.STRIPE_SECRET_KEY;
@@ -17,7 +20,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
 
-  const body = await req.json().catch(() => ({}));
   const scheme = (body as { scheme?: string }).scheme ?? "coconut";
 
   try {

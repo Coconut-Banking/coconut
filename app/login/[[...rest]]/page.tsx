@@ -9,8 +9,10 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ redirect_url?: string; hint?: string }>;
 }) {
-  const { userId } = await auth();
-  const { redirect_url, hint } = await searchParams;
+  const [{ userId }, { redirect_url, hint }] = await Promise.all([
+    auth(),
+    searchParams,
+  ]);
   const fallbackRedirect = redirect_url ?? "/app/dashboard";
   if (userId) redirect(fallbackRedirect.startsWith("/") ? fallbackRedirect : "/app/dashboard");
   const fromApp = fallbackRedirect.includes("from_app");

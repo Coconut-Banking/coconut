@@ -9,12 +9,14 @@ export async function PATCH(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
+  const [{ userId }, { id }, body] = await Promise.all([
+    auth(),
+    params,
+    _req.json().catch(() => ({})),
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { id } = await params;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
   try {
-    const body = await _req.json().catch(() => ({}));
     const status = body?.status as string | undefined;
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (status && ["active", "cancelled", "paused", "dismissed"].includes(status)) updates.status = status;
