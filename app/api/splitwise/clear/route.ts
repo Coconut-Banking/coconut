@@ -40,19 +40,24 @@ export async function POST(req: NextRequest) {
   let deletedGroups = 0;
 
   const BATCH = 200;
-  for (const gid of ids) {
-    const { data: splitRows } = await db.from("split_transactions").select("id").eq("group_id", gid);
-    const sids = (splitRows ?? []).map((r) => r.id);
-    if (sids.length > 0) {
-      for (let i = 0; i < sids.length; i += BATCH) {
-        await db.from("split_shares").delete().in("split_transaction_id", sids.slice(i, i + BATCH));
+  const results = await Promise.all(
+    ids.map(async (gid) => {
+      const { data: splitRows } = await db.from("split_transactions").select("id").eq("group_id", gid);
+      const sids = (splitRows ?? []).map((r: { id: string }) => r.id);
+      if (sids.length > 0) {
+        await Promise.all(
+          Array.from({ length: Math.ceil(sids.length / BATCH) }, (_, i) =>
+            db.from("split_shares").delete().in("split_transaction_id", sids.slice(i * BATCH, (i + 1) * BATCH))
+          )
+        );
       }
-    }
-    await db.from("split_transactions").delete().eq("group_id", gid);
-    await db.from("group_members").delete().eq("group_id", gid);
-    const { error: delG } = await db.from("groups").delete().eq("id", gid);
-    if (!delG) deletedGroups += 1;
-  }
+      await db.from("split_transactions").delete().eq("group_id", gid);
+      await db.from("group_members").delete().eq("group_id", gid);
+      const { error: delG } = await db.from("groups").delete().eq("id", gid);
+      return !delG;
+    })
+  );
+  deletedGroups = results.filter(Boolean).length;
 
   if (disconnectToken) {
     await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
