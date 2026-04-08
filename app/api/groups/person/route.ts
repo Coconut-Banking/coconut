@@ -285,6 +285,28 @@ export async function GET(req: NextRequest) {
       else sharesBySplitId.set(sh.split_transaction_id, [sh]);
     }
 
+    // Pre-index splits, members, settlements by group_id for O(1) per-group access
+    const splitsByGroup = new Map<string, typeof splits>();
+    for (const s of splits) {
+      const list = splitsByGroup.get(s.group_id) ?? [];
+      list.push(s);
+      splitsByGroup.set(s.group_id, list);
+    }
+
+    const membersByGroupId = new Map<string, NonNullable<typeof members>[number][]>();
+    for (const m of members ?? []) {
+      const list = membersByGroupId.get(m.group_id) ?? [];
+      list.push(m);
+      membersByGroupId.set(m.group_id, list);
+    }
+
+    const settlementsByGroupId = new Map<string, NonNullable<typeof settlements>[number][]>();
+    for (const s of settlements ?? []) {
+      const list = settlementsByGroupId.get(s.group_id) ?? [];
+      list.push(s);
+      settlementsByGroupId.set(s.group_id, list);
+    }
+
     const byCurrency = new Map<string, number>();
     const personSettlements: Array<{
       groupId: string;
@@ -311,8 +333,8 @@ export async function GET(req: NextRequest) {
     }> = [];
 
     for (const groupId of sharedGroupIds) {
-      const groupSplits = splits.filter((s) => s.group_id === groupId);
-      const groupMembers = (members ?? []).filter((m) => m.group_id === groupId);
+      const groupSplits = splitsByGroup.get(groupId) ?? [];
+      const groupMembers = membersByGroupId.get(groupId) ?? [];
       const myMember = groupMembers.find((m) => m.user_id === userId);
       const theirMember = groupMembers.find((m) => personMemberIds.has(m.id));
       if (!myMember || !theirMember) continue;
@@ -320,6 +342,7 @@ export async function GET(req: NextRequest) {
       const memberByUserId = new Map(
         groupMembers.filter((m) => m.user_id).map((m) => [m.user_id!, m.id])
       );
+      const groupMemberIdSet = new Set(groupMembers.map((m) => m.id));
 
       const splitCurrencyById = new Map(
         groupSplits.map((s) => [
@@ -341,7 +364,7 @@ export async function GET(req: NextRequest) {
       for (const s of groupSplits) {
         const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
         const pid =
-          payerMemberId && groupMembers.some((m) => m.id === payerMemberId)
+          payerMemberId && groupMemberIdSet.has(payerMemberId)
             ? payerMemberId
             : (() => {
                 const ownerId = txOwnerById.get(s.transaction_id);
@@ -350,7 +373,7 @@ export async function GET(req: NextRequest) {
         if (pid) payerBySplit.set(s.id, pid);
       }
 
-      const groupSettlements = (settlements ?? []).filter((s) => s.group_id === groupId);
+      const groupSettlements = settlementsByGroupId.get(groupId) ?? [];
 
       // Skip pairwise for Splitwise groups when cache is authoritative.
       // The cached balance already covers them; computing here would double-count.
@@ -535,12 +558,12 @@ export async function GET(req: NextRequest) {
         // Apply only LOCAL (non-Splitwise) settlements on top of cached balances
         for (const groupId of sharedGroupIds) {
           if (!swGroupIds.has(groupId)) continue;
-          const groupMembers = (members ?? []).filter((m) => m.group_id === groupId);
+          const groupMembers = membersByGroupId.get(groupId) ?? [];
           const myMember = groupMembers.find((m) => m.user_id === userId);
           const theirMember = groupMembers.find((m) => personMemberIds.has(m.id));
           if (!myMember || !theirMember) continue;
-          const gSettlements = (settlements ?? []).filter(
-            (s) => s.group_id === groupId && (s as { method?: string }).method !== "splitwise"
+          const gSettlements = (settlementsByGroupId.get(groupId) ?? []).filter(
+            (s) => (s as { method?: string }).method !== "splitwise"
           );
           for (const st of gSettlements) {
             const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
@@ -589,15 +612,16 @@ export async function GET(req: NextRequest) {
       activityBeforeFilter: activity.length,
       activityAfterFilter: dedupedActivity.length,
       perGroup: sharedGroupIds.map((gid) => {
-        const gs = splits.filter((s) => s.group_id === gid);
-        const gm = (members ?? []).filter((m) => m.group_id === gid);
+        const gs = splitsByGroup.get(gid) ?? [];
+        const gm = membersByGroupId.get(gid) ?? [];
         const myM = gm.find((m) => m.user_id === userId);
         const theirM = gm.find((m) => personMemberIds.has(m.id));
-        const splitIds = gs.map((s) => s.id);
-        const sharesForGroup = (shares ?? []).filter((sh) => splitIds.includes(sh.split_transaction_id));
+        const splitIds = new Set(gs.map((s) => s.id));
+        const sharesForGroup = (shares ?? []).filter((sh) => splitIds.has(sh.split_transaction_id));
+        const gmIdSet = new Set(gm.map((m) => m.id));
         const payersFound = gs.filter((s) => {
           const pmid = (s as { payer_member_id?: string | null }).payer_member_id;
-          if (pmid && gm.some((m) => m.id === pmid)) return true;
+          if (pmid && gmIdSet.has(pmid)) return true;
           const oid = s.transaction_id ? txOwnerById.get(s.transaction_id) : undefined;
           const memberByUid = new Map(gm.filter((m) => m.user_id).map((m) => [m.user_id!, m.id]));
           return oid ? !!memberByUid.get(oid) : false;
