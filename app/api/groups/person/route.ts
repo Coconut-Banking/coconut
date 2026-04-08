@@ -138,17 +138,13 @@ export async function GET(req: NextRequest) {
     }
 
     if (personMembers.length === 0) {
-      // Splitwise-only friends: check cached_friend_balances
-      if (key.includes("@")) {
-        const swFallback = await getSplitwiseCachedFriend(userId, key);
-        if (swFallback) return NextResponse.json(swFallback);
-      }
-
-      // Clerk users with no shared groups yet (e.g. device contacts)
-      if (key.startsWith("user_")) {
-        const clerkFallback = await getClerkUserStub(key);
-        if (clerkFallback) return NextResponse.json(clerkFallback);
-      }
+      // Run Splitwise and Clerk fallbacks in parallel
+      const [swFallback, clerkFallback] = await Promise.all([
+        key.includes("@") ? getSplitwiseCachedFriend(userId, key) : Promise.resolve(null),
+        key.startsWith("user_") ? getClerkUserStub(key) : Promise.resolve(null),
+      ]);
+      const fallback = swFallback ?? clerkFallback;
+      if (fallback) return NextResponse.json(fallback);
 
       return NextResponse.json(
         {

@@ -243,6 +243,7 @@ export function usePersonDetail(key: string | null) {
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastFetchRef = useRef<number>(0);
 
   const fetchDetail = useCallback(async (silent = false) => {
     if (!key) {
@@ -254,6 +255,7 @@ export function usePersonDetail(key: string | null) {
     if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/groups/person?key=${encodeURIComponent(key)}`);
+      lastFetchRef.current = Date.now();
       if (res.ok) {
         const data = await res.json();
         setError(null);
@@ -281,13 +283,19 @@ export function usePersonDetail(key: string | null) {
   const fetchDetailRef = useRef(fetchDetail);
   fetchDetailRef.current = fetchDetail;
 
-  // Refetch on tab visibility restore or window focus instead of polling every 30s
+  // Refetch on tab visibility restore or window focus — debounced to 30s to avoid excessive API calls
   useEffect(() => {
     if (!key) return;
     const onVisible = () => {
-      if (document.visibilityState === "visible") fetchDetailRef.current(true);
+      if (document.visibilityState === "visible" && Date.now() - lastFetchRef.current > 30000) {
+        fetchDetailRef.current(true);
+      }
     };
-    const onFocus = () => fetchDetailRef.current(true);
+    const onFocus = () => {
+      if (Date.now() - lastFetchRef.current > 30000) {
+        fetchDetailRef.current(true);
+      }
+    };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onFocus);
     return () => {

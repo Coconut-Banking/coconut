@@ -73,7 +73,14 @@ export function useTransactions() {
         if (cancelled) return;
         if (!statusRes.ok) throw new Error("status check failed");
 
-        const status = await statusRes.json();
+        // Read header before consuming body (headers are always accessible independently of body)
+        const needsSync = txRes.headers.get("X-Needs-Sync") === "1";
+
+        // Parallelize JSON parsing for both responses
+        const [status, initialData] = await Promise.all([
+          statusRes.json(),
+          txRes.ok ? txRes.json().catch(() => null) : Promise.resolve(null),
+        ]);
         if (cancelled) return;
 
         if (!status.linked) {
@@ -85,13 +92,9 @@ export function useTransactions() {
 
         setLinked(true);
 
-        // Read header before consuming body (headers remain readable after body consumed)
-        const needsSync = txRes.headers.get("X-Needs-Sync") === "1";
-
         // Show initial data immediately from the parallel fetch
         let initialTxCount = 0;
         if (txRes.ok) {
-          const initialData = await txRes.json().catch(() => null);
           if (!cancelled && Array.isArray(initialData)) {
             setTransactions(initialData as UITransaction[]);
             initialTxCount = initialData.length;
