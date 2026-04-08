@@ -49,7 +49,8 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
       const txId = `manual_recurring_${randomUUID()}`;
       const currency = normalizeSplitCurrency(rec.iso_currency_code);
 
-      const { error: txErr } = await db.from("transactions").insert({
+      // Use .select("id") on insert to get the ID without a second round-trip
+      const { data: txRow, error: txErr } = await db.from("transactions").insert({
         clerk_user_id: rec.clerk_user_id,
         plaid_transaction_id: txId,
         date: rec.next_due_date,
@@ -60,14 +61,8 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
         normalized_merchant: rec.description.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim(),
         primary_category: "OTHER",
         is_pending: false,
-      });
+      }).select("id").single();
       if (txErr) { console.error("[recurring] tx insert failed:", txErr.message); continue; }
-
-      const { data: txRow } = await db
-        .from("transactions")
-        .select("id")
-        .eq("plaid_transaction_id", txId)
-        .single();
       if (!txRow) continue;
 
       const { data: members } = await db
@@ -111,29 +106,20 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
         splitRow = st1;
       }
 
+      let shareMembers: string[];
       if (rec.person_key) {
         const parts = rec.person_key.split("-");
         const memberId = parts.length >= 2 ? parts[parts.length - 1] : null;
         const targetMember = memberId ? members.find((m: { id: string }) => m.id === memberId) : null;
-        const splitMemberIds = [payerMember, targetMember].filter(Boolean).map((m) => (m as { id: string }).id);
-        const shares = computeEqualShares(Math.abs(rec.amount), splitMemberIds);
-        for (const s of shares) {
-          await db.from("split_shares").insert({
-            split_transaction_id: splitRow.id,
-            member_id: s.memberId,
-            amount: s.amount,
-          });
-        }
+        shareMembers = [payerMember, targetMember].filter(Boolean).map((m) => (m as { id: string }).id);
       } else {
-        const memberIds = members.map((m: { id: string }) => m.id);
-        const shares = computeEqualShares(Math.abs(rec.amount), memberIds);
-        for (const s of shares) {
-          await db.from("split_shares").insert({
-            split_transaction_id: splitRow.id,
-            member_id: s.memberId,
-            amount: s.amount,
-          });
-        }
+        shareMembers = members.map((m: { id: string }) => m.id);
+      }
+      const shares = computeEqualShares(Math.abs(rec.amount), shareMembers);
+      if (shares.length > 0) {
+        await db.from("split_shares").insert(
+          shares.map((s) => ({ split_transaction_id: splitRow.id, member_id: s.memberId, amount: s.amount }))
+        );
       }
 
       const nextDue = addFrequency(rec.next_due_date, rec.frequency);
