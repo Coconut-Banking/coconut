@@ -41,17 +41,16 @@ export async function GET() {
   try {
     const db = getSupabase();
 
-    // plaid_items count
-    const { count: plaidCount } = await db
-      .from("plaid_items")
-      .select("id", { count: "exact", head: true })
-      .eq("clerk_user_id", effectiveUserId);
-
-    // accounts count
-    const { count: accountsCount } = await db
-      .from("accounts")
-      .select("id", { count: "exact", head: true })
-      .eq("clerk_user_id", effectiveUserId);
+    const [{ count: plaidCount }, { count: accountsCount }] = await Promise.all([
+      db
+        .from("plaid_items")
+        .select("id", { count: "exact", head: true })
+        .eq("clerk_user_id", effectiveUserId),
+      db
+        .from("accounts")
+        .select("id", { count: "exact", head: true })
+        .eq("clerk_user_id", effectiveUserId),
+    ]);
 
     // Try Plaid accountsGet for first token + verify which env it belongs to
     let plaidError: string | null = null;
@@ -79,25 +78,18 @@ export async function GET() {
       // Verify: try token with sandbox and/or production to detect mismatch.
       // In production, never call sandbox API (Plaid production checklist).
       const prodClient = createPlaidClientForEnv("production");
-      if (prodClient) {
-        try {
-          await prodClient.accountsGet({ access_token: accessToken });
-          token_works_in_production = true;
-        } catch {
-          token_works_in_production = false;
-        }
-      }
-      if (PLAID_ENV !== "production") {
-        const sandboxClient = createPlaidClientForEnv("sandbox");
-        if (sandboxClient) {
-          try {
-            await sandboxClient.accountsGet({ access_token: accessToken });
-            token_works_in_sandbox = true;
-          } catch {
-            token_works_in_sandbox = false;
-          }
-        }
-      }
+      const sandboxClient = PLAID_ENV !== "production" ? createPlaidClientForEnv("sandbox") : null;
+
+      const [prodResult, sandboxResult] = await Promise.all([
+        prodClient
+          ? prodClient.accountsGet({ access_token: accessToken }).then(() => true).catch(() => false)
+          : Promise.resolve(null as boolean | null),
+        sandboxClient
+          ? sandboxClient.accountsGet({ access_token: accessToken }).then(() => true).catch(() => false)
+          : Promise.resolve(null as boolean | null),
+      ]);
+      token_works_in_production = prodResult;
+      token_works_in_sandbox = sandboxResult;
     }
 
     const env_mismatch =
