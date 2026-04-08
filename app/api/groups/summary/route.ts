@@ -322,6 +322,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     const memberByUserId = new Map(
       groupMembers.filter((m) => m.user_id).map((m) => [m.user_id!, m.id])
     );
+    const groupMemberIdSet = new Set(groupMembers.map((m) => m.id));
 
     if (groupSplits.length === 0) {
       const lastActivityAt = g.created_at;
@@ -349,7 +350,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       const sWithPayer = s as { payer_member_id?: string | null };
       const payerMemberId = sWithPayer.payer_member_id;
       const memberId =
-        payerMemberId && groupMembers.some((m) => m.id === payerMemberId)
+        payerMemberId && groupMemberIdSet.has(payerMemberId)
           ? payerMemberId
           : (() => {
               const tid = s.transaction_id as string | null | undefined;
