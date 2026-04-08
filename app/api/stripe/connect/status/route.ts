@@ -18,21 +18,24 @@ export async function GET() {
     .eq("clerk_user_id", userId)
     .maybeSingle();
 
+  const CC = { headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=60" } };
+
   if (!row) {
-    return NextResponse.json({
-      hasAccount: false,
-      onboardingComplete: false,
-      chargesEnabled: false,
-      payoutsEnabled: false,
-    });
+    return NextResponse.json(
+      { hasAccount: false, onboardingComplete: false, chargesEnabled: false, payoutsEnabled: false },
+      CC
+    );
   }
 
-  return NextResponse.json({
-    hasAccount: true,
-    accountId: row.stripe_account_id,
-    onboardingComplete: row.onboarding_complete,
-    chargesEnabled: row.charges_enabled,
-    payoutsEnabled: row.payouts_enabled,
-    createdAt: row.created_at,
-  });
+  return NextResponse.json(
+    {
+      hasAccount: true,
+      accountId: row.stripe_account_id,
+      onboardingComplete: row.onboarding_complete,
+      chargesEnabled: row.charges_enabled,
+      payoutsEnabled: row.payouts_enabled,
+      createdAt: row.created_at,
+    },
+    CC
+  );
 }

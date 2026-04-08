@@ -32,7 +32,10 @@ export async function GET(request: NextRequest) {
       .in("transaction_id", ids);
 
     if (error) throw error;
-    return NextResponse.json({ annotations: data ?? [] });
+    return NextResponse.json(
+      { annotations: data ?? [] },
+      { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=30" } }
+    );
   } catch (err) {
     console.error("[p2p-annotation] GET error:", err);
     return NextResponse.json({ error: "Failed to fetch annotations" }, { status: 500 });
