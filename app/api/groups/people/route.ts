@@ -67,8 +67,8 @@ export async function GET() {
     a.displayName.localeCompare(b.displayName)
   );
 
-  return NextResponse.json({
-    people,
-    groups: groups.map((g) => ({ id: g.id, name: g.name })),
-  });
+  return NextResponse.json(
+    { people, groups: groups.map((g) => ({ id: g.id, name: g.name })) },
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+  );
 }
