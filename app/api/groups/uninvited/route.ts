@@ -79,5 +79,8 @@ export async function GET(req: Request) {
     a.displayName.localeCompare(b.displayName),
   );
 
-  return NextResponse.json({ members: result });
+  return NextResponse.json(
+    { members: result },
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=30" } }
+  );
 }

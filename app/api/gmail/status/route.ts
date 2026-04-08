@@ -15,5 +15,7 @@ export async function GET() {
   const status = await getGmailStatus(userId);
   console.log("[Gmail Status API] Status result:", status);
 
-  return NextResponse.json(status);
+  return NextResponse.json(status, {
+    headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=30" },
+  });
 }

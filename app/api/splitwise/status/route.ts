@@ -31,14 +31,17 @@ export async function GET() {
   const data = tokenRes.data;
   const importCount = importCountRes.count ?? 0;
 
-  return NextResponse.json({
-    configured: true,
-    /** Stored OAuth token exists (Splitwise authorized Coconut on the server). */
-    connected: !!data,
-    connectedAt: data?.created_at ?? null,
-    /** Groups created from Splitwise import — 0 if you authorized but never imported or cleared data. */
-    importedSplitwiseGroupCount: importCount,
-  });
+  return NextResponse.json(
+    {
+      configured: true,
+      /** Stored OAuth token exists (Splitwise authorized Coconut on the server). */
+      connected: !!data,
+      connectedAt: data?.created_at ?? null,
+      /** Groups created from Splitwise import — 0 if you authorized but never imported or cleared data. */
+      importedSplitwiseGroupCount: importCount,
+    },
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=30" } }
+  );
 }
 
 /** Disconnect — delete the stored token. */
