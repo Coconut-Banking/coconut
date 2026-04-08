@@ -18,15 +18,13 @@ type LinkEventBody = {
  * differences can be debugged quickly.
  */
 export async function POST(request: NextRequest) {
-  let body: LinkEventBody | null = null;
-  try {
-    body = (await request.json()) as LinkEventBody;
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-
-  const userId = await getEffectiveUserId();
+  // Parallelize auth + body parse (independent)
+  const [userId, body] = await Promise.all([
+    getEffectiveUserId(),
+    request.json().catch(() => null) as Promise<LinkEventBody | null>,
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!body) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   const payload = {
     ts: new Date().toISOString(),
     trace_id: body?.trace_id ?? `plaid_evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,

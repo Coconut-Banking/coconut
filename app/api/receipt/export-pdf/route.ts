@@ -29,15 +29,13 @@ function fmt(n: number) {
  * Body: { merchant: string, personShares: PersonShare[] }
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  const [{ userId }, rawBody] = await Promise.all([
+    auth(),
+    req.json().catch(() => null) as Promise<{ merchant?: string; personShares?: PersonShare[] } | null>,
+  ]);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  let body: { merchant?: string; personShares?: PersonShare[] };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
+  if (!rawBody) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  const body = rawBody;
 
   const merchant = body.merchant || "Receipt";
   const personShares = body.personShares ?? [];

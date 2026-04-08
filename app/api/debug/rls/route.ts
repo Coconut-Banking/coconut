@@ -27,27 +27,25 @@ export async function GET() {
     );
   }
  
-  // RLS check: query WITHOUT clerk_user_id filter. Should still only show the current user.
-  const { data: txRows, error: txErr } = await db
-    .from("transactions")
-    .select("id, clerk_user_id")
-    .limit(25);
- 
+  const admin = getSupabaseAdmin();
+
+  // Parallelize RLS-scoped query + admin count (independent after token is ready)
+  const [
+    { data: txRows, error: txErr },
+    { count: adminUserTxCount },
+  ] = await Promise.all([
+    db.from("transactions").select("id, clerk_user_id").limit(25),
+    admin.from("transactions").select("id", { count: "exact", head: true }).eq("clerk_user_id", userId),
+  ]);
+
   if (txErr) {
     return NextResponse.json(
       { ok: false, userId, step: "transactions_select", error: txErr.message },
       { status: 500 }
     );
   }
- 
+
   const userIds = Array.from(new Set((txRows ?? []).map((r) => r.clerk_user_id)));
- 
-  // Minimal comparison: admin count for this user (not a security control; only for sanity).
-  const admin = getSupabaseAdmin();
-  const { count: adminUserTxCount } = await admin
-    .from("transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("clerk_user_id", userId);
  
   return NextResponse.json({
     ok: true,
