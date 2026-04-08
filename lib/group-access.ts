@@ -78,15 +78,32 @@ export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
   // the member query, causing a new user to miss their groups on first load.
   await linkMemberByEmail(userId);
 
+  // Single RPC call replaces two parallel queries (owned + member).
+  // Falls back to the two-query path if the function doesn't exist yet.
+  const { data: rpcRows, error: rpcErr } = await db.rpc(
+    "get_accessible_group_ids",
+    { p_user_id: userId }
+  );
+
+  if (!rpcErr && Array.isArray(rpcRows)) {
+    console.log("[group-access] userId:", userId, "rpc ids:", rpcRows.length);
+    return rpcRows as string[];
+  }
+
+  // Fallback: two-query path (pre-migration or RPC not deployed yet)
+  if (rpcErr) {
+    console.warn("[group-access] RPC fallback:", rpcErr.message);
+  }
+
   const [ownedRes, memberRes] = await Promise.all([
     db.from("groups").select("id").eq("owner_id", userId),
     db.from("group_members").select("group_id").eq("user_id", userId),
   ]);
 
-  const { data: owned, error: ownedErr } = ownedRes;
-  const { data: memberRows, error: memberErr } = memberRes;
+  const { data: owned } = ownedRes;
+  const { data: memberRows } = memberRes;
 
-  console.log("[group-access] userId:", userId, "owned:", owned?.length ?? 0, "ownedErr:", ownedErr?.message, "memberRows:", memberRows?.length ?? 0, "memberErr:", memberErr?.message);
+  console.log("[group-access] userId:", userId, "owned:", owned?.length ?? 0, "memberRows:", memberRows?.length ?? 0);
 
   const ids = new Set<string>();
   for (const g of owned ?? []) ids.add(g.id);
