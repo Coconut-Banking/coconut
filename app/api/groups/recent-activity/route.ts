@@ -148,6 +148,15 @@ export async function GET() {
     memberById.set(m.id, { id: m.id, user_id: m.user_id, display_name: m.display_name });
   }
 
+  // Pre-compute myMember per group to avoid repeated find() inside the splits loop.
+  const myMemberByGroup = new Map<
+    string,
+    { id: string; user_id: string | null; display_name: string } | null
+  >();
+  for (const [gid, gMembers] of membersByGroup) {
+    myMemberByGroup.set(gid, gMembers.find((m) => m.user_id === userId) ?? null);
+  }
+
   type ActivityItem = {
     id: string;
     who: string;
@@ -170,7 +179,7 @@ export async function GET() {
       s as { transactions?: unknown; description?: string | null }
     );
     const groupMembers = membersByGroup.get(s.group_id) ?? [];
-    const myMember = groupMembers.find((m) => m.user_id === userId);
+    const myMember = myMemberByGroup.get(s.group_id) ?? null;
     const explicitPayerId = (s as { payer_member_id?: string | null }).payer_member_id;
     const payerByMemberRow =
       explicitPayerId && groupMembers.some((m) => m.id === explicitPayerId)
