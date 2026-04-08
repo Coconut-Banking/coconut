@@ -226,28 +226,33 @@ export async function GET(
       image_url: (m.user_id && photoMap.get(m.user_id)) || null,
     }));
 
+    const CC = { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=15" } };
+
     if (splits.length === 0) {
-      return NextResponse.json({
-        ...maskedGroup,
-        group: maskedGroup,
-        isOwner,
-        archivedAt: (group as { archived_at?: string | null }).archived_at ?? null,
-        members: members ?? [],
-        activity: [],
-        balances: (members ?? []).map((m) => ({
-          memberId: m.id,
-          currency: "USD",
-          paid: 0,
-          owed: 0,
-          total: 0,
-        })),
-        suggestions: [],
-        totalSpend: 0,
-        totalSpendByCurrency: [],
-        mySpend: 0,
-        mySpendByCurrency: [],
-        categoryBreakdown: [],
-      });
+      return NextResponse.json(
+        {
+          ...maskedGroup,
+          group: maskedGroup,
+          isOwner,
+          archivedAt: (group as { archived_at?: string | null }).archived_at ?? null,
+          members: members ?? [],
+          activity: [],
+          balances: (members ?? []).map((m) => ({
+            memberId: m.id,
+            currency: "USD",
+            paid: 0,
+            owed: 0,
+            total: 0,
+          })),
+          suggestions: [],
+          totalSpend: 0,
+          totalSpendByCurrency: [],
+          mySpend: 0,
+          mySpendByCurrency: [],
+          categoryBreakdown: [],
+        },
+        CC
+      );
     }
 
     const txOwnerById = new Map((txRows ?? []).map((t: { id: string; clerk_user_id: string }) => [t.id, t.clerk_user_id]));
@@ -514,25 +519,28 @@ export async function GET(
       }))
       .sort((a, b) => b.amount - a.amount);
 
-    return NextResponse.json({
-      ...maskedGroup,
-      group: maskedGroup,
-      isOwner,
-      archivedAt,
-      members: members ?? [],
-      activity,
-      balances: finalBalances,
-      suggestions: finalSuggestions.map((s) => ({
-        ...s,
-        fromMember: memberMap.get(s.fromMemberId),
-        toMember: memberMap.get(s.toMemberId),
-      })),
-      totalSpend,
-      totalSpendByCurrency,
-      mySpend,
-      mySpendByCurrency: mySpendArr,
-      categoryBreakdown,
-    });
+    return NextResponse.json(
+      {
+        ...maskedGroup,
+        group: maskedGroup,
+        isOwner,
+        archivedAt,
+        members: members ?? [],
+        activity,
+        balances: finalBalances,
+        suggestions: finalSuggestions.map((s) => ({
+          ...s,
+          fromMember: memberMap.get(s.fromMemberId),
+          toMember: memberMap.get(s.toMemberId),
+        })),
+        totalSpend,
+        totalSpendByCurrency,
+        mySpend,
+        mySpendByCurrency: mySpendArr,
+        categoryBreakdown,
+      },
+      CC
+    );
   } catch (err) {
     console.error("[groups/id]", err);
     return NextResponse.json({ error: "Failed to load group" }, { status: 500 });
