@@ -12,19 +12,20 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
+  // Parallelize auth + params + body parse (independent)
+  const [{ userId }, { id }, bodyRaw] = await Promise.all([
+    auth(),
+    params,
+    req.json().catch(() => null),
+  ]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const { id } = await params;
-  let body;
-  try {
-    body = await req.json();
-  } catch {
+  if (bodyRaw === null) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
-  const { groupId } = body;
+  const body = bodyRaw as Record<string, unknown>;
+  const { groupId } = body as { groupId?: string };
 
   if (!groupId) {
     return NextResponse.json({ error: "groupId required" }, { status: 400 });
