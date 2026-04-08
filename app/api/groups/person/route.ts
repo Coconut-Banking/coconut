@@ -41,20 +41,55 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    async function paginateAll<T>(
+      buildQuery: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }> & { range?: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
+      pageSize = 1000,
+    ): Promise<T[]> {
+      const first = buildQuery();
+      if (typeof first.range !== "function") { const { data } = await first; return data ?? []; }
+      const all: T[] = [];
+      let offset = 0;
+      for (;;) {
+        const q = offset === 0 ? first : buildQuery();
+        const { data, error } = await q.range!(offset, offset + pageSize - 1);
+        if (error || !data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < pageSize) break;
+        offset += pageSize;
+      }
+      return all;
+    }
+
     // Parallel fetch of groups and members (both only need accessible ids)
-    const [{ data: groupsRaw }, { data: membersRaw }] = await Promise.all([
-      db.from("groups").select("id, name, owner_id, source, group_type, archived_at").in("id", ids),
-      db.from("group_members")
-        .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
-        .in("group_id", ids),
+    const [groupsRaw, membersRaw] = await Promise.all([
+      paginateAll(() =>
+        db.from("groups").select("id, name, owner_id, source, group_type, archived_at, external_id").in("id", ids)
+      ),
+      paginateAll(() =>
+        db.from("group_members")
+          .select("id, group_id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
+          .in("group_id", ids)
+      ),
     ]);
 
-    // Exclude archived groups (matches summary endpoint behavior)
+    // Exclude archived groups and deduplicate Splitwise imports (same logic as summary)
     const activeGroupIds = new Set(
       (groupsRaw ?? []).filter((g) => !(g as { archived_at?: string | null }).archived_at).map((g) => g.id)
     );
-    const groups = (groupsRaw ?? []).filter((g) => activeGroupIds.has(g.id));
-    const members = (membersRaw ?? []).filter((m) => activeGroupIds.has(m.group_id));
+    const activeGroups = (groupsRaw ?? []).filter((g) => activeGroupIds.has(g.id));
+    activeGroups.sort((a, b) => (a.owner_id === userId ? 0 : 1) - (b.owner_id === userId ? 0 : 1));
+    const seenExtIds = new Set<string>();
+    const groups = activeGroups.filter((g) => {
+      const src = (g as { source?: string | null }).source;
+      const extId = (g as { external_id?: string | null }).external_id;
+      if (src === "splitwise" && extId) {
+        if (seenExtIds.has(extId)) return false;
+        seenExtIds.add(extId);
+      }
+      return true;
+    });
+    const dedupedGroupIds = new Set(groups.map((g) => g.id));
+    const members = (membersRaw ?? []).filter((m) => dedupedGroupIds.has(m.group_id));
 
     const directMatches = (members ?? []).filter((m) => {
       if (m.user_id === userId) return false;
@@ -169,33 +204,14 @@ export async function GET(req: NextRequest) {
       email: string | null;
       balance: { currency_code: string; amount: string }[];
     };
-    async function paginate<T>(
-      buildQuery: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }> & { range?: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
-      pageSize = 1000,
-    ): Promise<T[]> {
-      const first = buildQuery();
-      if (typeof first.range !== "function") { const { data } = await first; return data ?? []; }
-      const all: T[] = [];
-      let offset = 0;
-      for (;;) {
-        const q = offset === 0 ? first : buildQuery();
-        const { data, error } = await q.range!(offset, offset + pageSize - 1);
-        if (error || !data || data.length === 0) break;
-        all.push(...data);
-        if (data.length < pageSize) break;
-        offset += pageSize;
-      }
-      return all;
-    }
-
     const [splitsRaw, settlements, swTokenResult] = await Promise.all([
-      paginate(() =>
+      paginateAll(() =>
         db.from("split_transactions")
           .select(`id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, receipt_url, transactions(merchant_name, raw_name, amount, date)`)
           .in("group_id", sharedGroupIds)
           .order("created_at", { ascending: false })
       ),
-      paginate(() =>
+      paginateAll(() =>
         db.from("settlements")
           .select("group_id, payer_member_id, receiver_member_id, amount, iso_currency_code, method")
           .in("group_id", sharedGroupIds)
@@ -240,7 +256,7 @@ export async function GET(req: NextRequest) {
       for (let i = 0; i < splitIdList.length; i += BATCH) {
         const batch = splitIdList.slice(i, i + BATCH);
         sharesBatches.push(
-          paginate(() =>
+          paginateAll(() =>
             db.from("split_shares")
               .select("split_transaction_id, member_id, amount")
               .in("split_transaction_id", batch)
@@ -251,7 +267,7 @@ export async function GET(req: NextRequest) {
       for (let i = 0; i < txIds.length; i += BATCH) {
         const batch = txIds.slice(i, i + BATCH);
         txBatches.push(
-          paginate(() =>
+          paginateAll(() =>
             db.from("transactions")
               .select("id, clerk_user_id")
               .in("id", batch)
@@ -501,6 +517,9 @@ export async function GET(req: NextRequest) {
       totalSplits: splits.length,
       totalShares: (shares ?? []).length,
       activityCount: activity.length,
+      pairwiseByCurrency: Object.fromEntries(byCurrency),
+      hasSwCache,
+      swGroupCount: swGroupIds.size,
     });
 
     // Merge: start with non-Splitwise pairwise (byCurrency), then add
