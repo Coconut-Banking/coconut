@@ -431,59 +431,83 @@ async function handleSummary(req: NextRequest, userId: string) {
       }
 
       if (pairwiseRan) {
-        const sharesByTx = new Map<string, Map<string, number>>();
-        for (const s of groupSplits) {
-          for (const sh of sharesBySplitId.get(s.id) ?? []) {
-            let txMap = sharesByTx.get(sh.split_transaction_id);
-            if (!txMap) { txMap = new Map(); sharesByTx.set(sh.split_transaction_id, txMap); }
-            txMap.set(sh.member_id, Number(sh.amount));
-            shareCount++;
-          }
-        }
+        // Build a by-member-id lookup for O(1) access
+        const groupMemberById = new Map(groupMembers.map((m) => [m.id, m]));
+        const groupMemberIds = new Set(groupMembers.map((m) => m.id));
 
-        const payerBySplit = new Map<string, string>();
+        // Count shares and payer attempts for debug
         for (const s of groupSplits) {
           totalPayerAttempts++;
           const sWithPayer = s as { payer_member_id?: string | null };
-          const pid = sWithPayer.payer_member_id && groupMembers.some((m) => m.id === sWithPayer.payer_member_id)
+          const pid = sWithPayer.payer_member_id && groupMemberIds.has(sWithPayer.payer_member_id)
             ? sWithPayer.payer_member_id
             : (() => { const tid = s.transaction_id as string | null | undefined; const oid = tid ? txOwnerById.get(tid) : undefined; return oid ? memberByUserId.get(oid) ?? null : null; })();
-          if (pid) { payerBySplit.set(s.id, pid); payerFoundCount++; }
+          if (pid) payerFoundCount++;
+          shareCount += (sharesBySplitId.get(s.id) ?? []).length;
         }
 
-        for (const m of groupMembers) {
-          if (m.user_id === userId) continue;
-          const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
+        // Process each split ONCE — O(splits × avg_shares) instead of O(members × splits)
+        for (const s of groupSplits) {
+          const cur = splitCurrencyById.get(s.id) ?? "USD";
+          const sWithPayer = s as { payer_member_id?: string | null };
+          const pid = sWithPayer.payer_member_id && groupMemberIds.has(sWithPayer.payer_member_id)
+            ? sWithPayer.payer_member_id
+            : (() => {
+                const tid = s.transaction_id as string | null | undefined;
+                const oid = tid ? txOwnerById.get(tid) : undefined;
+                return oid ? memberByUserId.get(oid) ?? null : null;
+              })();
+          if (!pid) continue;
 
-          for (const s of groupSplits) {
-            const cur = splitCurrencyById.get(s.id) ?? "USD";
-            const txShares = sharesByTx.get(s.id);
-            if (!txShares) continue;
-            const payerId = payerBySplit.get(s.id);
-            if (!payerId) continue;
+          const shares = sharesBySplitId.get(s.id) ?? [];
 
-            if (payerId === myMember!.id) {
-              const theirShare = txShares.get(m.id) ?? 0;
+          if (pid === myMember!.id) {
+            // I paid: each other member owes me their share
+            for (const sh of shares) {
+              if (sh.member_id === myMember!.id) continue;
+              const m = groupMemberById.get(sh.member_id);
+              if (!m || m.user_id === userId) continue;
+              const theirShare = Number(sh.amount);
               if (theirShare > 0) {
+                const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
                 addPersonCurrency(personBalances, key, m.display_name, cur, theirShare);
                 _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: theirShare, source: "expense:iPaid" });
               }
-            } else if (payerId === m.id) {
-              const myShare = txShares.get(myMember!.id) ?? 0;
-              if (myShare > 0) {
-                addPersonCurrency(personBalances, key, m.display_name, cur, -myShare);
-                _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: -myShare, source: "expense:theyPaid" });
+            }
+          } else {
+            // Someone else paid: I owe them my share (if I have a share)
+            const m = groupMemberById.get(pid);
+            if (m && m.user_id !== userId) {
+              const myShareRow = shares.find((sh) => sh.member_id === myMember!.id);
+              if (myShareRow) {
+                const myShare = Number(myShareRow.amount);
+                if (myShare > 0) {
+                  const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
+                  addPersonCurrency(personBalances, key, m.display_name, cur, -myShare);
+                  _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: -myShare, source: "expense:theyPaid" });
+                }
               }
             }
           }
+        }
 
-          for (const st of groupSettlements) {
-            const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
-            const amt = Number(st.amount);
-            if (st.payer_member_id === myMember!.id && st.receiver_member_id === m.id) {
+        // Process settlements ONCE — O(settlements) instead of O(members × settlements)
+        for (const st of groupSettlements) {
+          const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
+          const amt = Number(st.amount);
+          if (st.payer_member_id === myMember!.id) {
+            // I paid them — they owe me more (or I get back more)
+            const m = groupMemberById.get(st.receiver_member_id);
+            if (m && m.user_id !== userId) {
+              const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
               addPersonCurrency(personBalances, key, m.display_name, cur, amt);
               _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: amt, source: "settlement:iPaid" });
-            } else if (st.payer_member_id === m.id && st.receiver_member_id === myMember!.id) {
+            }
+          } else if (st.receiver_member_id === myMember!.id) {
+            // They paid me — I owe them less
+            const m = groupMemberById.get(st.payer_member_id);
+            if (m && m.user_id !== userId) {
+              const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
               addPersonCurrency(personBalances, key, m.display_name, cur, -amt);
               _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: -amt, source: "settlement:theyPaid" });
             }
@@ -563,10 +587,10 @@ async function handleSummary(req: NextRequest, userId: string) {
       const localSettlementDeltas = new Map<string, Map<string, number>>();
       for (const m of members ?? []) {
         if (m.user_id === userId || !m.email) continue;
-        const myMember = memberByGroup.get(m.group_id)?.find((mm) => mm.user_id === userId);
+        const myMember = myMemberByGroupId.get(m.group_id) ?? null;
         if (!myMember) continue;
-        const gSettlements = (settlements ?? []).filter(
-          (s) => s.group_id === m.group_id && (s as { method?: string }).method !== "splitwise"
+        const gSettlements = (settlementsByGroup.get(m.group_id) ?? []).filter(
+          (s) => (s as { method?: string }).method !== "splitwise"
         );
         for (const st of gSettlements) {
           const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
@@ -618,14 +642,23 @@ async function handleSummary(req: NextRequest, userId: string) {
 
       // For members ONLY in Splitwise groups who are NOT in the cache,
       // their Splitwise balance is $0 — zero out the bad recalculated value.
+
+      // Pre-index: email → group IDs (for non-current-user members)
+      const emailToGroupIds = new Map<string, string[]>();
+      for (const mm of members ?? []) {
+        if (mm.user_id === userId || !mm.email) continue;
+        const email = mm.email.toLowerCase().trim();
+        const list = emailToGroupIds.get(email) ?? [];
+        if (!list.includes(mm.group_id)) list.push(mm.group_id);
+        emailToGroupIds.set(email, list);
+      }
+
       for (const m of members ?? []) {
         if (m.user_id === userId || !m.email) continue;
         const email = m.email.toLowerCase().trim();
         if (cachedEmailSet.has(email)) continue; // already handled above
         // Check if this member ONLY appears in Splitwise groups
-        const memberGroups = (members ?? [])
-          .filter((mm) => mm.email === m.email && mm.user_id !== userId)
-          .map((mm) => mm.group_id);
+        const memberGroups = emailToGroupIds.get(email) ?? [];
         const allSw = memberGroups.every((gid) => swGroupIds.has(gid));
         if (allSw) {
           const key = m.user_id ?? m.email ?? `${m.group_id}-${m.id}`;
