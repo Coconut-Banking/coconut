@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
 
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
+
 /**
  * GET /api/stripe/connect/onboarding-return
  * Stripe redirects here after the user completes (or exits) the hosted onboarding.
@@ -10,9 +14,8 @@ import { getSupabase } from "@/lib/supabase";
 export async function GET(req: NextRequest) {
   const accountId = req.nextUrl.searchParams.get("account_id");
 
-  if (accountId && process.env.STRIPE_SECRET_KEY) {
+  if (accountId && stripe) {
     try {
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
       const account = await stripe.accounts.retrieve(accountId);
       const db = getSupabase();
 
