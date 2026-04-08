@@ -183,8 +183,10 @@ export async function getGmailStatus(clerkUserId: string) {
 
 export async function removeGmailConnection(clerkUserId: string) {
   const db = getSupabase();
-  // Clear email_receipts.transaction_id FK before deleting (prevents FK violation)
-  await db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", clerkUserId);
-  await db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId);
+  // Clear FK and delete connection in parallel (FK clear must complete before email_receipts delete)
+  await Promise.all([
+    db.from("email_receipts").update({ transaction_id: null }).eq("clerk_user_id", clerkUserId),
+    db.from("gmail_connections").delete().eq("clerk_user_id", clerkUserId),
+  ]);
   await db.from("email_receipts").delete().eq("clerk_user_id", clerkUserId);
 }

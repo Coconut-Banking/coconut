@@ -415,15 +415,20 @@ export async function detectSubscriptionsForUser(clerkUserId: string): Promise<D
 // ── Save to database ──────────────────────────────────────────────────────────
 
 export async function saveDetectedSubscriptions(clerkUserId: string, detected: DetectedSubscription[]): Promise<void> {
+  if (detected.length === 0) return;
   const db = getSupabase();
 
+  // Pre-fetch all existing subscriptions in one query instead of N maybeSingle() calls
+  const normalizedMerchants = detected.map(d => d.normalizedMerchant);
+  const { data: existingRows } = await db
+    .from("subscriptions")
+    .select("id, status, amount, normalized_merchant")
+    .eq("clerk_user_id", clerkUserId)
+    .in("normalized_merchant", normalizedMerchants);
+  const existingMap = new Map((existingRows ?? []).map(r => [r.normalized_merchant as string, r as { id: string; status: string; amount: unknown; normalized_merchant: string }]));
+
   for (const d of detected) {
-    const { data: existing } = await db
-      .from("subscriptions")
-      .select("id, status, amount")
-      .eq("clerk_user_id", clerkUserId)
-      .eq("normalized_merchant", d.normalizedMerchant)
-      .maybeSingle();
+    const existing = existingMap.get(d.normalizedMerchant);
 
     if (existing?.status === "dismissed") continue;
 
@@ -489,15 +494,18 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
     if (error) continue;
 
     if (d.transactionDetails.length > 0) {
-      const { data: sub } = await db
-        .from("subscriptions")
-        .select("id")
-        .eq("clerk_user_id", clerkUserId)
-        .eq("normalized_merchant", d.normalizedMerchant)
-        .maybeSingle();
+      // Use existing row from pre-fetched map, or re-fetch after upsert if it was a new insert
+      const subId = existing?.id ?? (() => {
+        // For new inserts, we need to re-fetch once to get the ID
+        return null;
+      })();
+      const subIdPromise = subId
+        ? Promise.resolve(subId)
+        : db.from("subscriptions").select("id").eq("clerk_user_id", clerkUserId).eq("normalized_merchant", d.normalizedMerchant).maybeSingle().then(r => r.data?.id ?? null);
 
-      if (sub && d.transactionDetails.length > 0) {
-        try {
+      try {
+        const resolvedSubId = await subIdPromise;
+        if (resolvedSubId) {
           const idsToLink = d.transactionDetails.slice(0, 10).map(td => td.id);
           // Verify these IDs still exist in the DB
           const { data: validTxs } = await db
@@ -507,16 +515,16 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
             .in("id", idsToLink);
           const validIds = new Set((validTxs ?? []).map((r: { id: string }) => r.id));
 
-          for (const td of d.transactionDetails.slice(0, 10)) {
-            if (!validIds.has(td.id)) continue;  // skip if transaction no longer exists
-            await db.from("subscription_transactions").upsert(
-              { subscription_id: sub.id, transaction_id: td.id, amount: td.amount, date: td.date },
-              { onConflict: "subscription_id,transaction_id" }
-            );
+          // Batch upsert instead of N individual upserts
+          const rows = d.transactionDetails.slice(0, 10)
+            .filter(td => validIds.has(td.id))
+            .map(td => ({ subscription_id: resolvedSubId, transaction_id: td.id, amount: td.amount, date: td.date }));
+          if (rows.length > 0) {
+            await db.from("subscription_transactions").upsert(rows, { onConflict: "subscription_id,transaction_id" });
           }
-        } catch (linkErr) {
-          console.warn("[subscription-detect] subscription_transactions link failed for", d.normalizedMerchant, ":", linkErr instanceof Error ? linkErr.message : linkErr);
         }
+      } catch (linkErr) {
+        console.warn("[subscription-detect] subscription_transactions link failed for", d.normalizedMerchant, ":", linkErr instanceof Error ? linkErr.message : linkErr);
       }
     }
   }
