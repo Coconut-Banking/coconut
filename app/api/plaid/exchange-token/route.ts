@@ -157,14 +157,10 @@ export async function POST(request: NextRequest) {
 
       // Protect bank transactions that are referenced by split_transactions or subscription_transactions
       // (scoped to current user's transactions only)
-      const { data: inSplits } = await db
-        .from("split_transactions")
-        .select("transaction_id")
-        .in("transaction_id", userTxIds);
-      const { data: inSubscriptions } = await db
-        .from("subscription_transactions")
-        .select("transaction_id")
-        .in("transaction_id", userTxIds);
+      const [{ data: inSplits }, { data: inSubscriptions }] = await Promise.all([
+        db.from("split_transactions").select("transaction_id").in("transaction_id", userTxIds),
+        db.from("subscription_transactions").select("transaction_id").in("transaction_id", userTxIds),
+      ]);
       const protectedIds = new Set([
         ...(inSplits ?? []).map((r) => r.transaction_id as string),
         ...(inSubscriptions ?? []).map((r) => r.transaction_id as string),
