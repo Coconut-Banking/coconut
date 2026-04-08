@@ -1032,21 +1032,19 @@ export async function embedRichTransactionsForUser(clerkUserId: string): Promise
     });
 
     const embeddings = await embedBatch(texts);
-    for (let j = 0; j < batch.length; j++) {
-      const emb = embeddings[j];
-      if (emb) {
+    await Promise.all(
+      batch.map(async (tx, j) => {
+        const emb = embeddings[j];
+        if (!emb) return;
         const { error: updateErr } = await db
           .from("transactions")
-          .update({
-            rich_embedding: JSON.stringify(emb),
-            embed_text: texts[j],
-          })
-          .eq("id", batch[j].id);
+          .update({ rich_embedding: JSON.stringify(emb), embed_text: texts[j] })
+          .eq("id", tx.id);
         if (updateErr) {
-          console.warn("[embed-rich] update failed for tx", batch[j].id, ":", updateErr.message);
+          console.warn("[embed-rich] update failed for tx", tx.id, ":", updateErr.message);
         }
-      }
-    }
+      })
+    );
   }
   console.log(`[embed-rich] finished embedding ${rows.length} transactions for ${clerkUserId}`);
 }
@@ -1070,18 +1068,19 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
     const batch = rows.slice(i, i + EMBED_BATCH) as Array<EmbedRow & { id: string }>;
     const texts = batch.map((t) => buildEmbedText(t));
     const embeddings = await embedBatch(texts);
-    for (let j = 0; j < batch.length; j++) {
-      const emb = embeddings[j];
-      if (emb) {
+    await Promise.all(
+      batch.map(async (tx, j) => {
+        const emb = embeddings[j];
+        if (!emb) return;
         const { error: updateErr } = await db
           .from("transactions")
           .update({ embedding: JSON.stringify(emb) })
-          .eq("id", batch[j].id);
+          .eq("id", tx.id);
         if (updateErr) {
-          console.warn("[embed] update failed for tx", batch[j].id, ":", updateErr.message);
+          console.warn("[embed] update failed for tx", tx.id, ":", updateErr.message);
         }
-      }
-    }
+      })
+    );
   }
   console.log(`[embed] finished embedding ${rows.length} transactions for ${clerkUserId}`);
 }

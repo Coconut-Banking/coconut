@@ -507,10 +507,15 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
             .in("id", idsToLink);
           const validIds = new Set((validTxs ?? []).map((r: { id: string }) => r.id));
 
-          for (const td of d.transactionDetails.slice(0, 10)) {
-            if (!validIds.has(td.id)) continue;  // skip if transaction no longer exists
+          const validTdsToLink = d.transactionDetails.slice(0, 10).filter((td) => validIds.has(td.id));
+          if (validTdsToLink.length > 0) {
             await db.from("subscription_transactions").upsert(
-              { subscription_id: sub.id, transaction_id: td.id, amount: td.amount, date: td.date },
+              validTdsToLink.map((td) => ({
+                subscription_id: sub.id,
+                transaction_id: td.id,
+                amount: td.amount,
+                date: td.date,
+              })),
               { onConflict: "subscription_id,transaction_id" }
             );
           }
