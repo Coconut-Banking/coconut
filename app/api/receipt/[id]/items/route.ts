@@ -47,10 +47,11 @@ export async function PUT(
   if (Array.isArray(other_fees)) {
     updatePayload.other_fees = other_fees;
   }
-  await db.from("receipt_scans").update(updatePayload).eq("id", id).eq("clerk_user_id", userId);
-
-  // Replace all items
-  await db.from("receipt_items").delete().eq("receipt_id", id);
+  // Update receipt totals and delete existing items in parallel
+  await Promise.all([
+    db.from("receipt_scans").update(updatePayload).eq("id", id).eq("clerk_user_id", userId),
+    db.from("receipt_items").delete().eq("receipt_id", id),
+  ]);
 
   if (Array.isArray(items) && items.length > 0) {
     const itemRows = items.map(
