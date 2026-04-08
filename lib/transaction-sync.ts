@@ -906,14 +906,14 @@ export async function enrichCategoriesForUser(
     const batch = txs.slice(i, i + CATEGORIZE_BATCH);
     const categories = await categorizeBatch(batch);
 
-    for (const [id, category] of categories) {
-      const { error: updateErr } = await db
-        .from("transactions")
-        .update({ primary_category: category })
-        .eq("id", id)
-        .eq("clerk_user_id", clerkUserId);
+    const results = await Promise.all(
+      Array.from(categories).map(([id, category]) =>
+        db.from("transactions").update({ primary_category: category }).eq("id", id).eq("clerk_user_id", clerkUserId)
+      )
+    );
+    for (const { error: updateErr } of results) {
       if (updateErr) {
-        console.warn("[categorize] update failed for tx", id, ":", updateErr.message);
+        console.warn("[categorize] update failed:", updateErr.message);
       } else {
         updated++;
       }
@@ -1032,21 +1032,16 @@ export async function embedRichTransactionsForUser(clerkUserId: string): Promise
     });
 
     const embeddings = await embedBatch(texts);
-    for (let j = 0; j < batch.length; j++) {
-      const emb = embeddings[j];
-      if (emb) {
-        const { error: updateErr } = await db
-          .from("transactions")
-          .update({
-            rich_embedding: JSON.stringify(emb),
-            embed_text: texts[j],
-          })
-          .eq("id", batch[j].id);
-        if (updateErr) {
-          console.warn("[embed-rich] update failed for tx", batch[j].id, ":", updateErr.message);
-        }
-      }
-    }
+    await Promise.all(
+      batch.map((tx, j) => {
+        const emb = embeddings[j];
+        if (!emb) return Promise.resolve();
+        return db.from("transactions").update({ rich_embedding: JSON.stringify(emb), embed_text: texts[j] }).eq("id", tx.id)
+          .then(({ error: updateErr }) => {
+            if (updateErr) console.warn("[embed-rich] update failed for tx", tx.id, ":", updateErr.message);
+          });
+      })
+    );
   }
   console.log(`[embed-rich] finished embedding ${rows.length} transactions for ${clerkUserId}`);
 }
@@ -1070,18 +1065,16 @@ export async function embedTransactionsForUser(clerkUserId: string): Promise<voi
     const batch = rows.slice(i, i + EMBED_BATCH) as Array<EmbedRow & { id: string }>;
     const texts = batch.map((t) => buildEmbedText(t));
     const embeddings = await embedBatch(texts);
-    for (let j = 0; j < batch.length; j++) {
-      const emb = embeddings[j];
-      if (emb) {
-        const { error: updateErr } = await db
-          .from("transactions")
-          .update({ embedding: JSON.stringify(emb) })
-          .eq("id", batch[j].id);
-        if (updateErr) {
-          console.warn("[embed] update failed for tx", batch[j].id, ":", updateErr.message);
-        }
-      }
-    }
+    await Promise.all(
+      batch.map((tx, j) => {
+        const emb = embeddings[j];
+        if (!emb) return Promise.resolve();
+        return db.from("transactions").update({ embedding: JSON.stringify(emb) }).eq("id", tx.id)
+          .then(({ error: updateErr }) => {
+            if (updateErr) console.warn("[embed] update failed for tx", tx.id, ":", updateErr.message);
+          });
+      })
+    );
   }
   console.log(`[embed] finished embedding ${rows.length} transactions for ${clerkUserId}`);
 }
