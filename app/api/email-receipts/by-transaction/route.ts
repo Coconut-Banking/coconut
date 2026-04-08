@@ -24,5 +24,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Failed to fetch receipt" }, { status: 500 });
   }
 
-  return NextResponse.json({ receipt: data });
+  return NextResponse.json({ receipt: data }, {
+    headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
+  });
 }

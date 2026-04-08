@@ -35,11 +35,21 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabase();
 
-  const { data: groupMembers } = await db
-    .from("group_members")
-    .select("id, user_id, display_name, email")
-    .eq("group_id", groupId);
+  // Fetch group members and transaction in parallel (independent reads)
+  const [membersResult, txResult] = await Promise.all([
+    db
+      .from("group_members")
+      .select("id, user_id, display_name, email")
+      .eq("group_id", groupId),
+    db
+      .from("transactions")
+      .select("id, amount, clerk_user_id, iso_currency_code, merchant_name, raw_name")
+      .eq("id", transactionId)
+      .eq("clerk_user_id", userId)
+      .single(),
+  ]);
 
+  const groupMembers = membersResult.data;
   const memberIds = new Set((groupMembers ?? []).map((m) => m.id));
   const invalidMembers = shares.filter((s) => !memberIds.has(s.memberId));
   if (invalidMembers.length > 0) {
@@ -49,13 +59,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data: tx, error: txError } = await db
-    .from("transactions")
-    .select("id, amount, clerk_user_id, iso_currency_code, merchant_name, raw_name")
-    .eq("id", transactionId)
-    .eq("clerk_user_id", userId)
-    .single();
-
+  const { data: tx, error: txError } = txResult;
   if (txError || !tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
 
   const { data: existing } = await db

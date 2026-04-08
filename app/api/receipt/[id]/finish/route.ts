@@ -32,52 +32,44 @@ export async function POST(
 
   const db = getSupabase();
 
-  // Get receipt details with items and assignments
-  const { data: receipt, error: receiptError } = await db
-    .from("receipt_scans")
-    .select(`
-      *,
-      receipt_items(
-        id,
-        name,
-        quantity,
-        unit_price,
-        total_price,
-        receipt_assignments(
-          assignee_name,
-          member_id
+  // Fetch receipt, access check, group, and members in parallel
+  const [receiptResult, allowedResult, groupResult, membersResult] = await Promise.all([
+    db
+      .from("receipt_scans")
+      .select(`
+        *,
+        receipt_items(
+          id,
+          name,
+          quantity,
+          unit_price,
+          total_price,
+          receipt_assignments(
+            assignee_name,
+            member_id
+          )
         )
-      )
-    `)
-    .eq("id", id)
-    .eq("clerk_user_id", userId)
-    .single();
+      `)
+      .eq("id", id)
+      .eq("clerk_user_id", userId)
+      .single(),
+    canAccessGroup(userId, groupId),
+    db.from("groups").select("id, name").eq("id", groupId).single(),
+    db.from("group_members").select("id, display_name, user_id, email").eq("group_id", groupId),
+  ]);
 
+  const { data: receipt, error: receiptError } = receiptResult;
   if (receiptError || !receipt) {
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
-
-  const allowed = await canAccessGroup(userId, groupId);
-  if (!allowed) {
+  if (!allowedResult) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  const { data: group, error: groupError } = await db
-    .from("groups")
-    .select("id, name")
-    .eq("id", groupId)
-    .single();
-
+  const { data: group, error: groupError } = groupResult;
   if (groupError || !group) {
     return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
-
-  // Get group members (include email for payment requests)
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, display_name, user_id, email")
-    .eq("group_id", groupId);
-
+  const members = membersResult.data;
   if (!members || members.length === 0) {
     return NextResponse.json({ error: "No members in group" }, { status: 400 });
   }
@@ -205,31 +197,34 @@ export async function POST(
   // Fetch updated balances for the group
   const { computeBalances, getSuggestedSettlements } = await import("@/lib/split-balances");
 
-  // Get all splits for this group
-  const { data: allSplits } = await db
-    .from("split_transactions")
-    .select(`
-      id,
-      transaction_id,
-      transactions(amount)
-    `)
-    .eq("group_id", groupId);
+  // Fetch splits and settlements in parallel (both depend only on groupId)
+  const [splitsResult, settlementsResult] = await Promise.all([
+    db
+      .from("split_transactions")
+      .select(`
+        id,
+        transaction_id,
+        transactions(amount)
+      `)
+      .eq("group_id", groupId),
+    db
+      .from("settlements")
+      .select("payer_member_id, receiver_member_id, amount")
+      .eq("group_id", groupId)
+      .eq("status", "completed"),
+  ]);
 
-  // Get all shares
-  const allSplitIds = (allSplits ?? []).map(s => s.id);
+  const allSplits = splitsResult.data ?? [];
+  const settlements = settlementsResult.data ?? [];
+
+  // Get all shares (depends on split IDs)
+  const allSplitIds = allSplits.map(s => s.id);
   const { data: allShares } = allSplitIds.length > 0
     ? await db
         .from("split_shares")
         .select("split_transaction_id, member_id, amount")
         .in("split_transaction_id", allSplitIds)
     : { data: [] as { split_transaction_id: string; member_id: string; amount: number }[] };
-
-  // Get settlements
-  const { data: settlements } = await db
-    .from("settlements")
-    .select("payer_member_id, receiver_member_id, amount")
-    .eq("group_id", groupId)
-    .eq("status", "completed");
 
   // Build paid rows (who paid for transactions)
   const paidRows: { member_id: string; amount: number }[] = [];
