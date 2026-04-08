@@ -37,7 +37,10 @@ function buildIssueBody(body: BugReportBody, userId: string | null): string {
 }
 
 export async function POST(req: NextRequest) {
-  const clerkAuth = await loadClerkAuth();
+  const [clerkAuth, rawBody] = await Promise.all([
+    loadClerkAuth(),
+    req.json().catch(() => null),
+  ]);
   if (!clerkAuth.ok) {
     return NextResponse.json({ error: "Service temporarily unavailable" }, { status: 503 });
   }
@@ -50,12 +53,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Bug reporting is not configured" }, { status: 503 });
   }
 
-  let body: BugReportBody;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  if (!rawBody) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  const body = rawBody as BugReportBody;
 
   const title = body.title?.trim();
   const description = body.description?.trim();
