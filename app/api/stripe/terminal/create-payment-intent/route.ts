@@ -92,30 +92,33 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Use the expense currency when provided; fall back to the Stripe account's
-  // country currency only as a last resort. The old behaviour always derived
-  // currency from the Stripe account country which mis-labelled USD amounts as
-  // CAD (or vice-versa), making Stripe reject small amounts below the converted
-  // minimum.
+  // Stripe Terminal (card_present) requires the PaymentIntent currency to match
+  // the Stripe account's country — e.g. a CA account MUST use "cad", even if
+  // the expense itself is denominated in USD. We always derive the Terminal
+  // currency from the account country and store the original expense currency
+  // in metadata so settlement logic can reconcile later.
   const clientCurrency = typeof body.currency === "string" && /^[a-zA-Z]{3}$/.test(body.currency)
     ? body.currency.toLowerCase()
     : null;
 
-  let currency = clientCurrency ?? DEFAULT_CURRENCY;
-  if (!clientCurrency) {
-    try {
-      const acct = await stripe.accounts.retrieve();
-      const country = (acct.country ?? "").toUpperCase();
-      const countryToCurrency: Record<string, string> = {
-        CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
-        SG: "sgd", HK: "hkd", JP: "jpy", EU: "eur",
-        DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
-        IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
-      };
-      currency = countryToCurrency[country] ?? DEFAULT_CURRENCY;
-    } catch {
-      // Fallback to default
-    }
+  const COUNTRY_TO_CURRENCY: Record<string, string> = {
+    CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
+    SG: "sgd", HK: "hkd", JP: "jpy", EU: "eur",
+    DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
+    IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
+  };
+
+  let currency = DEFAULT_CURRENCY;
+  try {
+    const acct = await stripe.accounts.retrieve();
+    const country = (acct.country ?? "").toUpperCase();
+    currency = COUNTRY_TO_CURRENCY[country] ?? DEFAULT_CURRENCY;
+  } catch {
+    // Fallback to default
+  }
+
+  if (clientCurrency && clientCurrency !== currency) {
+    metadata.original_currency = clientCurrency;
   }
 
   try {
