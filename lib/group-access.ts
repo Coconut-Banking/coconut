@@ -84,10 +84,16 @@ export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
 
   // Single RPC call replaces two parallel queries (owned + member).
   // Falls back to the two-query path if the function doesn't exist yet.
-  const { data: rpcRows, error: rpcErr } = await db.rpc(
-    "get_accessible_group_ids",
-    { p_user_id: userId }
-  );
+  let rpcRows: string[] | null = null;
+  let rpcErr: { message: string } | null = null;
+  try {
+    const result = await (db as { rpc: Function }).rpc("get_accessible_group_ids", { p_user_id: userId });
+    rpcRows = result.data;
+    rpcErr = result.error;
+  } catch (e) {
+    console.warn("[group-access] RPC call failed, using fallback:", e instanceof Error ? e.message : e);
+    rpcErr = { message: e instanceof Error ? e.message : String(e) };
+  }
 
   if (!rpcErr && Array.isArray(rpcRows)) {
     console.log("[group-access] userId:", userId, "rpc ids:", rpcRows.length);
