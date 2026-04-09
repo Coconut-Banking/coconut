@@ -1,10 +1,7 @@
 /**
- * BUG-CRITICAL-1: Silent share insert failure on PATCH expense
- *
- * PATCH /api/split-transactions/:id returned ok:true even when the
- * split_shares insert failed (e.g. foreign-key or constraint violation).
- * The fix destructures `{ error }` from the insert and returns 500 on failure,
- * matching the pattern already used in the POST route.
+ * PATCH /api/split-transactions/:id uses update_split_transaction RPC.
+ * RPC failures (Postgres errors or logical errors in the returned jsonb) must
+ * not return ok:true — the client should see an error status and message.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -12,14 +9,13 @@ import { NextRequest } from "next/server";
 const TEST_USER_ID = "user_patch_shares_test";
 const SPLIT_ID = "split_abc123";
 const GROUP_ID = "group_xyz";
-const MEMBER_IDS = ["member_1", "member_2"];
 
 // ─── Auth mock ────────────────────────────────────────────────────────────────
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn().mockResolvedValue({ userId: TEST_USER_ID }),
 }));
 
-// ─── group-access mock ────────────────────────────────────────────────────────
+// ─── group-access mock (DELETE path still uses canAccessGroup) ────────────────
 vi.mock("@/lib/group-access", () => ({
   canAccessGroup: vi.fn().mockResolvedValue(true),
 }));
@@ -33,19 +29,19 @@ vi.mock("@/lib/cached-queries", () => ({
   },
 }));
 
-// ─── expense-shares mock ──────────────────────────────────────────────────────
-vi.mock("@/lib/expense-shares", () => ({
-  toCents: (n: number) => Math.round(n * 100),
-}));
-
-// ─── Supabase mock (controlled per-test via sharesInsertError) ────────────────
-//
-// We control whether the split_shares insert returns an error.
-// `sharesInsertError` is set before each test to simulate success or failure.
-let sharesInsertError: { message: string } | null = null;
+// ─── Supabase mock ────────────────────────────────────────────────────────────
+let rpcError: { message: string } | null = null;
+let rpcResult: Record<string, unknown> | null = null;
 
 vi.mock("@/lib/supabase", () => ({
   getSupabase: () => ({
+    rpc: async (_name: string, _params: unknown) => {
+      if (rpcError) return { data: null, error: rpcError };
+      return {
+        data: rpcResult ?? { ok: true, id: SPLIT_ID, groupId: GROUP_ID },
+        error: null,
+      };
+    },
     from: (table: string) => {
       if (table === "split_transactions") {
         return {
@@ -60,60 +56,23 @@ vi.mock("@/lib/supabase", () => ({
                 },
                 error: null,
               }),
-              // Used by getExistingAmount when transaction_id is null
               maybeSingle: async () => ({
-                data: { amount: -50 },
+                data: { payer_member_id: "member_1" },
                 error: null,
               }),
             }),
           }),
-          update: (_patch: unknown) => ({
-            eq: (_col: string, _val: unknown) =>
-              Promise.resolve({ data: null, error: null }),
-          }),
-        };
-      }
-
-      if (table === "group_members") {
-        return {
-          select: (_cols?: string) => ({
-            eq: (_col: string, _val: unknown) =>
-              Promise.resolve({
-                data: MEMBER_IDS.map((id) => ({
-                  id,
-                  user_id: null,
-                  display_name: id,
-                })),
-                error: null,
-              }),
-          }),
-        };
-      }
-
-      if (table === "split_shares") {
-        return {
           delete: () => ({
-            eq: (_col: string, _val: unknown) =>
-              Promise.resolve({ data: null, error: null }),
+            eq: () => Promise.resolve({ data: null, error: null }),
           }),
-          insert: (_rows: unknown) =>
-            Promise.resolve({ data: null, error: sharesInsertError }),
         };
       }
-
-      // Fallback
       return {
         select: () => ({
           eq: () => ({
-            single: async () => ({
-              data: null,
-              error: { message: "not found" },
-            }),
+            single: async () => ({ data: null, error: { message: "not found" } }),
             maybeSingle: async () => ({ data: null, error: null }),
           }),
-        }),
-        update: () => ({
-          eq: () => Promise.resolve({ data: null, error: null }),
         }),
         delete: () => ({
           eq: () => Promise.resolve({ data: null, error: null }),
@@ -126,28 +85,23 @@ vi.mock("@/lib/supabase", () => ({
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 function makePatchRequest(splitId: string, body: unknown) {
-  return new NextRequest(
-    `http://localhost/api/split-transactions/${splitId}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
-  );
+  return new NextRequest(`http://localhost/api/split-transactions/${splitId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
-describe("PATCH /api/split-transactions/:id — share insert error handling", () => {
+describe("PATCH /api/split-transactions/:id — RPC error handling", () => {
   beforeEach(() => {
     vi.resetModules();
-    sharesInsertError = null;
+    rpcError = null;
+    rpcResult = null;
   });
 
-  it("returns ok:true when shares insert succeeds", async () => {
-    sharesInsertError = null;
-
+  it("returns ok:true when RPC succeeds", async () => {
     const { PATCH } = await import("../[id]/route");
-    // amount + shares must sum correctly: 30 + 20 = 50
     const req = makePatchRequest(SPLIT_ID, {
       amount: 50,
       shares: [
@@ -165,8 +119,8 @@ describe("PATCH /api/split-transactions/:id — share insert error handling", ()
     expect(json.id).toBe(SPLIT_ID);
   });
 
-  it("returns 500 (not ok:true) when shares insert fails — demonstrates BUG-CRITICAL-1", async () => {
-    sharesInsertError = { message: "foreign key constraint violation" };
+  it("returns 500 when PostgREST reports an RPC failure (e.g. constraint violation)", async () => {
+    rpcError = { message: "foreign key constraint violation" };
 
     const { PATCH } = await import("../[id]/route");
     const req = makePatchRequest(SPLIT_ID, {
@@ -181,12 +135,27 @@ describe("PATCH /api/split-transactions/:id — share insert error handling", ()
       params: Promise.resolve({ id: SPLIT_ID }),
     });
 
-    // Before the fix this returned 200 with ok:true — a silent failure.
-    // After the fix it must return 500 with an error field.
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json.ok).toBeUndefined();
     expect(json.error).toBeDefined();
     expect(typeof json.error).toBe("string");
+  });
+
+  it("returns 400 when RPC returns a validation error in jsonb", async () => {
+    rpcResult = { error: "Invalid member IDs in shares" };
+
+    const { PATCH } = await import("../[id]/route");
+    const req = makePatchRequest(SPLIT_ID, {
+      shares: [{ memberId: "bad_member", amount: 10 }],
+    });
+
+    const res = await PATCH(req, {
+      params: Promise.resolve({ id: SPLIT_ID }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("Invalid member IDs in shares");
   });
 });

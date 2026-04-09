@@ -5,7 +5,6 @@ import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
-import { toCents } from "@/lib/expense-shares";
 import { shadowDeleteExpense, shadowUpdateExpense } from "@/lib/splitwise-shadow";
 
 export async function DELETE(
@@ -87,104 +86,93 @@ export async function PATCH(
 
   const db = getSupabase();
 
-  const { data: split, error: splitErr } = await db
-    .from("split_transactions")
-    .select("id, group_id, transaction_id, payer_member_id")
-    .eq("id", id)
-    .single();
+  const description =
+    typeof body.description === "string" ? body.description.trim().slice(0, 500) || null : null;
+  const newAmount =
+    typeof body.amount === "number" && Number.isFinite(body.amount) && body.amount > 0
+      ? body.amount
+      : null;
+  const payerMemberId = typeof body.payerMemberId === "string" ? body.payerMemberId : null;
 
-  if (splitErr || !split) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const allowed = await canAccessGroup(userId, split.group_id);
-  if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, user_id, display_name")
-    .eq("group_id", split.group_id);
-
-  const memberIds = new Set((members ?? []).map((m) => m.id));
-
-  const description = typeof body.description === "string" ? body.description.trim().slice(0, 500) : null;
-  const newAmount = typeof body.amount === "number" && Number.isFinite(body.amount) && body.amount > 0 ? body.amount : null;
-  const payerMemberId = typeof body.payerMemberId === "string" && memberIds.has(body.payerMemberId)
-    ? body.payerMemberId
-    : null;
-  const customShares = Array.isArray(body.shares) ? body.shares as Array<{ memberId: string; amount: number }> : null;
-
-  if (customShares) {
-    const invalid = customShares.filter((s) => !memberIds.has(s.memberId));
-    if (invalid.length > 0) {
-      return NextResponse.json({ error: "Invalid member IDs in shares" }, { status: 400 });
-    }
-    const effectiveAmount = newAmount ?? (await getExistingAmount(db, split.transaction_id, split.id));
-    if (effectiveAmount) {
-      const sumCents = customShares.reduce((s, sh) => s + toCents(Number(sh.amount)), 0);
-      if (Math.abs(sumCents - toCents(effectiveAmount)) > 1) {
-        return NextResponse.json({ error: `Shares must sum to $${effectiveAmount.toFixed(2)}` }, { status: 400 });
-      }
-    }
-  }
-
-  if (description && split.transaction_id) {
-    await db
-      .from("transactions")
-      .update({ merchant_name: description, raw_name: description })
-      .eq("id", split.transaction_id);
-  }
-
-  if (newAmount && split.transaction_id) {
-    await db
-      .from("transactions")
-      .update({ amount: -newAmount })
-      .eq("id", split.transaction_id);
-  }
-
-  const splitUpdates: Record<string, string | number | null> = {};
-
-  if (typeof body.description === "string" && !split.transaction_id) {
-    splitUpdates.description = description;
-  }
-  if (newAmount && !split.transaction_id) {
-    splitUpdates.amount = newAmount;
-  }
-  if (payerMemberId) {
-    splitUpdates.payer_member_id = payerMemberId;
-  }
+  let pNotes: string | null = null;
+  let pClearNotes = false;
   if ("notes" in body) {
-    if (body.notes === null) splitUpdates.notes = null;
-    else if (typeof body.notes === "string") splitUpdates.notes = body.notes.trim().slice(0, 2000);
+    if (body.notes === null) pClearNotes = true;
+    else if (typeof body.notes === "string") pNotes = body.notes.trim().slice(0, 2000);
     else return NextResponse.json({ error: "Invalid notes" }, { status: 400 });
   }
+
+  let pCategory: string | null = null;
+  let pClearCategory = false;
   if ("category" in body) {
-    if (body.category === null) splitUpdates.category = null;
-    else if (typeof body.category === "string") splitUpdates.category = body.category.trim().slice(0, 200);
+    if (body.category === null) pClearCategory = true;
+    else if (typeof body.category === "string") pCategory = body.category.trim().slice(0, 200);
     else return NextResponse.json({ error: "Invalid category" }, { status: 400 });
   }
+
+  let pReceiptUrl: string | null = null;
+  let pClearReceiptUrl = false;
   if ("receipt_url" in body) {
-    if (body.receipt_url === null) splitUpdates.receipt_url = null;
-    else if (typeof body.receipt_url === "string") splitUpdates.receipt_url = body.receipt_url.trim().slice(0, 2048);
+    if (body.receipt_url === null) pClearReceiptUrl = true;
+    else if (typeof body.receipt_url === "string") pReceiptUrl = body.receipt_url.trim().slice(0, 2048);
     else return NextResponse.json({ error: "Invalid receipt_url" }, { status: 400 });
   }
 
-  if (Object.keys(splitUpdates).length > 0) {
-    await db.from("split_transactions").update(splitUpdates).eq("id", id);
-  }
-
-  if (customShares && customShares.length > 0) {
-    await db.from("split_shares").delete().eq("split_transaction_id", id);
-    const { error: sharesErr } = await db.from("split_shares").insert(
-      customShares
+  const sharesForRpc = Array.isArray(body.shares)
+    ? (body.shares as Array<{ memberId: string; amount: number }>)
         .filter((s) => Number(s.amount) > 0)
         .map((s) => ({
-          split_transaction_id: id,
-          member_id: s.memberId,
+          memberId: s.memberId,
           amount: Math.round(Number(s.amount) * 100) / 100,
         }))
+    : null;
+
+  const { data: rpcData, error: rpcErr } = await db.rpc("update_split_transaction", {
+    p_clerk_user_id: userId,
+    p_split_id: id,
+    p_description: description,
+    p_amount: newAmount,
+    p_payer_member_id: payerMemberId,
+    p_notes: pNotes,
+    p_category: pCategory,
+    p_receipt_url: pReceiptUrl,
+    p_clear_notes: pClearNotes,
+    p_clear_category: pClearCategory,
+    p_clear_receipt_url: pClearReceiptUrl,
+    p_shares: sharesForRpc,
+  });
+
+  if (rpcErr) {
+    console.error("[split-transactions] update_split_transaction RPC error:", rpcErr.message);
+    return NextResponse.json(
+      { error: rpcErr.message ?? "Failed to update expense" },
+      { status: 500 }
     );
-    if (sharesErr) {
-      return NextResponse.json({ error: sharesErr.message ?? "Failed to update shares" }, { status: 500 });
-    }
+  }
+
+  const result = rpcData as { ok?: boolean; error?: string; id?: string; groupId?: string } | null;
+  if (result?.error) {
+    const msg = result.error;
+    const status =
+      msg === "Not found"
+        ? 404
+        : msg === "Invalid member IDs in shares" || msg === "Payer not in group"
+          ? 400
+          : 500;
+    return NextResponse.json({ error: msg }, { status });
+  }
+  if (!result?.ok || !result.groupId) {
+    return NextResponse.json({ error: "Failed to update expense" }, { status: 500 });
+  }
+
+  let shadowPayerMemberId: string | undefined = payerMemberId ?? undefined;
+  if (sharesForRpc && sharesForRpc.length > 0 && !shadowPayerMemberId) {
+    const { data: payerRow } = await db
+      .from("split_transactions")
+      .select("payer_member_id")
+      .eq("id", id)
+      .maybeSingle();
+    shadowPayerMemberId = (payerRow?.payer_member_id as string | undefined) ?? undefined;
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
@@ -192,25 +180,12 @@ export async function PATCH(
   void shadowUpdateExpense({
     clerkUserId: userId,
     splitTransactionId: id,
-    groupId: split.group_id,
+    groupId: result.groupId,
     description: description ?? undefined,
     amount: newAmount ?? undefined,
-    payerMemberId: payerMemberId ?? (split.payer_member_id as string | undefined),
-    shares: customShares ?? undefined,
+    payerMemberId: shadowPayerMemberId,
+    shares: sharesForRpc && sharesForRpc.length > 0 ? sharesForRpc : undefined,
   }).catch((err) => console.error("[shadow] split-tx update failed:", err));
 
   return NextResponse.json({ ok: true, id });
-}
-
-async function getExistingAmount(
-  db: ReturnType<typeof getSupabase>,
-  txId: string | null,
-  splitId: string
-): Promise<number | null> {
-  if (txId) {
-    const { data } = await db.from("transactions").select("amount").eq("id", txId).maybeSingle();
-    return data ? Math.abs(Number(data.amount)) : null;
-  }
-  const { data } = await db.from("split_transactions").select("amount").eq("id", splitId).maybeSingle();
-  return data?.amount != null ? Math.abs(Number(data.amount)) : null;
 }

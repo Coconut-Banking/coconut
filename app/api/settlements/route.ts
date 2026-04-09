@@ -4,7 +4,6 @@ import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { getMaxSettlementAllowed } from "@/lib/group-balances";
 import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
-import { canAccessGroup } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { formatCurrency } from "@/lib/currency";
@@ -43,24 +42,6 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabase();
 
-  const [canAccess, { data: partyRows, error: partyErr }] = await Promise.all([
-    canAccessGroup(userId, groupId),
-    db.from("group_members").select("id, display_name, email").eq("group_id", groupId).eq("user_id", userId).in("id", [payerMemberId, receiverMemberId]),
-  ]);
-
-  if (!canAccess) return NextResponse.json({ error: "Group not found" }, { status: 404 });
-
-  if (partyErr) {
-    console.error("[settlements] party check:", partyErr.message);
-    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
-  }
-  if (!partyRows?.length) {
-    return NextResponse.json(
-      { error: "Only the payer or receiver can record this settlement" },
-      { status: 403 }
-    );
-  }
-
   const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
     groupId,
     payerMemberId,
@@ -77,47 +58,62 @@ export async function POST(req: NextRequest) {
 
   const amountToInsert = Math.min(Math.round(amount * 100) / 100, maxAmount);
 
-  const { data: settlement, error } = await db
-    .from("settlements")
-    .insert({
-      group_id: groupId,
-      payer_member_id: payerMemberId,
-      receiver_member_id: receiverMemberId,
-      amount: amountToInsert,
-      method: ["manual", "in_person", "online"].includes(method) ? method : "manual",
-      status: "completed",
-      iso_currency_code: currency,
-    })
-    .select()
-    .single();
+  const { data: result, error: rpcErr } = await db.rpc("insert_settlement_checked", {
+    p_clerk_user_id: userId,
+    p_group_id: groupId,
+    p_payer_member_id: payerMemberId,
+    p_receiver_member_id: receiverMemberId,
+    p_amount: amountToInsert,
+    p_method: method,
+    p_currency: currency,
+  });
 
-  if (error) {
-    console.error("[settlements] insert:", error.message);
+  if (rpcErr) {
+    console.error("[settlements] insert_settlement_checked:", rpcErr.message);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
 
-  const postCheck = await getMaxSettlementAllowed(groupId, payerMemberId, receiverMemberId, currency);
-  if (postCheck.maxAmount < 0) {
-    await db.from("settlements").delete().eq("id", settlement.id);
+  if (result == null || typeof result !== "object" || Array.isArray(result)) {
+    console.error("[settlements] insert_settlement_checked: unexpected payload");
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+  }
+
+  const row = result as Record<string, unknown>;
+  if (row.error === "Forbidden") {
     return NextResponse.json(
-      { error: "Settlement race detected \u2014 already settled" },
-      { status: 409 }
+      { error: "Only the payer or receiver can record this settlement" },
+      { status: 403 }
     );
+  }
+
+  const settlementId = row.id;
+  if (typeof settlementId !== "string") {
+    console.error("[settlements] insert_settlement_checked: missing id");
+    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
 
-  const recorderName =
-    partyRows?.[0]?.display_name?.trim() ||
-    partyRows?.[0]?.email?.split("@")[0] ||
-    "Someone";
-  void notifyGroupMembers(
-    groupId,
-    "Settlement recorded",
-    `${recorderName} recorded a settlement of ${formatCurrency(amountToInsert, currency)}`,
-    userId,
-    { type: "settlement", groupId, settlementId: settlement.id }
-  );
+  void db
+    .from("group_members")
+    .select("display_name, email")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle()
+    .then(({ data, error }) => {
+      if (error) return;
+      const name =
+        data?.display_name?.trim() ||
+        data?.email?.split("@")?.[0] ||
+        "Someone";
+      void notifyGroupMembers(
+        groupId,
+        "Settlement recorded",
+        `${name} recorded a settlement of ${formatCurrency(amountToInsert, currency)}`,
+        userId,
+        { type: "settlement", groupId, settlementId }
+      );
+    });
 
-  return NextResponse.json(settlement);
+  return NextResponse.json(result);
 }

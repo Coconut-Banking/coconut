@@ -88,52 +88,44 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data: split, error: splitErr } = await db
-    .from("split_transactions")
-    .insert({
-      group_id: groupId,
-      transaction_id: transactionId,
-      created_by: userId,
-      iso_currency_code: (tx.iso_currency_code ?? "USD"),
-    })
-    .select("id")
-    .single();
-
-  if (splitErr || !split) {
-    return NextResponse.json({ error: splitErr?.message ?? "Failed to create split" }, { status: 500 });
-  }
-  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
-
-  const { data: allSplits } = await db
-    .from("split_transactions")
-    .select("id, created_at")
-    .eq("group_id", groupId)
-    .eq("transaction_id", transactionId)
-    .order("created_at", { ascending: true });
-
-  if (allSplits && allSplits.length > 1 && allSplits[0].id !== split.id) {
-    await db.from("split_transactions").delete().eq("id", split.id);
-    return NextResponse.json(
-      { error: "This transaction is already in this group" },
-      { status: 409 }
-    );
-  }
-
-  const shareRows = shares
+  const rpcShares = shares
     .filter((s) => Number(s.amount) > 0)
     .map((s) => ({
-      split_transaction_id: split.id,
-      member_id: s.memberId,
+      memberId: s.memberId,
       amount: Math.round(Number(s.amount) * 100) / 100,
     }));
 
-  if (shareRows.length > 0) {
-    const { error: sharesErr } = await db.from("split_shares").insert(shareRows);
-    if (sharesErr) {
-      await db.from("split_transactions").delete().eq("id", split.id);
-      return NextResponse.json({ error: sharesErr.message ?? "Failed to create shares" }, { status: 500 });
-    }
+  const { data: rpcResult, error: rpcErr } = await db.rpc("split_bank_transaction", {
+    p_clerk_user_id: userId,
+    p_group_id: groupId,
+    p_transaction_id: transactionId,
+    p_shares: rpcShares,
+  });
+
+  if (rpcErr) {
+    console.error("[split-transactions] RPC error:", rpcErr.message);
+    return NextResponse.json({ error: rpcErr.message ?? "Failed to create split" }, { status: 500 });
   }
+
+  const result = rpcResult as { splitTxId?: string; shares?: number; error?: string };
+  if (result.error) {
+    if (result.error === "Already split") {
+      return NextResponse.json(
+        { error: "This transaction is already in this group" },
+        { status: 400 }
+      );
+    }
+    const status =
+      result.error === "Group not found" || result.error === "Transaction not found" ? 404 : 400;
+    return NextResponse.json({ error: result.error }, { status });
+  }
+
+  const splitTxId = result.splitTxId;
+  if (!splitTxId) {
+    return NextResponse.json({ error: "Failed to create split" }, { status: 500 });
+  }
+
+  revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
 
   const creatorMember = (groupMembers ?? []).find((m) => m.user_id === userId);
   const creatorName =
@@ -148,12 +140,12 @@ export async function POST(req: NextRequest) {
   void shadowCreateExpense({
     clerkUserId: userId,
     groupId,
-    splitTransactionId: split.id,
+    splitTransactionId: splitTxId,
     amount: totalAmount,
     description: merchantLabel,
     currency: splitCurrency,
     payerMemberId: creatorMember?.id ?? "",
-    shares: shares.filter((s) => Number(s.amount) > 0),
+    shares: rpcShares,
   }).catch((err) => console.error("[shadow] split-tx create failed:", err));
 
   void notifyGroupMembers(
@@ -161,8 +153,8 @@ export async function POST(req: NextRequest) {
     "New split",
     `${creatorName} split ${merchantLabel} for ${formatCurrency(totalAmount, splitCurrency)}`,
     userId,
-    { type: "split_transaction", groupId, splitTransactionId: split.id }
+    { type: "split_transaction", groupId, splitTransactionId: splitTxId }
   );
 
-  return NextResponse.json({ id: split.id });
+  return NextResponse.json({ id: splitTxId });
 }

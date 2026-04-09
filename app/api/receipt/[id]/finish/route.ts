@@ -6,7 +6,6 @@ import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 import { paidAmountFromSplitRow } from "@/lib/split-transaction-helpers";
-import { randomUUID } from "crypto";
 
 export async function POST(
   req: NextRequest,
@@ -79,48 +78,6 @@ export async function POST(
     return NextResponse.json({ error: "You are not a member of this group" }, { status: 400 });
   }
 
-  // Create a transaction for the receipt
-  const { data: transaction, error: txError } = await db
-    .from("transactions")
-    .insert({
-      clerk_user_id: userId,
-      plaid_transaction_id: `manual_${randomUUID()}`,
-      merchant_name: receipt.merchant_name || "Receipt Split",
-      raw_name: receipt.merchant_name || "Receipt Split",
-      amount: -(receipt.total || 0),
-      date: new Date().toISOString().split('T')[0],
-      is_pending: false,
-      primary_category: "Food & Drink",
-      detailed_category: null,
-    })
-    .select()
-    .single();
-
-  if (txError || !transaction) {
-    return NextResponse.json({ error: "Failed to create transaction" }, { status: 500 });
-  }
-
-  // Create split transaction
-  const { data: splitTx, error: splitError } = await db
-    .from("split_transactions")
-    .insert({
-      group_id: groupId,
-      transaction_id: transaction.id,
-      created_by: userId,
-      iso_currency_code: "USD",
-      description: receipt.merchant_name || "Receipt Split",
-      amount: receipt.total || 0,
-      payer_member_id: payerMember.id,
-    })
-    .select()
-    .single();
-
-  if (splitError || !splitTx) {
-    // Rollback transaction
-    await db.from("transactions").delete().eq("id", transaction.id);
-    return NextResponse.json({ error: "Failed to create split" }, { status: 500 });
-  }
-
   // Calculate total tax and tip to distribute
   const subtotal = receipt.subtotal || 0;
   const tax = receipt.tax || 0;
@@ -163,25 +120,47 @@ export async function POST(
     }
   }
 
-  // Insert split shares
-  const shares = Array.from(sharesByMember.entries()).map(([memberId, amount]) => ({
-    split_transaction_id: splitTx.id,
-    member_id: memberId,
-    amount: Math.round(amount * 100) / 100, // Round to 2 decimal places
+  const merchantName = receipt.merchant_name || "Receipt Split";
+  const total = receipt.total || 0;
+  const sharesPayload = Array.from(sharesByMember.entries()).map(([memberId, amount]) => ({
+    memberId,
+    amount: Math.round(amount * 100) / 100,
   }));
 
-  if (shares.length > 0) {
-    const { error: sharesError } = await db
-      .from("split_shares")
-      .insert(shares);
+  const { data: rpcResult, error: rpcErr } = await db.rpc("finish_receipt_split", {
+    p_clerk_user_id: userId,
+    p_group_id: groupId,
+    p_payer_member_id: payerMember.id,
+    p_merchant_name: merchantName,
+    p_total: total,
+    p_currency: "USD",
+    p_shares: sharesPayload,
+  });
 
-    if (sharesError) {
-      // Rollback
-      await db.from("split_transactions").delete().eq("id", splitTx.id);
-      await db.from("transactions").delete().eq("id", transaction.id);
-      return NextResponse.json({ error: "Failed to create shares" }, { status: 500 });
-    }
+  if (rpcErr) {
+    console.error("[receipt/finish] RPC error:", rpcErr.message);
+    return NextResponse.json(
+      { error: rpcErr.message ?? "Failed to finish receipt split" },
+      { status: 500 }
+    );
   }
+
+  const result = rpcResult as {
+    txId?: string;
+    splitTxId?: string;
+    shares?: number;
+    error?: string;
+  };
+  if (result.error) {
+    const status = result.error === "Not a member" ? 400 : 500;
+    return NextResponse.json({ error: result.error }, { status });
+  }
+  if (!result.txId || !result.splitTxId) {
+    return NextResponse.json({ error: "Failed to finish receipt split" }, { status: 500 });
+  }
+
+  const transactionId = result.txId;
+  const splitTxId = result.splitTxId;
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");
@@ -269,8 +248,8 @@ export async function POST(
 
   return NextResponse.json({
     ok: true,
-    transactionId: transaction.id,
-    splitId: splitTx.id,
+    transactionId,
+    splitId: splitTxId,
     groupId: groupId,
     groupName,
     members: members.map((m) => ({
