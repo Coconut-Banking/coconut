@@ -84,31 +84,59 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getSupabase();
+  const plaidId = `manual_${randomUUID()}`;
+  const expenseDate = clientDate ?? new Date().toISOString().split("T")[0];
 
-  // Single query: fetch all members and use current user's presence as access check
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, user_id, display_name, email")
-    .eq("group_id", groupId);
+  // Run members fetch + transaction insert in parallel (they're independent)
+  const [{ data: members }, { data: transaction, error: txError }] = await Promise.all([
+    db.from("group_members")
+      .select("id, user_id, display_name, email")
+      .eq("group_id", groupId),
+    db.from("transactions")
+      .insert({
+        clerk_user_id: userId,
+        plaid_transaction_id: plaidId,
+        merchant_name: description,
+        raw_name: description,
+        amount: -amount,
+        date: expenseDate,
+        is_pending: false,
+        primary_category: expenseCategory,
+        detailed_category: null,
+      })
+      .select("id")
+      .single(),
+  ]);
 
   if (!members || members.length === 0) {
+    if (transaction) await db.from("transactions").delete().eq("id", transaction.id);
     return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
 
   const currentUserMember = members.find((m) => m.user_id === userId);
   if (!currentUserMember) {
+    if (transaction) await db.from("transactions").delete().eq("id", transaction.id);
     return NextResponse.json({ error: "Group not found" }, { status: 404 });
+  }
+
+  if (txError || !transaction) {
+    return NextResponse.json(
+      { error: txError?.message ?? "Failed to create transaction" },
+      { status: 500 }
+    );
   }
 
   const memberIds = new Set(members.map((m) => m.id));
 
   if (payerMemberId && !memberIds.has(payerMemberId)) {
+    await db.from("transactions").delete().eq("id", transaction.id);
     return NextResponse.json({ error: "Payer is not a member of this group" }, { status: 400 });
   }
 
   if (Array.isArray(customShares) && customShares.length > 0) {
     const invalidMembers = customShares.filter((s) => !memberIds.has(s.memberId));
     if (invalidMembers.length > 0) {
+      await db.from("transactions").delete().eq("id", transaction.id);
       return NextResponse.json(
         { error: "One or more member IDs do not belong to this group" },
         { status: 400 }
@@ -121,6 +149,7 @@ export async function POST(req: NextRequest) {
     const sumCents = customShares.reduce((s, sh) => s + toCents(Number(sh.amount)), 0);
     const amountCents = toCents(amount);
     if (Math.abs(sumCents - amountCents) > 1) {
+      await db.from("transactions").delete().eq("id", transaction.id);
       return NextResponse.json({ error: `Shares must sum to $${amount.toFixed(2)}` }, { status: 400 });
     }
     shares = customShares
@@ -138,9 +167,6 @@ export async function POST(req: NextRequest) {
       if (m.email === personKey) return true;
       return false;
     });
-    // When the personKey references a member in a DIFFERENT group (e.g. after
-    // auto-creating a 1:1 group), look up the original member and match by
-    // display_name or email. As a last resort, pick the only other member.
     if (!otherMember && memberIdFromKey && sourceGroupId && sourceGroupId !== groupId) {
       const { data: srcMembers } = await db
         .from("group_members")
@@ -162,6 +188,7 @@ export async function POST(req: NextRequest) {
       if (others.length === 1) otherMember = others[0];
     }
     if (!otherMember) {
+      await db.from("transactions").delete().eq("id", transaction.id);
       return NextResponse.json({ error: "Person not found in group" }, { status: 404 });
     }
     shares = computeTwoWayShares(amount, currentUserMember.id, otherMember.id);
@@ -176,34 +203,9 @@ export async function POST(req: NextRequest) {
     ? members.find((m) => m.id === payerMemberId)?.id ?? currentUserMember.id
     : currentUserMember.id;
 
-  const plaidId = `manual_${randomUUID()}`;
-
-  const { data: transaction, error: txError } = await db
-    .from("transactions")
-    .insert({
-      clerk_user_id: userId,
-      plaid_transaction_id: plaidId,
-      merchant_name: description,
-      raw_name: description,
-      amount: -amount,
-      date: clientDate ?? new Date().toISOString().split("T")[0],
-      is_pending: false,
-      primary_category: expenseCategory,
-      detailed_category: null,
-    })
-    .select("id")
-    .single();
-
-  if (txError || !transaction) {
-    return NextResponse.json(
-      { error: txError?.message ?? "Failed to create transaction" },
-      { status: 500 }
-    );
-  }
-
+  // Insert split_transaction
   let splitTx: { id: string } | null = null;
   let splitError: { message?: string } | null = null;
-  const expenseDate = clientDate ?? new Date().toISOString().split("T")[0];
   const insertPayload: Record<string, unknown> = {
     group_id: groupId,
     transaction_id: transaction.id,
@@ -249,6 +251,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Insert shares
   const shareRows = shares.map((s) => ({
     split_transaction_id: splitTx.id,
     member_id: s.memberId,
