@@ -8,6 +8,7 @@ import { getUserId } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { formatCurrency } from "@/lib/currency";
 import { notifyGroupMembers } from "@/lib/push-sender";
+import { shadowRecordSettlement } from "@/lib/splitwise-shadow";
 
 
 export async function POST(req: NextRequest) {
@@ -93,6 +94,15 @@ export async function POST(req: NextRequest) {
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+
+  void shadowRecordSettlement({
+    clerkUserId: userId,
+    groupId,
+    payerMemberId,
+    receiverMemberId,
+    amount: amountToInsert,
+    currency,
+  }).catch((err) => console.error("[shadow] settlement failed:", err));
 
   void db
     .from("group_members")
