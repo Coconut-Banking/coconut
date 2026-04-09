@@ -584,13 +584,14 @@ export async function syncTransactionsForUser(
   const requestPlaidRefresh = options?.requestPlaidRefresh === true;
   const forceRefresh = options?.forceRefresh === true;
   const db = getSupabase();
-  const accessTokens = await getAllPlaidTokensForUser(clerkUserId);
-  if (accessTokens.length === 0) return { synced: 0, error: "No Plaid connection found for user" };
-
   const plaid = getPlaidClient();
   if (!plaid) return { synced: 0, error: "Plaid not configured" };
 
-  const items = await getPlaidItemsForUser(clerkUserId);
+  const [accessTokens, items] = await Promise.all([
+    getAllPlaidTokensForUser(clerkUserId),
+    getPlaidItemsForUser(clerkUserId),
+  ]);
+  if (accessTokens.length === 0) return { synced: 0, error: "No Plaid connection found for user" };
   const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
 
   let totalSynced = 0;
@@ -749,15 +750,17 @@ export async function deleteDuplicateTransactionsForUser(
     .eq("clerk_user_id", clerkUserId);
   const userTxIds = (userTxs ?? []).map((r) => r.id as string);
 
-  const { data: protectedSplits } = await db
-    .from("split_transactions")
-    .select("transaction_id")
-    .in("transaction_id", userTxIds);
-  const { data: protectedSubTxs } = await db
-    .from("subscription_transactions")
-    .select("transaction_id")
-    .in("transaction_id", userTxIds)
-    .not("transaction_id", "is", null);
+  const [{ data: protectedSplits }, { data: protectedSubTxs }] = await Promise.all([
+    db
+      .from("split_transactions")
+      .select("transaction_id")
+      .in("transaction_id", userTxIds),
+    db
+      .from("subscription_transactions")
+      .select("transaction_id")
+      .in("transaction_id", userTxIds)
+      .not("transaction_id", "is", null),
+  ]);
   const protectedIds = new Set(
     [
       ...(protectedSplits ?? []).map((r) => r.transaction_id as string),

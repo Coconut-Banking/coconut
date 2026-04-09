@@ -297,16 +297,15 @@ export async function GET(request: NextRequest) {
     const items = await getPlaidItemsForUser(effectiveUserId);
     const tokenToItem = new Map(items.map((i) => [i.access_token, i]));
 
-    const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
-    for (const accessToken of accessTokens) {
-      try {
+    const accountResults = await Promise.allSettled(
+      accessTokens.map(async (accessToken) => {
         const item = tokenToItem.get(accessToken);
         const response = await client.accountsGet({ access_token: accessToken });
         if (!response.data?.accounts || !Array.isArray(response.data.accounts)) {
           console.error("[plaid][accounts] accountsGet returned invalid data");
-          continue;
+          return [];
         }
-        const rows = response.data.accounts.map((acct) => {
+        return response.data.accounts.map((acct) => {
           const bal = acct.balances as { current?: number; available?: number; iso_currency_code?: string } | undefined;
           const row: { clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string } = {
             clerk_user_id: effectiveUserId,
@@ -322,10 +321,14 @@ export async function GET(request: NextRequest) {
           if (item?.plaid_item_id) row.plaid_item_id = item.plaid_item_id;
           return row;
         });
-        allRows.push(...rows);
-      } catch (err) {
-        console.error("[plaid][accounts] accountsGet failed for token, skipping:", err instanceof Error ? err.message : err);
-        continue;
+      })
+    );
+    const allRows: Array<{ clerk_user_id: string; plaid_account_id: string; plaid_item_id?: string; name: string; type: string; subtype: string | null; mask: string | null; balance_current: number | null; balance_available: number | null; iso_currency_code: string }> = [];
+    for (const result of accountResults) {
+      if (result.status === "fulfilled") {
+        allRows.push(...result.value);
+      } else {
+        console.error("[plaid][accounts] accountsGet failed for token, skipping:", result.reason instanceof Error ? result.reason.message : result.reason);
       }
     }
     if (allRows.length > 0) {

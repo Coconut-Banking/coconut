@@ -273,6 +273,9 @@ export async function generateInsights(userId: string): Promise<Insight[]> {
   // then pass the in-memory slice to each detector instead of each querying the DB independently.
   const sixtyDaysAgo = new Date();
   sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+  const priceChangesPromise = detectSubscriptionPriceChanges(userId, db);
+  const newSubsPromise = detectNewSubscriptions(userId, db);
+
   const { data: txData } = await db
     .from("transactions")
     .select("id, merchant_name, raw_name, normalized_merchant, amount, date, primary_category")
@@ -287,8 +290,8 @@ export async function generateInsights(userId: string): Promise<Insight[]> {
     Promise.resolve(detectAnomalies(txRows)),
     Promise.resolve(detectDuplicates(txRows)),
     Promise.resolve(detectSpendingTrends(txRows)),
-    detectSubscriptionPriceChanges(userId, db),
-    detectNewSubscriptions(userId, db),
+    priceChangesPromise,
+    newSubsPromise,
     Promise.resolve(detectRefunds(txRows)),
   ]);
 

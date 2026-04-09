@@ -198,12 +198,13 @@ async function ensureMirrorGroup(
   const swType = typeMap[group.group_type ?? "other"] ?? "other";
   const { id: mirrorSwGroupId } = await createSwGroup(token, mirrorName, swType);
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, email, display_name, user_id")
-    .eq("group_id", coconutGroupId);
-
-  const swUser = await getCurrentUser(token);
+  const [{ data: members }, swUser] = await Promise.all([
+    db
+      .from("group_members")
+      .select("id, email, display_name, user_id")
+      .eq("group_id", coconutGroupId),
+    getCurrentUser(token),
+  ]);
 
   // For SW-linked groups, add members from the real Splitwise group by user_id
   // so we don't depend on Coconut group_members having emails.

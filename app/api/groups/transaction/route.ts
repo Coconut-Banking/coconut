@@ -26,11 +26,14 @@ export async function GET(req: NextRequest) {
   const selectCols = _hasExtendedCols !== false
     ? `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id, notes, category, receipt_url`
     : `id, group_id, description, amount, date, iso_currency_code, payer_member_id, created_at, source, external_id`;
-  const { data: tx, error: txErr } = await db
-    .from("split_transactions")
-    .select(selectCols)
-    .eq("id", id)
-    .maybeSingle() as unknown as { data: TxRow | null; error: { code?: string } | null };
+  const [{ data: tx, error: txErr }, accessibleIds] = await Promise.all([
+    db
+      .from("split_transactions")
+      .select(selectCols)
+      .eq("id", id)
+      .maybeSingle() as unknown as Promise<{ data: TxRow | null; error: { code?: string } | null }>,
+    getAccessibleGroupIds(userId),
+  ]);
 
   if (txErr?.code === "42703" && _hasExtendedCols !== false) {
     _hasExtendedCols = false;
@@ -40,8 +43,7 @@ export async function GET(req: NextRequest) {
       .eq("id", id)
       .maybeSingle();
     if (!txFallback) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
-    const accessibleIdsFallback = await getAccessibleGroupIds(userId);
-    if (!accessibleIdsFallback.includes(txFallback.group_id)) {
+    if (!accessibleIds.includes(txFallback.group_id)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     return buildResponse(db, userId, txFallback, null, null, null);
@@ -50,7 +52,6 @@ export async function GET(req: NextRequest) {
 
   if (!tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
 
-  const accessibleIds = await getAccessibleGroupIds(userId);
   if (!accessibleIds.includes(tx.group_id)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
