@@ -31,7 +31,44 @@ const MERCHANT_ALIASES: Record<string, string[]> = {
   clipper: ["clipper", "clipper card", "bay area toll"],
   frontier: ["frontier", "frontier airlines"],
   wise: ["wise", "transferwise"],
+  chipotle: ["chipotle", "chipotle mexican"],
+  wholefoods: ["whole foods", "whole fds", "wfm"],
+  traderjoes: ["trader joes", "trader joe"],
+  cvs: ["cvs", "cvs pharmacy"],
+  walgreens: ["walgreens", "wag"],
+  hulu: ["hulu"],
+  youtube: ["youtube", "google youtube"],
+  delta: ["delta", "delta air lines", "delta air"],
+  united: ["united", "united airlines"],
+  southwest: ["southwest", "southwest air", "southwest airlines"],
+  hilton: ["hilton", "hilton hotels"],
+  marriott: ["marriott"],
+  chickfila: ["chick fil a", "chick fila", "cfa"],
+  panera: ["panera", "panera bread"],
+  dominos: ["dominos", "domino"],
+  bestbuy: ["best buy", "bestbuy"],
+  homedepot: ["home depot", "homedepot"],
+  lowes: ["lowes", "lowe"],
+  fantuan: ["fantuan", "fantuanorder"],
+  skipthedishes: ["skip the dishes", "skipthedishes"],
 };
+
+const POS_PREFIXES = [
+  "sq *", "sq*", "tst *", "tst*", "pp *", "pp*",
+  "paypal *", "paypal*", "cke *", "cke*", "sp *", "sp*",
+  "google *", "google*", "apl* ", "apl*", "ghl*", "ghl *",
+  "int *", "int*",
+];
+
+function stripPosPrefix(merchant: string): string {
+  const lower = merchant.toLowerCase();
+  for (const prefix of POS_PREFIXES) {
+    if (lower.startsWith(prefix)) {
+      return merchant.slice(prefix.length).trim();
+    }
+  }
+  return merchant;
+}
 
 function resolveAliases(merchant: string): string[] {
   const norm = normalizeMerchant(merchant);
@@ -75,7 +112,7 @@ export function extractKeywords(merchant: string): string[] {
 
 export function merchantsMatch(receiptMerchant: string, txMerchant: string): boolean {
   const a = normalizeMerchant(receiptMerchant);
-  const b = normalizeMerchant(txMerchant);
+  const b = normalizeMerchant(stripPosPrefix(txMerchant));
   if (!a || !b) return false;
 
   if (a.includes(b) || b.includes(a)) return true;
@@ -87,7 +124,7 @@ export function merchantsMatch(receiptMerchant: string, txMerchant: string): boo
   if (bKeywords.some((kw) => a.includes(kw))) return true;
 
   const aAliases = resolveAliases(receiptMerchant);
-  const bAliases = resolveAliases(txMerchant);
+  const bAliases = resolveAliases(stripPosPrefix(txMerchant));
   if (aAliases.length > 0 && bAliases.length > 0) {
     if (aAliases.some((aa) => bAliases.includes(aa))) return true;
   }
@@ -170,11 +207,10 @@ export async function matchReceiptsToTransactions(
 ): Promise<number> {
   const db = getSupabase();
 
-  // Parallelize receipts fetch + already-linked fetch (independent)
   const [{ data: receipts }, { data: alreadyLinked }] = await Promise.all([
     db
       .from("email_receipts")
-      .select("id, merchant, amount, date")
+      .select("id, merchant, amount, date, subtotal")
       .in("id", receiptIds)
       .is("transaction_id", null),
     db
@@ -217,16 +253,24 @@ export async function matchReceiptsToTransactions(
     allCandidates = (txRows ?? []) as TxCandidate[];
   }
 
+  const tightWindowDays = 5;
+
   let matched = 0;
   const pendingUpdates: Array<{ id: string; transaction_id: string }> = [];
+  const debugUnmatched: Array<{ merchant: string; amount: number; date: string | null; reason: string }> = [];
 
   for (const receipt of receipts) {
     if (!receipt.merchant || !receipt.amount) continue;
 
     const receiptAmount = Math.abs(Number(receipt.amount));
+    const receiptSubtotal = receipt.subtotal != null ? Math.abs(Number(receipt.subtotal)) : null;
     const receiptDate = receipt.date;
 
-    // Compute per-receipt date window for filtering in-memory
+    const amountsToTry = [receiptAmount];
+    if (receiptSubtotal != null && Math.abs(receiptSubtotal - receiptAmount) > 0.01) {
+      amountsToTry.push(receiptSubtotal);
+    }
+
     let dateStart: string | undefined;
     let dateEnd: string | undefined;
     let tightStart: string | undefined;
@@ -238,13 +282,12 @@ export async function matchReceiptsToTransactions(
       dateStart = start.toISOString().split("T")[0];
       dateEnd = end.toISOString().split("T")[0];
 
-      const ts = new Date(dateObj); ts.setDate(ts.getDate() - 3);
-      const te = new Date(dateObj); te.setDate(te.getDate() + 3);
+      const ts = new Date(dateObj); ts.setDate(ts.getDate() - tightWindowDays);
+      const te = new Date(dateObj); te.setDate(te.getDate() + tightWindowDays);
       tightStart = ts.toISOString().split("T")[0];
       tightEnd = te.toISOString().split("T")[0];
     }
 
-    // Filter in-memory candidates within this receipt's date window
     const windowCandidates = allCandidates.filter((tx) => {
       if (alreadyMatchedTxIds.has(tx.id)) return false;
       if (!dateStart || !dateEnd) return true;
@@ -254,90 +297,132 @@ export async function matchReceiptsToTransactions(
     const keywords = extractKeywords(receipt.merchant);
     let bestMatchId: string | null = null;
 
-    // ── Strategy 1: keyword match in-memory ──
-    if (keywords.length > 0) {
-      for (const keyword of keywords) {
-        const kwLower = keyword.toLowerCase();
-        const keywordMatches = windowCandidates.filter((tx) => {
-          const nm = (tx.normalized_merchant ?? "").toLowerCase();
-          const mn = (tx.merchant_name ?? "").toLowerCase();
-          return nm.includes(kwLower) || mn.includes(kwLower);
+    for (const tryAmount of amountsToTry) {
+      if (bestMatchId) break;
+
+      // ── Strategy 1: keyword match in-memory ──
+      if (keywords.length > 0) {
+        for (const keyword of keywords) {
+          const kwLower = keyword.toLowerCase();
+          const keywordMatches = windowCandidates.filter((tx) => {
+            const nm = stripPosPrefix(tx.normalized_merchant ?? "").toLowerCase();
+            const mn = stripPosPrefix(tx.merchant_name ?? "").toLowerCase();
+            return nm.includes(kwLower) || mn.includes(kwLower);
+          });
+          if (keywordMatches.length > 0) {
+            bestMatchId = scoreCandidates(
+              keywordMatches as Array<{ id: string; amount: number; date: string; normalized_merchant?: string; merchant_name?: string }>,
+              tryAmount,
+              receiptDate,
+              receipt.merchant
+            );
+            if (bestMatchId) break;
+          }
+        }
+      }
+
+      // ── Strategy 2: date-window scan + merchant validation ──
+      if (!bestMatchId && dateStart && dateEnd) {
+        const scored = windowCandidates
+          .filter((tx) => {
+            if (tx.date == null) return false;
+            const txMerchant = tx.normalized_merchant || tx.merchant_name || "";
+            return merchantsMatch(receipt.merchant, txMerchant);
+          })
+          .map((tx) => {
+            const txAmount = Math.abs(Number(tx.amount));
+            const txDate = new Date(tx.date);
+            const dateDiff = receiptDate && !isNaN(txDate.getTime())
+              ? Math.abs(txDate.getTime() - new Date(receiptDate).getTime())
+              : Number.MAX_SAFE_INTEGER;
+            return {
+              id: tx.id,
+              amountDiff: Math.abs(txAmount - tryAmount),
+              dateDiff,
+              txAmount,
+            };
+          })
+          .filter((s) => amountWithinTolerance(tryAmount, tryAmount + s.amountDiff) && isFinite(s.dateDiff))
+          .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
+
+        if (scored.length > 0) {
+          bestMatchId = scored[0].id;
+        }
+      }
+
+      // ── Strategy 3: tight amount match without merchant validation ──
+      if (!bestMatchId && receiptDate && tightStart && tightEnd) {
+        const tightCandidates = allCandidates.filter((tx) => {
+          if (alreadyMatchedTxIds.has(tx.id)) return false;
+          return tx.date >= tightStart! && tx.date <= tightEnd!;
         });
-        if (keywordMatches.length > 0) {
-          bestMatchId = scoreCandidates(
-            keywordMatches as Array<{ id: string; amount: number; date: string; normalized_merchant?: string; merchant_name?: string }>,
-            receiptAmount,
-            receiptDate,
-            receipt.merchant
-          );
-          if (bestMatchId) break;
+
+        const scored = tightCandidates
+          .filter((tx) => {
+            const txMerch = tx.normalized_merchant || tx.merchant_name || "";
+            if (txMerch && knownMerchantsConflict(receipt.merchant, txMerch)) return false;
+            return true;
+          })
+          .map((tx) => {
+            const txAmount = Math.abs(Number(tx.amount));
+            return {
+              id: tx.id,
+              amountDiff: Math.abs(txAmount - tryAmount),
+              dateDiff: Math.abs(new Date(tx.date).getTime() - new Date(receiptDate).getTime()),
+            };
+          })
+          .filter((s) => s.amountDiff <= 0.01)
+          .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
+
+        if (scored.length > 0) {
+          bestMatchId = scored[0].id;
         }
       }
     }
 
-    // ── Strategy 2: date-window scan + merchant validation ──
-    if (!bestMatchId && dateStart && dateEnd) {
-      const scored = windowCandidates
-        .filter((tx) => {
-          if (tx.date == null) return false;
-          const txMerchant = tx.normalized_merchant || tx.merchant_name || "";
-          return merchantsMatch(receipt.merchant, txMerchant);
-        })
+    if (!bestMatchId) {
+      const closest = windowCandidates
         .map((tx) => {
           const txAmount = Math.abs(Number(tx.amount));
-          const txDate = new Date(tx.date);
-          const dateDiff = receiptDate && !isNaN(txDate.getTime())
-            ? Math.abs(txDate.getTime() - new Date(receiptDate).getTime())
-            : Number.MAX_SAFE_INTEGER;
-          return {
-            id: tx.id,
-            amountDiff: Math.abs(txAmount - receiptAmount),
-            dateDiff,
-            txAmount,
-          };
-        })
-        .filter((s) => amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff) && isFinite(s.dateDiff))
-        .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
-
-      if (scored.length > 0) {
-        bestMatchId = scored[0].id;
-      }
-    }
-
-    // ── Strategy 3: tight amount match without merchant validation ──
-    if (!bestMatchId && receiptDate && tightStart && tightEnd) {
-      const tightCandidates = allCandidates.filter((tx) => {
-        if (alreadyMatchedTxIds.has(tx.id)) return false;
-        return tx.date >= tightStart! && tx.date <= tightEnd!;
-      });
-
-      const scored = tightCandidates
-        .filter((tx) => {
           const txMerch = tx.normalized_merchant || tx.merchant_name || "";
-          if (txMerch && knownMerchantsConflict(receipt.merchant, txMerch)) return false;
-          return true;
-        })
-        .map((tx) => {
-          const txAmount = Math.abs(Number(tx.amount));
           return {
-            id: tx.id,
             amountDiff: Math.abs(txAmount - receiptAmount),
-            dateDiff: Math.abs(new Date(tx.date).getTime() - new Date(receiptDate).getTime()),
+            merchant: txMerch,
+            merchantMatch: txMerch ? merchantsMatch(receipt.merchant, txMerch) : false,
           };
         })
-        .filter((s) => s.amountDiff <= 0.01)
-        .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
-
-      if (scored.length > 0) {
-        bestMatchId = scored[0].id;
+        .sort((a, b) => a.amountDiff - b.amountDiff);
+      const best = closest[0];
+      let reason = `no candidates in ±${windowDays}d window`;
+      if (best) {
+        const parts: string[] = [];
+        if (best.amountDiff > 0.01) parts.push(`closest amount diff=$${best.amountDiff.toFixed(2)}`);
+        if (!best.merchantMatch) parts.push(`merchant mismatch (tx="${best.merchant}")`);
+        if (parts.length === 0) parts.push("unknown");
+        reason = parts.join("; ");
       }
+      debugUnmatched.push({
+        merchant: receipt.merchant,
+        amount: receiptAmount,
+        date: receiptDate,
+        reason,
+      });
+      continue;
     }
-
-    if (!bestMatchId) continue;
 
     pendingUpdates.push({ id: receipt.id as string, transaction_id: bestMatchId });
     alreadyMatchedTxIds.add(bestMatchId);
     matched++;
+  }
+
+  if (debugUnmatched.length > 0) {
+    console.log(`[receipt-matcher] ${debugUnmatched.length} unmatched receipts:`);
+    for (const d of debugUnmatched.slice(0, 15)) {
+      console.log(`  ${d.merchant} $${d.amount} (${d.date ?? "no date"}) — ${d.reason}`);
+    }
+    if (debugUnmatched.length > 15) {
+      console.log(`  ... and ${debugUnmatched.length - 15} more`);
+    }
   }
 
   if (pendingUpdates.length > 0) {
