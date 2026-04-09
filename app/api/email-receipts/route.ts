@@ -25,16 +25,18 @@ export async function GET() {
   try {
     const db = getSupabase();
 
-    let { data: receipts, error } = await db
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let receipts: any[] | null = null;
+
+    const primary = await db
       .from("email_receipts")
       .select(RECEIPT_COLUMNS)
       .eq("clerk_user_id", userId)
       .order("date", { ascending: false })
       .limit(EMAIL_RECEIPTS.PAGE_SIZE);
 
-    if (error) {
-      console.error("Failed to fetch receipts:", error.message, error.code, error.details);
-      // Retry with minimal columns if the full select failed (missing column from unapplied migration)
+    if (primary.error) {
+      console.error("Failed to fetch receipts:", primary.error.message, primary.error.code, primary.error.details);
       const fallback = await db
         .from("email_receipts")
         .select("id, clerk_user_id, merchant, amount, date, transaction_id, raw_from")
@@ -48,6 +50,8 @@ export async function GET() {
         );
       }
       receipts = fallback.data;
+    } else {
+      receipts = primary.data;
     }
 
     const filtered = (receipts || []).filter(
