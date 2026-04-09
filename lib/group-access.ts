@@ -87,7 +87,7 @@ export async function getAccessibleGroupIds(userId: string): Promise<string[]> {
   let rpcRows: string[] | null = null;
   let rpcErr: { message: string } | null = null;
   try {
-    const result = await (db as { rpc: Function }).rpc("get_accessible_group_ids", { p_user_id: userId });
+    const result = await (db as { rpc: (...args: unknown[]) => Promise<{ data: unknown; error: { message: string } | null }> }).rpc("get_accessible_group_ids", { p_user_id: userId });
     rpcRows = result.data;
     rpcErr = result.error;
   } catch (e) {
