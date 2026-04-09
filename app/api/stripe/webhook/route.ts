@@ -6,6 +6,7 @@ import { getMaxSettlementAllowed } from "@/lib/group-balances";
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const webhookSecretThin = process.env.STRIPE_WEBHOOK_SECRET_THIN;
 
 /**
  * POST /api/stripe/webhook
@@ -28,7 +29,16 @@ export async function POST(req: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+    // Try primary (snapshot) secret first, then thin payload secret
+    try {
+      event = stripe.webhooks.constructEvent(body, signature, webhookSecret!);
+    } catch {
+      if (webhookSecretThin) {
+        event = stripe.webhooks.constructEvent(body, signature, webhookSecretThin);
+      } else {
+        throw new Error("Signature verification failed with primary secret");
+      }
+    }
   } catch (err) {
     console.warn("[stripe-webhook] signature verification failed:", err);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
