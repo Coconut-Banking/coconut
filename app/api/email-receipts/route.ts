@@ -13,6 +13,11 @@ function isExcludedReceipt(rawFrom: string | null, merchant: string | null): boo
   );
 }
 
+const RECEIPT_COLUMNS = [
+  "id", "clerk_user_id", "merchant", "merchant_type", "amount",
+  "date", "transaction_id", "raw_from", "raw_subject", "match_source", "parsed_at",
+].join(", ");
+
 export async function GET() {
   const userId = await getEffectiveUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -20,16 +25,33 @@ export async function GET() {
   try {
     const db = getSupabase();
 
-    const { data: receipts, error } = await db
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let receipts: any[] | null = null;
+
+    const primary = await db
       .from("email_receipts")
-      .select("id, clerk_user_id, merchant, merchant_type, amount, currency, date, transaction_id, raw_from, parsed_at")
+      .select(RECEIPT_COLUMNS)
       .eq("clerk_user_id", userId)
-      .order("parsed_at", { ascending: false })
+      .order("date", { ascending: false })
       .limit(EMAIL_RECEIPTS.PAGE_SIZE);
 
-    if (error) {
-      console.error("Failed to fetch receipts:", error);
-      return NextResponse.json({ error: "Failed to fetch receipts" }, { status: 500 });
+    if (primary.error) {
+      console.error("Failed to fetch receipts:", primary.error.message, primary.error.code, primary.error.details);
+      const fallback = await db
+        .from("email_receipts")
+        .select("id, clerk_user_id, merchant, amount, date, transaction_id, raw_from")
+        .eq("clerk_user_id", userId)
+        .order("date", { ascending: false })
+        .limit(EMAIL_RECEIPTS.PAGE_SIZE);
+      if (fallback.error) {
+        return NextResponse.json(
+          { error: "Failed to fetch receipts", detail: fallback.error.message },
+          { status: 500 },
+        );
+      }
+      receipts = fallback.data;
+    } else {
+      receipts = primary.data;
     }
 
     const filtered = (receipts || []).filter(
