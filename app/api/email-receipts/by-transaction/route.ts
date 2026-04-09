@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const db = getSupabase();
   const { data, error } = await db
     .from("email_receipts")
-    .select("*")
+    .select("id, transaction_id, clerk_user_id, merchant, raw_subject, receipt_date, total, subtotal, tax, tip, merchant_type, merchant_details, created_at")
     .eq("clerk_user_id", userId)
     .eq("transaction_id", transactionId)
     .maybeSingle();

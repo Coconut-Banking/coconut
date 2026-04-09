@@ -48,23 +48,39 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
 
   if (!due?.length) return 0;
 
+  // Pre-fetch all group members in one query to avoid N+1
+  const allGroupIds = [...new Set((due as RecurringRow[]).map((r) => r.group_id))];
+  const { data: allMembers } = await db
+    .from("group_members")
+    .select("id, user_id, group_id")
+    .in("group_id", allGroupIds);
+  const membersByGroup = new Map<string, { id: string; user_id: string | null; group_id: string }[]>();
+  for (const m of allMembers ?? []) {
+    const list = membersByGroup.get(m.group_id) ?? [];
+    list.push(m);
+    membersByGroup.set(m.group_id, list);
+  }
+
+  // Collect IDs that need deactivation so we can batch the update
+  const deactivateIds: string[] = [];
+
   let created = 0;
   for (const rec of due as RecurringRow[]) {
     try {
-      // Check end conditions before creating
       if (rec.end_date && today > rec.end_date) {
-        await db.from("recurring_expenses").update({ is_active: false }).eq("id", rec.id);
+        deactivateIds.push(rec.id);
         continue;
       }
       if (rec.max_occurrences != null && (rec.occurrences_created ?? 0) >= rec.max_occurrences) {
-        await db.from("recurring_expenses").update({ is_active: false }).eq("id", rec.id);
+        deactivateIds.push(rec.id);
         continue;
       }
 
       const txId = `manual_recurring_${randomUUID()}`;
       const currency = normalizeSplitCurrency(rec.iso_currency_code);
 
-      const { error: txErr } = await db.from("transactions").insert({
+      // Insert transaction and return id in one round trip
+      const { data: txRow, error: txErr } = await db.from("transactions").insert({
         clerk_user_id: rec.clerk_user_id,
         plaid_transaction_id: txId,
         date: rec.next_due_date,
@@ -75,23 +91,16 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
         normalized_merchant: rec.description.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim(),
         primary_category: "OTHER",
         is_pending: false,
-      });
-      if (txErr) { console.error("[recurring] tx insert failed:", txErr.message); continue; }
+      }).select("id").single();
+      if (txErr || !txRow) {
+        console.error("[recurring] tx insert failed:", txErr?.message);
+        continue;
+      }
 
-      const { data: txRow } = await db
-        .from("transactions")
-        .select("id")
-        .eq("plaid_transaction_id", txId)
-        .single();
-      if (!txRow) continue;
-
-      const { data: members } = await db
-        .from("group_members")
-        .select("id, user_id")
-        .eq("group_id", rec.group_id);
+      const members = membersByGroup.get(rec.group_id);
       if (!members?.length) continue;
 
-      const payerMember = members.find((m: { user_id: string | null }) => m.user_id === rec.clerk_user_id);
+      const payerMember = members.find((m) => m.user_id === rec.clerk_user_id);
 
       let splitRow: { id: string } | null = null;
       const { data: st1, error: e1 } = await db
@@ -129,7 +138,7 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
       if (rec.person_key) {
         const parts = rec.person_key.split("-");
         const memberId = parts.length >= 2 ? parts[parts.length - 1] : null;
-        const targetMember = memberId ? members.find((m: { id: string }) => m.id === memberId) : null;
+        const targetMember = memberId ? members.find((m) => m.id === memberId) : null;
         const splitMemberIds = [payerMember, targetMember].filter(Boolean).map((m) => (m as { id: string }).id);
         const shares = computeEqualShares(Math.abs(rec.amount), splitMemberIds);
         if (shares.length > 0) {
@@ -140,7 +149,7 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
           })));
         }
       } else {
-        const memberIds = members.map((m: { id: string }) => m.id);
+        const memberIds = members.map((m) => m.id);
         const shares = computeEqualShares(Math.abs(rec.amount), memberIds);
         if (shares.length > 0) {
           await db.from("split_shares").insert(shares.map((s) => ({
@@ -166,6 +175,11 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
     } catch (e) {
       console.error("[recurring] failed to create expense:", e instanceof Error ? e.message : e);
     }
+  }
+
+  // Batch-deactivate all expired/maxed-out recurring expenses in one update
+  if (deactivateIds.length > 0) {
+    await db.from("recurring_expenses").update({ is_active: false }).in("id", deactivateIds);
   }
 
   if (created > 0) {
