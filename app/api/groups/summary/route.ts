@@ -185,7 +185,7 @@ async function handleSummary(req: NextRequest, userId: string) {
     ),
     paginate(() =>
       db.from("split_transactions")
-        .select(`id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, transactions(amount)`)
+        .select(`id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, source, transactions(amount)`)
         .in("group_id", groupIds)
         .order("created_at", { ascending: false })
     ),
@@ -304,14 +304,6 @@ async function handleSummary(req: NextRequest, userId: string) {
   );
 
   const personBalances = new Map<string, PersonAgg>();
-  // Debug: track per-person, per-group pairwise contributions
-  const _pairwiseDebug: Array<{ name: string; key: string; group: string; groupId: string; currency: string; delta: number; source: string }> = [];
-  const _groupPairwiseDebug: Array<{
-    name: string; id: string; splitCount: number; memberCount: number;
-    hasMyMember: boolean; isSw: boolean; pairwiseRan: boolean;
-    payerFoundCount: number; totalPayerAttempts: number;
-    shareCount: number; memberKeys: Record<string, string>;
-  }> = [];
 
   const groupsWithBalance = (groups ?? []).map((g) => {
     const groupSplits = splitByGroup.get(g.id) ?? [];
@@ -332,6 +324,7 @@ async function handleSummary(req: NextRequest, userId: string) {
         memberCount: groupMembers.length,
         myBalance: 0 as number | null,
         myBalances: [] as { currency: string; amount: number }[],
+        _nativeMyBalances: [] as { currency: string; amount: number }[],
         lastActivityAt,
       };
     }
@@ -412,41 +405,88 @@ async function handleSummary(req: NextRequest, userId: string) {
     const myBalance =
       myBalances.length === 1 ? myBalances[0].amount : myBalances.length === 0 ? 0 : null;
 
+    // For SW groups, compute balance from Coconut-native expenses only (source != 'splitwise').
+    // This delta is merged with the SW cached group balance in the overlay block below
+    // so that manually-added expenses are reflected without double-counting imported ones.
+    let _nativeMyBalances: { currency: string; amount: number }[] = [];
+    if (hasSwCache && swGroupIds.has(g.id) && myMember) {
+      const nativeSplits = groupSplits.filter((s) => (s as { source?: string | null }).source !== "splitwise");
+      if (nativeSplits.length > 0) {
+        const nativePaidRows: typeof paidRows = [];
+        const nativeOwedRows: typeof owedRows = [];
+        for (const s of nativeSplits) {
+          const sShares = sharesBySplitId.get(s.id) ?? [];
+          if (sShares.length === 0) continue;
+          const sWithPayer = s as { payer_member_id?: string | null };
+          const payerId = sWithPayer.payer_member_id;
+          const nMemberId =
+            payerId && groupMemberIdSet.has(payerId)
+              ? payerId
+              : (() => {
+                  const tid = s.transaction_id as string | null | undefined;
+                  const oid = tid ? txOwnerById.get(tid) : undefined;
+                  return oid ? memberByUserId.get(oid) : null;
+                })();
+          if (nMemberId) {
+            const amt = paidAmountFromSplitRow(
+              s as { transactions?: unknown; amount?: number | string | null }
+            );
+            if (amt > 0) {
+              nativePaidRows.push({
+                member_id: nMemberId,
+                amount: amt,
+                currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
+              });
+            }
+          }
+          const cur = splitCurrencyById.get(s.id) ?? "USD";
+          for (const sh of sShares) {
+            nativeOwedRows.push({ member_id: sh.member_id, amount: Number(sh.amount), currency: cur });
+          }
+        }
+        const nativeSettlements = groupSettlements.filter(
+          (st) => (st as { method?: string }).method !== "splitwise"
+        );
+        const nativePaidSett = nativeSettlements.map((st) => ({
+          payer_member_id: st.payer_member_id,
+          amount: Number(st.amount),
+          currency: normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code),
+        }));
+        const nativeRcvdSett = nativeSettlements.map((st) => ({
+          receiver_member_id: st.receiver_member_id,
+          amount: Number(st.amount),
+          currency: normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code),
+        }));
+        if (nativePaidRows.length > 0 || nativeOwedRows.length > 0 || nativeSettlements.length > 0) {
+          const nativeBals = computeBalancesByCurrency(nativePaidRows, nativeOwedRows, nativePaidSett, nativeRcvdSett);
+          for (const [cur, balMap] of nativeBals) {
+            const t = balMap.get(myMember.id)?.total ?? 0;
+            if (Math.abs(t) >= BALANCE_EPS) {
+              _nativeMyBalances.push({ currency: cur, amount: Math.round(t * 100) / 100 });
+            }
+          }
+        }
+      }
+    }
+
     // Compute correct PAIRWISE balances between me and each other member.
     // For each expense: if I paid, they owe me their share; if they paid, I owe them my share.
-    // Skip Splitwise-sourced groups when cached balances exist — the overlay
-    // block adds the authoritative cached totals. Computing pairwise for them
-    // too would double-count during the name-based dedup merge.
+    // For SW groups with cached balances, only process Coconut-native expenses
+    // (source != 'splitwise') to avoid double-counting with the SW cache overlay.
     {
       const isSw = hasSwCache && swGroupIds.has(g.id);
-      const pairwiseRan = !!myMember && !isSw;
-      let payerFoundCount = 0;
-      let totalPayerAttempts = 0;
-      let shareCount = 0;
-      const memberKeys: Record<string, string> = {};
-      for (const m of groupMembers) {
-        if (m.user_id === userId) continue;
-        memberKeys[m.display_name] = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
-      }
+      const pairwiseRan = !!myMember;
 
       if (pairwiseRan) {
-        // Build a by-member-id lookup for O(1) access
         const groupMemberById = new Map(groupMembers.map((m) => [m.id, m]));
         const groupMemberIds = new Set(groupMembers.map((m) => m.id));
 
-        // Count shares and payer attempts for debug
-        for (const s of groupSplits) {
-          totalPayerAttempts++;
-          const sWithPayer = s as { payer_member_id?: string | null };
-          const pid = sWithPayer.payer_member_id && groupMemberIds.has(sWithPayer.payer_member_id)
-            ? sWithPayer.payer_member_id
-            : (() => { const tid = s.transaction_id as string | null | undefined; const oid = tid ? txOwnerById.get(tid) : undefined; return oid ? memberByUserId.get(oid) ?? null : null; })();
-          if (pid) payerFoundCount++;
-          shareCount += (sharesBySplitId.get(s.id) ?? []).length;
-        }
+        const pairwiseSplits = isSw
+          ? groupSplits.filter((s) => (s as { source?: string | null }).source !== "splitwise")
+          : groupSplits;
 
         // Process each split ONCE — O(splits × avg_shares) instead of O(members × splits)
-        for (const s of groupSplits) {
+        for (const s of pairwiseSplits) {
           const cur = splitCurrencyById.get(s.id) ?? "USD";
           const sWithPayer = s as { payer_member_id?: string | null };
           const pid = sWithPayer.payer_member_id && groupMemberIds.has(sWithPayer.payer_member_id)
@@ -461,7 +501,6 @@ async function handleSummary(req: NextRequest, userId: string) {
           const shares = sharesBySplitId.get(s.id) ?? [];
 
           if (pid === myMember!.id) {
-            // I paid: each other member owes me their share
             for (const sh of shares) {
               if (sh.member_id === myMember!.id) continue;
               const m = groupMemberById.get(sh.member_id);
@@ -470,11 +509,9 @@ async function handleSummary(req: NextRequest, userId: string) {
               if (theirShare > 0) {
                 const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
                 addPersonCurrency(personBalances, key, m.display_name, cur, theirShare);
-                _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: theirShare, source: "expense:iPaid" });
               }
             }
           } else {
-            // Someone else paid: I owe them my share (if I have a share)
             const m = groupMemberById.get(pid);
             if (m && m.user_id !== userId) {
               const myShareRow = shares.find((sh) => sh.member_id === myMember!.id);
@@ -483,45 +520,35 @@ async function handleSummary(req: NextRequest, userId: string) {
                 if (myShare > 0) {
                   const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
                   addPersonCurrency(personBalances, key, m.display_name, cur, -myShare);
-                  _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: -myShare, source: "expense:theyPaid" });
                 }
               }
             }
           }
         }
 
-        // Process settlements ONCE — O(settlements) instead of O(members × settlements)
-        for (const st of groupSettlements) {
-          const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
-          const amt = Number(st.amount);
-          if (st.payer_member_id === myMember!.id) {
-            // I paid them — they owe me more (or I get back more)
-            const m = groupMemberById.get(st.receiver_member_id);
-            if (m && m.user_id !== userId) {
-              const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
-              addPersonCurrency(personBalances, key, m.display_name, cur, amt);
-              _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: amt, source: "settlement:iPaid" });
-            }
-          } else if (st.receiver_member_id === myMember!.id) {
-            // They paid me — I owe them less
-            const m = groupMemberById.get(st.payer_member_id);
-            if (m && m.user_id !== userId) {
-              const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
-              addPersonCurrency(personBalances, key, m.display_name, cur, -amt);
-              _pairwiseDebug.push({ name: m.display_name, key, group: g.name, groupId: g.id, currency: cur, delta: -amt, source: "settlement:theyPaid" });
+        // Process settlements — skip for SW groups (SW cache overlay handles them)
+        if (!isSw) {
+          for (const st of groupSettlements) {
+            const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
+            const amt = Number(st.amount);
+            if (st.payer_member_id === myMember!.id) {
+              const m = groupMemberById.get(st.receiver_member_id);
+              if (m && m.user_id !== userId) {
+                const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
+                addPersonCurrency(personBalances, key, m.display_name, cur, amt);
+              }
+            } else if (st.receiver_member_id === myMember!.id) {
+              const m = groupMemberById.get(st.payer_member_id);
+              if (m && m.user_id !== userId) {
+                const key = m.user_id ?? m.email ?? `${g.id}-${m.id}`;
+                addPersonCurrency(personBalances, key, m.display_name, cur, -amt);
+              }
             }
           }
         }
       }
 
-      if (groupSplits.length > 0 || groupMembers.length > 1) {
-        _groupPairwiseDebug.push({
-          name: g.name, id: g.id, splitCount: groupSplits.length,
-          memberCount: groupMembers.length, hasMyMember: !!myMember,
-          isSw: isSw, pairwiseRan, payerFoundCount, totalPayerAttempts,
-          shareCount, memberKeys,
-        });
-      }
+      
     }
 
     const lastSplit = groupSplits[0];
@@ -535,6 +562,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       memberCount: groupMembers.length,
       myBalance,
       myBalances,
+      _nativeMyBalances,
       lastActivityAt,
     };
   });
@@ -704,17 +732,29 @@ async function handleSummary(req: NextRequest, userId: string) {
         const cachedBals = groupCacheMap.get(row.external_id);
         if (!cachedBals) continue;
 
-        const newBalances = cachedBals
-          .map((b) => ({
-            currency: normalizeSplitCurrency(b.currency_code),
-            amount: Math.round(parseFloat(b.amount) * 100) / 100,
-          }))
-          .filter((b) => Number.isFinite(b.amount) && Math.abs(b.amount) >= BALANCE_EPS);
-        newBalances.sort((a, b) => a.currency.localeCompare(b.currency));
+        const swByCurrency = new Map<string, number>();
+        for (const b of cachedBals) {
+          const cur = normalizeSplitCurrency(b.currency_code);
+          const amt = Math.round(parseFloat(b.amount) * 100) / 100;
+          if (Number.isFinite(amt) && Math.abs(amt) >= BALANCE_EPS) {
+            swByCurrency.set(cur, (swByCurrency.get(cur) ?? 0) + amt);
+          }
+        }
 
-        g.myBalances = newBalances;
+        // Merge Coconut-native expense deltas (source != 'splitwise') into SW cached balance
+        const nativeBals = (g as typeof g & { _nativeMyBalances?: { currency: string; amount: number }[] })._nativeMyBalances ?? [];
+        for (const nb of nativeBals) {
+          swByCurrency.set(nb.currency, (swByCurrency.get(nb.currency) ?? 0) + nb.amount);
+        }
+
+        const mergedBalances = [...swByCurrency.entries()]
+          .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
+          .filter((b) => Math.abs(b.amount) >= BALANCE_EPS);
+        mergedBalances.sort((a, b) => a.currency.localeCompare(b.currency));
+
+        g.myBalances = mergedBalances;
         g.myBalance =
-          newBalances.length === 1 ? newBalances[0].amount : newBalances.length === 0 ? 0 : null;
+          mergedBalances.length === 1 ? mergedBalances[0].amount : mergedBalances.length === 0 ? 0 : null;
       }
     }
   }
@@ -833,28 +873,6 @@ async function handleSummary(req: NextRequest, userId: string) {
       totalOwedToMe,
       totalIOwe,
       netBalance,
-      _debug: {
-        hasSwCache,
-        swGroupCount: swGroupIds.size,
-        topFriendBreakdown: friends
-          .filter((f) => f.balances.length > 0)
-          .slice(0, 3)
-          .map((f) => ({
-            name: f.displayName,
-            key: f.key,
-            balances: f.balances,
-            contributions: _pairwiseDebug
-              .filter((d) => d.name.toLowerCase() === f.displayName.toLowerCase())
-              .reduce((acc, d) => {
-                const gKey = `${d.group}|${d.currency}`;
-                if (!acc[gKey]) acc[gKey] = { group: d.group, groupId: d.groupId, currency: d.currency, total: 0, count: 0 };
-                acc[gKey].total = Math.round((acc[gKey].total + d.delta) * 100) / 100;
-                acc[gKey].count++;
-                return acc;
-              }, {} as Record<string, { group: string; groupId: string; currency: string; total: number; count: number }>),
-          })),
-        groupPairwise: _groupPairwiseDebug.filter((gd) => gd.splitCount > 0),
-      },
       totalsByCurrency,
     },
     { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }

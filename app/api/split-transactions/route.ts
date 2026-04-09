@@ -8,6 +8,7 @@ import { canAccessGroup } from "@/lib/group-access";
 import { formatCurrency } from "@/lib/currency";
 import { toCents } from "@/lib/expense-shares";
 import { notifyGroupMembers } from "@/lib/push-sender";
+import { shadowCreateExpense } from "@/lib/splitwise-shadow";
 
 export async function POST(req: NextRequest) {
   // Parallelize auth + body parse (independent)
@@ -143,6 +144,18 @@ export async function POST(req: NextRequest) {
     (tx.merchant_name || tx.raw_name || "a purchase").toString().trim() || "a purchase"
   ).slice(0, 120);
   const splitCurrency = tx.iso_currency_code ?? "USD";
+
+  void shadowCreateExpense({
+    clerkUserId: userId,
+    groupId,
+    splitTransactionId: split.id,
+    amount: totalAmount,
+    description: merchantLabel,
+    currency: splitCurrency,
+    payerMemberId: creatorMember?.id ?? "",
+    shares: shares.filter((s) => Number(s.amount) > 0),
+  }).catch((err) => console.error("[shadow] split-tx create failed:", err));
+
   void notifyGroupMembers(
     groupId,
     "New split",

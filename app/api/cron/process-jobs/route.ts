@@ -8,6 +8,49 @@ import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 
+const DAILY_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let _lastDailyRefreshCheck = 0;
+
+/**
+ * Once per day, find Plaid Items that haven't been refreshed in 24h and sync them
+ * with forceRefresh. This ensures no transactions are missed even if webhooks fail.
+ * Cost: $0.12 × items × 1/day (e.g. $0.24/day for 2 banks).
+ */
+async function runDailyRefreshIfNeeded(db: ReturnType<typeof getSupabase>) {
+  const now = Date.now();
+  if (now - _lastDailyRefreshCheck < 60 * 60 * 1000) return; // Check at most once per hour
+  _lastDailyRefreshCheck = now;
+
+  try {
+    // Only refresh items that have had NO sync activity (webhook or manual) for 48h+.
+    // If last_synced_at is recent, webhooks are working fine — no need to pay $0.12.
+    const cutoff = new Date(now - DAILY_REFRESH_INTERVAL_MS * 2).toISOString();
+    const { data: staleItems } = await db
+      .from("plaid_items")
+      .select("clerk_user_id, plaid_item_id, last_refreshed_at, last_synced_at")
+      .or(`last_synced_at.is.null,last_synced_at.lt.${cutoff}`)
+      .limit(10);
+
+    if (!staleItems || staleItems.length === 0) return;
+
+    const userIds = [...new Set(staleItems.map((i) => i.clerk_user_id as string))];
+    console.log("[cron] daily safety-net refresh for", userIds.length, "user(s),", staleItems.length, "item(s)");
+
+    const { syncTransactionsForUser } = await import("@/lib/transaction-sync");
+    for (const userId of userIds) {
+      try {
+        await syncTransactionsForUser(userId, { requestPlaidRefresh: true, forceRefresh: true });
+        const { revalidateTag } = await import("next/cache");
+        try { revalidateTag(CACHE_TAGS.transactions(userId), "max"); } catch { /* ok */ }
+      } catch (e) {
+        console.warn("[cron] daily refresh failed for", userId, ":", e instanceof Error ? e.message : e);
+      }
+    }
+  } catch (e) {
+    console.warn("[cron] daily refresh check failed:", e instanceof Error ? e.message : e);
+  }
+}
+
 /**
  * GET /api/cron/process-jobs
  * Runs every minute via Vercel Cron (requires Hobby plan or above).
@@ -44,6 +87,9 @@ export async function GET(req: NextRequest) {
   }
 
   if (!jobs || jobs.length === 0) {
+    // No pending jobs — check for stale Plaid Items that need a daily safety-net refresh.
+    // transactionsRefresh costs $0.12/call so we only do this once per 24h per Item.
+    await runDailyRefreshIfNeeded(db);
     return NextResponse.json({ processed: 0 });
   }
 

@@ -315,7 +315,6 @@ export interface ScanStats {
   insertErrors: number;
   inserted: number;
   matched: number;
-  rematched?: number;
   receipts?: unknown[];
   error?: string;
 }
@@ -540,8 +539,8 @@ export async function scanGmailForReceipts(
     }
   }
 
-  // Match NEW receipts to transactions and update scan timestamp in parallel
-  const [newMatchedCount] = await Promise.all([
+  // Match receipts to transactions and update scan timestamp in parallel
+  const [matchedCount] = await Promise.all([
     insertedReceiptIds.length > 0
       ? matchReceiptsToTransactions(clerkUserId, insertedReceiptIds)
       : Promise.resolve(0),
@@ -549,27 +548,9 @@ export async function scanGmailForReceipts(
       .update({ last_scan_at: new Date().toISOString() })
       .eq("clerk_user_id", clerkUserId),
   ]);
+  const matched = matchedCount;
 
-  // Also re-match any previously unmatched receipts (new bank transactions may
-  // have synced since the last scan, so old unmatched receipts can now match)
-  let rematchedCount = 0;
-  const { data: unmatched } = await db
-    .from("email_receipts")
-    .select("id")
-    .eq("clerk_user_id", clerkUserId)
-    .is("transaction_id", null);
-  const unmatchedIds = (unmatched ?? [])
-    .map((r) => r.id as string)
-    .filter((id) => !insertedReceiptIds.includes(id));
-  if (unmatchedIds.length > 0) {
-    rematchedCount = await matchReceiptsToTransactions(clerkUserId, unmatchedIds);
-    if (rematchedCount > 0) {
-      console.log(`[receipt-parser] Rematched ${rematchedCount} previously unmatched receipts`);
-    }
-  }
-
-  const matched = newMatchedCount + rematchedCount;
-
+  // Optionally return the inserted receipts
   let receipts: unknown[] = [];
   if (detailed && insertedReceiptIds.length > 0) {
     const { data } = await db
@@ -590,7 +571,6 @@ export async function scanGmailForReceipts(
     insertErrors,
     inserted: insertedReceiptIds.length,
     matched,
-    rematched: rematchedCount,
     ...(detailed && { receipts }),
   };
 }

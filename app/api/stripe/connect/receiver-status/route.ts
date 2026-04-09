@@ -31,12 +31,13 @@ export async function GET(req: NextRequest) {
 
   const { data: connectAccount } = await db
     .from("stripe_connected_accounts")
-    .select("onboarding_complete, payouts_enabled")
+    .select("charges_enabled, payouts_enabled")
     .eq("clerk_user_id", member.user_id)
     .maybeSingle();
 
+  // charges_enabled is the reliable signal — payouts_enabled may lag in test mode
   return NextResponse.json(
-    { payoutsEnabled: connectAccount?.onboarding_complete && connectAccount?.payouts_enabled },
+    { payoutsEnabled: connectAccount?.charges_enabled ?? false },
     { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
   );
 }

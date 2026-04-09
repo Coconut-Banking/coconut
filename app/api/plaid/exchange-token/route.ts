@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
     }
     const synced = 0;
     // Fire sync in background — don't block response (prevents Vercel timeout)
-    syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true })
+    syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true, forceRefresh: true })
       .then((result) => {
         if (result.synced > 0) {
           revalidateTag(CACHE_TAGS.transactions(effectiveUserId), "max");

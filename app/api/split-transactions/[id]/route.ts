@@ -6,6 +6,7 @@ import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 import { toCents } from "@/lib/expense-shares";
+import { shadowDeleteExpense, shadowUpdateExpense } from "@/lib/splitwise-shadow";
 
 export async function DELETE(
   _req: NextRequest,
@@ -36,6 +37,10 @@ export async function DELETE(
       .maybeSingle();
     linkedTxClerkUserId = (tx?.clerk_user_id as string | undefined) ?? null;
   }
+
+  void shadowDeleteExpense(userId, id).catch((err) =>
+    console.error("[shadow] split-tx delete failed:", err)
+  );
 
   await db.from("split_transactions").delete().eq("id", id);
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
@@ -183,6 +188,16 @@ export async function PATCH(
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+
+  void shadowUpdateExpense({
+    clerkUserId: userId,
+    splitTransactionId: id,
+    groupId: split.group_id,
+    description: description ?? undefined,
+    amount: newAmount ?? undefined,
+    payerMemberId: payerMemberId ?? (split.payer_member_id as string | undefined),
+    shares: customShares ?? undefined,
+  }).catch((err) => console.error("[shadow] split-tx update failed:", err));
 
   return NextResponse.json({ ok: true, id });
 }

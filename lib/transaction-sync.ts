@@ -7,6 +7,13 @@ import { mapWithConcurrency } from "./retry";
 
 /** Min interval between Plaid /transactions/refresh calls per Item (Plaid also enforces daily limits). */
 const PLAID_TX_REFRESH_WINDOW_MS = 120_000;
+
+/**
+ * Minimum age (ms) before we'll pay for another transactionsRefresh on an Item.
+ * transactionsRefresh costs $0.12/call — webhooks + free transactionsSync cover
+ * 99% of cases. We only pay for refresh when data is genuinely stale.
+ */
+const STALE_REFRESH_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours — only cron + initial link should trigger paid refreshes
 import OpenAI from "openai";
 
 const openai = process.env.OPENAI_API_KEY
@@ -312,20 +319,49 @@ async function syncSingleToken(
   plaidItemId: string,
   plaid: ReturnType<typeof getPlaidClient>,
   db: ReturnType<typeof getSupabase>,
-  requestPlaidRefresh: boolean
+  requestPlaidRefresh: boolean,
+  forceRefresh?: boolean
 ): Promise<{ synced: number; removedIds: string[]; skipped: number }> {
   if (!plaid) return { synced: 0, removedIds: [], skipped: 0 };
 
+  // Smart refresh: transactionsRefresh costs $0.12/call.
+  // Only pay when the item is genuinely stale (>6h since last refresh)
+  // OR when explicitly forced (initial link, cron safety net).
+  // Free transactionsSync + Plaid webhooks handle the rest.
+  let didRefresh = false;
   if (requestPlaidRefresh && plaidItemId) {
-    const rl = rateLimit(`plaid-tx-refresh:${plaidItemId}`, 1, PLAID_TX_REFRESH_WINDOW_MS);
-    if (rl.success) {
-      try {
-        await plaid.transactionsRefresh({ access_token: accessToken });
-        console.log("[sync] transactionsRefresh requested", { plaidItemId });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn("[sync] transactionsRefresh failed (continuing with sync):", msg);
+    let shouldRefresh = forceRefresh === true;
+
+    if (!shouldRefresh) {
+      const { data: itemRow } = await db
+        .from("plaid_items")
+        .select("last_refreshed_at")
+        .eq("plaid_item_id", plaidItemId)
+        .maybeSingle();
+      const lastRefresh = (itemRow as { last_refreshed_at?: string | null } | null)?.last_refreshed_at;
+      const age = lastRefresh ? Date.now() - new Date(lastRefresh).getTime() : Infinity;
+      shouldRefresh = age > STALE_REFRESH_THRESHOLD_MS;
+    }
+
+    if (shouldRefresh) {
+      const rl = rateLimit(`plaid-tx-refresh:${plaidItemId}`, 1, PLAID_TX_REFRESH_WINDOW_MS);
+      if (rl.success) {
+        try {
+          await plaid.transactionsRefresh({ access_token: accessToken });
+          didRefresh = true;
+          console.log("[sync] transactionsRefresh requested (stale)", { plaidItemId });
+          // Persist refresh timestamp (best-effort)
+          db.from("plaid_items")
+            .update({ last_refreshed_at: new Date().toISOString() })
+            .eq("plaid_item_id", plaidItemId)
+            .then(({ error }) => { if (error) console.warn("[sync] update last_refreshed_at:", error.message); });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn("[sync] transactionsRefresh failed (continuing with sync):", msg);
+        }
       }
+    } else {
+      console.log("[sync] skipping transactionsRefresh (not stale)", { plaidItemId });
     }
   }
 
@@ -516,15 +552,29 @@ async function syncSingleToken(
     console.log("[sync] skipped", skipped, "duplicate tx(s) for user", clerkUserId);
   }
 
+  // Stamp last_synced_at (best-effort, don't block)
+  if (plaidItemId) {
+    db.from("plaid_items")
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq("plaid_item_id", plaidItemId)
+      .then(({ error }) => { if (error) console.warn("[sync] update last_synced_at:", error.message); });
+  }
+
   return { synced: actualSynced, removedIds: allRemovedIds, skipped };
 }
 
 export type SyncTransactionsOptions = {
   /**
    * Ask Plaid to pull the latest from the institution before /transactions/sync.
-   * Use for user-driven sync (pull-to-refresh, POST); omit for webhooks to avoid refresh quotas.
+   * The actual call is gated by staleness (>6h since last refresh) to save $0.12/call.
+   * Use for user-driven sync (pull-to-refresh, POST); omit for webhooks.
    */
   requestPlaidRefresh?: boolean;
+  /**
+   * Bypass the staleness check and always call transactionsRefresh.
+   * Use only for: initial link, cron safety-net, explicit user "force refresh".
+   */
+  forceRefresh?: boolean;
 };
 
 export async function syncTransactionsForUser(
@@ -532,6 +582,7 @@ export async function syncTransactionsForUser(
   options?: SyncTransactionsOptions
 ): Promise<{ synced: number; error?: string }> {
   const requestPlaidRefresh = options?.requestPlaidRefresh === true;
+  const forceRefresh = options?.forceRefresh === true;
   const db = getSupabase();
   const accessTokens = await getAllPlaidTokensForUser(clerkUserId);
   if (accessTokens.length === 0) return { synced: 0, error: "No Plaid connection found for user" };
@@ -561,7 +612,8 @@ export async function syncTransactionsForUser(
           plaidItemId,
           plaid,
           db,
-          requestPlaidRefresh
+          requestPlaidRefresh,
+          forceRefresh
         );
         return { ok: true as const, synced, removedIds, skipped };
       } catch (e) {

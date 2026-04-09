@@ -93,10 +93,12 @@ export async function POST(req: NextRequest) {
     const account = event.data.object as Stripe.Account;
     const db = getSupabase();
 
+    // charges_enabled is sufficient for routing payments — payouts_enabled may stay false
+    // in test mode (no real bank) but funds still route correctly to the connected account.
     const { error } = await db
       .from("stripe_connected_accounts")
       .update({
-        onboarding_complete: (account.charges_enabled && account.payouts_enabled) ?? false,
+        onboarding_complete: account.charges_enabled ?? false,
         charges_enabled: account.charges_enabled ?? false,
         payouts_enabled: account.payouts_enabled ?? false,
       })

@@ -13,6 +13,7 @@ import {
 import { createRecurringExpense, processRecurringExpenses } from "@/lib/recurring-expenses";
 import { formatCurrency } from "@/lib/currency";
 import { notifyGroupMembers } from "@/lib/push-sender";
+import { shadowCreateExpense } from "@/lib/splitwise-shadow";
 
 
 let _hasPayerAndDateCols: boolean | null = null;
@@ -275,6 +276,21 @@ export async function POST(req: NextRequest) {
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   revalidateTag(CACHE_TAGS.transactions(userId), "max");
+
+  console.log("[manual-expense] firing shadowCreateExpense for", { groupId, splitTxId: splitTx.id, description, amount });
+  void shadowCreateExpense({
+    clerkUserId: userId,
+    groupId,
+    splitTransactionId: splitTx.id,
+    amount,
+    description,
+    currency,
+    date: expenseDate,
+    payerMemberId: effectivePayer,
+    shares,
+  }).then(() => {
+    console.log("[manual-expense] shadow write completed for", splitTx.id);
+  }).catch((err) => console.error("[shadow] manual-expense create failed:", err));
 
   const recurringFrequency = body.recurringFrequency ?? body.recurring_frequency;
   if (recurringFrequency && ["weekly", "biweekly", "monthly"].includes(recurringFrequency)) {

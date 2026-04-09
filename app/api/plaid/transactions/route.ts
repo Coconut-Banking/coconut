@@ -368,7 +368,7 @@ export async function POST() {
 
   try {
     const { syncTransactionsForUser, embedTransactionsForUser, embedRichTransactionsForUser, enrichCategoriesForUser } = await import("@/lib/transaction-sync");
-    const { synced, error } = await syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true });
+    const { synced, error } = await syncTransactionsForUser(effectiveUserId);
     if (error) {
       const isUserError =
         /no plaid connection/i.test(error) || /not configured/i.test(error);

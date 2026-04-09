@@ -80,7 +80,7 @@ export async function GET(
         .from("split_transactions")
         .select(`
           id, transaction_id, created_by, created_at, payer_member_id, amount, description,
-          iso_currency_code, receipt_url, category,
+          iso_currency_code, receipt_url, category, source,
           transactions(merchant_name, raw_name, amount, date, primary_category)
         `)
         .eq("group_id", id)
@@ -270,8 +270,15 @@ export async function GET(
     );
 
     const memberIdSet = new Set((members ?? []).map((m) => m.id));
+
+    // For SW groups, compute balances only from Coconut-native splits to avoid
+    // double-counting with the SW cached balance overlay below.
+    const balanceSplits = isSplitwiseGroup
+      ? splits.filter((s) => (s as { source?: string | null }).source !== "splitwise")
+      : splits;
+
     const paidRows: { member_id: string; amount: number; currency: string }[] = [];
-    for (const s of splits) {
+    for (const s of balanceSplits) {
       const tid = s.transaction_id as string | null | undefined;
       const payerMemberId = (s as { payer_member_id?: string | null }).payer_member_id;
       const memberId =
@@ -295,8 +302,10 @@ export async function GET(
       }
     }
 
+    const balanceSplitIds = new Set(balanceSplits.map((s) => s.id));
     const owedBySplitMember = new Map<string, number>();
     for (const sh of shares ?? []) {
+      if (!balanceSplitIds.has(sh.split_transaction_id)) continue;
       const key = `${sh.split_transaction_id}:${sh.member_id}`;
       owedBySplitMember.set(key, (owedBySplitMember.get(key) ?? 0) + Number(sh.amount));
     }
@@ -367,9 +376,12 @@ export async function GET(
     }
 
     const spendByCurrency = new Map<string, number>();
-    for (const r of paidRows) {
-      const c = normalizeSplitCurrency(r.currency);
-      spendByCurrency.set(c, (spendByCurrency.get(c) ?? 0) + r.amount);
+    for (const s of splits) {
+      const amt = paidAmountFromSplitRow(s as { transactions?: unknown; amount?: number | string | null });
+      if (amt > 0) {
+        const c = normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code);
+        spendByCurrency.set(c, (spendByCurrency.get(c) ?? 0) + amt);
+      }
     }
     const totalSpendByCurrency = [...spendByCurrency.entries()]
       .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
@@ -412,13 +424,13 @@ export async function GET(
 
     const archivedAt = (group as { archived_at?: string | null }).archived_at ?? null;
 
-    // Override balances + suggestions for Splitwise groups with authoritative simplified_debts.
+    // For SW groups, merge cached SW balance with native-only computed balance.
+    // balancesFlat/suggestions already reflect native-only splits (source != 'splitwise').
     let finalBalances = balancesFlat;
     let finalSuggestions = suggestions;
     if (isSplitwiseGroup) {
       try {
         const tokenRow = splitwiseTokenRow;
-
         type CachedGroupBalance = {
           external_id: string;
           balances: { currency_code: string; amount: string }[];
@@ -426,46 +438,52 @@ export async function GET(
         const cachedGroups = (tokenRow as Record<string, unknown> | null)
           ?.cached_group_balances as CachedGroupBalance[] | null;
         const extId = (group as { external_id: string }).external_id;
-        const cachedBals = cachedGroups?.find((g) => g.external_id === extId)?.balances;
+        const cachedBals = cachedGroups?.find((g) => g.external_id === extId)?.balances ?? [];
 
-        if (cachedBals && cachedBals.length > 0) {
-          const myMember = (members ?? []).find((m) => m.user_id === userId);
-          const cachedMyByCurrency = new Map(
+        const myMember = (members ?? []).find((m) => m.user_id === userId);
+        if (myMember) {
+          // SW cached balance + native-only delta = combined balance
+          const swByCurrency = new Map(
             cachedBals.map((b) => [
               normalizeSplitCurrency(b.currency_code),
               Math.round(parseFloat(b.amount) * 100) / 100,
             ])
           );
-          if (myMember) {
-            for (const b of finalBalances) {
-              if (b.memberId !== myMember.id) continue;
-              const cached = cachedMyByCurrency.get(b.currency);
-              if (cached !== undefined) b.total = cached;
-            }
 
-            // Rebuild suggestions from the authoritative cached balance so the
-            // "settle up" section matches Splitwise instead of showing amounts
-            // derived from incomplete imported data.
-            const newSuggestions: typeof finalSuggestions = [];
-            for (const [cur, amt] of cachedMyByCurrency) {
-              if (Math.abs(amt) < BALANCE_EPS) continue;
-              const existingForCur = suggestions.find((s) => s.currency === cur);
-              if (amt < 0) {
-                const toId = existingForCur?.toMemberId
-                  ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
-                if (toId) {
-                  newSuggestions.push({ currency: cur, fromMemberId: myMember.id, toMemberId: toId, amount: Math.abs(amt) });
-                }
-              } else {
-                const fromId = existingForCur?.fromMemberId
-                  ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
-                if (fromId) {
-                  newSuggestions.push({ currency: cur, fromMemberId: fromId, toMemberId: myMember.id, amount: amt });
-                }
+          // Add native balance deltas
+          for (const b of finalBalances) {
+            if (b.memberId !== myMember.id) continue;
+            swByCurrency.set(b.currency, (swByCurrency.get(b.currency) ?? 0) + b.total);
+          }
+
+          // Update my balances to the merged values
+          const mergedBalances = [...finalBalances.filter((b) => b.memberId !== myMember.id)];
+          for (const [cur, amt] of swByCurrency) {
+            if (Math.abs(amt) < BALANCE_EPS) continue;
+            mergedBalances.push({ memberId: myMember.id, currency: cur, paid: 0, owed: 0, total: Math.round(amt * 100) / 100 });
+          }
+          finalBalances = mergedBalances;
+
+          // Rebuild suggestions from merged balance
+          const newSuggestions: typeof finalSuggestions = [];
+          for (const [cur, amt] of swByCurrency) {
+            if (Math.abs(amt) < BALANCE_EPS) continue;
+            const existingForCur = suggestions.find((s) => s.currency === cur);
+            if (amt < 0) {
+              const toId = existingForCur?.toMemberId
+                ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
+              if (toId) {
+                newSuggestions.push({ currency: cur, fromMemberId: myMember.id, toMemberId: toId, amount: Math.round(Math.abs(amt) * 100) / 100 });
+              }
+            } else {
+              const fromId = existingForCur?.fromMemberId
+                ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
+              if (fromId) {
+                newSuggestions.push({ currency: cur, fromMemberId: fromId, toMemberId: myMember.id, amount: Math.round(amt * 100) / 100 });
               }
             }
-            finalSuggestions = newSuggestions;
           }
+          finalSuggestions = newSuggestions;
         }
       } catch (err) {
         console.warn("[groups/id] cached group balance overlay failed:", err);

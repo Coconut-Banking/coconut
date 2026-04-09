@@ -83,12 +83,13 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (receiverMember?.user_id) {
+      // charges_enabled is the reliable signal — onboarding_complete may lag if webhook is delayed
       const [{ data: connectAccount }] = await Promise.all([
         db
           .from("stripe_connected_accounts")
           .select("stripe_account_id")
           .eq("clerk_user_id", receiverMember.user_id)
-          .eq("onboarding_complete", true)
+          .eq("charges_enabled", true)
           .maybeSingle(),
         stripeAcctPromise,
       ]);
