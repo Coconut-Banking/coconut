@@ -531,16 +531,19 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ONE settlement per currency for the total balance. Attach to the first
-    // shared group that has both members (prefer non-SW so getMaxSettlementAllowed works).
+    // ONE settlement per currency for the total balance. Attach to the best
+    // shared group: prefer non-SW groups with expenses (so getMaxSettlementAllowed works).
     for (const [cur, totalBalance] of mergedByCurrency) {
       if (Math.abs(totalBalance) < BALANCE_EPS) continue;
-      const nonSwFirst = [...sharedGroupIds].sort((a, b) => {
+      const ranked = [...sharedGroupIds].sort((a, b) => {
+        const aHasExpenses = (splitsByGroup.get(a) ?? []).length > 0 ? 0 : 1;
+        const bHasExpenses = (splitsByGroup.get(b) ?? []).length > 0 ? 0 : 1;
+        if (aHasExpenses !== bHasExpenses) return aHasExpenses - bHasExpenses;
         const aIsSw = swGroupIds.has(a) ? 1 : 0;
         const bIsSw = swGroupIds.has(b) ? 1 : 0;
         return aIsSw - bIsSw;
       });
-      for (const gid of nonSwFirst) {
+      for (const gid of ranked) {
         const gMembers = membersByGroupId.get(gid) ?? [];
         const myM = gMembers.find((m) => m.user_id === userId);
         const theirM = gMembers.find((m) => personMemberIds.has(m.id));
