@@ -178,12 +178,22 @@ export async function GET(req: NextRequest) {
     for (const m of members ?? []) {
       memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
     }
+    const membersByGroup = new Map<string, typeof members>();
+    for (const m of members ?? []) {
+      const list = membersByGroup.get(m.group_id) ?? [];
+      list.push(m);
+      membersByGroup.set(m.group_id, list);
+    }
+
     const sharedGroups = sharedGroupIds
       .map((id) => ({
         id,
         name: groupNameById.get(id) ?? "Group",
         memberCount: memberCountByGroup.get(id) ?? 0,
         groupType: groupTypeById.get(id) ?? null,
+        members: (membersByGroup.get(id) ?? []).map((m) => ({
+          id: m.id, user_id: m.user_id, display_name: m.display_name, venmo_username: m.venmo_username ?? null,
+        })),
       }))
       .sort((a, b) => a.memberCount - b.memberCount);
 

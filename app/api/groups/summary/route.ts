@@ -32,13 +32,23 @@ function addPersonCurrency(
   personBalances.set(key, existing);
 }
 
-function friendRowFromAgg(key: string, v: PersonAgg) {
+function friendRowFromAgg(
+  key: string,
+  v: PersonAgg,
+  fg?: { groupId: string; members: { id: string; user_id: string | null; display_name: string }[] },
+) {
   const balances = [...v.byCurrency.entries()]
     .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
     .filter((b) => Math.abs(b.amount) >= BALANCE_EPS)
     .sort((a, b) => a.currency.localeCompare(b.currency));
   const balance = balances.length === 1 ? balances[0].amount : balances.length === 0 ? 0 : null;
-  return { key, displayName: v.displayName, balance, balances };
+  return {
+    key,
+    displayName: v.displayName,
+    balance,
+    balances,
+    ...(fg ? { friendGroupId: fg.groupId, friendGroupMembers: fg.members } : {}),
+  };
 }
 
 /**
@@ -304,6 +314,27 @@ async function handleSummary(req: NextRequest, userId: string) {
   );
 
   const personBalances = new Map<string, PersonAgg>();
+
+  // Build person key → friend group mapping for 2-person "friend" groups.
+  // This lets the client skip the /api/groups/person + /members round trips.
+  const personFriendGroup = new Map<string, {
+    groupId: string;
+    members: { id: string; user_id: string | null; display_name: string }[];
+  }>();
+  for (const g of groups ?? []) {
+    if ((g as { group_type?: string }).group_type !== "friend") continue;
+    const gm = memberByGroup.get(g.id) ?? [];
+    if (gm.length !== 2) continue;
+    const other = gm.find((m) => m.user_id !== userId);
+    if (!other) continue;
+    const key = other.user_id ?? other.email ?? `${g.id}-${other.id}`;
+    if (!personFriendGroup.has(key)) {
+      personFriendGroup.set(key, {
+        groupId: g.id,
+        members: gm.map((m) => ({ id: m.id, user_id: m.user_id, display_name: m.display_name })),
+      });
+    }
+  }
 
   const groupsWithBalance = (groups ?? []).map((g) => {
     const groupSplits = splitByGroup.get(g.id) ?? [];
@@ -796,7 +827,7 @@ async function handleSummary(req: NextRequest, userId: string) {
   }
 
   let friends = Array.from(personBalances.entries())
-    .map(([key, v]) => friendRowFromAgg(key, v))
+    .map(([key, v]) => friendRowFromAgg(key, v, personFriendGroup.get(key)))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   // Hide 1:1 groups from the group list — their balances already appear in the
