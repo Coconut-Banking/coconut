@@ -183,7 +183,6 @@ export async function POST(request: NextRequest) {
         });
       }
     }
-    const synced = 0;
     // Fire sync in background — don't block response (prevents Vercel timeout)
     syncTransactionsForUser(effectiveUserId, { requestPlaidRefresh: true, forceRefresh: true })
       .then((result) => {
@@ -223,10 +222,10 @@ export async function POST(request: NextRequest) {
       user_id: effectiveUserId,
       item_id,
       request_id: plaid_request_id ?? null,
-      synced,
+      syncQueued: true,
       elapsed_ms: Date.now() - startedAt,
     });
-    return NextResponse.json({ ok: true, item_id, synced, trace_id: traceId });
+    return NextResponse.json({ ok: true, item_id, syncQueued: true, trace_id: traceId });
   } catch (err) {
     const errObj = err && typeof err === "object" ? err : {};
     const response = "response" in errObj ? (errObj.response as { data?: unknown; status?: number }) : null;
