@@ -35,7 +35,10 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
-  const { action, groupId, personKey, amount, description, frequency, startDate, iso_currency_code } = body as {
+  const {
+    action, groupId, personKey, amount, description, frequency, startDate,
+    iso_currency_code, endDate, maxOccurrences, customIntervalDays,
+  } = body as {
     action?: string;
     groupId?: string;
     personKey?: string;
@@ -44,6 +47,9 @@ export async function POST(request: NextRequest) {
     frequency?: string;
     startDate?: string;
     iso_currency_code?: string;
+    endDate?: string;
+    maxOccurrences?: number;
+    customIntervalDays?: number;
   };
 
   if (action === "process") {
@@ -58,8 +64,11 @@ export async function POST(request: NextRequest) {
   if (!groupId || !amount || !description || !frequency) {
     return NextResponse.json({ error: "groupId, amount, description, frequency required" }, { status: 400 });
   }
-  if (!["weekly", "biweekly", "monthly"].includes(frequency)) {
-    return NextResponse.json({ error: "frequency must be weekly, biweekly, or monthly" }, { status: 400 });
+  if (!["weekly", "biweekly", "monthly", "custom"].includes(frequency)) {
+    return NextResponse.json({ error: "frequency must be weekly, biweekly, monthly, or custom" }, { status: 400 });
+  }
+  if (frequency === "custom" && (!customIntervalDays || customIntervalDays < 1)) {
+    return NextResponse.json({ error: "customIntervalDays required for custom frequency" }, { status: 400 });
   }
 
   const result = await createRecurringExpense({
@@ -68,9 +77,12 @@ export async function POST(request: NextRequest) {
     personKey,
     amount,
     description,
-    frequency: frequency as "weekly" | "biweekly" | "monthly",
+    frequency: frequency as "weekly" | "biweekly" | "monthly" | "custom",
     startDate,
     isoCurrencyCode: iso_currency_code,
+    endDate: endDate ?? null,
+    maxOccurrences: maxOccurrences ?? null,
+    customIntervalDays: customIntervalDays ?? null,
   });
 
   if (!result) return NextResponse.json({ error: "Failed to create" }, { status: 500 });

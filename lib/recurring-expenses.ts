@@ -15,17 +15,22 @@ interface RecurringRow {
   person_key: string | null;
   amount: number;
   description: string;
-  frequency: "weekly" | "biweekly" | "monthly";
+  frequency: "weekly" | "biweekly" | "monthly" | "custom";
   next_due_date: string;
   iso_currency_code?: string | null;
+  end_date?: string | null;
+  max_occurrences?: number | null;
+  occurrences_created?: number | null;
+  custom_interval_days?: number | null;
 }
 
-function addFrequency(date: string, frequency: string): string {
+function addFrequency(date: string, frequency: string, customDays?: number | null): string {
   const d = new Date(date + "T12:00:00");
   switch (frequency) {
     case "weekly": d.setDate(d.getDate() + 7); break;
     case "biweekly": d.setDate(d.getDate() + 14); break;
     case "monthly": d.setMonth(d.getMonth() + 1); break;
+    case "custom": d.setDate(d.getDate() + (customDays ?? 30)); break;
   }
   return d.toISOString().split("T")[0];
 }
@@ -36,7 +41,7 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
 
   const { data: due } = await db
     .from("recurring_expenses")
-    .select("id, clerk_user_id, group_id, person_key, amount, description, frequency, next_due_date, iso_currency_code")
+    .select("id, clerk_user_id, group_id, person_key, amount, description, frequency, next_due_date, iso_currency_code, end_date, max_occurrences, occurrences_created, custom_interval_days")
     .eq("clerk_user_id", clerkUserId)
     .eq("is_active", true)
     .lte("next_due_date", today);
@@ -46,6 +51,16 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
   let created = 0;
   for (const rec of due as RecurringRow[]) {
     try {
+      // Check end conditions before creating
+      if (rec.end_date && today > rec.end_date) {
+        await db.from("recurring_expenses").update({ is_active: false }).eq("id", rec.id);
+        continue;
+      }
+      if (rec.max_occurrences != null && (rec.occurrences_created ?? 0) >= rec.max_occurrences) {
+        await db.from("recurring_expenses").update({ is_active: false }).eq("id", rec.id);
+        continue;
+      }
+
       const txId = `manual_recurring_${randomUUID()}`;
       const currency = normalizeSplitCurrency(rec.iso_currency_code);
 
@@ -136,10 +151,15 @@ export async function processRecurringExpenses(clerkUserId: string): Promise<num
         }
       }
 
-      const nextDue = addFrequency(rec.next_due_date, rec.frequency);
+      const nextDue = addFrequency(rec.next_due_date, rec.frequency, rec.custom_interval_days);
+      const newCount = (rec.occurrences_created ?? 0) + 1;
+      const hitMax = rec.max_occurrences != null && newCount >= rec.max_occurrences;
+      const pastEnd = rec.end_date != null && nextDue > rec.end_date;
       await db.from("recurring_expenses").update({
         next_due_date: nextDue,
         last_created_at: new Date().toISOString(),
+        occurrences_created: newCount,
+        ...(hitMax || pastEnd ? { is_active: false } : {}),
       }).eq("id", rec.id);
 
       created++;
@@ -160,12 +180,19 @@ export async function createRecurringExpense(opts: {
   personKey?: string;
   amount: number;
   description: string;
-  frequency: "weekly" | "biweekly" | "monthly";
+  frequency: "weekly" | "biweekly" | "monthly" | "custom";
   startDate?: string;
   isoCurrencyCode?: string | null;
+  endDate?: string | null;
+  maxOccurrences?: number | null;
+  customIntervalDays?: number | null;
 }): Promise<{ id: string } | null> {
   const db = getSupabase();
-  const startDate = opts.startDate ?? addFrequency(new Date().toISOString().split("T")[0], opts.frequency);
+  const startDate = opts.startDate ?? addFrequency(
+    new Date().toISOString().split("T")[0],
+    opts.frequency,
+    opts.customIntervalDays,
+  );
   const currency = normalizeSplitCurrency(opts.isoCurrencyCode);
 
   const { data, error } = await db
@@ -179,6 +206,10 @@ export async function createRecurringExpense(opts: {
       frequency: opts.frequency,
       next_due_date: startDate,
       iso_currency_code: currency,
+      end_date: opts.endDate ?? null,
+      max_occurrences: opts.maxOccurrences ?? null,
+      custom_interval_days: opts.frequency === "custom" ? (opts.customIntervalDays ?? 30) : null,
+      occurrences_created: 0,
     })
     .select("id")
     .single();

@@ -91,14 +91,27 @@ interface MirrorContext {
 }
 
 function matchMembers(
-  coconutMembers: { id: string; email?: string | null; display_name?: string | null }[],
-  swMembers: { id: number; email?: string | null; first_name?: string; last_name?: string }[]
+  coconutMembers: { id: string; email?: string | null; display_name?: string | null; user_id?: string | null }[],
+  swMembers: { id: number; email?: string | null; first_name?: string; last_name?: string }[],
+  tokenOwner?: { clerkUserId: string; swUserId: number },
 ): Map<string, number> {
   const coconutToSw = new Map<string, number>();
   const usedSwIds = new Set<number>();
 
+  // Pass 0: match the token owner (current user) by clerk user_id
+  // Handles the "You" display_name case where name/email matching fails
+  if (tokenOwner) {
+    const meMember = coconutMembers.find((m) => m.user_id === tokenOwner.clerkUserId);
+    const meSwMember = swMembers.find((m) => m.id === tokenOwner.swUserId);
+    if (meMember && meSwMember) {
+      coconutToSw.set(meMember.id, meSwMember.id);
+      usedSwIds.add(meSwMember.id);
+    }
+  }
+
   // Pass 1: match by email (most reliable)
   for (const member of coconutMembers) {
+    if (coconutToSw.has(member.id)) continue;
     const email = member.email?.trim().toLowerCase();
     if (!email) continue;
     const swMember = swMembers.find((m) => !usedSwIds.has(m.id) && m.email?.trim().toLowerCase() === email);
@@ -112,7 +125,7 @@ function matchMembers(
   for (const member of coconutMembers) {
     if (coconutToSw.has(member.id)) continue;
     const name = member.display_name?.trim().toLowerCase();
-    if (!name) continue;
+    if (!name || name === "you") continue;
     const swMember = swMembers.find((m) => {
       if (usedSwIds.has(m.id)) return false;
       const fullName = `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim().toLowerCase();
@@ -145,19 +158,23 @@ async function ensureMirrorGroup(
 
   const mirrorMap = await loadMirrorMap(db, clerkUserId);
 
+  // Resolve the current Splitwise user for reliable self-matching
+  const swUser = await getCurrentUser(token);
+  const tokenOwner = { clerkUserId, swUserId: swUser.id };
+
   // Check if we already have a mirror for this group
   if (mirrorMap[coconutGroupId]) {
     const mirrorSwGroupId = mirrorMap[coconutGroupId];
     try {
       const [mirrorGroup, { data: members }] = await Promise.all([
         getGroup(token, mirrorSwGroupId),
-        db.from("group_members").select("id, email, display_name").eq("group_id", coconutGroupId),
+        db.from("group_members").select("id, email, display_name, user_id").eq("group_id", coconutGroupId),
       ]);
       console.log(`[shadow] Found mirror ${mirrorSwGroupId} via map, coconut members:`,
-        (members ?? []).map((m) => ({ id: m.id, email: m.email, name: m.display_name })),
+        (members ?? []).map((m) => ({ id: m.id, email: m.email, name: m.display_name, uid: m.user_id })),
         "sw members:", mirrorGroup.members.map((m) => ({ id: m.id, email: m.email, name: `${m.first_name} ${m.last_name}` }))
       );
-      const coconutToSw = matchMembers(members ?? [], mirrorGroup.members);
+      const coconutToSw = matchMembers(members ?? [], mirrorGroup.members, tokenOwner);
       console.log(`[shadow] matchMembers result: ${coconutToSw.size} mappings`, Object.fromEntries(coconutToSw));
       if (coconutToSw.size > 0) {
         return { mirrorSwGroupId, coconutToSw };
@@ -178,9 +195,9 @@ async function ensureMirrorGroup(
 
     const { data: members } = await db
       .from("group_members")
-      .select("id, email, display_name")
+      .select("id, email, display_name, user_id")
       .eq("group_id", coconutGroupId);
-    const coconutToSw = matchMembers(members ?? [], existingMirror.members);
+    const coconutToSw = matchMembers(members ?? [], existingMirror.members, tokenOwner);
     if (coconutToSw.size > 0) {
       return { mirrorSwGroupId: existingMirror.id, coconutToSw };
     }
@@ -198,13 +215,10 @@ async function ensureMirrorGroup(
   const swType = typeMap[group.group_type ?? "other"] ?? "other";
   const { id: mirrorSwGroupId } = await createSwGroup(token, mirrorName, swType);
 
-  const [{ data: members }, swUser] = await Promise.all([
-    db
-      .from("group_members")
-      .select("id, email, display_name, user_id")
-      .eq("group_id", coconutGroupId),
-    getCurrentUser(token),
-  ]);
+  const { data: members } = await db
+    .from("group_members")
+    .select("id, email, display_name, user_id")
+    .eq("group_id", coconutGroupId);
 
   // For SW-linked groups, add members from the real Splitwise group by user_id
   // so we don't depend on Coconut group_members having emails.
@@ -240,7 +254,7 @@ async function ensureMirrorGroup(
 
   // Re-fetch mirror to get all member IDs
   const freshMirror = await getGroup(token, mirrorSwGroupId);
-  const coconutToSw = matchMembers(members ?? [], freshMirror.members);
+  const coconutToSw = matchMembers(members ?? [], freshMirror.members, tokenOwner);
 
   // Persist the mapping
   mirrorMap[coconutGroupId] = mirrorSwGroupId;
