@@ -642,9 +642,11 @@ async function handleSummary(req: NextRequest, userId: string) {
 
       // Build per-person local settlement deltas (Coconut settlements not yet reflected in Splitwise cache).
       // These must be subtracted from the cached balance so "mark as paid" works immediately.
+      // IMPORTANT: only include SW groups — non-SW settlements are already in the pairwise section.
       const localSettlementDeltas = new Map<string, Map<string, number>>();
       for (const m of members ?? []) {
         if (m.user_id === userId || !m.email) continue;
+        if (!swGroupIds.has(m.group_id)) continue;
         const myMember = myMemberByGroupId.get(m.group_id) ?? null;
         if (!myMember) continue;
         const gSettlements = (settlementsByGroup.get(m.group_id) ?? []).filter(
