@@ -432,41 +432,8 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Settlement suggestions: only for non-SW groups.
-      // SW groups are handled after the merge with cached balances below.
-      if (!isSw) {
-        const pairwiseSplits = groupSplits.map((s) => ({
-          id: s.id,
-          payerMemberId: payerBySplit.get(s.id) ?? null,
-        }));
-        const pairwiseSettlements = groupSettlements.map((s) => ({
-          payer_member_id: s.payer_member_id,
-          receiver_member_id: s.receiver_member_id,
-          amount: Number(s.amount),
-          currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
-        }));
-
-        const currenciesInGroup = new Set(splitCurrencyById.values());
-        for (const cur of currenciesInGroup) {
-          const pw = computePairwiseBalance(
-            myMember.id,
-            theirMember.id,
-            pairwiseSplits,
-            sharesBySplitId as Map<string, Array<{ member_id: string; amount: number }>>,
-            pairwiseSettlements,
-            splitCurrencyById,
-            cur,
-          );
-          if (Math.abs(pw) < 0.005) continue;
-          personSettlements.push({
-            groupId,
-            fromMemberId: pw > 0 ? theirMember.id : myMember.id,
-            toMemberId: pw > 0 ? myMember.id : theirMember.id,
-            amount: Math.abs(pw),
-            currency: cur,
-          });
-        }
-      }
+      // Settlement suggestions are computed AFTER the merge below
+      // (one per currency for the total balance, not per group).
 
       // Pre-index shares by split_id + member_id for O(1) lookups
       const shareAmountBySplitMember = new Map<string, number>();
@@ -564,40 +531,28 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Add settlement suggestions for the SW-cached portion of the balance.
-    // mergedByCurrency = byCurrency (non-SW + Coconut-native in SW) + SW cache + local settlements overlay
-    // personSettlements so far only covers non-SW groups. The remainder is the SW portion.
-    if (hasSwCache && swGroupIds.size > 0) {
-      const nonSwSettledByCurrency = new Map<string, number>();
-      for (const se of personSettlements) {
-        const sign = se.toMemberId === se.fromMemberId ? 0
-          : personMemberIds.has(se.fromMemberId) ? 1 : -1;
-        const prev = nonSwSettledByCurrency.get(se.currency) ?? 0;
-        nonSwSettledByCurrency.set(se.currency, prev + sign * se.amount);
-      }
-
-      for (const [cur, totalBalance] of mergedByCurrency) {
-        if (Math.abs(totalBalance) < BALANCE_EPS) continue;
-        const alreadySettled = nonSwSettledByCurrency.get(cur) ?? 0;
-        const swRemainder = Math.round((totalBalance - alreadySettled) * 100) / 100;
-        if (Math.abs(swRemainder) < BALANCE_EPS) continue;
-
-        // Find any SW group that has both members to attach the settlement to
-        for (const swGid of swGroupIds) {
-          if (!sharedGroupIds.includes(swGid)) continue;
-          const gMembers = membersByGroupId.get(swGid) ?? [];
-          const myM = gMembers.find((m) => m.user_id === userId);
-          const theirM = gMembers.find((m) => personMemberIds.has(m.id));
-          if (myM && theirM) {
-            personSettlements.push({
-              groupId: swGid,
-              fromMemberId: swRemainder > 0 ? theirM.id : myM.id,
-              toMemberId: swRemainder > 0 ? myM.id : theirM.id,
-              amount: Math.abs(swRemainder),
-              currency: cur,
-            });
-            break;
-          }
+    // ONE settlement per currency for the total balance. Attach to the first
+    // shared group that has both members (prefer non-SW so getMaxSettlementAllowed works).
+    for (const [cur, totalBalance] of mergedByCurrency) {
+      if (Math.abs(totalBalance) < BALANCE_EPS) continue;
+      const nonSwFirst = [...sharedGroupIds].sort((a, b) => {
+        const aIsSw = swGroupIds.has(a) ? 1 : 0;
+        const bIsSw = swGroupIds.has(b) ? 1 : 0;
+        return aIsSw - bIsSw;
+      });
+      for (const gid of nonSwFirst) {
+        const gMembers = membersByGroupId.get(gid) ?? [];
+        const myM = gMembers.find((m) => m.user_id === userId);
+        const theirM = gMembers.find((m) => personMemberIds.has(m.id));
+        if (myM && theirM) {
+          personSettlements.push({
+            groupId: gid,
+            fromMemberId: totalBalance > 0 ? theirM.id : myM.id,
+            toMemberId: totalBalance > 0 ? myM.id : theirM.id,
+            amount: Math.abs(totalBalance),
+            currency: cur,
+          });
+          break;
         }
       }
     }
