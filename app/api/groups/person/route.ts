@@ -210,7 +210,7 @@ export async function GET(req: NextRequest) {
     const [splitsRaw, settlements, swTokenResult] = await Promise.all([
       paginateAll(() =>
         db.from("split_transactions")
-          .select(`id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, receipt_url, transactions(merchant_name, raw_name, amount, date)`)
+          .select(`id, group_id, transaction_id, created_by, created_at, payer_member_id, amount, description, iso_currency_code, source, receipt_url, transactions(merchant_name, raw_name, amount, date)`)
           .in("group_id", sharedGroupIds)
           .order("created_at", { ascending: false })
       ),
