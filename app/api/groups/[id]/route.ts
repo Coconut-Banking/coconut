@@ -558,6 +558,41 @@ export async function GET(
   }
 }
 
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const [userId, { id }] = await Promise.all([getUserId(), params]);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const db = getSupabase();
+  const { data: group, error: loadErr } = await db
+    .from("groups")
+    .select("owner_id")
+    .eq("id", id)
+    .single();
+  if (loadErr || !group || group.owner_id !== userId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const { count } = await db
+    .from("split_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", id);
+
+  if ((count ?? 0) > 0) {
+    return NextResponse.json(
+      { error: "Cannot delete a group with expenses. Archive it instead." },
+      { status: 400 }
+    );
+  }
+
+  const { error: delErr } = await db.from("groups").delete().eq("id", id);
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

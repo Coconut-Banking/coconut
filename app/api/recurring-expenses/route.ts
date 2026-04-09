@@ -64,6 +64,9 @@ export async function POST(request: NextRequest) {
   if (!groupId || !amount || !description || !frequency) {
     return NextResponse.json({ error: "groupId, amount, description, frequency required" }, { status: 400 });
   }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return NextResponse.json({ error: "amount must be a positive number" }, { status: 400 });
+  }
   if (!["weekly", "biweekly", "monthly", "custom"].includes(frequency)) {
     return NextResponse.json({ error: "frequency must be weekly, biweekly, monthly, or custom" }, { status: 400 });
   }

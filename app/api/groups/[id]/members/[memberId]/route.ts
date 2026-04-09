@@ -35,6 +35,18 @@ export async function DELETE(
     );
   }
 
+  const { count: shareCount } = await db
+    .from("split_shares")
+    .select("id", { count: "exact", head: true })
+    .eq("member_id", memberId);
+
+  if ((shareCount ?? 0) > 0) {
+    return NextResponse.json(
+      { error: "Cannot remove a member who is part of existing expenses. Settle up first, then remove." },
+      { status: 400 }
+    );
+  }
+
   const { error: deleteError } = await db
     .from("group_members")
     .delete()

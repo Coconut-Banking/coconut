@@ -155,8 +155,8 @@ export async function GET(request: NextRequest) {
       ),
       db.from("subscription_transactions").select("transaction_id").in("transaction_id", txIds),
       acctIds.length > 0
-        ? db.from("accounts").select("id, plaid_account_id, name, mask").in("id", acctIds).then((r) => r.data ?? [])
-        : Promise.resolve([] as { id: string; plaid_account_id: string; name: string; mask: string }[]),
+        ? db.from("accounts").select("id, plaid_account_id, name, nickname, mask").in("id", acctIds).then((r) => r.data ?? [])
+        : Promise.resolve([] as { id: string; plaid_account_id: string; name: string; nickname: string | null; mask: string }[]),
       db.from("subscriptions").select("normalized_merchant").eq("clerk_user_id", effectiveUserId).eq("status", "active"),
     ]);
 
@@ -302,7 +302,7 @@ export async function GET(request: NextRequest) {
     const accountIdToMask = new Map<string, string>();
     for (const a of acctRows) {
       accountIdToMask.set(a.id, a.mask ?? "****");
-      accountIdToMask.set(`name:${a.id}`, a.name ?? "");
+      accountIdToMask.set(`name:${a.id}`, (a as { nickname?: string | null }).nickname || a.name || "");
       accountIdToMask.set(`plaid:${a.id}`, a.plaid_account_id);
     }
     const recurringMerchants = new Set(
