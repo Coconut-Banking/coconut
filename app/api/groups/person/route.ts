@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
-import { getSuggestedSettlements } from "@/lib/split-balances";
-import { computeBalancesByCurrency, normalizeSplitCurrency } from "@/lib/split-balances-currency";
+import { computePairwiseBalance } from "@/lib/split-balances";
+import { normalizeSplitCurrency } from "@/lib/split-balances-currency";
 import { getAccessibleGroupIds } from "@/lib/group-access";
 import { getUserId } from "@/lib/auth";
 import {
@@ -385,34 +385,40 @@ export async function GET(req: NextRequest) {
 
       const groupSettlements = settlementsByGroupId.get(groupId) ?? [];
 
-      // Skip pairwise for Splitwise groups when cache is authoritative.
-      // The cached balance already covers them; computing here would double-count.
-      const skipPairwise = hasSwCache && swGroupIds.has(groupId);
-      if (!skipPairwise) {
-        // Pairwise balance: only count transactions where I or they paid
-        for (const s of groupSplits) {
-          const cur = splitCurrencyById.get(s.id) ?? "USD";
-          const txShares = sharesByTx.get(s.id);
-          if (!txShares) continue;
-          const payerId = payerBySplit.get(s.id);
-          if (!payerId) continue;
+      const isSw = hasSwCache && swGroupIds.has(groupId);
 
-          if (payerId === myMember.id) {
-            const theirShare = txShares.get(theirMember.id) ?? 0;
-            if (theirShare > 0) {
-              const prev = byCurrency.get(cur) ?? 0;
-              byCurrency.set(cur, Math.round((prev + theirShare) * 100) / 100);
-            }
-          } else if (payerId === theirMember.id) {
-            const myShare = txShares.get(myMember.id) ?? 0;
-            if (myShare > 0) {
-              const prev = byCurrency.get(cur) ?? 0;
-              byCurrency.set(cur, Math.round((prev - myShare) * 100) / 100);
-            }
+      // For SW groups with cache: only process Coconut-native expenses
+      // (source != 'splitwise') so we don't double-count with the cache overlay.
+      // For non-SW groups: process all expenses as before.
+      const pairwiseSplitList = isSw
+        ? groupSplits.filter((s) => (s as { source?: string | null }).source !== "splitwise")
+        : groupSplits;
+
+      // Pairwise balance: only count transactions where I or they paid
+      for (const s of pairwiseSplitList) {
+        const cur = splitCurrencyById.get(s.id) ?? "USD";
+        const txShares = sharesByTx.get(s.id);
+        if (!txShares) continue;
+        const payerId = payerBySplit.get(s.id);
+        if (!payerId) continue;
+
+        if (payerId === myMember.id) {
+          const theirShare = txShares.get(theirMember.id) ?? 0;
+          if (theirShare > 0) {
+            const prev = byCurrency.get(cur) ?? 0;
+            byCurrency.set(cur, Math.round((prev + theirShare) * 100) / 100);
+          }
+        } else if (payerId === theirMember.id) {
+          const myShare = txShares.get(myMember.id) ?? 0;
+          if (myShare > 0) {
+            const prev = byCurrency.get(cur) ?? 0;
+            byCurrency.set(cur, Math.round((prev - myShare) * 100) / 100);
           }
         }
+      }
 
-        // Pairwise settlement adjustments
+      // Pairwise settlement adjustments — skip for SW groups (cache overlay handles them)
+      if (!isSw) {
         for (const st of groupSettlements) {
           const cur = normalizeSplitCurrency((st as { iso_currency_code?: string | null }).iso_currency_code);
           const amt = Number(st.amount);
@@ -426,73 +432,38 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Compute settlement suggestions using group-level balances (correct for suggestions)
-      const paidRows: { member_id: string; amount: number; currency: string }[] = [];
-      for (const s of groupSplits) {
-        const pid = payerBySplit.get(s.id);
-        if (pid) {
-          const amt = paidAmountFromSplitRow(
-            s as { transactions?: unknown; amount?: number | string | null }
+      // Settlement suggestions: only for non-SW groups.
+      // SW groups are handled after the merge with cached balances below.
+      if (!isSw) {
+        const pairwiseSplits = groupSplits.map((s) => ({
+          id: s.id,
+          payerMemberId: payerBySplit.get(s.id) ?? null,
+        }));
+        const pairwiseSettlements = groupSettlements.map((s) => ({
+          payer_member_id: s.payer_member_id,
+          receiver_member_id: s.receiver_member_id,
+          amount: Number(s.amount),
+          currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
+        }));
+
+        const currenciesInGroup = new Set(splitCurrencyById.values());
+        for (const cur of currenciesInGroup) {
+          const pw = computePairwiseBalance(
+            myMember.id,
+            theirMember.id,
+            pairwiseSplits,
+            sharesBySplitId as Map<string, Array<{ member_id: string; amount: number }>>,
+            pairwiseSettlements,
+            splitCurrencyById,
+            cur,
           );
-          if (amt > 0) {
-            paidRows.push({
-              member_id: pid,
-              amount: amt,
-              currency: splitCurrencyById.get(s.id) ?? "USD",
-            });
-          }
-        }
-      }
-
-      const owedRows: { member_id: string; amount: number; currency: string }[] = [];
-      for (const s of groupSplits) {
-        for (const sh of sharesBySplitId.get(s.id) ?? []) {
-          owedRows.push({
-            member_id: sh.member_id,
-            amount: Number(sh.amount),
-            currency: splitCurrencyById.get(sh.split_transaction_id) ?? "USD",
-          });
-        }
-      }
-
-      const paidSettlements = groupSettlements.map((s) => ({
-        payer_member_id: s.payer_member_id,
-        amount: Number(s.amount),
-        currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
-      }));
-      const receivedSettlements = groupSettlements.map((s) => ({
-        receiver_member_id: s.receiver_member_id,
-        amount: Number(s.amount),
-        currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
-      }));
-
-      const balancesByCurrency = computeBalancesByCurrency(
-        paidRows,
-        owedRows,
-        paidSettlements,
-        receivedSettlements
-      );
-
-      const suggestions = (() => {
-        const out: Array<{ currency: string; fromMemberId: string; toMemberId: string; amount: number }> = [];
-        for (const [cur, balMap] of balancesByCurrency) {
-          for (const s of getSuggestedSettlements(balMap)) {
-            out.push({ currency: cur, ...s });
-          }
-        }
-        return out;
-      })();
-
-      for (const s of suggestions) {
-        const involvesMe = s.fromMemberId === myMember.id || s.toMemberId === myMember.id;
-        const involvesThem = s.fromMemberId === theirMember.id || s.toMemberId === theirMember.id;
-        if (involvesMe && involvesThem) {
+          if (Math.abs(pw) < 0.005) continue;
           personSettlements.push({
             groupId,
-            fromMemberId: s.fromMemberId,
-            toMemberId: s.toMemberId,
-            amount: s.amount,
-            currency: s.currency,
+            fromMemberId: pw > 0 ? theirMember.id : myMember.id,
+            toMemberId: pw > 0 ? myMember.id : theirMember.id,
+            amount: Math.abs(pw),
+            currency: cur,
           });
         }
       }
@@ -588,6 +559,44 @@ export async function GET(req: NextRequest) {
             } else if (st.payer_member_id === myMember.id && st.receiver_member_id === theirMember.id) {
               mergedByCurrency.set(cur, Math.round(((mergedByCurrency.get(cur) ?? 0) + amt) * 100) / 100);
             }
+          }
+        }
+      }
+    }
+
+    // Add settlement suggestions for the SW-cached portion of the balance.
+    // mergedByCurrency = byCurrency (non-SW + Coconut-native in SW) + SW cache + local settlements overlay
+    // personSettlements so far only covers non-SW groups. The remainder is the SW portion.
+    if (hasSwCache && swGroupIds.size > 0) {
+      const nonSwSettledByCurrency = new Map<string, number>();
+      for (const se of personSettlements) {
+        const sign = se.toMemberId === se.fromMemberId ? 0
+          : personMemberIds.has(se.fromMemberId) ? 1 : -1;
+        const prev = nonSwSettledByCurrency.get(se.currency) ?? 0;
+        nonSwSettledByCurrency.set(se.currency, prev + sign * se.amount);
+      }
+
+      for (const [cur, totalBalance] of mergedByCurrency) {
+        if (Math.abs(totalBalance) < BALANCE_EPS) continue;
+        const alreadySettled = nonSwSettledByCurrency.get(cur) ?? 0;
+        const swRemainder = Math.round((totalBalance - alreadySettled) * 100) / 100;
+        if (Math.abs(swRemainder) < BALANCE_EPS) continue;
+
+        // Find any SW group that has both members to attach the settlement to
+        for (const swGid of swGroupIds) {
+          if (!sharedGroupIds.includes(swGid)) continue;
+          const gMembers = membersByGroupId.get(swGid) ?? [];
+          const myM = gMembers.find((m) => m.user_id === userId);
+          const theirM = gMembers.find((m) => personMemberIds.has(m.id));
+          if (myM && theirM) {
+            personSettlements.push({
+              groupId: swGid,
+              fromMemberId: swRemainder > 0 ? theirM.id : myM.id,
+              toMemberId: swRemainder > 0 ? myM.id : theirM.id,
+              amount: Math.abs(swRemainder),
+              currency: cur,
+            });
+            break;
           }
         }
       }

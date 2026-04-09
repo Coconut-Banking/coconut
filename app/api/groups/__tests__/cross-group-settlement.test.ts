@@ -1032,4 +1032,94 @@ describe("full ledger integrity: cross-group settlement", () => {
     expect(friendTripBal).toBeDefined();
     expect(r(friendTripBal.total)).toBe(30);
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  REGRESSION: pairwise != group-wide simplified — settle-up must match
+  //  displayed balance, not the minimized graph.
+  //
+  //  3-person group: Me, Friend, Alice
+  //    - I paid $300 split 3 ways ($100 each)
+  //    - Friend paid $90 split 3 ways ($30 each)
+  //
+  //  Pairwise (Me↔Friend): Friend owes me $100, I owe Friend $30 → net $70
+  //  Group-wide simplified: Me=+170, Friend=-40, Alice=-130
+  //    → greedy: Alice→Me $130, Friend→Me $40   (Friend→Me is $40, not $70!)
+  //
+  //  Before this fix, settle-up would cap at $40 (simplified), leaving $30
+  //  orphaned. Now it uses $70 (pairwise) so full settlement is possible.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  it("REGRESSION: 3-person group where pairwise != simplified — settle-up matches displayed balance", async () => {
+    db.split_transactions = [];
+    db.split_shares = [];
+    db.settlements = [];
+
+    // Reuse trip group (4-person), but we only care about Me, Friend, Alice
+    // I paid $300 split 3 ways among me, friend, alice
+    addExpense(
+      tripGroupId,
+      myTripMemberId,
+      300,
+      [
+        { memberId: myTripMemberId, amount: 100 },
+        { memberId: friendTripMemberId, amount: 100 },
+        { memberId: aliceTripMemberId, amount: 100 },
+      ],
+      "Big dinner"
+    );
+
+    // Friend paid $90 split 3 ways among me, friend, alice
+    addExpense(
+      tripGroupId,
+      friendTripMemberId,
+      90,
+      [
+        { memberId: myTripMemberId, amount: 30 },
+        { memberId: friendTripMemberId, amount: 30 },
+        { memberId: aliceTripMemberId, amount: 30 },
+      ],
+      "Drinks"
+    );
+
+    const p = await fetchPerson("friend_user_id");
+
+    // Displayed balance should be $70 (pairwise: 100 - 30)
+    expect(p.balance).toBe(70);
+    expect(p.currencyBalances).toHaveLength(1);
+    expect(p.currencyBalances[0].amount).toBe(70);
+
+    // Settlement suggestions should sum to $70 (matching displayed balance)
+    const totalSettle = p.settlements.reduce(
+      (sum: number, s: { amount: number }) => sum + s.amount,
+      0
+    );
+    expect(r(totalSettle)).toBe(70);
+
+    // Each settlement should involve friend→me
+    for (const s of p.settlements) {
+      expect(s.fromMemberId).toBe(friendTripMemberId);
+      expect(s.toMemberId).toBe(myTripMemberId);
+    }
+
+    // Record the settlements and verify balance goes to zero
+    recordSettlements(p.settlements);
+
+    const after = await fetchPerson("friend_user_id");
+    expect(after.balance).toBe(0);
+    expect(after.settlements).toHaveLength(0);
+
+    // Verify no orphaned balance — friend is fully settled in the group
+    const tripG = await fetchGroup(tripGroupId);
+    const friendBal = tripG.balances.find(
+      (b: { memberId: string }) => b.memberId === friendTripMemberId
+    );
+    expect(r(friendBal?.total ?? 0)).toBe(0);
+
+    // Alice still owes: $100 (from my expense) + $30 (from friend's expense) = $130
+    const aliceBal = tripG.balances.find(
+      (b: { memberId: string }) => b.memberId === aliceTripMemberId
+    );
+    expect(aliceBal).toBeDefined();
+    expect(r(aliceBal.total)).toBe(-130);
+  });
 });

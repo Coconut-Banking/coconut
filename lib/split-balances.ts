@@ -59,6 +59,59 @@ export function computeBalances(
 }
 
 /**
+ * Direct pairwise balance between two members in a single group/currency.
+ *
+ * Returns the net from memberA's perspective:
+ *   positive → memberB owes memberA
+ *   negative → memberA owes memberB
+ *
+ * Unlike getSuggestedSettlements (group-wide debt minimization), this
+ * reflects the actual debt between two specific people — matching what
+ * the person detail screen displays.
+ */
+export function computePairwiseBalance(
+  memberAId: string,
+  memberBId: string,
+  splits: ReadonlyArray<{ id: string; payerMemberId: string | null }>,
+  sharesBySplitId: ReadonlyMap<string, ReadonlyArray<{ member_id: string; amount: number }>>,
+  settlements: ReadonlyArray<{
+    payer_member_id: string;
+    receiver_member_id: string;
+    amount: number;
+    currency: string;
+  }>,
+  splitCurrencyById: ReadonlyMap<string, string>,
+  currency: string,
+): number {
+  let balance = 0;
+
+  for (const split of splits) {
+    const cur = splitCurrencyById.get(split.id) ?? "USD";
+    if (cur !== currency) continue;
+    const shares = sharesBySplitId.get(split.id) ?? [];
+
+    if (split.payerMemberId === memberAId) {
+      const bShare = shares.find((s) => s.member_id === memberBId);
+      if (bShare) balance += Number(bShare.amount);
+    } else if (split.payerMemberId === memberBId) {
+      const aShare = shares.find((s) => s.member_id === memberAId);
+      if (aShare) balance -= Number(aShare.amount);
+    }
+  }
+
+  for (const st of settlements) {
+    if (st.currency !== currency) continue;
+    if (st.payer_member_id === memberAId && st.receiver_member_id === memberBId) {
+      balance += Number(st.amount);
+    } else if (st.payer_member_id === memberBId && st.receiver_member_id === memberAId) {
+      balance -= Number(st.amount);
+    }
+  }
+
+  return Math.round(balance * 100) / 100;
+}
+
+/**
  * Stable comparator for settlement suggestions (Spliit-style).
  * Ensures that executing one suggested reimbursement does not cause
  * the remaining suggestions to shuffle randomly — deterministic ordering.

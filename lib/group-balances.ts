@@ -3,12 +3,9 @@
  * Prevents over-settling when "Mark paid" is clicked multiple times.
  */
 import { getSupabase } from "./supabase";
-import { getSuggestedSettlements } from "./split-balances";
-import { computeBalancesByCurrency, normalizeSplitCurrency } from "./split-balances-currency";
-import {
-  paidAmountFromSplitRow,
-  splitTransactionDedupeKey,
-} from "./split-transaction-helpers";
+import { computePairwiseBalance } from "./split-balances";
+import { normalizeSplitCurrency } from "./split-balances-currency";
+import { splitTransactionDedupeKey } from "./split-transaction-helpers";
 
 export interface MaxSettlementResult {
   maxAmount: number;
@@ -76,88 +73,48 @@ export async function getMaxSettlementAllowed(
     ])
   );
 
-  const paidRows: { member_id: string; amount: number; currency: string }[] = [];
-  for (const s of splits) {
-    const tid = s.transaction_id as string | null | undefined;
+  const memberIdSet = new Set((members ?? []).map((m) => m.id));
+
+  const pairwiseSplits = splits.map((s) => {
     const payerM = (s as { payer_member_id?: string | null }).payer_member_id;
-    const memberId =
-      payerM && (members ?? []).some((m) => m.id === payerM)
+    const payerMemberId =
+      payerM && memberIdSet.has(payerM)
         ? payerM
         : (() => {
+            const tid = s.transaction_id as string | null | undefined;
             const ownerId = tid ? txOwnerById.get(tid) : undefined;
-            return ownerId ? memberByUserId.get(ownerId) : null;
+            return ownerId ? memberByUserId.get(ownerId) ?? null : null;
           })();
-    if (memberId) {
-      const amt = paidAmountFromSplitRow(
-        s as { transactions?: unknown; amount?: number | string | null }
-      );
-      if (amt > 0) {
-        paidRows.push({
-          member_id: memberId,
-          amount: amt,
-          currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
-        });
-      }
-    }
-  }
-
-  const owedBySplitMember = new Map<string, number>();
-  for (const sh of shares ?? []) {
-    const key = `${sh.split_transaction_id}:${sh.member_id}`;
-    owedBySplitMember.set(key, (owedBySplitMember.get(key) ?? 0) + Number(sh.amount));
-  }
-  const owedRows = Array.from(owedBySplitMember.entries()).map(([key, amount]) => {
-    const splitId = key.split(":")[0];
-    return {
-      member_id: key.split(":")[1],
-      amount,
-      currency: splitCurrencyById.get(splitId) ?? "USD",
-    };
+    return { id: s.id, payerMemberId };
   });
 
-  const paidSettlements = (settlements ?? []).map((s) => ({
+  const sharesBySplitId = new Map<string, Array<{ member_id: string; amount: number }>>();
+  for (const sh of shares ?? []) {
+    const list = sharesBySplitId.get(sh.split_transaction_id);
+    if (list) list.push({ member_id: sh.member_id, amount: Number(sh.amount) });
+    else sharesBySplitId.set(sh.split_transaction_id, [{ member_id: sh.member_id, amount: Number(sh.amount) }]);
+  }
+
+  const pairwiseSettlements = (settlements ?? []).map((s) => ({
     payer_member_id: s.payer_member_id,
-    amount: Number(s.amount),
-    currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
-  }));
-  const receivedSettlements = (settlements ?? []).map((s) => ({
     receiver_member_id: s.receiver_member_id,
     amount: Number(s.amount),
     currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
   }));
 
-  const balancesByCurrency = computeBalancesByCurrency(
-    paidRows,
-    owedRows,
-    paidSettlements,
-    receivedSettlements
+  // Positive result means payer owes receiver (from receiver's perspective)
+  const remaining = computePairwiseBalance(
+    receiverMemberId,
+    payerMemberId,
+    pairwiseSplits,
+    sharesBySplitId,
+    pairwiseSettlements,
+    splitCurrencyById,
+    cur,
   );
 
-  const balMap = balancesByCurrency.get(cur);
-  if (!balMap) {
-    return { maxAmount: 0, allowed: false, reason: "No balance in this currency for this group" };
-  }
-
-  const suggestions = getSuggestedSettlements(balMap);
-  const suggestion = suggestions.find(
-    (s) => s.fromMemberId === payerMemberId && s.toMemberId === receiverMemberId
-  );
-  if (!suggestion || suggestion.amount <= 0) {
-    return { maxAmount: 0, allowed: false, reason: "Already settled between these members in this currency" };
-  }
-
-  const existingFromPayerToReceiver = (settlements ?? [])
-    .filter(
-      (s) =>
-        s.payer_member_id === payerMemberId &&
-        s.receiver_member_id === receiverMemberId &&
-        normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code) === cur
-    )
-    .reduce((sum, s) => sum + Number(s.amount), 0);
-
-  const remaining = Math.round((suggestion.amount - existingFromPayerToReceiver) * 100) / 100;
   if (remaining <= 0) {
-    return { maxAmount: 0, allowed: false, reason: "Already settled" };
+    return { maxAmount: 0, allowed: false, reason: "Already settled between these members in this currency" };
   }
 
   return { maxAmount: remaining, allowed: true };
