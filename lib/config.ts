@@ -13,7 +13,7 @@ export const SEARCH = {
 
 export const GMAIL = {
   DEFAULT_SCAN_DAYS: 30,
-  MAX_RESULTS: 200,
+  MAX_RESULTS: 500,
   EMAIL_MAX_CHARS: 12_000,
   PARSE_CONCURRENCY: 5,
   PARSE_TIMEOUT_MS: 30_000,
@@ -75,7 +75,7 @@ export const GMAIL = {
     "chowbus.com",
     "skipthedishes.com",
   ],
-  RECEIPT_EXCLUSIONS: ["-label:spam", "-label:trash", "-category:promotions"],
+  RECEIPT_EXCLUSIONS: ["-label:spam", "-label:trash"],
   /** Senders whose emails should never be treated as expense receipts. */
   EXCLUDED_SENDERS: [
     "wealthsimple.com",
@@ -116,6 +116,7 @@ export const RECEIPT_MATCH = {
   AMOUNT_TOLERANCE_DOLLARS: 5,
   AMOUNT_TOLERANCE_PERCENT: 0.20,
   DATE_WINDOW_DAYS: 7,
+  TIGHT_DATE_WINDOW_DAYS: 5,
   MIN_KEYWORD_LENGTH: 3,
   STOP_WORDS: new Set([
     "the", "and", "for", "inc", "llc", "ltd", "com", "www", "online",
