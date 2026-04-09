@@ -318,12 +318,15 @@ export async function GET(
       };
     });
 
-    const paidSettlements = (settlements ?? []).map((s) => ({
+    const nativeSettlements = isSplitwiseGroup
+      ? (settlements ?? []).filter((s) => (s as { method?: string }).method !== "splitwise")
+      : (settlements ?? []);
+    const paidSettlements = nativeSettlements.map((s) => ({
       payer_member_id: s.payer_member_id,
       amount: Number(s.amount),
       currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
     }));
-    const receivedSettlements = (settlements ?? []).map((s) => ({
+    const receivedSettlements = nativeSettlements.map((s) => ({
       receiver_member_id: s.receiver_member_id,
       amount: Number(s.amount),
       currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
@@ -509,6 +512,7 @@ export async function GET(
 
       for (const sh of shares ?? []) {
         if (sh.member_id !== myMemberId) continue;
+        if (isSplitwiseGroup && !balanceSplitIds.has(sh.split_transaction_id)) continue;
         const amt = Math.round(Number(sh.amount) * 100) / 100;
         if (amt <= 0) continue;
         const cur = splitCurrencyById.get(sh.split_transaction_id) ?? "USD";
