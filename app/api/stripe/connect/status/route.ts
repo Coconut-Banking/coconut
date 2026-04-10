@@ -41,8 +41,10 @@ export async function GET() {
       const account = await stripe.accounts.retrieve(row.stripe_account_id);
       const chargesEnabled = account.charges_enabled ?? false;
       const payoutsEnabled = account.payouts_enabled ?? false;
-      // charges_enabled is sufficient for routing — payouts may lag in test mode
       const onboardingComplete = chargesEnabled;
+      const pastDue = account.requirements?.past_due ?? [];
+      const currentlyDue = account.requirements?.currently_due ?? [];
+      const requiresVerification = pastDue.length > 0 || currentlyDue.length > 0;
 
       if (
         onboardingComplete !== row.onboarding_complete ||
@@ -61,6 +63,7 @@ export async function GET() {
         onboardingComplete,
         chargesEnabled,
         payoutsEnabled,
+        requiresVerification,
         createdAt: row.created_at,
       });
     } catch {

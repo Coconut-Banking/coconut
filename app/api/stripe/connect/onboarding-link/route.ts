@@ -50,6 +50,10 @@ export async function POST(req: Request) {
       refresh_url: `${appUrl}/api/stripe/connect/onboarding-refresh?account_id=${row.stripe_account_id}&scheme=${scheme}`,
       return_url: `${appUrl}/api/stripe/connect/onboarding-return?account_id=${row.stripe_account_id}&scheme=${scheme}`,
       type: "account_onboarding",
+      collection_options: {
+        fields: "eventually_due",
+        future_requirements: "include",
+      },
     });
 
     return NextResponse.json({ url: accountLink.url });
