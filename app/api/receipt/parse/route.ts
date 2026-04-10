@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
         image_base64: imagePayload,
         status: "parsed",
       })
-      .select("*")
+      .select("id, merchant_name, receipt_date, subtotal, tax, tip, other_fees, total, status, created_at")
       .single();
 
     if (receiptErr || !receipt) {

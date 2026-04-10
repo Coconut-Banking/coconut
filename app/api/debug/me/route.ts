@@ -12,5 +12,8 @@ export async function GET() {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const { userId } = await auth();
-  return NextResponse.json({ userId: userId ?? null });
+  return NextResponse.json(
+    { userId: userId ?? null },
+    { headers: { "Cache-Control": "private, no-store" } }
+  );
 }
