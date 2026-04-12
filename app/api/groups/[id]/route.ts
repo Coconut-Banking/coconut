@@ -11,6 +11,7 @@ import {
   paidAmountFromSplitRow,
   splitTransactionDedupeKey,
 } from "@/lib/split-transaction-helpers";
+import { getGroup as getSwGroup } from "@/lib/splitwise";
 
 const BALANCE_EPS = 0.005;
 
@@ -210,7 +211,7 @@ export async function GET(
         ? Promise.resolve(
             getSupabaseAdmin()
               .from("splitwise_tokens")
-              .select("cached_group_balances")
+              .select("access_token, cached_group_balances")
               .eq("clerk_user_id", userId)
               .maybeSingle()
           ).then((r) => r.data).catch(() => null)
@@ -433,15 +434,57 @@ export async function GET(
     let finalSuggestions = suggestions;
     if (isSplitwiseGroup) {
       try {
-        const tokenRow = splitwiseTokenRow;
-        type CachedGroupBalance = {
-          external_id: string;
-          balances: { currency_code: string; amount: string }[];
-        };
-        const cachedGroups = (tokenRow as Record<string, unknown> | null)
-          ?.cached_group_balances as CachedGroupBalance[] | null;
+        const tokenRow = splitwiseTokenRow as { access_token?: string; cached_group_balances?: unknown } | null;
         const extId = (group as { external_id: string }).external_id;
-        const cachedBals = cachedGroups?.find((g) => g.external_id === extId)?.balances ?? [];
+        const swToken = tokenRow?.access_token;
+        const swGroupId = extId ? parseInt(extId, 10) : NaN;
+
+        // Fetch FRESH balance from Splitwise API (not stale cache) so
+        // settlements recorded in Splitwise are reflected immediately.
+        type SwBalance = { currency_code: string; amount: string };
+        let liveBals: SwBalance[] = [];
+        if (swToken && Number.isFinite(swGroupId)) {
+          try {
+            const swGroup = await getSwGroup(swToken, swGroupId);
+            const swMe = swGroup.members.find((m) =>
+              (members ?? []).some((cm) => cm.email && cm.email === m.email)
+            );
+            if (swMe) {
+              const byCur = new Map<string, number>();
+              for (const d of swGroup.simplified_debts) {
+                const cur = d.currency_code ?? "USD";
+                const amt = parseFloat(d.amount);
+                if (d.to === swMe.id) byCur.set(cur, (byCur.get(cur) ?? 0) + amt);
+                if (d.from === swMe.id) byCur.set(cur, (byCur.get(cur) ?? 0) - amt);
+              }
+              liveBals = [...byCur.entries()].map(([currency_code, a]) => ({
+                currency_code,
+                amount: a.toFixed(2),
+              }));
+            }
+
+            // Update cache in background so summary stays fresh too
+            type CachedGroupBalance = { external_id: string; balances: SwBalance[] };
+            const existingCache = (tokenRow?.cached_group_balances ?? []) as CachedGroupBalance[];
+            const updatedCache = existingCache.filter((g) => g.external_id !== extId);
+            updatedCache.push({ external_id: extId, balances: liveBals });
+            void getSupabaseAdmin()
+              .from("splitwise_tokens")
+              .update({ cached_group_balances: updatedCache } as Record<string, unknown>)
+              .eq("clerk_user_id", userId)
+              .then(() => {});
+          } catch (swErr) {
+            console.warn("[groups/id] live SW balance fetch failed, falling back to cache:", swErr);
+          }
+        }
+
+        // Fall back to stale cache if live fetch failed
+        if (liveBals.length === 0) {
+          type CachedGroupBalance = { external_id: string; balances: SwBalance[] };
+          const cachedGroups = (tokenRow?.cached_group_balances ?? null) as CachedGroupBalance[] | null;
+          liveBals = cachedGroups?.find((g) => g.external_id === extId)?.balances ?? [];
+        }
+        const cachedBals = liveBals;
 
         const myMember = (members ?? []).find((m) => m.user_id === userId);
         if (myMember) {
@@ -467,20 +510,28 @@ export async function GET(
           }
           finalBalances = mergedBalances;
 
-          // Rebuild suggestions from merged balance
+          // Rebuild suggestions from merged balance.
+          // When merged sign differs from native, the existing suggestion's
+          // counterparty may be the user themselves (sign flip). Always pick
+          // a counterparty that is NOT the current user.
           const newSuggestions: typeof finalSuggestions = [];
+          const otherMembers = (members ?? []).filter((m) => m.id !== myMember.id);
           for (const [cur, amt] of swByCurrency) {
             if (Math.abs(amt) < BALANCE_EPS) continue;
             const existingForCur = suggestions.find((s) => s.currency === cur);
             if (amt < 0) {
-              const toId = existingForCur?.toMemberId
-                ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
+              const toId =
+                (existingForCur?.toMemberId !== myMember.id ? existingForCur?.toMemberId : null)
+                ?? (existingForCur?.fromMemberId !== myMember.id ? existingForCur?.fromMemberId : null)
+                ?? otherMembers[0]?.id;
               if (toId) {
                 newSuggestions.push({ currency: cur, fromMemberId: myMember.id, toMemberId: toId, amount: Math.round(Math.abs(amt) * 100) / 100 });
               }
             } else {
-              const fromId = existingForCur?.fromMemberId
-                ?? (members ?? []).find((m) => m.id !== myMember.id)?.id;
+              const fromId =
+                (existingForCur?.fromMemberId !== myMember.id ? existingForCur?.fromMemberId : null)
+                ?? (existingForCur?.toMemberId !== myMember.id ? existingForCur?.toMemberId : null)
+                ?? otherMembers[0]?.id;
               if (fromId) {
                 newSuggestions.push({ currency: cur, fromMemberId: fromId, toMemberId: myMember.id, amount: Math.round(amt * 100) / 100 });
               }

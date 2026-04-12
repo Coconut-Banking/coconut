@@ -9,6 +9,7 @@ import {
   paidAmountFromSplitRow,
   splitTransactionDedupeKey,
 } from "@/lib/split-transaction-helpers";
+import { getGroups as getSwGroups } from "@/lib/splitwise";
 
 /** Ignore sub–half-cent noise when deciding “settled” vs outstanding (Splitwise-style lists). */
 const BALANCE_EPS = 0.005;
@@ -206,7 +207,7 @@ async function handleSummary(req: NextRequest, userId: string) {
         .eq("status", "completed")
     ),
     db.from("splitwise_tokens")
-      .select("cached_friend_balances, cached_group_balances")
+      .select("access_token, cached_friend_balances, cached_group_balances")
       .eq("clerk_user_id", userId)
       .maybeSingle(),
   ]);
@@ -611,6 +612,57 @@ async function handleSummary(req: NextRequest, userId: string) {
       lastActivityAt,
     };
   });
+
+  // Background: refresh cached_group_balances from Splitwise so settled groups
+  // don't show stale pre-settlement debt on the NEXT request.
+  {
+    const swToken = (swTokenRow as Record<string, unknown> | null)?.access_token as string | undefined;
+    if (swToken) {
+      void (async () => {
+        try {
+          const swGroups = await getSwGroups(swToken);
+          const swMe = await (async () => {
+            for (const g of swGroups) {
+              for (const m of g.members) {
+                const match = (members ?? []).find(
+                  (cm) => cm.email && cm.email.toLowerCase() === m.email?.toLowerCase()
+                );
+                if (match?.user_id === userId) return m;
+              }
+            }
+            return null;
+          })();
+          if (!swMe) return;
+
+          type SwBalance = { currency_code: string; amount: string };
+          type CachedGroupBalance = { external_id: string; balances: SwBalance[] };
+          const freshCache: CachedGroupBalance[] = swGroups.map((g) => {
+            const byCur = new Map<string, number>();
+            for (const d of g.simplified_debts) {
+              const cur = d.currency_code ?? "USD";
+              const amt = parseFloat(d.amount);
+              if (d.to === swMe.id) byCur.set(cur, (byCur.get(cur) ?? 0) + amt);
+              if (d.from === swMe.id) byCur.set(cur, (byCur.get(cur) ?? 0) - amt);
+            }
+            return {
+              external_id: String(g.id),
+              balances: [...byCur.entries()].map(([currency_code, a]) => ({
+                currency_code,
+                amount: a.toFixed(2),
+              })),
+            };
+          });
+
+          await getSupabaseAdmin()
+            .from("splitwise_tokens")
+            .update({ cached_group_balances: freshCache } as Record<string, unknown>)
+            .eq("clerk_user_id", userId);
+        } catch {
+          // non-critical background refresh; swallow
+        }
+      })();
+    }
+  }
 
   // Use cached Splitwise balances (authoritative) instead of recalculated ones.
   // Splitwise's balance engine handles multi-payer, debt simplification, etc. correctly.
