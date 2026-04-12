@@ -379,7 +379,7 @@ export async function GET(
     }
 
     const spendByCurrency = new Map<string, number>();
-    for (const s of splits) {
+    for (const s of balanceSplits) {
       const amt = paidAmountFromSplitRow(s as { transactions?: unknown; amount?: number | string | null });
       if (amt > 0) {
         const c = normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code);

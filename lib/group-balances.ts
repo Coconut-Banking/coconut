@@ -26,17 +26,32 @@ export async function getMaxSettlementAllowed(
   const cur = normalizeSplitCurrency(currency);
   const db = getSupabase();
 
+  // Check if this is a Splitwise-imported group
+  const { data: groupRow } = await db
+    .from("groups")
+    .select("source, external_id")
+    .eq("id", groupId)
+    .maybeSingle();
+  const isSwGroup =
+    (groupRow as { source?: string } | null)?.source === "splitwise" &&
+    (groupRow as { external_id?: string } | null)?.external_id;
+
   const { data: splitsRaw } = await db
     .from("split_transactions")
     .select(`
       id, group_id, transaction_id, created_by, payer_member_id, amount,
-      iso_currency_code,
+      iso_currency_code, source,
       transactions(amount)
     `)
     .eq("group_id", groupId);
 
+  // For SW groups, exclude imported splits to avoid double-counting with the SW cache
+  const filtered = isSwGroup
+    ? (splitsRaw ?? []).filter((s) => (s as { source?: string | null }).source !== "splitwise")
+    : (splitsRaw ?? []);
+
   const seenKeys = new Set<string>();
-  const splits = (splitsRaw ?? []).filter((s) => {
+  const splits = filtered.filter((s) => {
     const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
     if (seenKeys.has(k)) return false;
     seenKeys.add(k);
@@ -54,7 +69,7 @@ export async function getMaxSettlementAllowed(
   const [{ data: members }, { data: shares }, { data: settlements }, txResult] = await Promise.all([
     db.from("group_members").select("id, user_id").eq("group_id", groupId),
     db.from("split_shares").select("split_transaction_id, member_id, amount").in("split_transaction_id", splitIds),
-    db.from("settlements").select("payer_member_id, receiver_member_id, amount, iso_currency_code").eq("group_id", groupId).eq("status", "completed"),
+    db.from("settlements").select("payer_member_id, receiver_member_id, amount, method, iso_currency_code").eq("group_id", groupId).eq("status", "completed"),
     txIds.length > 0
       ? db.from("transactions").select("id, clerk_user_id").in("id", txIds)
       : Promise.resolve({ data: [] as { id: string; clerk_user_id: string }[] }),
@@ -95,7 +110,10 @@ export async function getMaxSettlementAllowed(
     else sharesBySplitId.set(sh.split_transaction_id, [{ member_id: sh.member_id, amount: Number(sh.amount) }]);
   }
 
-  const pairwiseSettlements = (settlements ?? []).map((s) => ({
+  const nativeSettlements = isSwGroup
+    ? (settlements ?? []).filter((s) => (s as { method?: string }).method !== "splitwise")
+    : (settlements ?? []);
+  const pairwiseSettlements = nativeSettlements.map((s) => ({
     payer_member_id: s.payer_member_id,
     receiver_member_id: s.receiver_member_id,
     amount: Number(s.amount),

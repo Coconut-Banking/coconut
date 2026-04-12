@@ -393,24 +393,31 @@ async function handleSummary(req: NextRequest, userId: string) {
       }
     }
 
-    const owedRows: { member_id: string; amount: number; currency: string }[] = [];
+    const owedAgg = new Map<string, { member_id: string; amount: number; currency: string }>();
     for (const s of groupSplits) {
       for (const sh of sharesBySplitId.get(s.id) ?? []) {
-        owedRows.push({
-          member_id: sh.member_id,
-          amount: Number(sh.amount),
-          currency: splitCurrencyById.get(sh.split_transaction_id) ?? "USD",
-        });
+        const cur = splitCurrencyById.get(sh.split_transaction_id) ?? "USD";
+        const key = `${sh.split_transaction_id}:${sh.member_id}`;
+        const existing = owedAgg.get(key);
+        if (existing) {
+          existing.amount += Number(sh.amount);
+        } else {
+          owedAgg.set(key, { member_id: sh.member_id, amount: Number(sh.amount), currency: cur });
+        }
       }
     }
+    const owedRows = Array.from(owedAgg.values());
 
     const groupSettlements = settlementsByGroup.get(g.id) ?? [];
-    const paidSettlements = groupSettlements.map((s) => ({
+    const balanceSettlements = swGroupIds.has(g.id)
+      ? groupSettlements.filter((s) => (s as { method?: string }).method !== "splitwise")
+      : groupSettlements;
+    const paidSettlements = balanceSettlements.map((s) => ({
       payer_member_id: s.payer_member_id,
       amount: Number(s.amount),
       currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
     }));
-    const receivedSettlements = groupSettlements.map((s) => ({
+    const receivedSettlements = balanceSettlements.map((s) => ({
       receiver_member_id: s.receiver_member_id,
       amount: Number(s.amount),
       currency: normalizeSplitCurrency((s as { iso_currency_code?: string | null }).iso_currency_code),
@@ -444,7 +451,7 @@ async function handleSummary(req: NextRequest, userId: string) {
       const nativeSplits = groupSplits.filter((s) => (s as { source?: string | null }).source !== "splitwise");
       if (nativeSplits.length > 0) {
         const nativePaidRows: typeof paidRows = [];
-        const nativeOwedRows: typeof owedRows = [];
+        const nativeOwedAgg = new Map<string, { member_id: string; amount: number; currency: string }>();
         for (const s of nativeSplits) {
           const sShares = sharesBySplitId.get(s.id) ?? [];
           if (sShares.length === 0) continue;
@@ -472,9 +479,16 @@ async function handleSummary(req: NextRequest, userId: string) {
           }
           const cur = splitCurrencyById.get(s.id) ?? "USD";
           for (const sh of sShares) {
-            nativeOwedRows.push({ member_id: sh.member_id, amount: Number(sh.amount), currency: cur });
+            const key = `${s.id}:${sh.member_id}`;
+            const existing = nativeOwedAgg.get(key);
+            if (existing) {
+              existing.amount += Number(sh.amount);
+            } else {
+              nativeOwedAgg.set(key, { member_id: sh.member_id, amount: Number(sh.amount), currency: cur });
+            }
           }
         }
+        const nativeOwedRows = Array.from(nativeOwedAgg.values());
         const nativeSettlements = groupSettlements.filter(
           (st) => (st as { method?: string }).method !== "splitwise"
         );
