@@ -280,10 +280,17 @@ export async function GET(request: NextRequest) {
             toPersist.push({ id: snap.id, value: trimmed });
           }
           if (toPersist.length === 0) return;
-          await adminDbBg.rpc("batch_update_merchant_llm", {
-            p_clerk_user_id: uid,
-            p_updates: JSON.stringify(toPersist.map(u => ({ id: u.id, value: u.value }))),
-          });
+          try {
+            const { error: rpcErr } = await adminDbBg.rpc("batch_update_merchant_llm", {
+              p_clerk_user_id: uid,
+              p_updates: JSON.stringify(toPersist.map(u => ({ id: u.id, value: u.value }))),
+            });
+            if (rpcErr) {
+              console.warn("[transactions] batch_update_merchant_llm RPC failed:", rpcErr.message);
+            }
+          } catch (e) {
+            console.warn("[transactions] batch_update_merchant_llm error:", e instanceof Error ? e.message : e);
+          }
         }).catch((e) => console.warn("[transactions] background LLM failed:", e));
       }
     }

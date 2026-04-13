@@ -63,6 +63,7 @@ export function useSubscriptions() {
 
   const detect = useCallback(async () => {
     setDetecting(true);
+    setLoading(true);
     let cancelled = false;
     try {
       const res = await fetch("/api/subscriptions", { method: "POST" });

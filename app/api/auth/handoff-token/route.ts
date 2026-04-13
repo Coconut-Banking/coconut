@@ -20,9 +20,10 @@ export async function POST() {
       expiresInSeconds: 120,
     });
 
-    const base = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "https://coconut-app.dev";
+    const base =
+      process.env.APP_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+      "https://coconut-app.dev";
     const redirect = encodeURIComponent(`${base}/connect?from_app=1&via_login=1`);
     const url = `${base}/auth/handoff?__clerk_ticket=${encodeURIComponent(signInToken.token)}&redirect_url=${redirect}`;
 

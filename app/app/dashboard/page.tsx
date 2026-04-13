@@ -324,7 +324,7 @@ export default function DashboardPage() {
             <RefreshCw size={15} className="text-purple-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            {!linked ? "—" : subData ? formatCurrency(subData.totalMonthly, "USD") : "…"}
+            {!linked ? "—" : subData ? fc(convertCurrency(subData.totalMonthly, "USD", currencyCode)) : "…"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Subscriptions/mo</div>
           {!linked ? (
@@ -376,13 +376,13 @@ export default function DashboardPage() {
             <Wallet size={15} className="text-blue-500" />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-0.5">
-            {!linked ? "—" : netWorth != null ? formatCurrency(netWorth.total, "USD") : "…"}
+            {!linked ? "—" : netWorth != null ? fc(convertCurrency(netWorth.total, "USD", currencyCode)) : "…"}
           </div>
           <div className="text-xs text-gray-500 mb-2">Net Worth</div>
           {!linked ? (
             <div className="text-xs text-gray-400">Connect a bank to see</div>
           ) : netWorth != null ? (
-            <div className="text-xs text-gray-400">{formatCurrency(netWorth.assets, "USD")} assets</div>
+            <div className="text-xs text-gray-400">{fc(convertCurrency(netWorth.assets, "USD", currencyCode))} assets</div>
           ) : (
             <div className="text-xs text-gray-400">Loading...</div>
           )}

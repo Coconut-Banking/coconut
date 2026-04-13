@@ -159,6 +159,47 @@ describe("useSubscriptions – dismiss mountedRef guard", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("sets loading=true at the start of detect() before the refetch", async () => {
+    // Initial load: returns one subscription
+    // POST (detect): resolves ok
+    // GET refetch (fetchSubs): we control timing to observe loading state mid-flight
+    let resolveRefetch!: (v: unknown) => void;
+    const refetchPromise = new Promise((res) => { resolveRefetch = res; });
+
+    const fetchMock = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce({ ok: true, json: async () => [SUB] })
+      // POST detect
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      // GET refetch – slow so we can observe loading mid-flight
+      .mockReturnValueOnce(refetchPromise);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSubscriptions());
+
+    // Wait for initial load to complete
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Start detect – do not await so we can inspect state while it's in-flight
+    act(() => {
+      result.current.detect();
+    });
+
+    // After detect() starts, loading must be true before the refetch resolves
+    await waitFor(() => expect(result.current.loading).toBe(true));
+
+    // Also detecting should be true at the same time
+    expect(result.current.detecting).toBe(true);
+
+    // Resolve the pending refetch to clean up
+    resolveRefetch({ ok: true, json: async () => [] });
+
+    // Wait for detect to finish (detecting goes back to false)
+    await waitFor(() => expect(result.current.detecting).toBe(false));
+  });
+
   it("calls fetchSubs when PATCH fails and component is still mounted (dismiss)", async () => {
     const fetchMock = vi
       .fn()
