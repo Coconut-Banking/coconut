@@ -21,6 +21,9 @@ const isPublicRoute = createRouteMatcher([
   "/api/connect/app-done",
   "/join(.*)",
   "/api/invite(.*)",
+  // Shadow write diagnostic endpoints — admin auth handled in route
+  "/api/splitwise/shadow-diagnose",
+  "/api/splitwise/shadow-test",
 ]);
 
 function isClerkRateLimitError(e: unknown): e is { status: number; retryAfter?: number } {
