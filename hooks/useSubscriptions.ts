@@ -73,11 +73,15 @@ export function useSubscriptions() {
         const body = await res.json().catch(() => ({}));
         if (mountedRef.current && !cancelled) {
           setError((body as { error?: string }).error ?? "Detection failed. Please try again.");
+          setLoading(false);
         }
       }
     } catch (e) {
       console.error("[subscriptions] detect:", e);
-      if (mountedRef.current && !cancelled) setError("Detection failed. Please try again.");
+      if (mountedRef.current && !cancelled) {
+        setError("Detection failed. Please try again.");
+        setLoading(false);
+      }
     } finally {
       cancelled = true;
       if (mountedRef.current) setDetecting(false);
