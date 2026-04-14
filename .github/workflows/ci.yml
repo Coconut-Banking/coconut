@@ -24,7 +24,7 @@ env:
 
 jobs:
   ci:
-    name: Build + E2E Tests
+    name: Typecheck + Lint + Test + Build + E2E
     runs-on: ubuntu-latest
     # Bug council and AI fix branches validate locally (typecheck + lint + vitest) before pushing.
     # CI is skipped to save minutes — these PRs are small targeted fixes, not feature work.
@@ -40,7 +40,17 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (Vitest)
+        run: npm run test
+
+      - name: Build
+        run: npm run build
 
       - run: npx playwright install --with-deps chromium
 
