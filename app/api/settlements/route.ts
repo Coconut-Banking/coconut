@@ -43,36 +43,21 @@ export async function POST(req: NextRequest) {
 
   const db = getSupabase();
 
-  // For Splitwise groups the authoritative balance comes from the SW cache,
-  // which getMaxSettlementAllowed doesn't have access to. The person route
-  // already validated the amount against the cache, so trust it.
-  const { data: groupRow } = await db
-    .from("groups")
-    .select("source")
-    .eq("id", groupId)
-    .maybeSingle();
-  const isSwGroup = (groupRow as Record<string, unknown> | null)?.source === "splitwise";
+  const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
+    groupId,
+    payerMemberId,
+    receiverMemberId,
+    currency
+  );
 
-  let amountToInsert: number;
-  if (isSwGroup) {
-    amountToInsert = Math.round(amount * 100) / 100;
-  } else {
-    const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
-      groupId,
-      payerMemberId,
-      receiverMemberId,
-      currency
+  if (!allowed || maxAmount <= 0) {
+    return NextResponse.json(
+      { error: reason ?? "Nothing left to settle between these members" },
+      { status: 400 }
     );
-
-    if (!allowed || maxAmount <= 0) {
-      return NextResponse.json(
-        { error: reason ?? "Nothing left to settle between these members" },
-        { status: 400 }
-      );
-    }
-
-    amountToInsert = Math.min(Math.round(amount * 100) / 100, maxAmount);
   }
+
+  const amountToInsert = Math.min(Math.round(amount * 100) / 100, maxAmount);
 
   const { data: result, error: rpcErr } = await db.rpc("insert_settlement_checked", {
     p_clerk_user_id: userId,
