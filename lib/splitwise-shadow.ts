@@ -5,10 +5,12 @@
  * is mirrored to a separate "Mirror [GroupName]" group in Splitwise. The user's
  * real Splitwise groups are NEVER touched.
  *
+ * Mirror group members are PHANTOM (fake email placeholders) so real friends
+ * never receive notifications. The phantom email encodes the real Splitwise
+ * user ID for deterministic mapping: `phantom_{swUserId}@mirror.local`.
+ *
  * On first write for a group, the mirror is bootstrapped by copying all
  * historical expenses from the real Splitwise group.
- *
- * Blocking mode: if the Splitwise write fails, the whole operation fails.
  */
 
 import { getSupabase } from "@/lib/supabase";
@@ -24,12 +26,23 @@ import {
   addUserToSwGroup,
   getCurrentUser,
   type SwExpenseUserShare,
-  type SplitwiseExpense,
 } from "@/lib/splitwise";
 
 type DB = ReturnType<typeof getSupabase>;
 
 const MIRROR_PREFIX = "Mirror ";
+const PHANTOM_DOMAIN = "mirror.local";
+
+/** Deterministic phantom email for a Splitwise user ID. */
+function phantomEmail(swUserId: number): string {
+  return `phantom_${swUserId}@${PHANTOM_DOMAIN}`;
+}
+
+/** Extract the SW user ID from a phantom email, or null if not a phantom. */
+function parsePhantomEmail(email: string): number | null {
+  const m = email.match(/^phantom_(\d+)@mirror\.local$/);
+  return m ? Number(m[1]) : null;
+}
 
 export function isShadowWriteEnabled(): boolean {
   return process.env.SPLITWISE_SHADOW_WRITE === "1";
@@ -51,8 +64,6 @@ async function getSwToken(db: DB, clerkUserId: string): Promise<string> {
 }
 
 // ── Mirror group ID persistence ──────────────────────────────────────────────
-// Stores the mirror mapping as JSONB on splitwise_tokens.shadow_mirror_map.
-// Falls back to name-based lookup if the column doesn't exist.
 
 type MirrorMap = Record<string, number>; // coconutGroupId → mirrorSwGroupId
 
@@ -78,7 +89,6 @@ async function saveMirrorMap(db: DB, clerkUserId: string, map: MirrorMap): Promi
       .update({ shadow_mirror_map: map } as Record<string, unknown>)
       .eq("clerk_user_id", clerkUserId);
   } catch {
-    // Column may not exist — fall back silently; we'll re-discover by name next time
     console.warn("[shadow] Could not persist mirror map — column may not exist. Will use name-based lookup.");
   }
 }
@@ -90,54 +100,79 @@ interface MirrorContext {
   coconutToSw: Map<string, number>;
 }
 
-function matchMembers(
+/**
+ * Map Coconut group members → mirror Splitwise member IDs.
+ *
+ * For phantom mirrors the mapping is:
+ *   1. Token owner (self) → their real SW ID (they own the mirror group)
+ *   2. SW-imported groups: coconut member → real SW member (by email/name) → phantom email → mirror member
+ *   3. Non-SW groups: coconut member → phantom email built from coconut member ID → mirror member
+ */
+function matchMembersPhantom(
   coconutMembers: { id: string; email?: string | null; display_name?: string | null; user_id?: string | null }[],
-  swMembers: { id: number; email?: string | null; first_name?: string; last_name?: string }[],
-  tokenOwner?: { clerkUserId: string; swUserId: number },
+  mirrorSwMembers: { id: number; email?: string | null; first_name?: string; last_name?: string }[],
+  tokenOwner: { clerkUserId: string; swUserId: number },
+  realSwMembers?: { id: number; email?: string | null; first_name?: string; last_name?: string }[],
 ): Map<string, number> {
   const coconutToSw = new Map<string, number>();
-  const usedSwIds = new Set<number>();
 
-  // Pass 0: match the token owner (current user) by clerk user_id
-  // Handles the "You" display_name case where name/email matching fails
-  if (tokenOwner) {
-    const meMember = coconutMembers.find((m) => m.user_id === tokenOwner.clerkUserId);
-    const meSwMember = swMembers.find((m) => m.id === tokenOwner.swUserId);
-    if (meMember && meSwMember) {
-      coconutToSw.set(meMember.id, meSwMember.id);
-      usedSwIds.add(meSwMember.id);
-    }
+  // Build a lookup: phantom email → mirror SW member ID
+  const phantomToMirrorId = new Map<string, number>();
+  for (const m of mirrorSwMembers) {
+    const email = m.email?.trim().toLowerCase();
+    if (email) phantomToMirrorId.set(email, m.id);
   }
 
-  // Pass 1: match by email (most reliable)
-  for (const member of coconutMembers) {
-    if (coconutToSw.has(member.id)) continue;
-    const email = member.email?.trim().toLowerCase();
-    if (!email) continue;
-    const swMember = swMembers.find((m) => !usedSwIds.has(m.id) && m.email?.trim().toLowerCase() === email);
-    if (swMember) {
-      coconutToSw.set(member.id, swMember.id);
-      usedSwIds.add(swMember.id);
+  for (const cm of coconutMembers) {
+    // Self: the token owner is a real member of the mirror group
+    if (cm.user_id === tokenOwner.clerkUserId) {
+      coconutToSw.set(cm.id, tokenOwner.swUserId);
+      continue;
     }
-  }
 
-  // Pass 2: match by display_name ↔ first_name + last_name
-  for (const member of coconutMembers) {
-    if (coconutToSw.has(member.id)) continue;
-    const name = member.display_name?.trim().toLowerCase();
-    if (!name || name === "you") continue;
-    const swMember = swMembers.find((m) => {
-      if (usedSwIds.has(m.id)) return false;
-      const fullName = `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim().toLowerCase();
-      return fullName === name || m.first_name?.trim().toLowerCase() === name;
-    });
-    if (swMember) {
-      coconutToSw.set(member.id, swMember.id);
-      usedSwIds.add(swMember.id);
+    if (realSwMembers) {
+      // SW-imported: find the real SW member, then find the phantom in the mirror
+      const realSwId = findRealSwMember(cm, realSwMembers);
+      if (realSwId) {
+        const mirrorId = phantomToMirrorId.get(phantomEmail(realSwId));
+        if (mirrorId) {
+          coconutToSw.set(cm.id, mirrorId);
+          continue;
+        }
+      }
+    } else {
+      // Non-SW group: phantom email is based on coconut member ID
+      const pe = `phantom_cm_${cm.id}@${PHANTOM_DOMAIN}`;
+      const mirrorId = phantomToMirrorId.get(pe);
+      if (mirrorId) {
+        coconutToSw.set(cm.id, mirrorId);
+        continue;
+      }
     }
   }
 
   return coconutToSw;
+}
+
+/** Find a coconut member's corresponding real SW user ID by email or name. */
+function findRealSwMember(
+  coconutMember: { email?: string | null; display_name?: string | null },
+  realSwMembers: { id: number; email?: string | null; first_name?: string; last_name?: string }[],
+): number | null {
+  const email = coconutMember.email?.trim().toLowerCase();
+  if (email) {
+    const found = realSwMembers.find((m) => m.email?.trim().toLowerCase() === email);
+    if (found) return found.id;
+  }
+  const name = coconutMember.display_name?.trim().toLowerCase();
+  if (name && name !== "you") {
+    const found = realSwMembers.find((m) => {
+      const full = `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim().toLowerCase();
+      return full === name || m.first_name?.trim().toLowerCase() === name;
+    });
+    if (found) return found.id;
+  }
+  return null;
 }
 
 // ── Ensure mirror group exists + bootstrap ───────────────────────────────────
@@ -157,25 +192,27 @@ async function ensureMirrorGroup(
   if (!group) throw new Error(`[shadow] Group ${coconutGroupId} not found`);
 
   const mirrorMap = await loadMirrorMap(db, clerkUserId);
-
-  // Resolve the current Splitwise user for reliable self-matching
   const swUser = await getCurrentUser(token);
   const tokenOwner = { clerkUserId, swUserId: swUser.id };
+
+  const isSwImported = group.external_id && group.source === "splitwise";
+  const realSwMembers = isSwImported
+    ? (await getGroup(token, Number(group.external_id))).members
+    : undefined;
+
+  const { data: members } = await db
+    .from("group_members")
+    .select("id, email, display_name, user_id")
+    .eq("group_id", coconutGroupId);
 
   // Check if we already have a mirror for this group
   if (mirrorMap[coconutGroupId]) {
     const mirrorSwGroupId = mirrorMap[coconutGroupId];
     try {
-      const [mirrorGroup, { data: members }] = await Promise.all([
-        getGroup(token, mirrorSwGroupId),
-        db.from("group_members").select("id, email, display_name, user_id").eq("group_id", coconutGroupId),
-      ]);
-      console.log(`[shadow] Found mirror ${mirrorSwGroupId} via map, coconut members:`,
-        (members ?? []).map((m) => ({ id: m.id, email: m.email, name: m.display_name, uid: m.user_id })),
-        "sw members:", mirrorGroup.members.map((m) => ({ id: m.id, email: m.email, name: `${m.first_name} ${m.last_name}` }))
+      const mirrorGroup = await getGroup(token, mirrorSwGroupId);
+      const coconutToSw = matchMembersPhantom(
+        members ?? [], mirrorGroup.members, tokenOwner, realSwMembers
       );
-      const coconutToSw = matchMembers(members ?? [], mirrorGroup.members, tokenOwner);
-      console.log(`[shadow] matchMembers result: ${coconutToSw.size} mappings`, Object.fromEntries(coconutToSw));
       if (coconutToSw.size > 0) {
         return { mirrorSwGroupId, coconutToSw };
       }
@@ -190,15 +227,12 @@ async function ensureMirrorGroup(
   const existingMirror = allSwGroups.find((g) => g.name === mirrorName);
 
   if (existingMirror) {
-    mirrorMap[coconutGroupId] = existingMirror.id;
-    await saveMirrorMap(db, clerkUserId, mirrorMap);
-
-    const { data: members } = await db
-      .from("group_members")
-      .select("id, email, display_name, user_id")
-      .eq("group_id", coconutGroupId);
-    const coconutToSw = matchMembers(members ?? [], existingMirror.members, tokenOwner);
+    const coconutToSw = matchMembersPhantom(
+      members ?? [], existingMirror.members, tokenOwner, realSwMembers
+    );
     if (coconutToSw.size > 0) {
+      mirrorMap[coconutGroupId] = existingMirror.id;
+      await saveMirrorMap(db, clerkUserId, mirrorMap);
       return { mirrorSwGroupId: existingMirror.id, coconutToSw };
     }
   }
@@ -215,60 +249,50 @@ async function ensureMirrorGroup(
   const swType = typeMap[group.group_type ?? "other"] ?? "other";
   const { id: mirrorSwGroupId } = await createSwGroup(token, mirrorName, swType);
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, email, display_name, user_id")
-    .eq("group_id", coconutGroupId);
-
-  // For SW-linked groups, add members from the real Splitwise group by user_id
-  // so we don't depend on Coconut group_members having emails.
-  if (group.external_id && group.source === "splitwise") {
-    const realSwGroupId = Number(group.external_id);
-    const realGroup = await getGroup(token, realSwGroupId);
-    for (const rm of realGroup.members) {
+  // Add PHANTOM members (fake emails — no notifications to real people)
+  if (isSwImported && realSwMembers) {
+    for (const rm of realSwMembers) {
       if (rm.id === swUser.id) continue;
       try {
         await addUserToSwGroup(token, mirrorSwGroupId, {
-          user_id: rm.id,
-          first_name: rm.first_name || undefined,
-          last_name: rm.last_name || undefined,
-          email: rm.email || undefined,
+          email: phantomEmail(rm.id),
+          first_name: rm.first_name || "User",
+          last_name: rm.last_name || String(rm.id),
         });
       } catch (e) {
-        console.warn(`[shadow] Failed to add SW user ${rm.id} to mirror:`, e);
+        console.warn(`[shadow] Failed to add phantom for SW user ${rm.id}:`, e);
       }
     }
   } else {
     for (const member of members ?? []) {
       if (member.user_id === clerkUserId) continue;
-      const email = member.email?.trim();
-      if (email) {
-        const nameParts = (member.display_name ?? "").split(" ");
-        try {
-          await addUserToSwGroup(token, mirrorSwGroupId, {
-            email,
-            first_name: nameParts[0] || email.split("@")[0],
-            last_name: nameParts.slice(1).join(" ") || undefined,
-          });
-        } catch (e) {
-          console.warn(`[shadow] Failed to add ${email} to mirror group:`, e);
-        }
+      const nameParts = (member.display_name ?? "Unknown").split(" ");
+      try {
+        await addUserToSwGroup(token, mirrorSwGroupId, {
+          email: `phantom_cm_${member.id}@${PHANTOM_DOMAIN}`,
+          first_name: nameParts[0] || "Member",
+          last_name: nameParts.slice(1).join(" ") || member.id.slice(0, 8),
+        });
+      } catch (e) {
+        console.warn(`[shadow] Failed to add phantom for member ${member.id}:`, e);
       }
     }
   }
 
   // Re-fetch mirror to get all member IDs
   const freshMirror = await getGroup(token, mirrorSwGroupId);
-  const coconutToSw = matchMembers(members ?? [], freshMirror.members, tokenOwner);
+  const coconutToSw = matchMembersPhantom(
+    members ?? [], freshMirror.members, tokenOwner, realSwMembers
+  );
 
   // Persist the mapping
   mirrorMap[coconutGroupId] = mirrorSwGroupId;
   await saveMirrorMap(db, clerkUserId, mirrorMap);
 
   // Bootstrap: copy historical expenses from real Splitwise group into mirror
-  if (group.external_id && group.source === "splitwise") {
+  if (isSwImported && realSwMembers) {
     const realSwGroupId = Number(group.external_id);
-    await bootstrapMirrorFromReal(token, realSwGroupId, mirrorSwGroupId, freshMirror, swUser.id);
+    await bootstrapMirrorFromReal(token, realSwGroupId, mirrorSwGroupId, freshMirror, realSwMembers);
   }
 
   console.log(`[shadow] Mirror group ${mirrorSwGroupId} ready for "${group.name}"`);
@@ -282,22 +306,30 @@ async function bootstrapMirrorFromReal(
   realSwGroupId: number,
   mirrorSwGroupId: number,
   mirrorGroup: Awaited<ReturnType<typeof getGroup>>,
-  mySwUserId: number
+  realSwMembers: { id: number; email?: string | null; first_name?: string; last_name?: string }[],
 ): Promise<void> {
   console.log(`[shadow] Bootstrapping mirror ${mirrorSwGroupId} from real group ${realSwGroupId}`);
 
-  const realGroup = await getGroup(token, realSwGroupId);
   const expenses = await getExpenses(token, realSwGroupId);
 
-  // Build real SW user ID → mirror SW user ID mapping (by email)
+  // Build real SW user ID → mirror SW user ID via phantom email
+  const mirrorByEmail = new Map<string, number>();
+  for (const m of mirrorGroup.members) {
+    const email = m.email?.trim().toLowerCase();
+    if (email) mirrorByEmail.set(email, m.id);
+  }
+
   const realToMirror = new Map<number, number>();
-  for (const realMember of realGroup.members) {
-    const email = realMember.email?.trim().toLowerCase();
-    if (!email) continue;
-    const mirrorMember = mirrorGroup.members.find(
-      (m) => m.email?.trim().toLowerCase() === email
-    );
-    if (mirrorMember) realToMirror.set(realMember.id, mirrorMember.id);
+  for (const rm of realSwMembers) {
+    // Self maps directly (same user owns both groups)
+    const mirrorSelf = mirrorGroup.members.find((m) => m.id === rm.id);
+    if (mirrorSelf) {
+      realToMirror.set(rm.id, mirrorSelf.id);
+      continue;
+    }
+    // Others map via phantom email
+    const mirrorId = mirrorByEmail.get(phantomEmail(rm.id));
+    if (mirrorId) realToMirror.set(rm.id, mirrorId);
   }
 
   let copied = 0;
@@ -305,7 +337,6 @@ async function bootstrapMirrorFromReal(
 
   for (const expense of expenses) {
     try {
-      const isPayment = expense.payment;
       const users: SwExpenseUserShare[] = [];
       let allMapped = true;
 
@@ -330,7 +361,7 @@ async function bootstrapMirrorFromReal(
         cost: expense.cost,
         currency_code: expense.currency_code,
         date: expense.date,
-        payment: isPayment || undefined,
+        payment: expense.payment || undefined,
         users,
       });
       copied++;
@@ -405,7 +436,6 @@ export async function shadowCreateExpense(params: ShadowExpenseParams): Promise<
     users,
   });
 
-  // Store the MIRROR expense ID on the split_transaction for future updates/deletes
   await db
     .from("split_transactions")
     .update({ external_id: String(swExpenseId), source: "splitwise_mirror" } as Record<string, unknown>)
@@ -439,7 +469,6 @@ export async function shadowUpdateExpense(params: ShadowUpdateParams): Promise<v
     .eq("id", params.splitTransactionId)
     .single();
 
-  // Only update expenses we created in the mirror
   if (!splitTx?.external_id || splitTx.source !== "splitwise_mirror") {
     console.warn(`[shadow] split_tx ${params.splitTransactionId} not a mirror expense — skipping update`);
     return;
@@ -561,7 +590,6 @@ export async function getMirrorGroupId(
   const mirrorMap = await loadMirrorMap(db, clerkUserId);
   if (mirrorMap[coconutGroupId]) return mirrorMap[coconutGroupId];
 
-  // Fall back to name-based lookup
   const { data: group } = await db
     .from("groups")
     .select("name")
@@ -574,3 +602,7 @@ export async function getMirrorGroupId(
   const mirror = allSwGroups.find((g) => g.name === mirrorName);
   return mirror?.id ?? null;
 }
+
+// ── Exported: for diagnostics ────────────────────────────────────────────────
+
+export { phantomEmail, parsePhantomEmail, PHANTOM_DOMAIN };
