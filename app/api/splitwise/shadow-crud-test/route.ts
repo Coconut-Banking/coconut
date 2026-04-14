@@ -193,7 +193,7 @@ export async function POST(req: Request) {
       return respond(steps);
     }
 
-    const amountMatch = createdInMirror.cost === testAmount.toFixed(2);
+    const amountMatch = Math.abs(parseFloat(createdInMirror.cost) - testAmount) < 0.01;
     const descMatch = createdInMirror.description === testDesc;
     steps.push({
       step: "create_verify_sw",
@@ -201,7 +201,7 @@ export async function POST(req: Request) {
       detail: {
         swExpenseId: createdInMirror.id,
         description: { expected: testDesc, actual: createdInMirror.description, match: descMatch },
-        cost: { expected: testAmount.toFixed(2), actual: createdInMirror.cost, match: amountMatch },
+        cost: { expected: testAmount, actual: parseFloat(createdInMirror.cost), match: amountMatch },
         users: createdInMirror.users.map((u) => ({
           userId: u.user_id,
           paidShare: u.paid_share,
@@ -219,11 +219,17 @@ export async function POST(req: Request) {
 
     // Update the DB via RPC
     const { error: updateErr } = await db.rpc("update_split_transaction", {
-      p_split_tx_id: splitTxId,
+      p_split_id: splitTxId,
       p_clerk_user_id: userId,
       p_description: updatedDesc,
       p_amount: updatedAmount,
       p_payer_member_id: myMember.id,
+      p_notes: null,
+      p_category: null,
+      p_receipt_url: null,
+      p_clear_notes: false,
+      p_clear_category: false,
+      p_clear_receipt_url: false,
       p_shares: [
         { memberId: myMember.id, amount: 10.00 },
         { memberId: otherMember.id, amount: 10.00 },
@@ -263,14 +269,14 @@ export async function POST(req: Request) {
     if (!updatedInMirror) {
       steps.push({ step: "update_verify_sw", status: "error", detail: "Expense disappeared from mirror after update" });
     } else {
-      const updAmountMatch = updatedInMirror.cost === updatedAmount.toFixed(2);
+      const updAmountMatch = Math.abs(parseFloat(updatedInMirror.cost) - updatedAmount) < 0.01;
       const updDescMatch = updatedInMirror.description === updatedDesc;
       steps.push({
         step: "update_verify_sw",
         status: updAmountMatch && updDescMatch ? "ok" : "warn",
         detail: {
           description: { expected: updatedDesc, actual: updatedInMirror.description, match: updDescMatch },
-          cost: { expected: updatedAmount.toFixed(2), actual: updatedInMirror.cost, match: updAmountMatch },
+          cost: { expected: updatedAmount, actual: parseFloat(updatedInMirror.cost), match: updAmountMatch },
           users: updatedInMirror.users.map((u) => ({
             userId: u.user_id,
             paidShare: u.paid_share,
@@ -367,12 +373,12 @@ export async function POST(req: Request) {
       steps.push({ step: "settlement_verify_sw", status: "error", detail: "Settlement payment not found in mirror" });
     } else {
       steps.push({
-        step: "settlement_verify_sw",
-        status: settlementInMirror.cost === settlementAmount.toFixed(2) ? "ok" : "warn",
-        detail: {
-          swExpenseId: settlementInMirror.id,
-          isPayment: settlementInMirror.payment,
-          cost: { expected: settlementAmount.toFixed(2), actual: settlementInMirror.cost },
+      step: "settlement_verify_sw",
+      status: Math.abs(parseFloat(settlementInMirror.cost) - settlementAmount) < 0.01 ? "ok" : "warn",
+      detail: {
+        swExpenseId: settlementInMirror.id,
+        isPayment: settlementInMirror.payment,
+        cost: { expected: settlementAmount, actual: parseFloat(settlementInMirror.cost), match: Math.abs(parseFloat(settlementInMirror.cost) - settlementAmount) < 0.01 },
           users: settlementInMirror.users.map((u) => ({
             userId: u.user_id,
             paidShare: u.paid_share,
