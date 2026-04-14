@@ -48,6 +48,19 @@ export function isShadowWriteEnabled(): boolean {
   return process.env.SPLITWISE_SHADOW_WRITE === "1";
 }
 
+/**
+ * Only dual-write for these Coconut groups.
+ * If empty, all groups are eligible. If non-empty, only listed groups sync.
+ */
+const SHADOW_ALLOWED_GROUPS: Set<string> = new Set([
+  "9f384109-df8c-43d0-a001-80e3207b2fa7", // Seattle
+  "850bf861-7b3c-482f-8ac3-dcf5abd43160", // San Francisco W26
+]);
+
+function isGroupAllowed(groupId: string): boolean {
+  return SHADOW_ALLOWED_GROUPS.size === 0 || SHADOW_ALLOWED_GROUPS.has(groupId);
+}
+
 // ── Token resolution ─────────────────────────────────────────────────────────
 
 async function getSwToken(db: DB, clerkUserId: string): Promise<string> {
@@ -391,6 +404,7 @@ export interface ShadowExpenseParams {
 export async function shadowCreateExpense(params: ShadowExpenseParams): Promise<void> {
   console.log("[shadow] shadowCreateExpense called, enabled:", isShadowWriteEnabled());
   if (!isShadowWriteEnabled()) return;
+  if (!isGroupAllowed(params.groupId)) return;
 
   const db = getSupabase();
   const token = await getSwToken(db, params.clerkUserId);
@@ -460,6 +474,7 @@ export interface ShadowUpdateParams {
 
 export async function shadowUpdateExpense(params: ShadowUpdateParams): Promise<void> {
   if (!isShadowWriteEnabled()) return;
+  if (!isGroupAllowed(params.groupId)) return;
 
   const db = getSupabase();
 
@@ -520,9 +535,11 @@ export async function shadowDeleteExpense(
 
   const { data: splitTx } = await db
     .from("split_transactions")
-    .select("external_id, source")
+    .select("external_id, source, group_id")
     .eq("id", splitTransactionId)
     .single();
+
+  if (splitTx?.group_id && !isGroupAllowed(splitTx.group_id)) return;
 
   if (!splitTx?.external_id || splitTx.source !== "splitwise_mirror") {
     console.warn(`[shadow] split_tx ${splitTransactionId} not a mirror expense — skipping delete`);
@@ -547,6 +564,7 @@ export interface ShadowSettlementParams {
 
 export async function shadowRecordSettlement(params: ShadowSettlementParams): Promise<void> {
   if (!isShadowWriteEnabled()) return;
+  if (!isGroupAllowed(params.groupId)) return;
 
   const db = getSupabase();
   const token = await getSwToken(db, params.clerkUserId);
