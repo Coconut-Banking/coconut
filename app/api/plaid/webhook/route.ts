@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
     }
   } else if (webhook_type === "ITEM") {
     if (webhook_code === "NEW_ACCOUNTS_AVAILABLE") {
-      const [, { data: existingJob }] = await Promise.all([
+      const [{ error: newAccountsErr }, { data: existingJob }] = await Promise.all([
         db.from("plaid_items").update({ new_accounts_available: true }).eq("plaid_item_id", item_id),
         db
           .from("job_queue")
@@ -166,6 +166,10 @@ export async function POST(request: NextRequest) {
           .limit(1)
           .maybeSingle(),
       ]);
+      if (newAccountsErr) {
+        console.error("[plaid][webhook] plaid_items update failed (NEW_ACCOUNTS):", newAccountsErr.message);
+        return NextResponse.json({ error: "DB update failed" }, { status: 503 });
+      }
       if (!existingJob) {
         const { error: queueErr } = await db.from("job_queue").insert({
           type: "plaid_sync",
@@ -180,15 +184,25 @@ export async function POST(request: NextRequest) {
       console.log("[plaid][webhook] queued plaid_sync for NEW_ACCOUNTS_AVAILABLE", { item_id });
     } else if (webhook_code === "ERROR" && payload.error?.error_code === "ITEM_LOGIN_REQUIRED") {
       console.log("[plaid][webhook] ITEM_LOGIN_REQUIRED", { item_id, user_id: clerkUserId });
-      await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
+      const { error: reauthErr } = await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
+      if (reauthErr) {
+        console.error("[plaid][webhook] plaid_items update failed (ITEM_LOGIN_REQUIRED):", reauthErr.message);
+        return NextResponse.json({ error: "DB update failed" }, { status: 503 });
+      }
     } else if (webhook_code === "PENDING_EXPIRATION" || webhook_code === "PENDING_DISCONNECT") {
       console.log("[plaid][webhook] expiration/disconnect", { webhook_code, item_id, user_id: clerkUserId });
-      await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
+      const { error: pendingErr } = await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
+      if (pendingErr) {
+        console.error("[plaid][webhook] plaid_items update failed (PENDING_EXPIRATION/DISCONNECT):", pendingErr.message);
+        return NextResponse.json({ error: "DB update failed" }, { status: 503 });
+      }
     } else if (webhook_code === "LOGIN_REPAIRED") {
       console.log("[plaid][webhook] LOGIN_REPAIRED", { item_id, user_id: clerkUserId });
       // Queue the post-repair sync (non-critical — reauth flag is already cleared)
       await Promise.all([
-        db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id),
+        db.from("plaid_items").update({ needs_reauth: false }).eq("plaid_item_id", item_id).then(({ error }) => {
+          if (error) console.error("[plaid][webhook] plaid_items update failed (LOGIN_REPAIRED):", error.message);
+        }),
         db.from("job_queue").insert({
           type: "plaid_sync",
           payload: { clerk_user_id: clerkUserId, item_id, webhook_code },
@@ -217,7 +231,11 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.warn("[plaid][webhook] failed to fetch token for itemRemove:", e instanceof Error ? e.message : e);
       }
-      await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
+      const { error: revokeErr } = await db.from("plaid_items").update({ needs_reauth: true }).eq("plaid_item_id", item_id);
+      if (revokeErr) {
+        console.error("[plaid][webhook] plaid_items update failed (USER_REVOKED):", revokeErr.message);
+        return NextResponse.json({ error: "DB update failed" }, { status: 503 });
+      }
     }
   }
 
