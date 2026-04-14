@@ -179,8 +179,26 @@ export async function POST(req: Request) {
           continue;
         }
         try {
-          await addUserToSwGroup(token, mirrorSwGroupId, { user_id: rm.id });
-          steps.push({ step: `add_member_${rm.id}`, status: "ok", detail: `Added ${rm.first_name} ${rm.last_name} (SW id ${rm.id})` });
+          const addBody: Record<string, unknown> = {
+            group_id: mirrorSwGroupId,
+            users__0__user_id: rm.id,
+          };
+          const addRes = await fetch("https://secure.splitwise.com/api/v3.0/add_user_to_group", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(addBody),
+          });
+          const addResBody = await addRes.json();
+          steps.push({
+            step: `add_member_${rm.id}`,
+            status: addRes.ok && addResBody.success !== false ? "ok" : "error",
+            detail: {
+              httpStatus: addRes.status,
+              requestBody: addBody,
+              responseBody: addResBody,
+              name: `${rm.first_name} ${rm.last_name}`,
+            },
+          });
         } catch (e) {
           steps.push({ step: `add_member_${rm.id}`, status: "error", detail: `Failed to add ${rm.first_name} (${rm.id}): ${e}` });
         }
