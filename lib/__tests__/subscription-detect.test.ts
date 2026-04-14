@@ -16,17 +16,17 @@ const mockUpsertResult = vi.fn();
  * given result mock. Every builder method (eq, neq, in, order, select,
  * update, upsert) returns the same chain so any call sequence resolves.
  */
-function makeChainable(terminal: ReturnType<typeof vi.fn>) {
-  const chain: Record<string, (...args: unknown[]) => unknown> = {};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeChainable(terminal: (...args: any[]) => any): any {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chain: Record<string, (...args: any[]) => any> = {};
   const methods = ["eq", "neq", "in", "order", "select", "update", "upsert", "lt", "gte"];
   for (const m of methods) {
     chain[m] = () => chain;
   }
   // Make the chain itself thenable so `await chain` resolves via the terminal mock.
-  chain["then"] = (
-    resolve: (v: unknown) => unknown,
-    reject?: (e: unknown) => unknown,
-  ) => terminal().then(resolve, reject);
+  chain["then"] = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+    terminal().then(resolve, reject);
   return chain;
 }
 
@@ -44,10 +44,11 @@ vi.mock("../supabase", () => ({
         };
       }
       // subscription_transactions and transactions tables — safe no-ops
+      const noop = vi.fn().mockResolvedValue({ data: null, error: null });
       return {
-        select: () => makeChainable(() => Promise.resolve({ data: [], error: null })),
-        upsert: () => Promise.resolve({ data: null, error: null }),
-        delete: () => makeChainable(() => Promise.resolve({ data: null, error: null })),
+        select: () => makeChainable(vi.fn().mockResolvedValue({ data: [], error: null })),
+        upsert: () => makeChainable(noop),
+        delete: () => makeChainable(noop),
       };
     },
   }),
