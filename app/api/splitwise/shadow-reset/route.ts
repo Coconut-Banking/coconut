@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { decryptToken } from "@/lib/encryption";
-import { getGroups, getCurrentUser } from "@/lib/splitwise";
+import { getGroups, getExpenses, getCurrentUser, deleteSwExpense } from "@/lib/splitwise";
 
 /**
  * POST /api/splitwise/shadow-reset
@@ -49,19 +49,29 @@ export async function POST(req: Request) {
 
   for (const mg of mirrorGroups) {
     try {
-      // Splitwise doesn't have a delete_group API, but we can remove ourselves
-      // which effectively abandons the group. Use remove_user_from_group.
+      // Delete all expenses first to clear balances
+      const expenses = await getExpenses(token, mg.id, { maxPages: 100 });
+      let deleted = 0;
+      for (const exp of expenses) {
+        try {
+          await deleteSwExpense(token, exp.id);
+          deleted++;
+        } catch {
+          // May already be deleted
+        }
+      }
+
+      // Now leave the group
       const res = await fetch("https://secure.splitwise.com/api/v3.0/remove_user_from_group", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ group_id: mg.id, user_id: swUser.id }),
       });
-      const body = await res.json();
-      if (body.success === false) {
-        // If we can't leave (maybe we have balances), try deleting all expenses first
-        results.push({ id: mg.id, name: mg.name, status: "cannot_leave", detail: JSON.stringify(body.errors) });
+      const resBody = await res.json();
+      if (resBody.success === false) {
+        results.push({ id: mg.id, name: mg.name, status: "cannot_leave", detail: `Deleted ${deleted} expenses but still can't leave: ${JSON.stringify(resBody.errors)}` });
       } else {
-        results.push({ id: mg.id, name: mg.name, status: "left" });
+        results.push({ id: mg.id, name: mg.name, status: "left", detail: `Deleted ${deleted} expenses, then left group` });
       }
     } catch (e) {
       results.push({ id: mg.id, name: mg.name, status: "error", detail: String(e) });
