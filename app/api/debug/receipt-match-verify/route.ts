@@ -269,8 +269,6 @@ export async function GET() {
     } | null;
   }> = [];
 
-  const windowDays = RECEIPT_MATCH.DATE_WINDOW_DAYS;
-
   for (const receipt of unmatchedReceiptRows) {
     if (!receipt.merchant || !receipt.amount) continue;
 
@@ -282,9 +280,9 @@ export async function GET() {
     if (receipt.date) {
       const dateObj = new Date(receipt.date);
       const start = new Date(dateObj);
-      start.setDate(start.getDate() - windowDays);
+      start.setDate(start.getDate() - RECEIPT_MATCH.WINDOW_BEFORE_DAYS);
       const end = new Date(dateObj);
-      end.setDate(end.getDate() + windowDays);
+      end.setDate(end.getDate() + RECEIPT_MATCH.WINDOW_AFTER_DAYS);
       dateStart = start.toISOString().split("T")[0];
       dateEnd = end.toISOString().split("T")[0];
     }

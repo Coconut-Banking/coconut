@@ -113,14 +113,27 @@ export const GMAIL = {
 } as const;
 
 export const RECEIPT_MATCH = {
-  AMOUNT_TOLERANCE_DOLLARS: 5,
-  AMOUNT_TOLERANCE_PERCENT: 0.20,
-  DATE_WINDOW_DAYS: 7,
+  // Amount tolerance when merchant name matches (tiered: min of dollars vs percent)
+  AMOUNT_TOLERANCE_DOLLARS: 5.0,
+  AMOUNT_TOLERANCE_PERCENT: 0.10,
+  // Exact tolerance for Strategy 3 (no merchant signal)
+  AMOUNT_TOLERANCE_EXACT: 0.01,
+  // Asymmetric date windows — receipt date is order date, bank posts later
+  WINDOW_BEFORE_DAYS: 3,
+  WINDOW_AFTER_DAYS: 10,
+  TIGHT_WINDOW_BEFORE_DAYS: 1,
+  TIGHT_WINDOW_AFTER_DAYS: 4,
   MIN_KEYWORD_LENGTH: 3,
+  MAX_KEYWORDS: 7,
   STOP_WORDS: new Set([
     "the", "and", "for", "inc", "llc", "ltd", "com", "www", "online",
     "payment", "pay", "purchase", "store", "shop", "receipt", "order",
     "confirmation", "your", "thank", "you",
+    "service", "services", "app", "group", "co", "corp",
+    "new", "usa", "us", "get", "my",
+    "restaurant", "bar", "grill", "cafe", "kitchen", "coffee",
+    "delivery", "shipping", "express",
+    "airlines", "airline", "air", "travel",
   ]),
 } as const;
 
