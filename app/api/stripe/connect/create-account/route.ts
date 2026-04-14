@@ -52,6 +52,7 @@ export async function POST(req: Request) {
 
       const account = await stripe.accounts.create({
         type: "express",
+        country: "US",
         email,
         business_type: "individual",
         business_profile: {
