@@ -504,11 +504,13 @@ export async function saveDetectedSubscriptions(clerkUserId: string, detected: D
         .update(u.data)
         .eq("id", u.id)
         .neq("status", "dismissed")
+        .then(({ error }) => { if (error) throw new Error(`Failed to update subscription ${u.id}: ${error.message}`); })
     ),
     toUpsert.length > 0
       ? db
           .from("subscriptions")
           .upsert(toUpsert, { onConflict: "clerk_user_id,normalized_merchant", ignoreDuplicates: true })
+          .then(({ error }) => { if (error) throw new Error(`Failed to upsert subscriptions: ${error.message}`); })
       : Promise.resolve(),
   ]);
 
