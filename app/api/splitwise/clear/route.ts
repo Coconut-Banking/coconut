@@ -11,9 +11,8 @@ import { CACHE_TAGS } from "@/lib/cached-queries";
  *
  * Body options:
  *   { disconnectToken?: boolean }  — legacy: delete Splitwise-imported groups only
- *   { resetAll: true }             — nuclear: delete ALL groups, splits, settlements, members + Splitwise token
- *
- * Bank transactions are never touched.
+ *   { resetAll: true }             — nuclear: delete ALL groups, splits, settlements,
+ *                                    memberships + Splitwise token. Bank tx untouched.
  */
 export async function POST(req: NextRequest) {
   const userId = await getUserId();
@@ -49,34 +48,75 @@ export async function POST(req: NextRequest) {
     return !delG;
   }
 
-  // Decide which groups to delete
-  const groupQuery = db.from("groups").select("id").eq("owner_id", userId);
-  if (!resetAll) {
-    groupQuery.eq("source", "splitwise");
+  if (resetAll) {
+    // ── Nuclear reset: wipe every group the user owns or is a member of ──
+
+    // 1. Groups the user owns → full cascade delete
+    const { data: ownedGroups } = await db
+      .from("groups").select("id").eq("owner_id", userId);
+    const ownedIds = (ownedGroups ?? []).map((g) => g.id);
+
+    // 2. Groups the user is a member of but doesn't own → remove membership only
+    const { data: memberRows } = await db
+      .from("group_members").select("id, group_id").eq("user_id", userId);
+    const memberGroupIds = new Set(
+      (memberRows ?? [])
+        .map((r) => r.group_id as string)
+        .filter((gid) => !ownedIds.includes(gid))
+    );
+    const memberRowIds = (memberRows ?? [])
+      .filter((r) => memberGroupIds.has(r.group_id as string))
+      .map((r) => r.id as string);
+
+    // Execute in parallel
+    const [ownedResults] = await Promise.all([
+      Promise.all(ownedIds.map(deleteGroupCascade)),
+      memberRowIds.length > 0
+        ? Promise.all(
+            Array.from({ length: Math.ceil(memberRowIds.length / BATCH) }, (_, i) =>
+              db.from("group_members").delete().in("id", memberRowIds.slice(i * BATCH, (i + 1) * BATCH))
+            )
+          )
+        : Promise.resolve([]),
+    ]);
+
+    const deletedGroups = ownedResults.filter(Boolean).length;
+
+    await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
+    revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
+
+    return NextResponse.json({
+      ok: true,
+      deletedGroups,
+      removedMemberships: memberRowIds.length,
+      resetAll: true,
+    });
   }
-  const { data: groups, error: listErr } = await groupQuery;
+
+  // ── Legacy mode: Splitwise-only groups ──
+  const { data: swGroups, error: listErr } = await db
+    .from("groups").select("id").eq("owner_id", userId).eq("source", "splitwise");
 
   if (listErr) {
     console.error("[splitwise/clear] list:", listErr.message);
     return NextResponse.json({ error: "Could not list groups" }, { status: 500 });
   }
 
-  const ids = (groups ?? []).map((g) => g.id);
+  const ids = (swGroups ?? []).map((g) => g.id);
   const results = await Promise.all(ids.map(deleteGroupCascade));
   const deletedGroups = results.filter(Boolean).length;
 
-  if (disconnectToken || resetAll) {
+  if (disconnectToken) {
     await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
   }
 
-  if (deletedGroups > 0 || resetAll) {
+  if (deletedGroups > 0) {
     revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   }
 
   return NextResponse.json({
     ok: true,
     deletedGroups,
-    resetAll,
-    disconnectToken: disconnectToken || resetAll,
+    disconnectToken,
   });
 }
