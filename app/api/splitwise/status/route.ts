@@ -40,7 +40,7 @@ export async function GET() {
       /** Groups created from Splitwise import — 0 if you authorized but never imported or cleared data. */
       importedSplitwiseGroupCount: importCount,
     },
-    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
   );
 }
 
