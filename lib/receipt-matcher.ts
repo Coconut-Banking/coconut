@@ -1,8 +1,17 @@
 import { getSupabase } from "./supabase";
 import { RECEIPT_MATCH } from "./config";
 
+// POS processor prefixes that appear in Plaid transaction names but not email receipts.
+// Strip these before matching so "SQ *MENSHO" matches "Mensho Tokyo SF".
+const POS_PREFIX_RE = /^(sq\s*\*|tst\*|tst\s+|sp\s*\*|pp\s*\*|pp\s+|amzn\s*\*|paypal\s*\*|paypal\s+|checkcard\s+|pos\s+|purchase\s+|ach\s+|dda\s+|applecard\s+gs\s+bank|google\s*\*)\s*/i;
+
 export function normalizeMerchant(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+  return s
+    .replace(POS_PREFIX_RE, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function sanitizeForIlike(s: string): string {
@@ -20,7 +29,7 @@ const MERCHANT_ALIASES: Record<string, string[]> = {
   costco: ["costco", "costco whse"],
   airbnb: ["airbnb", "air bnb"],
   starbucks: ["starbucks", "sbux"],
-  mcdonalds: ["mcdonalds", "mcdonald"],
+  mcdonalds: ["mcdonalds", "mcdonald", "mcd"],
   apple: ["apple", "apple com bill", "apple com"],
   spotify: ["spotify"],
   netflix: ["netflix"],
@@ -31,21 +40,69 @@ const MERCHANT_ALIASES: Record<string, string[]> = {
   clipper: ["clipper", "clipper card", "bay area toll"],
   frontier: ["frontier", "frontier airlines"],
   wise: ["wise", "transferwise"],
+  chipotle: ["chipotle", "chipotle mexican"],
+  traderjoes: ["trader joes", "trader joe"],
+  wholefoods: ["whole foods", "wholefoods", "wfm"],
+  sephora: ["sephora"],
+  nike: ["nike"],
+  homedepot: ["home depot", "the home depot"],
+  lowes: ["lowes", "lowe s"],
+  bestbuy: ["best buy", "bestbuy"],
+  chewy: ["chewy"],
+  etsy: ["etsy"],
+  deltaairlines: ["delta", "delta air", "delta airlines"],
+  unitedairlines: ["united", "united airlines", "united air"],
+  southwest: ["southwest", "southwest airlines"],
+  hulu: ["hulu"],
+  disney: ["disney", "disney plus", "disneyplus"],
+  github: ["github"],
+  openai: ["openai", "openai chatgpt"],
 };
 
-function resolveAliases(merchant: string): string[] {
+/**
+ * Returns the canonical alias group key(s) that merchant belongs to.
+ * Used ONLY for group-membership checks (same group = same merchant).
+ * Intentionally excludes sub-tokens to prevent cross-group collisions
+ * (e.g. "airlines" appearing in both Delta and United).
+ */
+function resolveAliasGroups(merchant: string): string[] {
+  const norm = normalizeMerchant(merchant);
+  const groups: string[] = [];
+  for (const [canonical, aliases] of Object.entries(MERCHANT_ALIASES)) {
+    if (aliases.some((a) => norm.includes(a)) || norm.includes(canonical)) {
+      groups.push(canonical);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Returns all alias tokens (canonical key + sub-tokens from alias strings)
+ * for a merchant. Used for keyword extraction and word-boundary matching.
+ * Stop words are filtered to avoid generic tokens (e.g. "airlines") causing
+ * cross-group false positives.
+ */
+function resolveAliasKeywords(merchant: string): string[] {
   const norm = normalizeMerchant(merchant);
   const extra: string[] = [];
   for (const [canonical, aliases] of Object.entries(MERCHANT_ALIASES)) {
     if (aliases.some((a) => norm.includes(a)) || norm.includes(canonical)) {
-      extra.push(canonical);
+      if (!extra.includes(canonical)) extra.push(canonical);
       for (const a of aliases) {
-        const kw = a.split(" ")[0];
-        if (kw.length >= 3 && !extra.includes(kw)) extra.push(kw);
+        for (const kw of a.split(" ").filter(
+          (t) => t.length >= 3 && !RECEIPT_MATCH.STOP_WORDS.has(t)
+        )) {
+          if (!extra.includes(kw)) extra.push(kw);
+        }
       }
     }
   }
   return extra;
+}
+
+/** @deprecated Use resolveAliasGroups or resolveAliasKeywords */
+function resolveAliases(merchant: string): string[] {
+  return resolveAliasKeywords(merchant);
 }
 
 export function extractKeywords(merchant: string): string[] {
@@ -58,7 +115,7 @@ export function extractKeywords(merchant: string): string[] {
     .map(sanitizeForIlike)
     .filter((w) => w.length > 0);
 
-  const aliasKeywords = resolveAliases(merchant)
+  const aliasKeywords = resolveAliasKeywords(merchant)
     .map(sanitizeForIlike)
     .filter((w) => w.length > 0);
 
@@ -70,7 +127,7 @@ export function extractKeywords(merchant: string): string[] {
       result.push(w);
     }
   }
-  return result.slice(0, 5);
+  return result.slice(0, RECEIPT_MATCH.MAX_KEYWORDS);
 }
 
 export function merchantsMatch(receiptMerchant: string, txMerchant: string): boolean {
@@ -86,21 +143,47 @@ export function merchantsMatch(receiptMerchant: string, txMerchant: string): boo
   const bKeywords = b.split(" ").filter((w) => w.length >= 3);
   if (bKeywords.some((kw) => a.includes(kw))) return true;
 
-  const aAliases = resolveAliases(receiptMerchant);
-  const bAliases = resolveAliases(txMerchant);
-  if (aAliases.length > 0 && bAliases.length > 0) {
-    if (aAliases.some((aa) => bAliases.includes(aa))) return true;
+  // Group check: same canonical alias group = same merchant
+  const aGroups = resolveAliasGroups(receiptMerchant);
+  const bGroups = resolveAliasGroups(txMerchant);
+  if (aGroups.length > 0 && bGroups.length > 0) {
+    if (aGroups.some((g) => bGroups.includes(g))) return true;
   }
-  if (aAliases.some((aa) => b.includes(aa))) return true;
-  if (bAliases.some((ba) => a.includes(ba))) return true;
+
+  // Keyword check: alias tokens from one side appear as whole words in the other's
+  // normalized name. Use word-token matching (not substring) to prevent e.g.
+  // "delta" alias token "air" matching inside "united airlines".
+  const aWords = new Set(a.split(" "));
+  const bWords = new Set(b.split(" "));
+  const aKeywordAliases = resolveAliasKeywords(receiptMerchant);
+  const bKeywordAliases = resolveAliasKeywords(txMerchant);
+  if (aKeywordAliases.some((kw) => bWords.has(kw))) return true;
+  if (bKeywordAliases.some((kw) => aWords.has(kw))) return true;
 
   return false;
 }
 
-function amountWithinTolerance(receiptAmount: number, txAmount: number): boolean {
-  // Exact match only — $0.01 rounding buffer for floating-point representation.
-  // Loose dollar/percent tolerances caused too many false matches on small amounts.
-  return Math.abs(txAmount - receiptAmount) <= 0.01;
+/**
+ * When merchantMatched=true (Strategies 1 & 2), allow up to ±$5 or ±10% of
+ * the receipt amount, whichever is smaller. This covers tips, rounding, and
+ * tax discrepancies while avoiding false positives on large amounts.
+ * When merchantMatched=false (Strategy 3 — no merchant validation), require
+ * exact match ($0.01) to compensate for the lack of merchant signal.
+ */
+function amountWithinTolerance(
+  receiptAmount: number,
+  txAmount: number,
+  merchantMatched = false
+): boolean {
+  const diff = Math.abs(txAmount - receiptAmount);
+  if (merchantMatched) {
+    const tolerance = Math.min(
+      RECEIPT_MATCH.AMOUNT_TOLERANCE_DOLLARS,
+      receiptAmount * RECEIPT_MATCH.AMOUNT_TOLERANCE_PERCENT
+    );
+    return diff <= Math.max(tolerance, RECEIPT_MATCH.AMOUNT_TOLERANCE_EXACT);
+  }
+  return diff <= RECEIPT_MATCH.AMOUNT_TOLERANCE_EXACT;
 }
 
 /**
@@ -110,10 +193,10 @@ function amountWithinTolerance(receiptAmount: number, txAmount: number): boolean
  */
 function knownMerchantsConflict(m1: string, m2: string): boolean {
   if (!m1 || !m2) return false;
-  const a1 = resolveAliases(m1);
-  const a2 = resolveAliases(m2);
-  // Both are recognised merchants and share no alias group → definitively different
-  return a1.length > 0 && a2.length > 0 && !a1.some((a) => a2.includes(a));
+  const g1 = resolveAliasGroups(m1);
+  const g2 = resolveAliasGroups(m2);
+  // Both are recognised merchants and share no canonical group → definitively different
+  return g1.length > 0 && g2.length > 0 && !g1.some((g) => g2.includes(g));
 }
 
 export function scoreCandidates(
@@ -125,25 +208,32 @@ export function scoreCandidates(
   const scored = candidates
     .map((tx) => {
       const txAmount = Math.abs(Number(tx.amount));
-      const amountDiff = Math.abs(txAmount - receiptAmount);
+      const txMerch = tx.normalized_merchant || tx.merchant_name || "";
+      // merchantMatched=true only when there is a real merchant signal on both sides.
+      // Missing merchant name → false (tight tolerance), not true (loose tolerance).
+      const merchantMatched = Boolean(
+        receiptMerchant && txMerch && merchantsMatch(receiptMerchant, txMerch)
+      );
       return {
         id: tx.id,
-        amountDiff,
+        txAmount,
+        amountDiff: Math.abs(txAmount - receiptAmount),
         dateDiff: receiptDate
           ? Math.abs(new Date(tx.date).getTime() - new Date(receiptDate).getTime())
           : 0,
         normalized_merchant: tx.normalized_merchant,
         merchant_name: tx.merchant_name,
+        merchantMatched,
       };
     })
     .filter((s) => {
-      if (!amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff)) return false;
-
+      // Reject if amount is outside tolerance (tiered by merchant match confidence)
+      if (!amountWithinTolerance(receiptAmount, s.txAmount, s.merchantMatched)) return false;
+      // Reject if a receipt merchant was provided but this tx doesn't match
       if (receiptMerchant) {
         const txMerch = s.normalized_merchant || s.merchant_name || "";
         if (txMerch && !merchantsMatch(receiptMerchant, txMerch)) return false;
       }
-
       return true;
     })
     .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
@@ -187,16 +277,20 @@ export async function matchReceiptsToTransactions(
     (alreadyLinked ?? []).map((r) => r.transaction_id as string).filter(Boolean)
   );
 
-  const windowDays = RECEIPT_MATCH.DATE_WINDOW_DAYS;
+  // Asymmetric window: receipt date is the order date; bank transactions typically
+  // post 1-3 days later. Look back a few days (pre-auth/same-day charges) and
+  // forward more days (delayed posting, pending → posted transitions).
+  const WINDOW_BEFORE_DAYS = RECEIPT_MATCH.WINDOW_BEFORE_DAYS;
+  const WINDOW_AFTER_DAYS = RECEIPT_MATCH.WINDOW_AFTER_DAYS;
 
-  // Collect the overall date range covering ALL receipts (+ window on each side)
+  // Collect the overall date range covering ALL receipts
   let globalMinDate: Date | null = null;
   let globalMaxDate: Date | null = null;
   for (const receipt of receipts) {
     if (!receipt.date) continue;
     const d = new Date(receipt.date);
-    const lo = new Date(d); lo.setDate(lo.getDate() - windowDays);
-    const hi = new Date(d); hi.setDate(hi.getDate() + windowDays);
+    const lo = new Date(d); lo.setDate(lo.getDate() - WINDOW_BEFORE_DAYS);
+    const hi = new Date(d); hi.setDate(hi.getDate() + WINDOW_AFTER_DAYS);
     if (!globalMinDate || lo < globalMinDate) globalMinDate = lo;
     if (!globalMaxDate || hi > globalMaxDate) globalMaxDate = hi;
   }
@@ -229,13 +323,14 @@ export async function matchReceiptsToTransactions(
     let tightEnd: string | undefined;
     if (receiptDate) {
       const dateObj = new Date(receiptDate);
-      const start = new Date(dateObj); start.setDate(start.getDate() - windowDays);
-      const end = new Date(dateObj); end.setDate(end.getDate() + windowDays);
+      const start = new Date(dateObj); start.setDate(start.getDate() - WINDOW_BEFORE_DAYS);
+      const end = new Date(dateObj); end.setDate(end.getDate() + WINDOW_AFTER_DAYS);
       dateStart = start.toISOString().split("T")[0];
       dateEnd = end.toISOString().split("T")[0];
 
-      const ts = new Date(dateObj); ts.setDate(ts.getDate() - 3);
-      const te = new Date(dateObj); te.setDate(te.getDate() + 3);
+      // Tight window for Strategy 3: same asymmetry but narrower
+      const ts = new Date(dateObj); ts.setDate(ts.getDate() - RECEIPT_MATCH.TIGHT_WINDOW_BEFORE_DAYS);
+      const te = new Date(dateObj); te.setDate(te.getDate() + RECEIPT_MATCH.TIGHT_WINDOW_AFTER_DAYS);
       tightStart = ts.toISOString().split("T")[0];
       tightEnd = te.toISOString().split("T")[0];
     }
@@ -292,7 +387,7 @@ export async function matchReceiptsToTransactions(
             txAmount,
           };
         })
-        .filter((s) => amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff) && isFinite(s.dateDiff))
+        .filter((s) => amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff, true) && isFinite(s.dateDiff))
         .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
 
       if (scored.length > 0) {
@@ -321,7 +416,7 @@ export async function matchReceiptsToTransactions(
             dateDiff: Math.abs(new Date(tx.date).getTime() - new Date(receiptDate).getTime()),
           };
         })
-        .filter((s) => s.amountDiff <= 0.01)
+        .filter((s) => amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff, false))
         .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
 
       if (scored.length > 0) {
@@ -424,7 +519,7 @@ export async function auditAndRematchAllReceipts(
       // But if merchants are known-conflicting aliases (e.g. Airbnb vs Clipper),
       // clear it regardless of how close the amounts are.
       const nameOk = merchantsMatch(receipt.merchant, txMerchant);
-      const tightAmountOk = Math.abs(txAmount - rcptAmount) <= 0.01;
+      const tightAmountOk = amountWithinTolerance(rcptAmount, txAmount, false);
       const aliasConflict = knownMerchantsConflict(receipt.merchant, txMerchant);
       if (!nameOk && (!tightAmountOk || aliasConflict)) {
         toClear.push(receipt.id as string);
