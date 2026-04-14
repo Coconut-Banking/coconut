@@ -16,8 +16,19 @@ import { isShadowWriteEnabled } from "@/lib/splitwise-shadow";
  * - For each mirror: members, expenses, member mapping quality
  * - Surfaces the actual errors instead of swallowing them
  */
-export async function GET() {
-  const userId = await getUserId();
+export async function GET(req: Request) {
+  // Allow admin access via Clerk secret key for CLI diagnostics
+  const authHeader = req.headers.get("x-admin-key");
+  const clerkSecret = process.env.CLERK_SECRET_KEY;
+  const url = new URL(req.url);
+  const adminUserId = url.searchParams.get("user_id");
+
+  let userId: string | null;
+  if (authHeader && clerkSecret && authHeader === clerkSecret && adminUserId) {
+    userId = adminUserId;
+  } else {
+    userId = await getUserId();
+  }
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getSupabase();
