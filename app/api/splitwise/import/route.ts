@@ -96,9 +96,11 @@ export async function POST(req: NextRequest) {
       getGroups(token),
     ]);
     const myEmail = clerkUser?.primaryEmailAddress?.emailAddress ?? null;
+    // Filter out mirror groups created by dual-write (they start with "Mirror ")
+    const nonMirrorGroups = swGroups.filter((g) => !g.name.startsWith("Mirror "));
     const filteredGroups = groupIds
-      ? swGroups.filter((g) => groupIds.includes(g.id))
-      : swGroups;
+      ? nonMirrorGroups.filter((g) => groupIds.includes(g.id))
+      : nonMirrorGroups;
     console.log(`[splitwise-import] found ${swGroups.length} groups for user ${swUser.id}`);
 
     // Batch look up all member emails to link existing Coconut users
