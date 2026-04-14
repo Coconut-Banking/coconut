@@ -29,12 +29,12 @@ const MIRROR_PREFIX = "Mirror ";
  */
 export async function POST(req: Request) {
   const authHeader = req.headers.get("x-admin-key");
-  const clerkSecret = process.env.CLERK_SECRET_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const url = new URL(req.url);
   const adminUserId = url.searchParams.get("user_id");
 
   let userId: string | null;
-  if (authHeader && clerkSecret && authHeader === clerkSecret && adminUserId) {
+  if (authHeader && serviceKey && authHeader === serviceKey && adminUserId) {
     userId = adminUserId;
   } else {
     userId = await getUserId();

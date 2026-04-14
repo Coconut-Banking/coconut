@@ -17,14 +17,14 @@ import { isShadowWriteEnabled } from "@/lib/splitwise-shadow";
  * - Surfaces the actual errors instead of swallowing them
  */
 export async function GET(req: Request) {
-  // Allow admin access via Clerk secret key for CLI diagnostics
+  // Allow admin access via service role key for CLI diagnostics
   const authHeader = req.headers.get("x-admin-key");
-  const clerkSecret = process.env.CLERK_SECRET_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const url = new URL(req.url);
   const adminUserId = url.searchParams.get("user_id");
 
   let userId: string | null;
-  if (authHeader && clerkSecret && authHeader === clerkSecret && adminUserId) {
+  if (authHeader && serviceKey && authHeader === serviceKey && adminUserId) {
     userId = adminUserId;
   } else {
     userId = await getUserId();
