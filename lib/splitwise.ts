@@ -314,10 +314,17 @@ export async function addUserToSwGroup(
   const body: Record<string, unknown> = { group_id: groupId };
   if (user.user_id) {
     body.users__0__user_id = user.user_id;
-  } else {
-    if (user.email) body.users__0__email = user.email;
-    if (user.first_name) body.users__0__first_name = user.first_name;
-    if (user.last_name) body.users__0__last_name = user.last_name;
   }
-  await swPost<unknown>(token, "/add_user_to_group", body);
+  if (user.email) body.users__0__email = user.email;
+  if (user.first_name) body.users__0__first_name = user.first_name;
+  if (user.last_name) body.users__0__last_name = user.last_name;
+
+  const res = await swPost<{ success?: boolean; errors?: Record<string, string[]> }>(
+    token,
+    "/add_user_to_group",
+    body
+  );
+  if (res.success === false || (res.errors && Object.keys(res.errors).length > 0)) {
+    throw new Error(`Splitwise add_user_to_group failed: ${JSON.stringify(res.errors)}`);
+  }
 }

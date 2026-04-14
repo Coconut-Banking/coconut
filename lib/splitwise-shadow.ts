@@ -228,7 +228,12 @@ async function ensureMirrorGroup(
     for (const rm of realGroup.members) {
       if (rm.id === swUser.id) continue;
       try {
-        await addUserToSwGroup(token, mirrorSwGroupId, { user_id: rm.id });
+        await addUserToSwGroup(token, mirrorSwGroupId, {
+          user_id: rm.id,
+          first_name: rm.first_name || undefined,
+          last_name: rm.last_name || undefined,
+          email: rm.email || undefined,
+        });
       } catch (e) {
         console.warn(`[shadow] Failed to add SW user ${rm.id} to mirror:`, e);
       }

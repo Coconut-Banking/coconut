@@ -182,6 +182,9 @@ export async function POST(req: Request) {
           const addBody: Record<string, unknown> = {
             group_id: mirrorSwGroupId,
             users__0__user_id: rm.id,
+            users__0__first_name: rm.first_name || "User",
+            users__0__last_name: rm.last_name || "",
+            users__0__email: rm.email || undefined,
           };
           const addRes = await fetch("https://secure.splitwise.com/api/v3.0/add_user_to_group", {
             method: "POST",
