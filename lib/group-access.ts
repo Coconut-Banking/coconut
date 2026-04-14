@@ -12,6 +12,10 @@ const GROUP_ID_TTL_MS = 5_000;
 /**
  * Link group members by email when user signs in.
  * Cached per-user for 60s to avoid redundant Clerk + DB calls on every request.
+ *
+ * IMPORTANT: only links to groups the user OWNS. Cross-linking into other
+ * users' copies of the same Splitwise group caused stale balance pollution
+ * (every import creates its own copy; members should only see their own).
  */
 async function linkMemberByEmail(userId: string) {
   const now = Date.now();
@@ -27,11 +31,24 @@ async function linkMemberByEmail(userId: string) {
 
   const db = getSupabase();
 
+  // Only link to groups the user owns — never cross-link into other users' groups
+  const { data: ownedGroups } = await db
+    .from("groups")
+    .select("id")
+    .eq("owner_id", userId);
+  const ownedGroupIds = (ownedGroups ?? []).map((g) => g.id);
+
+  if (ownedGroupIds.length === 0) {
+    _linkCache.set(userId, now);
+    return;
+  }
+
   const { data: candidates } = await db
     .from("group_members")
     .select("id, group_id")
     .eq("email", email.toLowerCase())
-    .is("user_id", null);
+    .is("user_id", null)
+    .in("group_id", ownedGroupIds);
 
   if (!candidates || candidates.length === 0) {
     _linkCache.set(userId, now);
@@ -45,7 +62,7 @@ async function linkMemberByEmail(userId: string) {
   );
 
   console.log(
-    `[group-access] linked ${candidates.length} member row(s) for ${email}`
+    `[group-access] linked ${candidates.length} member row(s) for ${email} (own groups only)`
   );
   _linkCache.set(userId, now);
 }

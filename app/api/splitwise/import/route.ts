@@ -9,7 +9,7 @@ import { getUserId } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { decryptToken } from "@/lib/encryption";
 import { CACHE_TAGS } from "@/lib/cached-queries";
-import { findClerkUserIdsByEmails } from "@/lib/clerk-user-lookup";
+
 import {
   getGroups,
   getExpenses,
@@ -17,7 +17,6 @@ import {
   getFriends,
   type GetExpensesOptions,
   type SplitwiseGroup,
-  type SplitwiseExpense,
 } from "@/lib/splitwise";
 
 interface ImportStats {
@@ -103,26 +102,9 @@ export async function POST(req: NextRequest) {
       : nonMirrorGroups;
     console.log(`[splitwise-import] found ${swGroups.length} groups for user ${swUser.id}`);
 
-    // Batch look up all member emails to link existing Coconut users
-    const allMemberEmails = new Set<string>();
-    for (const g of filteredGroups) {
-      for (const m of g.members) {
-        const email = (m.email ?? "").trim().toLowerCase();
-        if (email && email !== (myEmail ?? "").toLowerCase()) {
-          allMemberEmails.add(email);
-        }
-      }
-    }
-    const emailToClerkId = dryRun
-      ? new Map<string, string>()
-      : await findClerkUserIdsByEmails([...allMemberEmails]);
-    if (emailToClerkId.size > 0) {
-      console.log(`[splitwise-import] found ${emailToClerkId.size} existing Coconut user(s) among Splitwise members`);
-    }
-
     for (const swGroup of filteredGroups) {
       try {
-        await importGroup(db, userId, token, swGroup, swUser.id, myEmail, emailToClerkId, stats, {
+        await importGroup(db, userId, token, swGroup, swUser.id, myEmail, stats, {
           dryRun,
           expenseOptions,
         });
@@ -285,7 +267,6 @@ async function importGroup(
   swGroup: SplitwiseGroup,
   swUserId: number,
   myEmail: string | null,
-  emailToClerkId: Map<string, string>,
   stats: ImportStats,
   opts: { dryRun: boolean; expenseOptions: GetExpensesOptions }
 ) {
@@ -380,26 +361,14 @@ async function importGroup(
 
     if (existingMember) {
       swMemberIdToCoconutId.set(swMember.id, existingMember.id);
-      // Backfill user_id on existing rows that were previously unlinked
-      if (!isMe && email) {
-        const linkedId = emailToClerkId.get(email.toLowerCase());
-        if (linkedId) {
-          await db
-            .from("group_members")
-            .update({ user_id: linkedId })
-            .eq("id", existingMember.id)
-            .is("user_id", null);
-        }
-      }
       continue;
     }
 
-    let memberUserId: string | null = null;
-    if (isMe) {
-      memberUserId = userId;
-    } else if (email) {
-      memberUserId = emailToClerkId.get(email.toLowerCase()) ?? null;
-    }
+    // Only set user_id for the importer (self). Other users should access
+    // this group through their OWN import, not by being cross-linked here.
+    // Cross-linking caused stale balance pollution when multiple users
+    // imported the same Splitwise group.
+    const memberUserId = isMe ? userId : null;
 
     const { data: newMember, error } = await db
       .from("group_members")

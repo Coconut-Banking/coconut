@@ -10,6 +10,7 @@ import {
   splitTransactionDedupeKey,
 } from "@/lib/split-transaction-helpers";
 import { getGroups as getSwGroups } from "@/lib/splitwise";
+import { decryptToken } from "@/lib/encryption";
 
 /** Ignore sub–half-cent noise when deciding “settled” vs outstanding (Splitwise-style lists). */
 const BALANCE_EPS = 0.005;
@@ -616,10 +617,11 @@ async function handleSummary(req: NextRequest, userId: string) {
   // Background: refresh cached_group_balances from Splitwise so settled groups
   // don't show stale pre-settlement debt on the NEXT request.
   {
-    const swToken = (swTokenRow as Record<string, unknown> | null)?.access_token as string | undefined;
-    if (swToken) {
+    const swTokenEnc = (swTokenRow as Record<string, unknown> | null)?.access_token as string | undefined;
+    if (swTokenEnc) {
       void (async () => {
         try {
+          const swToken = decryptToken(swTokenEnc);
           const swGroups = await getSwGroups(swToken);
           const swMe = await (async () => {
             for (const g of swGroups) {
