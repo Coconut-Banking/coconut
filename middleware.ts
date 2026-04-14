@@ -25,6 +25,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/splitwise/shadow-diagnose",
   "/api/splitwise/shadow-test",
   "/api/splitwise/shadow-reset",
+  "/api/splitwise/shadow-crud-test",
 ]);
 
 function isClerkRateLimitError(e: unknown): e is { status: number; retryAfter?: number } {
