@@ -106,17 +106,52 @@ export async function POST(req: NextRequest) {
   const results = await Promise.all(ids.map(deleteGroupCascade));
   const deletedGroups = results.filter(Boolean).length;
 
-  if (disconnectToken) {
-    await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
+  // Unlink this user from other people's groups so stale copies don't
+  // pollute the balance computation after reconnect.
+  let unlinkedMemberships = 0;
+  const { data: otherMemberRows } = await db
+    .from("group_members")
+    .select("id, group_id")
+    .eq("user_id", userId);
+  const ownedIdSet = new Set(ids);
+  const foreignRows = (otherMemberRows ?? []).filter(
+    (r) => !ownedIdSet.has(r.group_id as string)
+  );
+  if (foreignRows.length > 0) {
+    const foreignIds = foreignRows.map((r) => r.id as string);
+    for (let i = 0; i < foreignIds.length; i += BATCH) {
+      await db
+        .from("group_members")
+        .update({ user_id: null })
+        .in("id", foreignIds.slice(i, i + BATCH));
+    }
+    unlinkedMemberships = foreignIds.length;
+    console.log(`[splitwise/clear] Unlinked ${unlinkedMemberships} memberships in other users' groups`);
   }
 
-  if (deletedGroups > 0) {
+  if (disconnectToken) {
+    await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
+  } else {
+    // Clear cached balances even if keeping the token
+    try {
+      await db
+        .from("splitwise_tokens")
+        .update({
+          cached_friend_balances: null,
+          cached_group_balances: null,
+        } as Record<string, unknown>)
+        .eq("clerk_user_id", userId);
+    } catch { /* column may not exist */ }
+  }
+
+  if (deletedGroups > 0 || unlinkedMemberships > 0) {
     revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
   }
 
   return NextResponse.json({
     ok: true,
     deletedGroups,
+    unlinkedMemberships,
     disconnectToken,
   });
 }
