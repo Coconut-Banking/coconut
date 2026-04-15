@@ -1,0 +1,30 @@
+---
+
+**Bug Council complete.** PR: https://github.com/Coconut-Banking/coconut/pull/139
+
+### Results
+
+| | Count |
+|---|---|
+| Bugs reported | 3 |
+| Verified (survived Devil's Advocate) | 3 |
+| Fixed with tests | 3 |
+| Disproved / Deferred | 0 |
+
+### Fixed Bugs
+
+**[P1] BUG-RESILIENCE-1** — `lib/transaction-sync.ts`  
+`embedRichTransactionsForUser` and `embedTransactionsForUser` discarded Supabase's `{ data, error }` response tuple, silently swallowing DB write failures during embedding. +3 tests.
+
+**[P2] BUG-CLIENT-1** — `hooks/useSubscriptions.ts`  
+`dismiss` and `dismissPriceChange` called `fetchSubs()` on error paths without checking `mountedRef.current`, causing React "setState on unmounted component" warnings. +4 tests.
+
+**[P2] BUG-DAILY-1** — `app/app/dashboard/page.tsx`, `app/app/settings/page.tsx`  
+Account/wallet balances displayed in native `iso_currency_code` while transactions correctly converted to the user's preferred currency. Fixed by applying `convertCurrency()` before `formatCurrency()`. +11 tests.
+
+### Patterns added to `.cursor/rules/common-bugs.mdc`
+1. Always check Supabase `.update()`/`.insert()`/`.delete()` error responses
+2. Check `mountedRef.current` in all async callback branches
+3. Apply `convertCurrency()` before `formatCurrency()` for user-facing monetary displays
+
+PR_NUMBER=139

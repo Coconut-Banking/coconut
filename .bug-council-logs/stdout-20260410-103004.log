@@ -1,0 +1,36 @@
+
+================================================================
+  Bug Council v2: coconut (web)
+================================================================
+M	package-lock.json
+Your branch is up to date with 'origin/main'.
+HEAD is now at f47e50e feat: wire up settlement shadow write + improve verify endpoint
+
+up to date in 19s
+
+193 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council v2 audit for coconut...
+PR #244 created for coconut.
+Polling CI for PR #244...
+CI passed for coconut!
+https://github.com/Coconut-Banking/coconut/pull/244#issuecomment-4225569922
+
+================================================================
+  Bug Council v2: coconut-app (mobile)
+================================================================
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+
+up to date in 9s
+
+107 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council v2 audit for coconut-app...
+PR #57 created for coconut-app.
+PR #57 has merge conflicts. Auto-resolving...
+Merge conflicts resolved for coconut-app.
+Polling CI for PR #57...
+Poll 1/60 for coconut-app: CI still running...
+CI passed for coconut-app!
+https://github.com/Coconut-Banking/coconut-app/pull/57#issuecomment-4225673430
+Cleaning up...

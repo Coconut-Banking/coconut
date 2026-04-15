@@ -1,0 +1,32 @@
+No CI checks are configured on this repo. The PR is ready.
+
+---
+
+## Bug Council Audit Complete
+
+**PR:** https://github.com/KoushikP04/coconut-app/pull/1
+
+### Summary
+
+| Metric | Count |
+|--------|-------|
+| Agents deployed | 7 |
+| Bugs found (raw) | 35 |
+| Bugs found (deduplicated) | 31 |
+| Bugs fixed | 31 |
+| New TypeScript errors introduced | 0 |
+
+### P0 — Critical (2 fixed)
+- **NATIVE-1**: Removed hardcoded Clerk publishable key from source control
+- **PAYMENTS-2**: Stripe payments were sending dollar floats instead of integer cents — every charge was wrong
+
+### P1 — Broken Functionality (16 fixed)
+Key highlights:
+- **PAYMENTS-1/AUTH-5**: Unauthenticated requests were reaching Stripe Terminal and the connected screen
+- **NATIVE-5**: `TerminalTokenProvider` mounted in dev/SKIP_AUTH builds, requesting real Stripe secrets with no auth
+- **API-1/3/4/5**: Multiple API calls crashed on non-JSON error responses or silently discarded failures
+- **FLOWS-1**: `.catch()` after `.finally()` was dead code — errors in `useTransactions` were never caught
+- **NAV-2**: `router.back()` was a no-op in tab screens, stranding users on add-expense
+
+### P2 — Incorrect Behavior (13 fixed)
+SafeAreaView on all auth/detail screens, Android keyboard fix, focus-based data refresh, discoverReaders error surfacing, sign-up Google timeout, and more.

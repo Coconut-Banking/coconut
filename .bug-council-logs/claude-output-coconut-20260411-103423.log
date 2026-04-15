@@ -1,0 +1,3 @@
+CI is green. The `fix/bug-council-*` branches intentionally skip the full CI pipeline (validated locally instead) — both Vercel checks passed.
+
+PR #245 is ready for review: https://github.com/Coconut-Banking/coconut/pull/245

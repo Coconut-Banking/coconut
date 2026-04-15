@@ -1,0 +1,28 @@
+---
+
+## Bug Council Audit Complete
+
+**PR**: https://github.com/Coconut-Banking/coconut-app/pull/48 (no CI configured)
+
+### Results Summary
+
+| | Count |
+|---|---|
+| Bugs reported by agents | 5 |
+| Verified (passed Devil's Advocate) | 3 |
+| Fixed | 3 |
+| False positives rejected | 2 |
+
+### Fixed Bugs
+
+**P1 — Data Loss**
+- **BUG-FLOWS-1** `hooks/useReceiptSplit.ts` + `receipt.tsx`: `saveAssignments()` silently discarded all HTTP errors (never checked `res.ok`), letting the user advance to the summary screen with unsaved data. Fixed: check `res.ok`, throw on failure, show Alert to user.
+
+**P2 — Wrong Behavior (×2)**
+- **BUG-API-1/2** `app/(tabs)/shared.tsx`: In both "Mark paid" and "Request payment" handlers, `res.json()` was called in error paths with no catch. A non-JSON server error (HTML 500) would throw silently, eating the user-facing error Alert. Fixed: wrap `res.json()` calls in try/catch with generic fallback messages.
+
+### Disproved (Rejected)
+- **BUG-NAV_AUTH-1**: `scheme: "coconut"` IS in `app.config.js` — agent read the wrong file
+- **BUG-NATIVE-1**: Stripe SDK handles tokenProvider errors gracefully — not a crash
+
+PR_NUMBER=48

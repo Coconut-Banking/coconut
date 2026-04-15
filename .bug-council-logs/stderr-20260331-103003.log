@@ -1,0 +1,7 @@
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   18f1667..c558696  main       -> origin/main
+HEAD is now at c558696 fix: eliminate Clerk 429 cascade — stop blocking all requests on rate limit
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview

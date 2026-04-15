@@ -1,0 +1,39 @@
+
+================================================================
+  Bug Council v2: coconut (web)
+================================================================
+M	package-lock.json
+Your branch is behind 'origin/main' by 2 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+HEAD is now at 1f1abb5 fix: prevent self-owe suggestions and refresh stale Splitwise cache
+
+up to date in 17s
+
+193 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council v2 audit for coconut...
+PR #245 created for coconut.
+Polling CI for PR #245...
+Poll 1/60 for coconut: CI still running...
+Poll 2/60 for coconut: CI still running...
+Poll 3/60 for coconut: CI still running...
+Poll 4/60 for coconut: CI still running...
+CI passed for coconut!
+https://github.com/Coconut-Banking/coconut/pull/245#issuecomment-4239090992
+
+================================================================
+  Bug Council v2: coconut-app (mobile)
+================================================================
+M	package-lock.json
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+
+up to date in 4s
+
+107 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council v2 audit for coconut-app...
+PR #57 created for coconut-app.
+Polling CI for PR #57...
+CI passed for coconut-app!
+https://github.com/Coconut-Banking/coconut-app/pull/57#issuecomment-4239097098
+Cleaning up...

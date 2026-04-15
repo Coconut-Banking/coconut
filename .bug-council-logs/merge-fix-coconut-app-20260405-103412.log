@@ -1,0 +1,5 @@
+Done. Conflicts resolved and pushed:
+
+- **`app/(tabs)/shared.tsx`** — deleted (accepted upstream's deletion, structural change)
+- **`hooks/useReceiptSplit.ts`** — took upstream's more robust non-JSON error handling (try-catch around `res.json()`)
+- **`app/(tabs)/receipt.tsx`** — took upstream's version with unassigned-count label and refactored button UI

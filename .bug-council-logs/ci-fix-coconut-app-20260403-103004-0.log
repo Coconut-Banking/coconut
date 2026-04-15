@@ -1,0 +1,10 @@
+Done. Here's a summary of what was fixed:
+
+**`lib/biometric-lock.ts`**:
+- Added `checkBiometricStatus()` — was imported by `BiometricEnablePrompt.tsx` but didn't exist
+- Extended `authenticate()` to accept a 2nd `options?: { biometricOnly?: boolean }` param — was being called with 2 args in 3 places
+- Updated return type to `{ success: boolean; error?: string; errorCode?: string }` — callers were reading `.error` and `.errorCode` fields that didn't exist on the type
+
+**`hooks/useShakeDetector.ts`**:
+- Replaced `typeof import("expo-sensors")` (causes TS2307 since `expo-sensors` isn't in `package.json`) with `any` cast
+- Added explicit `{ x: number; y: number; z: number }` type to the accelerometer callback to fix TS7031

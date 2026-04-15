@@ -260,6 +260,14 @@ export async function cloneMirrorGroup(
   const mirrorGroupFresh = await getGroup(token, mirrorSwGroupId);
   const realToMirror = buildRealToMirrorMemberMap(swGroup.members, mirrorGroupFresh.members);
 
+  // Skip expense copying if the mirror already has expenses — avoids duplicates on re-runs.
+  // To force a re-copy, delete the mirror group expenses manually first.
+  const existingMirrorExpenses = await getExpenses(token, mirrorSwGroupId, { limitPerPage: 1, maxPages: 1 });
+  if (alreadyExisted && existingMirrorExpenses.length > 0) {
+    console.log(`[mirror-debug] Mirror already has expenses — skipping copy (${existingMirrorExpenses.length}+ found)`);
+    return { mirrorSwGroupId, alreadyExisted, copied: 0, skipped: 0, totalFetched: 0 };
+  }
+
   // Fetch the most recent `limit` expenses from the real group
   const expenses = await getExpenses(token, realSwGroupId, {
     limitPerPage: limit,

@@ -1,0 +1,4 @@
+fatal: unable to access 'https://github.com/Coconut-Banking/coconut.git/': Could not resolve host: github.com
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview

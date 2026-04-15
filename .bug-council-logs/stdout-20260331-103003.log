@@ -1,0 +1,30 @@
+
+================================================================
+  Bug Council: coconut (web)
+================================================================
+M	package-lock.json
+HEAD is now at c558696 fix: eliminate Clerk 429 cascade — stop blocking all requests on rate limit
+
+up to date in 914ms
+
+193 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council audit for coconut...
+PR #126 created for coconut.
+Polling CI for PR #126...
+CI passed for coconut!
+https://github.com/Coconut-Banking/coconut/pull/126#issuecomment-4164551559
+
+================================================================
+  Bug Council: coconut-app (mobile)
+================================================================
+M	package-lock.json
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+
+up to date in 2s
+
+107 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council audit for coconut-app...
+No PR found for coconut-app. May have found no bugs or failed.
+Cleaning up...

@@ -1,0 +1,115 @@
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   cd412a8..7c6cb14  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+fatal: unable to access 'https://github.com/Coconut-Banking/coconut.git/': Could not resolve host: github.com
+HEAD is now at 7c6cb14 fix(splitwise): deep link uses OAuth app variant + path-style URI
+fatal: unable to access 'https://github.com/KoushikP04/coconut-app.git/': Could not resolve host: github.com
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   7c6cb14..edc1c45  main       -> origin/main
+Previous HEAD position was 7c6cb14 fix(splitwise): deep link uses OAuth app variant + path-style URI
+HEAD is now at edc1c45 fix: filter out pending transactions when posted counterpart exists
+fatal: unable to access 'https://github.com/KoushikP04/coconut-app.git/': Could not resolve host: github.com
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   607cf16..0cb863c  main       -> origin/main
+HEAD is now at 0cb863c feat: add PDF export endpoint for receipt splits
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   18f1667..c558696  main       -> origin/main
+HEAD is now at c558696 fix: eliminate Clerk 429 cascade — stop blocking all requests on rate limit
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   1a02090..2951db7  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   ffed8c6..a56f416  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   9e586e3..97b8db5  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   97b8db5..4d9db99  main       -> origin/main
+fatal: unable to access 'https://github.com/KoushikP04/coconut-app.git/': Could not resolve host: github.com
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   4d9db99..f54b450  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   c958892..4ad4230  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+error: Your local changes to the following files would be overwritten by checkout:
+	package-lock.json
+Please commit your changes or stash them before you switch branches.
+Aborting
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   7e12a1a..75a1e7e  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+ + 8a162e2...f47e50e main       -> origin/main  (forced update)
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+fatal: unable to access 'https://github.com/Coconut-Banking/coconut.git/': Could not resolve host: github.com
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   f47e50e..4fbf2cf  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+fatal: unable to access 'https://github.com/KoushikP04/coconut-app.git/': Could not resolve host: github.com
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   4fbf2cf..1f1abb5  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+   14f5032..ea0ed85  main       -> origin/main
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview

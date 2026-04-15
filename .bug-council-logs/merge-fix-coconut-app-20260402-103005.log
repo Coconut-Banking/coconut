@@ -1,0 +1,5 @@
+Done. All conflicts resolved and pushed:
+
+- **13 conflicted files** resolved by taking `upstream/main` for all conflicts (structural refactors, new UI system, biometric auth, demo mode, etc.)
+- `app/(tabs)/shared.tsx` removed (deleted in upstream/main, replaced by new `app/(tabs)/shared/` directory)
+- Committed as `merge: resolve conflicts with main` and pushed to `origin/fix/bug-council-20260402`

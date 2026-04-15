@@ -1,0 +1,42 @@
+---
+
+## Bug Council Audit Complete
+
+**PR**: https://github.com/Coconut-Banking/coconut-app/pull/51
+
+---
+
+### Results Summary
+
+| | Count |
+|---|---|
+| Bugs reported by agents | 7 |
+| Survived Devil's Advocate | 7 |
+| Fixed | 7 |
+| Deferred | 0 |
+| False positives | 0 |
+
+---
+
+### Fixed Bugs (7 commits)
+
+| Severity | ID | Fix |
+|---|---|---|
+| P0 | BUG-NATIVE-2 | Removed hardcoded Clerk test key from `app.config.js` |
+| P1 | BUG-NAV_AUTH-1 | `hasClearedSession.current` moved into `.then()` so failed `signOut()` can retry |
+| P1 | BUG-NATIVE-1 | `fetchConnectionToken` now throws early on null token instead of sending `Authorization: ""` |
+| P1 | BUG-API-1 | `.ok` checked before `.json()` in 5 call sites (6 files); `confirmItems` was silently swallowing errors with no user feedback |
+| P1 | BUG-API-2 | Semantic search `.ok` guard added in `index.tsx` |
+| P1 | BUG-FLOWS-1 | `saveAssignments()` now returns `boolean`; `computeSummary()` only called on success |
+| P2 | BUG-NATIVE-3 | `pickAndUpload` requests only the permission actually needed (camera OR library) |
+
+---
+
+### Patterns Added to `.cursor/rules/common-bugs.mdc`
+
+- Always check `res.ok` before `res.json()`; use `.catch(() => ({}))` for error body extraction
+- `try-finally` without `catch` silently swallows errors — always set error state in `catch`
+- Never hardcode credentials as config fallbacks
+- Never send `Authorization: ""` — throw early if token is unavailable
+
+PR_NUMBER=51

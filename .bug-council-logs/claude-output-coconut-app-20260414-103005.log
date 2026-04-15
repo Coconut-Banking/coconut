@@ -1,0 +1,34 @@
+All done. Here's the full summary:
+
+---
+
+## Bug Council Audit — 2026-04-14
+
+**PR #58**: https://github.com/Coconut-Banking/coconut-app/pull/58
+
+### Results
+| | Count |
+|---|---|
+| Reported | 9 |
+| Verified | 7 |
+| Fixed | 7 |
+| Disproved | 2 |
+| Deferred | 0 |
+
+### Fixed Bugs
+
+**P0 (Critical)**
+- **BUG-NATIVE-1**: Payment amount sent in dollars instead of cents — $10.00 was charging $0.10. `Math.round(amt * 100)` restored in `pay.tsx`.
+
+**P1 (Broken Functionality)**
+- **BUG-API-1/2**: `.json()` before `.ok` in terminal location fetch and payment intent creation (`pay.tsx`) — non-JSON error responses threw uncaught SyntaxErrors
+- **BUG-API-3**: `.json()` before `.ok` in receipt finish and group creation (`receipt.tsx`) — same pattern, two instances
+- **BUG-NATIVE-2**: `.json()` before `.ok` in `uploadReceipt` and `confirmItems` (`useReceiptSplit.ts`)
+- **BUG-FLOWS-1**: `saveAssignments()` didn't check `res.ok`; caller had no try-catch, so API failures gave users zero feedback. Now throws on failure; AssignStep `onPress` catches and Alerts.
+- **BUG-NAV_AUTH-2**: Google auth flow in sign-up screen had no timeout, could hang indefinitely. Added `withTimeout()` matching sign-in pattern.
+
+### Disproved
+- BUG-NAV_AUTH-1: Clerk correctly types `setActive?` as optional; code guards before using it
+- BUG-NATIVE-3: Not a "removal" — superseded by BUG-FLOWS-1 fix
+
+PR_NUMBER=58

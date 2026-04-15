@@ -1,0 +1,3 @@
+The branch is already in sync with `origin/main` — all 8 bug-council commits sit cleanly on top of main with no conflicts. The `package-lock.json` modification is an unstaged local change (not part of any conflict).
+
+No action was needed: no conflict markers exist, no merge commit is required, and the branch is already up to date with `origin/fix/bug-council-20260407`. The PR #51 should be conflict-free.

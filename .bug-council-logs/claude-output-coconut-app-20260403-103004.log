@@ -1,0 +1,29 @@
+No CI checks configured on this repo. Bug Council complete.
+
+---
+
+## Summary
+
+**5 bugs reported → 3 verified → 3 fixed → 1 deferred → 1 disproved**
+
+### Fixed (PR #46)
+
+| # | Severity | Bug | File |
+|---|----------|-----|------|
+| 1 | **P1** | `saveAssignments()` ignores HTTP errors → user silently lands on summary with unsaved data | `hooks/useReceiptSplit.ts` + `receipt.tsx` |
+| 2 | **P1** | `setActive()` in sign-up has no timeout → indefinite hang on Clerk API slowness | `app/(auth)/sign-up.tsx` |
+| 3 | **P2** | `confirmItems()` empty catch → no error feedback when item save fails | `hooks/useReceiptSplit.ts` + `receipt.tsx` |
+
+### Deferred
+- **BUG-NATIVE-1**: Payment amount in dollars vs cents — requires backend code to confirm
+
+### Disproved
+- **BUG-API-1**: `pay.tsx` `.json()` before `.ok` — adequately protected by existing try-catch
+
+### Patterns written to `.cursor/rules/common-bugs.mdc`
+- Always capture `apiFetch()` response — `fetch()` never throws on 4xx/5xx
+- Never use empty catch blocks — set error state for user feedback
+- Gate navigation on async save success
+- All Clerk `setActive()` calls need `withTimeout()`
+
+PR_NUMBER=46

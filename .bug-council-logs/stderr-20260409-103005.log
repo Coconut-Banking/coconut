@@ -1,0 +1,6 @@
+From https://github.com/Coconut-Banking/coconut
+ * branch            main       -> FETCH_HEAD
+ + 8a162e2...f47e50e main       -> origin/main  (forced update)
+From https://github.com/KoushikP04/coconut-app
+ * branch            main       -> FETCH_HEAD
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview

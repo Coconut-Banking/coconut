@@ -1,0 +1,11 @@
+All conflicts resolved and pushed. Here's a summary of what was done:
+
+**Merge source:** `upstream/main` (Coconut-Banking/coconut-app) had diverged significantly — the PR was conflicting against the upstream repo, not the fork.
+
+**Conflicts resolved in 3 files:**
+
+- **`hooks/useReceiptSplit.ts`**: Upstream renamed `confirmError→saveError`. Kept their naming, merged our error-reset (`setSaveError(null)`) with their demo-mode guard, took their cleaner defensive JSON error parsing, removed stale `confirmError` from the return object.
+
+- **`app/(tabs)/receipt.tsx`**: Upstream refactored nav styling to `st.*`. Kept our error display (adapted to `rs.saveError` + `st.errorText`), used their new nav structure. For AssignStep, used their new `View`-wrapper + unassigned-count indicator + `sfx.success()`, but preserved our try/catch with `Alert` on save failure.
+
+- **`app/(auth)/sign-up.tsx`**: Upstream already added its own `withTimeout` + constants. Deduplicated to one `withTimeout` function + `SIGN_IN_TIMEOUT_MS`/`SIGN_UP_GOOGLE_OAUTH_TIMEOUT_MS`. Merged both goals: their `setActiveGoogle` variable rename + `setIsDemoOn(false)` + routing, plus our `withTimeout` wrapping on both `setActive` calls.

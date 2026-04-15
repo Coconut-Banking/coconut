@@ -1,0 +1,28 @@
+
+================================================================
+  Bug Council v2: coconut (web)
+================================================================
+M	package-lock.json
+Your branch is behind 'origin/main' by 6 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+HEAD is now at 4d9db99 chore: trigger deploy for Vercel [skip ci]
+
+up to date in 30s
+
+193 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council v2 audit for coconut...
+No PR found for coconut. Clean audit or failure — check logs.
+
+================================================================
+  Bug Council v2: coconut-app (mobile)
+================================================================
+HEAD is now at 00f43b7 Skip auth mode, fix reload spinner, bypass Clerk for UI preview
+
+up to date in 4s
+
+107 packages are looking for funding
+  run `npm fund` for details
+Starting Bug Council v2 audit for coconut-app...
+No PR found for coconut-app. Clean audit or failure — check logs.
+Cleaning up...

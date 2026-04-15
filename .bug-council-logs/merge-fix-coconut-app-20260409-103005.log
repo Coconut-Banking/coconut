@@ -1,0 +1,10 @@
+Done. Here's a summary of what was resolved:
+
+| File | Conflict | Resolution |
+|---|---|---|
+| `.cursor/rules/common-bugs.mdc` | add/add (both branches added the file) | Took main's version (includes new "Timeout Protection for Auth" section) |
+| `app/_layout.tsx` | We added `TerminalTokenProvider`; main removed it (structural refactor) | Took main (removed function) |
+| `app/(tabs)/receipt.tsx` (confirmItems button) | Our try/catch wrapper vs. main's new styling + `sfx.pop()` | Took main (error handling moved into hook) |
+| `app/(tabs)/receipt.tsx` (saveAssignments button) | Our try/catch vs. main's unassigned count UI + try/catch | Took main (already has error handling + UI improvement) |
+| `hooks/useReceiptSplit.ts` (confirmItems catch) | `throw e` vs. `setSaveError(...)` | Took main (consistent with receipt.tsx onPress design) |
+| `hooks/useReceiptSplit.ts` (saveAssignments error) | `.catch(() => ({}))` inline vs. `try/catch` block | Took main (functionally equivalent) |
