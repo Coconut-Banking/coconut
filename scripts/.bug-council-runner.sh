@@ -429,11 +429,11 @@ else:
 " 2>/dev/null || echo "❌ parse error")
 
   echo "Parity check:       $parity_line"
-  echo "SW → mirror write:  $heartbeat_line"
+  echo "SW mirror write:    $heartbeat_line"
   echo "Coconut → SW write: $e2e_line"
   RESULTS+=("🪞 *Splitwise Mirror*
   Parity check: $parity_line
-  SW → mirror write: $heartbeat_line
+  SW mirror write: $heartbeat_line
   Coconut → SW write: $e2e_line")
 }
 
