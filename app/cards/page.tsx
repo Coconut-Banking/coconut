@@ -49,10 +49,24 @@ interface CardData {
   rewards_value_cpp: number;
   earn_rates: Record<string, number>;
   sign_up_bonus_value: number;
+  sign_up_bonus_spend: number;
+  sign_up_bonus_days: number;
   foreign_transaction_fee: boolean;
   key_perks: string[];
   pairs_well_with: string[];
   apply_url?: string | null;
+}
+
+interface ValueBreakdown {
+  dining: number;
+  travel: number;
+  groceries: number;
+  gas: number;
+  streaming: number;
+  transit: number;
+  other: number;
+  annual_fee_cost: number;
+  sign_up_bonus_contribution: number;
 }
 
 interface Recommendation {
@@ -60,6 +74,7 @@ interface Recommendation {
   score: number;
   estimated_annual_value: number;
   reason: string;
+  value_breakdown?: ValueBreakdown;
   card: CardData | null;
 }
 
@@ -539,8 +554,27 @@ function ResultCard({
   rank: number;
 }) {
   const [perksOpen, setPerksOpen] = useState(false);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
   const card = rec.card;
   if (!card) return null;
+
+  const bd = rec.value_breakdown;
+  const CATEGORY_LABELS: Array<[keyof ValueBreakdown, string]> = [
+    ["dining", "Dining"],
+    ["groceries", "Groceries"],
+    ["travel", "Travel"],
+    ["gas", "Gas"],
+    ["streaming", "Streaming"],
+    ["transit", "Transit"],
+    ["other", "Everything else"],
+  ];
+  const spendCategories = bd
+    ? CATEGORY_LABELS.filter(([k]) => (bd[k] as number) > 0).map(([k, label]) => ({
+        label,
+        value: bd[k] as number,
+        rate: card.earn_rates[k === "other" ? "base" : k] ?? card.earn_rates["base"] ?? 1,
+      }))
+    : [];
 
   const pairNames = card.pairs_well_with
     .map((id) => allCards.get(id)?.name)
@@ -573,6 +607,46 @@ function ResultCard({
           </div>
         </div>
         <p className="text-sm text-gray-600 mt-2 leading-relaxed">{rec.reason}</p>
+
+        {/* Value breakdown */}
+        {bd && spendCategories.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setBreakdownOpen((p) => !p)}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              How we get to ~{formatCurrency(rec.estimated_annual_value)}/yr
+              {breakdownOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            {breakdownOpen && (
+              <div className="mt-2 rounded-lg bg-gray-50 border border-gray-100 divide-y divide-gray-100 text-xs">
+                {spendCategories.map(({ label, value, rate }) => (
+                  <div key={label} className="flex justify-between items-center px-3 py-1.5">
+                    <span className="text-gray-600">{label} <span className="text-gray-400">({rate}x)</span></span>
+                    <span className="font-medium text-gray-800">+{formatCurrency(value)}/yr</span>
+                  </div>
+                ))}
+                {bd.annual_fee_cost < 0 && (
+                  <div className="flex justify-between items-center px-3 py-1.5">
+                    <span className="text-gray-600">Annual fee</span>
+                    <span className="font-medium text-red-500">{formatCurrency(bd.annual_fee_cost)}/yr</span>
+                  </div>
+                )}
+                {bd.sign_up_bonus_contribution > 0 && (
+                  <div className="flex justify-between items-center px-3 py-1.5">
+                    <span className="text-gray-600">Sign-up bonus <span className="text-gray-400">(amortized)</span></span>
+                    <span className="font-medium text-gray-800">+{formatCurrency(bd.sign_up_bonus_contribution)}/yr</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center px-3 py-2 bg-white rounded-b-lg font-semibold">
+                  <span className="text-gray-700">Total</span>
+                  <span className="text-[#1e2021]">~{formatCurrency(rec.estimated_annual_value)}/yr</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Meta row */}
@@ -594,8 +668,14 @@ function ResultCard({
           <span className="text-xs text-gray-500">Foreign transaction fee applies</span>
         )}
         {card.sign_up_bonus_value > 0 && (
-          <span className="text-xs text-gray-600">
+          <span className="relative group text-xs text-gray-600 cursor-default">
             <span className="font-medium">Sign-up bonus:</span> ~{formatCurrency(card.sign_up_bonus_value)} value
+            {card.sign_up_bonus_spend > 0 && (
+              <span className="absolute bottom-full left-0 mb-1.5 z-10 hidden group-hover:block w-56 rounded-lg bg-gray-900 text-white text-xs px-3 py-2 shadow-lg leading-relaxed pointer-events-none">
+                Spend {formatCurrency(card.sign_up_bonus_spend)} in {card.sign_up_bonus_days} days to earn ~{formatCurrency(card.sign_up_bonus_value)} in rewards value.
+                <span className="block text-gray-400 mt-1">Amortized as +{formatCurrency(Math.round(card.sign_up_bonus_value / 3))}/yr in the estimate above.</span>
+              </span>
+            )}
           </span>
         )}
       </div>

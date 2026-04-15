@@ -43,11 +43,24 @@ export interface CreditCard {
   active: boolean;
 }
 
+export interface ValueBreakdown {
+  dining: number;
+  travel: number;
+  groceries: number;
+  gas: number;
+  streaming: number;
+  transit: number;
+  other: number;
+  annual_fee_cost: number;       // negative number, e.g. -95
+  sign_up_bonus_contribution: number; // amortized 1/3 of bonus value
+}
+
 export interface CardRecommendation {
   card_id: string;
   score: number;
   estimated_annual_value: number; // in dollars
   reason: string; // one personalized sentence
+  value_breakdown: ValueBreakdown;
   upgrade_from?: string; // e.g. "vs your current average of $X back"
 }
 
@@ -61,14 +74,13 @@ const CREDIT_SCORE_MAP: Record<QuizAnswers["credit_score_bucket"], number> = {
 
 /**
  * Calculate the estimated annual value of a card for a given spend profile.
- * Returns net value in dollars after annual fee.
+ * Returns net value in dollars after annual fee, plus a per-category breakdown.
  */
-function calculateAnnualValue(card: CreditCard, spend: SpendProfile): number {
+function calculateAnnualValue(card: CreditCard, spend: SpendProfile): { total: number; breakdown: ValueBreakdown } {
   const rates = card.earn_rates;
   const cpp = Number(card.rewards_value_cpp);
 
-  // Map spend categories to earn_rates keys
-  const categorySpend: Array<[keyof SpendProfile, string]> = [
+  const cats: Array<[keyof SpendProfile & keyof ValueBreakdown, string]> = [
     ["dining", "dining"],
     ["travel", "travel"],
     ["groceries", "groceries"],
@@ -77,31 +89,30 @@ function calculateAnnualValue(card: CreditCard, spend: SpendProfile): number {
     ["transit", "transit"],
   ];
 
-  let annualRewards = 0;
-  for (const [spendKey, rateKey] of categorySpend) {
+  const breakdown: ValueBreakdown = {
+    dining: 0, travel: 0, groceries: 0, gas: 0, streaming: 0, transit: 0,
+    other: 0, annual_fee_cost: -card.annual_fee, sign_up_bonus_contribution: Math.round(card.sign_up_bonus_value / 3),
+  };
+
+  for (const [spendKey, rateKey] of cats) {
     const monthly = spend[spendKey] ?? 0;
     const rate = rates[rateKey] ?? rates["base"] ?? 1;
-    // monthly_spend × earn_rate × cpp / 100 × 12 months
-    annualRewards += monthly * rate * (cpp / 100) * 12;
+    breakdown[spendKey] = Math.round(monthly * rate * (cpp / 100) * 12);
   }
+  breakdown.other = Math.round((spend.other ?? 0) * (rates["base"] ?? 1) * (cpp / 100) * 12);
 
-  // "other" uses base rate
-  const baseRate = rates["base"] ?? 1;
-  annualRewards += (spend.other ?? 0) * baseRate * (cpp / 100) * 12;
+  const total =
+    breakdown.dining + breakdown.travel + breakdown.groceries + breakdown.gas +
+    breakdown.streaming + breakdown.transit + breakdown.other +
+    breakdown.annual_fee_cost + breakdown.sign_up_bonus_contribution;
 
-  // Subtract annual fee
-  const netValue = annualRewards - card.annual_fee;
-
-  // Add sign-up bonus value, weighted at 1/3 (penalized for one-time nature)
-  const bonusContribution = card.sign_up_bonus_value / 3;
-
-  return netValue + bonusContribution;
+  return { total, breakdown };
 }
 
 /**
  * Build a personalized one-sentence reason for recommending a card.
  */
-function buildReason(card: CreditCard, spend: SpendProfile, annualValue: number): string {
+function buildReason(card: CreditCard, spend: SpendProfile, annualValue: number, _breakdown?: ValueBreakdown): string {
   const rates = card.earn_rates;
   const cpp = Number(card.rewards_value_cpp);
 
@@ -180,13 +191,14 @@ export function getCardRecommendations(
 
   // Score each card
   const scored = eligible.map((card) => {
-    const annualValue = calculateAnnualValue(card, spend);
+    const { total: annualValue, breakdown } = calculateAnnualValue(card, spend);
     const reason = buildReason(card, spend, annualValue);
     return {
       card_id: card.id,
       score: annualValue,
       estimated_annual_value: Math.round(annualValue),
       reason,
+      value_breakdown: breakdown,
     } satisfies CardRecommendation;
   });
 
