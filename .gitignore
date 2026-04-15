@@ -51,3 +51,10 @@ screenshots/
 # Local TODO (not committed)
 TODO.md
 *.ipa
+
+# Bug council and AI fix runner logs
+.ai-fix-logs/
+.bug-council-logs/
+
+# Supabase temp files
+supabase/.temp/

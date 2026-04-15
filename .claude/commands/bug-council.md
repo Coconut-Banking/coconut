@@ -28,17 +28,23 @@ Record:
 ### Step 2: Identify recent changes
 
 ```bash
-LAST_AUDIT=$(git describe --tags --abbrev=0 --match 'bug-council-*' 2>/dev/null || echo '')
-if [ -z "$LAST_AUDIT" ]; then
-  DIFF_BASE="HEAD~50"
+# Use the state file written by the runner after each successful audit.
+# Falls back to last 50 commits if this is the first run.
+STATE_FILE=".bug-council-logs/.last-successful-run"
+if [ -f "$STATE_FILE" ]; then
+  DIFF_BASE=$(cat "$STATE_FILE")
+  echo "Last successful audit SHA: $DIFF_BASE"
 else
-  DIFF_BASE="$LAST_AUDIT"
+  DIFF_BASE="HEAD~50"
+  echo "No previous audit state — using last 50 commits as baseline"
 fi
-echo "=== CHANGED FILES SINCE $DIFF_BASE ===" && git diff --name-only "$DIFF_BASE"..HEAD
+
+echo "=== CHANGED FILES SINCE LAST AUDIT ===" && git diff --name-only "$DIFF_BASE"..HEAD
 echo "=== DIFF STAT ===" && git diff --stat "$DIFF_BASE"..HEAD
+echo "=== RECENT COMMITS ===" && git log --oneline "$DIFF_BASE"..HEAD
 ```
 
-Save the list of changed files. Agents will prioritize these.
+Save the list of changed files. **These are the highest-risk files** — they changed since the last audit and are the most likely source of new bugs. Agents must treat these as primary targets.
 
 ### Step 3: Create the branch
 
@@ -62,7 +68,12 @@ You are a senior engineer auditing this codebase for real bugs.
 ## Context from Health Check
 - Baseline test failures (ALREADY BROKEN — do NOT report these): {BASELINE_TEST_FAILURES}
 - Baseline type errors (ALREADY BROKEN — do NOT report these): {BASELINE_TYPE_ERRORS}
-- Files changed since last audit: {CHANGED_FILES_LIST}
+
+## Recently Changed Files (HIGHEST PRIORITY)
+These files changed since the last successful audit — they are the most likely source of new bugs.
+Spend at least half your time here before moving to your broader domain.
+
+{CHANGED_FILES_LIST}
 
 ## Your Domain
 {DOMAIN_NAME}: {DOMAIN_DESCRIPTION}
@@ -70,7 +81,7 @@ You are a senior engineer auditing this codebase for real bugs.
 ## Key Files
 {KEY_FILES}
 
-Follow imports and trace call chains beyond these files. But START with recently changed files in your domain.
+Read the recently changed files in your domain first. Follow imports and trace call chains from those changes outward.
 
 ## What Counts as a Bug
 

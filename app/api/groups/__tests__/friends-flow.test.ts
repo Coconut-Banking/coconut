@@ -41,6 +41,7 @@ const db: Record<string, Record<string, unknown>[]> = {
 function makeClient() {
   return {
     from: (table: string) => makeTable(table),
+    rpc: (_fn: string, _args?: unknown) => Promise.resolve({ data: null, error: { message: "rpc not mocked" } }),
   };
 }
 
@@ -74,6 +75,10 @@ function makeTable(table: string) {
             Promise.resolve({ data: rows.filter(r => r[col] === val && (vals as unknown[]).includes(r[c2])), error: null }).then(fn),
         }),
         is: (c2: string, val2: unknown) => ({
+          in: (c3: string, vals3: unknown[]) => Promise.resolve({
+            data: rows.filter(r => r[col] === val && r[c2] === val2 && (vals3 as unknown[]).includes(r[c3])),
+            error: null,
+          }),
           then: (fn: (value: MockListResult) => unknown) =>
             Promise.resolve({ data: rows.filter(r => r[col] === val && r[c2] === val2), error: null }).then(fn),
         }),

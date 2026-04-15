@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
     const text = await file.text();
 
     // Validate it's actually text/CSV (not binary)
+    // Matches C0 control chars (except \t=0x09, \n=0x0A, \r=0x0D which are valid in CSV)
+    // eslint-disable-next-line no-control-regex
     if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 1000))) {
       return NextResponse.json({ error: "File appears to be binary, not CSV" }, { status: 400 });
     }

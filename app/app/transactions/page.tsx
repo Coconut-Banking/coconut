@@ -361,7 +361,6 @@ function TransactionDrawer({ tx, onClose, currencyCode }: { tx: UITransaction; o
                           rel="noopener noreferrer"
                           className="block rounded-xl overflow-hidden border border-gray-100 hover:border-gray-300 transition-colors cursor-zoom-in"
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={String(receipt.merchant_details.map_url)}
                             alt="Trip route map"
