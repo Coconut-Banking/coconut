@@ -14,6 +14,7 @@ export interface SpendProfile {
 }
 
 export interface QuizAnswers {
+  countries: string[];          // e.g. ["US"] or ["CA"]
   max_annual_fee: number;       // 0, 95, 250, 550, or 9999 (no limit)
   networks: string[];           // ["visa","mastercard"] or ["visa","mastercard","amex","discover"]
   existing_cards: string[];     // card IDs they already have
@@ -26,6 +27,7 @@ export interface CreditCard {
   name: string;
   issuer: string;
   network: string;
+  country?: string | null;
   annual_fee: number;
   rewards_program: string;
   rewards_value_cpp: number;

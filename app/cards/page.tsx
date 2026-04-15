@@ -161,11 +161,11 @@ function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
           detected_card_ids?: string[];
           error?: string;
         };
-        if (!resp.ok || !data.session_id) {
+        if (!resp.ok || !data.session_id || !data.spend_summary) {
           onError(data.error ?? "Failed to analyze your transactions");
           return;
         }
-        onSuccess(data.session_id, data.spend_summary!, data.detected_card_ids);
+        onSuccess(data.session_id, data.spend_summary, data.detected_card_ids);
       } catch {
         onError("Failed to analyze transactions. Please try again.");
       } finally {
@@ -404,14 +404,21 @@ function Step3ExistingCards({ value, onChange }: QuizStep3Props) {
   const [cards, setCards] = useState<SimpleCard[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
-  useEffect(() => {
+  const loadCards = useCallback(() => {
+    setLoading(true);
+    setFetchError(false);
     fetch("/api/cards/list")
       .then((r) => r.json() as Promise<{ cards: SimpleCard[] }>)
       .then((d) => setCards(d.cards ?? []))
-      .catch(() => {})
+      .catch(() => setFetchError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadCards();
+  }, [loadCards]);
 
   const toggle = (id: string) => {
     if (value.includes(id)) {
@@ -453,6 +460,13 @@ function Step3ExistingCards({ value, onChange }: QuizStep3Props) {
       {loading ? (
         <div className="flex justify-center py-8">
           <Loader2 size={20} className="animate-spin text-gray-400" />
+        </div>
+      ) : fetchError ? (
+        <div className="text-center py-6 text-sm text-gray-500">
+          <p className="mb-2">Failed to load cards.</p>
+          <button type="button" onClick={loadCards} className="text-[#1e2021] font-semibold underline">
+            Try again
+          </button>
         </div>
       ) : (
         <div className="max-h-64 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">
@@ -835,11 +849,15 @@ function CardsPageInner() {
         setStage("entry");
         return;
       }
-      setSessionId(data.session_id!);
-      setSpendSummary(data.spend_summary!);
-      if (data.detected_card_ids && data.detected_card_ids.length > 0) {
-        setExistingCards(data.detected_card_ids);
+      if (!data.session_id || !data.spend_summary) {
+        setError(data.error ?? "Failed to analyze your spending");
+        setStage("entry");
+        return;
       }
+      setSessionId(data.session_id);
+      setSpendSummary(data.spend_summary);
+      // Always overwrite existingCards so stale detections from a prior session don't persist
+      setExistingCards(data.detected_card_ids ?? []);
       setStage("quiz");
     } catch {
       setError("Failed to connect. Please try again.");
@@ -850,9 +868,8 @@ function CardsPageInner() {
   const handlePlaidSuccess = (sid: string, summary: SpendSummary, detectedCardIds?: string[]) => {
     setSessionId(sid);
     setSpendSummary(summary);
-    if (detectedCardIds && detectedCardIds.length > 0) {
-      setExistingCards(detectedCardIds);
-    }
+    // Always overwrite existingCards so stale detections from a prior session don't persist
+    setExistingCards(detectedCardIds ?? []);
     setStage("quiz");
   };
 
