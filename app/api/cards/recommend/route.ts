@@ -13,22 +13,22 @@ import type { QuizAnswers, CreditCard, SpendProfile } from "@/lib/card-recommend
 import { rateLimit } from "@/lib/rate-limit";
 
 type RecommendBody = {
-  session_id?: string;
   quiz_answers?: QuizAnswers;
 };
 
 export async function POST(request: NextRequest) {
+  // Session ID comes only from the httpOnly cookie — never from the request body
+  // (accepting it from the body would allow any caller to read another user's spend data)
+  const sessionId = request.cookies.get("card_session_id")?.value;
+  if (!sessionId) {
+    return NextResponse.json({ error: "session_id required" }, { status: 400 });
+  }
+
   let body: RecommendBody;
   try {
     body = (await request.json()) as RecommendBody;
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-
-  // Fall back to cookie if session_id not in body
-  const sessionId = body.session_id ?? request.cookies.get("card_session_id")?.value;
-  if (!sessionId) {
-    return NextResponse.json({ error: "session_id required" }, { status: 400 });
   }
 
   const quizAnswers = body.quiz_answers;
@@ -94,14 +94,17 @@ export async function POST(request: NextRequest) {
     card: cardMap.get(rec.card_id) ?? null,
   }));
 
-  // Persist quiz_answers and recommendations to session
-  await db
+  // Persist quiz_answers and recommendations to session (best-effort — non-fatal)
+  const { error: updateError } = await db
     .from("card_tool_sessions")
     .update({
       quiz_answers: quizAnswers,
       recommendations: recommendations,
     })
     .eq("id", sessionId);
+  if (updateError) {
+    console.error("[cards/recommend] session update failed:", updateError.message);
+  }
 
   return NextResponse.json({ recommendations: results, session_id: sessionId });
 }

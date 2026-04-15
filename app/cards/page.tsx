@@ -110,8 +110,10 @@ function NetworkBadge({ network }: { network: string }) {
   );
 }
 
-function formatCurrency(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+function formatCurrency(n: number, country?: string | null) {
+  const currency = country === "CA" ? "CAD" : "USD";
+  const locale = country === "CA" ? "en-CA" : "en-US";
+  return n.toLocaleString(locale, { style: "currency", currency, maximumFractionDigits: 0 });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -161,11 +163,11 @@ function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
           detected_card_ids?: string[];
           error?: string;
         };
-        if (!resp.ok || !data.session_id) {
+        if (!resp.ok || !data.session_id || !data.spend_summary) {
           onError(data.error ?? "Failed to analyze your transactions");
           return;
         }
-        onSuccess(data.session_id, data.spend_summary!, data.detected_card_ids);
+        onSuccess(data.session_id, data.spend_summary, data.detected_card_ids);
       } catch {
         onError("Failed to analyze transactions. Please try again.");
       } finally {
@@ -404,14 +406,21 @@ function Step3ExistingCards({ value, onChange }: QuizStep3Props) {
   const [cards, setCards] = useState<SimpleCard[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
-  useEffect(() => {
+  const loadCards = useCallback(() => {
+    setLoading(true);
+    setFetchError(false);
     fetch("/api/cards/list")
       .then((r) => r.json() as Promise<{ cards: SimpleCard[] }>)
       .then((d) => setCards(d.cards ?? []))
-      .catch(() => {})
+      .catch(() => setFetchError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadCards();
+  }, [loadCards]);
 
   const toggle = (id: string) => {
     if (value.includes(id)) {
@@ -453,6 +462,13 @@ function Step3ExistingCards({ value, onChange }: QuizStep3Props) {
       {loading ? (
         <div className="flex justify-center py-8">
           <Loader2 size={20} className="animate-spin text-gray-400" />
+        </div>
+      ) : fetchError ? (
+        <div className="text-center py-6 text-sm text-gray-500">
+          <p className="mb-2">Failed to load cards.</p>
+          <button type="button" onClick={loadCards} className="text-[#1e2021] font-semibold underline">
+            Try again
+          </button>
         </div>
       ) : (
         <div className="max-h-64 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">
@@ -648,7 +664,7 @@ function ResultCard({
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-lg font-bold text-[#1e2021]">
-              ~{formatCurrency(rec.estimated_annual_value)}
+              ~{formatCurrency(rec.estimated_annual_value, card.country)}
             </p>
             <p className="text-xs text-gray-500">est. annual value</p>
           </div>
@@ -663,7 +679,7 @@ function ResultCard({
               onClick={() => setBreakdownOpen((p) => !p)}
               className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
             >
-              How we get to ~{formatCurrency(rec.estimated_annual_value)}/yr
+              How we get to ~{formatCurrency(rec.estimated_annual_value, card.country)}/yr
               {breakdownOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
             {breakdownOpen && (
@@ -671,24 +687,24 @@ function ResultCard({
                 {spendCategories.map(({ label, value, rate }) => (
                   <div key={label} className="flex justify-between items-center px-3 py-1.5">
                     <span className="text-gray-600">{label} <span className="text-gray-400">({rate}x)</span></span>
-                    <span className="font-medium text-gray-800">+{formatCurrency(value)}/yr</span>
+                    <span className="font-medium text-gray-800">+{formatCurrency(value, card.country)}/yr</span>
                   </div>
                 ))}
                 {bd.annual_fee_cost < 0 && (
                   <div className="flex justify-between items-center px-3 py-1.5">
                     <span className="text-gray-600">Annual fee</span>
-                    <span className="font-medium text-red-500">{formatCurrency(bd.annual_fee_cost)}/yr</span>
+                    <span className="font-medium text-red-500">{formatCurrency(bd.annual_fee_cost, card.country)}/yr</span>
                   </div>
                 )}
                 {bd.sign_up_bonus_contribution > 0 && (
                   <div className="flex justify-between items-center px-3 py-1.5">
                     <span className="text-gray-600">Sign-up bonus <span className="text-gray-400">(amortized)</span></span>
-                    <span className="font-medium text-gray-800">+{formatCurrency(bd.sign_up_bonus_contribution)}/yr</span>
+                    <span className="font-medium text-gray-800">+{formatCurrency(bd.sign_up_bonus_contribution, card.country)}/yr</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center px-3 py-2 bg-white rounded-b-lg font-semibold">
                   <span className="text-gray-700">Total</span>
-                  <span className="text-[#1e2021]">~{formatCurrency(rec.estimated_annual_value)}/yr</span>
+                  <span className="text-[#1e2021]">~{formatCurrency(rec.estimated_annual_value, card.country)}/yr</span>
                 </div>
               </div>
             )}
@@ -703,7 +719,7 @@ function ResultCard({
           {card.annual_fee === 0 ? (
             <span className="text-emerald-600 font-semibold">No fee</span>
           ) : (
-            `$${card.annual_fee}`
+            formatCurrency(card.annual_fee, card.country)
           )}
         </span>
         {!card.foreign_transaction_fee ? (
@@ -716,11 +732,11 @@ function ResultCard({
         )}
         {card.sign_up_bonus_value > 0 && (
           <span className="relative group text-xs text-gray-600 cursor-default">
-            <span className="font-medium">Sign-up bonus:</span> ~{formatCurrency(card.sign_up_bonus_value)} value
+            <span className="font-medium">Sign-up bonus:</span> ~{formatCurrency(card.sign_up_bonus_value, card.country)} value
             {card.sign_up_bonus_spend > 0 && (
               <span className="absolute bottom-full left-0 mb-1.5 z-10 hidden group-hover:block w-56 rounded-lg bg-gray-900 text-white text-xs px-3 py-2 shadow-lg leading-relaxed pointer-events-none">
-                Spend {formatCurrency(card.sign_up_bonus_spend)} in {card.sign_up_bonus_days} days to earn ~{formatCurrency(card.sign_up_bonus_value)} in rewards value.
-                <span className="block text-gray-400 mt-1">Amortized as +{formatCurrency(Math.round(card.sign_up_bonus_value / 3))}/yr in the estimate above.</span>
+                Spend {formatCurrency(card.sign_up_bonus_spend, card.country)} in {card.sign_up_bonus_days} days to earn ~{formatCurrency(card.sign_up_bonus_value, card.country)} in rewards value.
+                <span className="block text-gray-400 mt-1">Amortized as +{formatCurrency(Math.round(card.sign_up_bonus_value / 3), card.country)}/yr in the estimate above.</span>
               </span>
             )}
           </span>
@@ -835,11 +851,15 @@ function CardsPageInner() {
         setStage("entry");
         return;
       }
-      setSessionId(data.session_id!);
-      setSpendSummary(data.spend_summary!);
-      if (data.detected_card_ids && data.detected_card_ids.length > 0) {
-        setExistingCards(data.detected_card_ids);
+      if (!data.session_id || !data.spend_summary) {
+        setError(data.error ?? "Failed to analyze your spending");
+        setStage("entry");
+        return;
       }
+      setSessionId(data.session_id);
+      setSpendSummary(data.spend_summary);
+      // Always overwrite existingCards so stale detections from a prior session don't persist
+      setExistingCards(data.detected_card_ids ?? []);
       setStage("quiz");
     } catch {
       setError("Failed to connect. Please try again.");
@@ -850,9 +870,8 @@ function CardsPageInner() {
   const handlePlaidSuccess = (sid: string, summary: SpendSummary, detectedCardIds?: string[]) => {
     setSessionId(sid);
     setSpendSummary(summary);
-    if (detectedCardIds && detectedCardIds.length > 0) {
-      setExistingCards(detectedCardIds);
-    }
+    // Always overwrite existingCards so stale detections from a prior session don't persist
+    setExistingCards(detectedCardIds ?? []);
     setStage("quiz");
   };
 
@@ -898,7 +917,7 @@ function CardsPageInner() {
       const resp = await fetch("/api/cards/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, quiz_answers: quiz }),
+        body: JSON.stringify({ quiz_answers: quiz }),
       });
       const data = (await resp.json()) as {
         recommendations?: Recommendation[];
