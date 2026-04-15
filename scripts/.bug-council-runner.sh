@@ -28,6 +28,10 @@ DATE_TAG=$(date +%Y%m%d)
 : "${COCONUT_APP_REPO:="$(dirname "$COCONUT_REPO")/coconut-app"}"
 
 LOG_DIR="$COCONUT_REPO/.bug-council-logs"
+STATE_FILE="$LOG_DIR/.last-successful-run"
+
+: "${COCONUT_PROD_URL:="https://coconut-lemon.vercel.app"}"
+: "${SUPABASE_SERVICE_ROLE_KEY:=""}"
 
 # Repo configs: name|full_repo|main_repo_path|worktree_parent|has_ci|claude_command
 WORKTREE_BASE="$(dirname "$COCONUT_REPO")"
@@ -354,6 +358,54 @@ https://github.com/$full_repo/pull/$pr_number")
   esac
 }
 
+# ── Splitwise parity check ────────────────────────────────────────────────────
+run_parity_check() {
+  echo ""
+  echo "================================================================"
+  echo "  Splitwise Mirror Parity Check"
+  echo "================================================================"
+
+  if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+    echo "SUPABASE_SERVICE_ROLE_KEY not set — skipping parity check"
+    RESULTS+=("Mirror parity: skipped (no service key)")
+    return
+  fi
+
+  local response
+  response=$(curl -s --max-time 30 \
+    -H "x-admin-key: $SUPABASE_SERVICE_ROLE_KEY" \
+    "$COCONUT_PROD_URL/api/cron/splitwise-parity" 2>/dev/null || echo "")
+
+  if [ -z "$response" ]; then
+    echo "Parity check failed — could not reach $COCONUT_PROD_URL"
+    RESULTS+=("Mirror parity: ❌ unreachable")
+    return
+  fi
+
+  local ok
+  ok=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('ok') else 'false')" 2>/dev/null || echo "error")
+
+  if [ "$ok" = "true" ]; then
+    local count
+    count=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('results',[])))" 2>/dev/null || echo "?")
+    echo "Parity check passed — $count group(s) in sync"
+    RESULTS+=("Mirror parity: ✅ all groups in sync")
+  elif [ "$ok" = "false" ]; then
+    local drifted
+    drifted=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+bad=[r['group'] for r in d.get('results',[]) if not r.get('parity')]
+print(', '.join(bad))
+" 2>/dev/null || echo "unknown")
+    echo "Parity drift detected in: $drifted"
+    RESULTS+=("Mirror parity: ⚠️ drift in $drifted — check mirror")
+  else
+    echo "Parity check error: $response"
+    RESULTS+=("Mirror parity: ❌ error parsing response")
+  fi
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 mkdir -p "$LOG_DIR"
@@ -385,6 +437,11 @@ for config in "${REPO_CONFIGS[@]}"; do
   IFS='|' read -r name full_repo main_repo work_dir has_ci claude_cmd <<< "$config"
   run_for_repo "$name" "$full_repo" "$main_repo" "$work_dir" "$has_ci" "$claude_cmd" || true
 done
+
+run_parity_check || true
+
+# ── Save state: record this run's HEAD SHA so next run knows what changed ────
+git -C "$COCONUT_REPO" rev-parse HEAD > "$STATE_FILE" 2>/dev/null || true
 
 # ── Consolidated notification ────────────────────────────────────────────────
 TELEGRAM_MSG="*Bug Council v2 Complete*"
