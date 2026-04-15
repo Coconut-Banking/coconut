@@ -46,6 +46,9 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(key);
   const db = getSupabase();
 
+  // Fire stripe.accounts.retrieve() to get platform account country for currency mapping
+  const stripeAcctPromise = stripe.accounts.retrieve().catch(() => null);
+
   const metadata: Record<string, string> = {};
 
   if (body.groupId && body.payerMemberId && body.receiverMemberId) {
@@ -91,6 +94,7 @@ export async function POST(req: NextRequest) {
           .eq("clerk_user_id", receiverMember.user_id)
           .eq("charges_enabled", true)
           .maybeSingle(),
+        stripeAcctPromise,
       ]);
 
       if (connectAccount) {
@@ -99,8 +103,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Always use USD for now — multi-currency support can be added later.
-  const currency = "usd";
+  // Stripe Terminal card_present currency MUST match the platform account's country.
+  // A Canadian platform account must use CAD — USD will be rejected by Stripe.
+  // To collect USD, the platform Stripe account needs to be a US account.
+  const COUNTRY_TO_CURRENCY: Record<string, string> = {
+    CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
+    SG: "sgd", HK: "hkd", JP: "jpy",
+    DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
+    IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
+  };
+  const acct = await stripeAcctPromise;
+  const platformCountry = (acct?.country ?? "").toUpperCase();
+  const currency = COUNTRY_TO_CURRENCY[platformCountry] ?? DEFAULT_CURRENCY;
 
   try {
     const piParams: Stripe.PaymentIntentCreateParams = {
