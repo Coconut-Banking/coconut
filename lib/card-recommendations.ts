@@ -19,6 +19,7 @@ export interface QuizAnswers {
   existing_cards: string[];     // card IDs they already have
   is_business: boolean;
   credit_score_bucket: "excellent" | "good" | "fair" | "poor";
+  countries: string[];          // ["US"], ["CA"], or ["US","CA"]
 }
 
 export interface CreditCard {
@@ -26,6 +27,7 @@ export interface CreditCard {
   name: string;
   issuer: string;
   network: string;
+  country: string;              // "US" or "CA"
   annual_fee: number;
   rewards_program: string;
   rewards_value_cpp: number;
@@ -179,6 +181,10 @@ export function getCardRecommendations(
 
     // Network preference
     if (quiz.networks.length > 0 && !quiz.networks.includes(card.network)) return false;
+
+    // Country eligibility
+    const cardCountry = (card as CreditCard & { country?: string }).country ?? "US";
+    if (quiz.countries.length > 0 && !quiz.countries.includes(cardCountry)) return false;
 
     // Business vs personal
     if (card.is_business !== quiz.is_business) return false;
