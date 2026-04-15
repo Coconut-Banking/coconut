@@ -40,13 +40,13 @@ export async function POST(req: NextRequest) {
   }
 
   const amountCents = Math.round(amount * 100);
+  const clientCurrency = typeof body.currency === "string" && /^[a-zA-Z]{3}$/.test(body.currency)
+    ? body.currency.toLowerCase()
+    : null;
   const stripe = new Stripe(key);
   const db = getSupabase();
 
   const metadata: Record<string, string> = {};
-
-  // Fire stripe.accounts.retrieve() immediately — it's independent of all DB queries
-  const stripeAcctPromise = stripe.accounts.retrieve().catch(() => null);
 
   if (body.groupId && body.payerMemberId && body.receiverMemberId) {
     const allowed = await canAccessGroup(userId, body.groupId);
@@ -91,7 +91,6 @@ export async function POST(req: NextRequest) {
           .eq("clerk_user_id", receiverMember.user_id)
           .eq("charges_enabled", true)
           .maybeSingle(),
-        stripeAcctPromise,
       ]);
 
       if (connectAccount) {
@@ -100,32 +99,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Stripe Terminal (card_present) requires the PaymentIntent currency to match
-  // the Stripe account's country — e.g. a CA account MUST use "cad", even if
-  // the expense itself is denominated in USD. We always derive the Terminal
-  // currency from the account country and store the original expense currency
-  // in metadata so settlement logic can reconcile later.
-  const clientCurrency = typeof body.currency === "string" && /^[a-zA-Z]{3}$/.test(body.currency)
-    ? body.currency.toLowerCase()
-    : null;
-
-  const COUNTRY_TO_CURRENCY: Record<string, string> = {
-    CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
-    SG: "sgd", HK: "hkd", JP: "jpy", EU: "eur",
-    DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
-    IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
-  };
-
-  let currency = DEFAULT_CURRENCY;
-  const acct = await stripeAcctPromise;
-  if (acct) {
-    const country = (acct.country ?? "").toUpperCase();
-    currency = COUNTRY_TO_CURRENCY[country] ?? DEFAULT_CURRENCY;
-  }
-
-  if (clientCurrency && clientCurrency !== currency) {
-    metadata.original_currency = clientCurrency;
-  }
+  // Use the client-provided currency (e.g. "usd") if valid, otherwise default to USD.
+  // We no longer derive currency from the platform account country — that caused all
+  // payments to default to CAD because our platform Stripe account is Canadian.
+  const currency = clientCurrency ?? DEFAULT_CURRENCY;
 
   try {
     const piParams: Stripe.PaymentIntentCreateParams = {
