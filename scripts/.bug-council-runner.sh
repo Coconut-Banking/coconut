@@ -385,25 +385,40 @@ run_parity_check() {
   local ok
   ok=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('ok') else 'false')" 2>/dev/null || echo "error")
 
-  if [ "$ok" = "true" ]; then
-    local count
-    count=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('results',[])))" 2>/dev/null || echo "?")
-    echo "Parity check passed — $count group(s) in sync"
-    RESULTS+=("Mirror parity: ✅ all groups in sync")
-  elif [ "$ok" = "false" ]; then
-    local drifted
-    drifted=$(echo "$response" | python3 -c "
+  local parity_line heartbeat_line
+  parity_line=$(echo "$response" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
-bad=[r['group'] for r in d.get('results',[]) if not r.get('parity')]
-print(', '.join(bad))
-" 2>/dev/null || echo "unknown")
-    echo "Parity drift detected in: $drifted"
-    RESULTS+=("Mirror parity: ⚠️ drift in $drifted — check mirror")
-  else
-    echo "Parity check error: $response"
-    RESULTS+=("Mirror parity: ❌ error parsing response")
-  fi
+results=d.get('parity',[])
+if not results:
+    print('✅ no mirrors configured')
+else:
+    bad=[r['group'] for r in results if not r.get('parity')]
+    if bad:
+        print('⚠️ drift in: ' + ', '.join(bad))
+    else:
+        print('✅ ' + ', '.join(r['group'] for r in results) + ' in sync')
+" 2>/dev/null || echo "❌ parse error")
+
+  heartbeat_line=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+results=d.get('heartbeat',[])
+if not results:
+    print('✅ no mirrors configured')
+else:
+    bad=[r['group'] for r in results if not r.get('ok')]
+    if bad:
+        print('❌ write pipeline broken: ' + ', '.join(bad))
+    else:
+        print('✅ write pipeline ok (' + ', '.join(r['group'] for r in results) + ')')
+" 2>/dev/null || echo "❌ parse error")
+
+  echo "Parity:    $parity_line"
+  echo "Heartbeat: $heartbeat_line"
+  RESULTS+=("🪞 *Splitwise Mirror*
+  Parity: $parity_line
+  Heartbeat: $heartbeat_line")
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
