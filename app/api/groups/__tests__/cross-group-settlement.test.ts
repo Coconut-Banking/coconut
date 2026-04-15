@@ -56,7 +56,10 @@ function nextId(prefix: string) {
 type MockListResult = { data: Record<string, unknown>[]; error: null };
 
 function makeClient() {
-  return { from: (table: string) => makeTable(table) };
+  return {
+    from: (table: string) => makeTable(table),
+    rpc: (_fn: string, _args?: unknown) => Promise.resolve({ data: null, error: { message: "rpc not mocked" } }),
+  };
 }
 
 function makeTable(table: string) {
@@ -116,6 +119,10 @@ function makeTable(table: string) {
             };
           },
           is: (c2: string, val2: unknown) => ({
+            in: (c3: string, vals3: unknown[]) => Promise.resolve({
+              data: rows.filter((r) => r[col] === val && r[c2] === val2 && (vals3 as unknown[]).includes(r[c3])),
+              error: null,
+            }),
             then: (fn: (value: MockListResult) => unknown) =>
               Promise.resolve({
                 data: rows.filter((r) => r[col] === val && r[c2] === val2),
@@ -1108,12 +1115,14 @@ describe("full ledger integrity: cross-group settlement", () => {
     expect(after.balance).toBe(0);
     expect(after.settlements).toHaveLength(0);
 
-    // Verify no orphaned balance — friend is fully settled in the group
+    // After pairwise settlement of $70, friend's group-wide balance is +$30
+    // (friend paid $90, owes $130 in shares, settled $70 → net = 90 - 130 + 70 = +$30)
+    // In a 3-person group, pairwise balance ($70) ≠ group-simplified balance ($40).
     const tripG = await fetchGroup(tripGroupId);
     const friendBal = tripG.balances.find(
       (b: { memberId: string }) => b.memberId === friendTripMemberId
     );
-    expect(r(friendBal?.total ?? 0)).toBe(0);
+    expect(r(friendBal?.total ?? 0)).toBe(30);
 
     // Alice still owes: $100 (from my expense) + $30 (from friend's expense) = $130
     const aliceBal = tripG.balances.find(
