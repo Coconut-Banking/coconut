@@ -224,33 +224,41 @@ export async function cloneMirrorGroup(
     }
   }
 
+  const swUser = await getCurrentUser(token);
+
   if (!mirrorSwGroupId) {
     // Create the mirror group
     const mirrorName = `${MIRROR_PREFIX}${coconutGroupName}`;
     console.log(`[mirror-debug] Creating mirror group "${mirrorName}"`);
 
-    const swUser = await getCurrentUser(token);
     const { id } = await createSwGroup(token, mirrorName, swGroup.group_type ?? "other");
     mirrorSwGroupId = id;
-
-    // Add members by SW user_id (most reliable — no email invite)
-    for (const member of swGroup.members) {
-      if (member.id === swUser.id) continue;
-      try {
-        await addUserToSwGroup(token, mirrorSwGroupId, { user_id: member.id });
-      } catch (e) {
-        console.warn(`[mirror-debug] Failed to add SW user ${member.id}:`, e);
-      }
-    }
   }
 
   // Persist mapping
   map[coconutGroupId] = mirrorSwGroupId;
   await saveMirrorMap(db, clerkUserId, map);
 
-  // Fetch mirror members (after potential adds)
+  // Fetch mirror members and add anyone missing from the real group
+  // (handles case where mirror was created before a member joined the real group)
   const mirrorGroup = await getGroup(token, mirrorSwGroupId);
-  const realToMirror = buildRealToMirrorMemberMap(swGroup.members, mirrorGroup.members);
+  const mirrorEmails = new Set(mirrorGroup.members.map((m) => m.email?.trim().toLowerCase()).filter(Boolean));
+
+  for (const member of swGroup.members) {
+    if (member.id === swUser.id) continue;
+    const email = member.email?.trim().toLowerCase();
+    if (email && mirrorEmails.has(email)) continue; // already in mirror
+    try {
+      await addUserToSwGroup(token, mirrorSwGroupId, { user_id: member.id });
+      console.log(`[mirror-debug] Added missing member ${member.id} (${email}) to mirror`);
+    } catch (e) {
+      console.warn(`[mirror-debug] Failed to add SW user ${member.id}:`, e);
+    }
+  }
+
+  // Re-fetch mirror after member sync
+  const mirrorGroupFresh = await getGroup(token, mirrorSwGroupId);
+  const realToMirror = buildRealToMirrorMemberMap(swGroup.members, mirrorGroupFresh.members);
 
   // Fetch the most recent `limit` expenses from the real group
   const expenses = await getExpenses(token, realSwGroupId, {
