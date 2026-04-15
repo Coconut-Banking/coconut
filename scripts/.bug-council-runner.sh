@@ -372,7 +372,7 @@ run_parity_check() {
   fi
 
   local response
-  response=$(curl -s --max-time 30 \
+  response=$(curl -s --max-time 90 \
     -H "x-admin-key: $SUPABASE_SERVICE_ROLE_KEY" \
     "$COCONUT_PROD_URL/api/cron/splitwise-parity" 2>/dev/null || echo "")
 
@@ -385,7 +385,7 @@ run_parity_check() {
   local ok
   ok=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('ok') else 'false')" 2>/dev/null || echo "error")
 
-  local parity_line heartbeat_line
+  local parity_line heartbeat_line e2e_line
   parity_line=$(echo "$response" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
@@ -414,11 +414,27 @@ else:
         print('✅ write pipeline ok (' + ', '.join(r['group'] for r in results) + ')')
 " 2>/dev/null || echo "❌ parse error")
 
+  e2e_line=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+results=d.get('e2e',[])
+if not results:
+    print('✅ no mirrors configured')
+else:
+    bad=[r['group'] for r in results if not r.get('ok')]
+    if bad:
+        print('❌ E2E failed: ' + ', '.join(bad))
+    else:
+        print('✅ end-to-end ok (' + ', '.join(r['group'] for r in results) + ')')
+" 2>/dev/null || echo "❌ parse error")
+
   echo "Parity:    $parity_line"
   echo "Heartbeat: $heartbeat_line"
+  echo "E2E:       $e2e_line"
   RESULTS+=("🪞 *Splitwise Mirror*
   Parity: $parity_line
-  Heartbeat: $heartbeat_line")
+  Heartbeat: $heartbeat_line
+  E2E: $e2e_line")
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
