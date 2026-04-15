@@ -1,3 +1,0 @@
-CI is green (skipped by design per the `fix/bug-council-*` pattern in `.github/workflows/ci.yml`). PR #248 is ready to merge.
-
-PR_NUMBER=248

@@ -1,9 +1,0 @@
-Done. All conflicts resolved and pushed. Summary of what happened:
-
-- **13 conflicted files** resolved, **1 deleted** (`app/(tabs)/shared.tsx` — deleted in upstream)
-- **Strategy applied**: took upstream for all structural changes (UI redesigns in sign-in, sign-up, add-expense, index, insights, pay, receipt, _layout)
-- **Bug fixes preserved**:
-  - `app/connected.tsx`: kept the conditional heading fix (linked vs connecting)
-  - `hooks/useTransactions.ts`: kept the unconditional `finally` block loading clear
-- **app.config.js**: took upstream's `package: bundleId`, `minSdkVersion: 26`, simplified permissions
-- Committed as `merge: resolve conflicts with main` and pushed to `origin/fix/bug-council-20260401`

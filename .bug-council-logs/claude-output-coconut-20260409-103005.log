@@ -1,3 +1,0 @@
-CI is green. The `Build + E2E Tests` job is intentionally skipped for `fix/bug-council-*` branches, and all local validation passes with only pre-existing baseline failures.
-
-**PR #244 is ready for review:** https://github.com/Coconut-Banking/coconut/pull/244

@@ -1,8 +1,0 @@
-Done. Here's a summary of what was resolved:
-
-| File | Resolution |
-|------|-----------|
-| `.cursor/rules/common-bugs.mdc` | Took upstream's reorganized content; appended our Audit History section |
-| `app/(tabs)/pay.tsx` | Took upstream's refactored payment flow (prefetch cache, currency support, better error handling); preserved our P1 fix: `Math.round(amt * 100)` for cents |
-| `app/(tabs)/receipt.tsx` | Took upstream's structural changes (new styling, `sfx` sound effects, unassigned count indicator) — upstream's hook now handles errors via `setSaveError` state |
-| `hooks/useReceiptSplit.ts` | Took upstream's approach for all 4 conflicts (try/catch around `.json()` to handle non-JSON bodies; `setSaveError` state instead of re-throw; upstream's error extraction pattern for assignments) |

@@ -1,5 +1,0 @@
-Done. The CI failure was in `hooks/useReceiptSplit.ts` — `confirmError` and `setConfirmError` were referenced in the return object but never declared. Fixed by:
-
-1. Adding `const [confirmError, setConfirmError] = useState<string | null>(null);`
-2. Updating `confirmItems` to use `setConfirmError` (instead of the unrelated `setSaveError`)
-3. Adding `setConfirmError(null)` to `reset()`

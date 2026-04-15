@@ -1,1 +1,0 @@
-Done. The fix was in `app/(auth)/sign-up.tsx` — `startSSOFlow` was used at line 89 in the Google OAuth fallback path but was never imported or initialized. Added the missing `useSSO` import from `@clerk/expo` and the `const { startSSOFlow } = useSSO();` call inside the component (matching the pattern from `sign-in.tsx`).
