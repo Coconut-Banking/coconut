@@ -9,7 +9,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPlaidClient } from "@/lib/plaid-client";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { encryptToken } from "@/lib/encryption";
-import { categorizeTransactions } from "@/lib/card-recommendations";
+import { categorizeTransactions, matchPlaidAccountsToCards } from "@/lib/card-recommendations";
+import type { CreditCard } from "@/lib/card-recommendations";
 import { rateLimit } from "@/lib/rate-limit";
 
 type AnalyzePlaidBody = {
@@ -103,11 +104,40 @@ export async function POST(request: NextRequest) {
     const monthsAnalyzed = 3;
     const spendSummary = categorizeTransactions(allTransactions, monthsAnalyzed);
 
+    // Detect credit cards the user already has via their accounts
+    const db = getSupabaseAdmin();
+    let detectedCardIds: string[] = [];
+    try {
+      const [accountsResp, cardsResp] = await Promise.all([
+        client.accountsGet({ access_token }),
+        db.from("credit_cards").select("id, name, issuer").eq("active", true),
+      ]);
+      const creditAccounts = accountsResp.data.accounts.filter(
+        (a) => a.type === "credit" || a.subtype === "credit card"
+      );
+      const institution = accountsResp.data.item.institution_id ?? "";
+      const institutionName = creditAccounts[0]
+        ? (accountsResp.data.item as unknown as { institution_name?: string }).institution_name ?? institution
+        : "";
+      const accountsForMatching = creditAccounts.map((a) => ({
+        name: a.name,
+        official_name: a.official_name ?? null,
+        institution_name: institutionName,
+      }));
+      if (accountsForMatching.length > 0 && cardsResp.data) {
+        detectedCardIds = matchPlaidAccountsToCards(
+          accountsForMatching,
+          cardsResp.data as CreditCard[]
+        );
+      }
+    } catch {
+      // Non-fatal — detection is best-effort
+    }
+
     // Encrypt the access token for storage
     const encryptedToken = encryptToken(access_token);
 
     // Create card_tool_sessions record
-    const db = getSupabaseAdmin();
     const { data: session, error } = await db
       .from("card_tool_sessions")
       .insert({
@@ -125,7 +155,7 @@ export async function POST(request: NextRequest) {
 
     const sessionId = (session as { id: string }).id;
 
-    const response = NextResponse.json({ session_id: sessionId, spend_summary: spendSummary });
+    const response = NextResponse.json({ session_id: sessionId, spend_summary: spendSummary, detected_card_ids: detectedCardIds });
     // Set httpOnly session cookie (30 days)
     response.cookies.set("card_session_id", sessionId, {
       httpOnly: true,

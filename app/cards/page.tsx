@@ -32,6 +32,7 @@ interface SpendSummary {
 }
 
 interface QuizAnswers {
+  countries: string[];
   max_annual_fee: number;
   networks: string[];
   existing_cards: string[];
@@ -44,6 +45,7 @@ interface CardData {
   name: string;
   issuer: string;
   network: string;
+  country: string;
   annual_fee: number;
   rewards_program: string;
   rewards_value_cpp: number;
@@ -117,7 +119,7 @@ function formatCurrency(n: number) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 interface PlaidConnectButtonProps {
-  onSuccess: (sessionId: string, spendSummary: SpendSummary) => void;
+  onSuccess: (sessionId: string, spendSummary: SpendSummary, detectedCardIds?: string[]) => void;
   onError: (msg: string) => void;
 }
 
@@ -156,13 +158,14 @@ function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
         const data = (await resp.json()) as {
           session_id?: string;
           spend_summary?: SpendSummary;
+          detected_card_ids?: string[];
           error?: string;
         };
         if (!resp.ok || !data.session_id) {
           onError(data.error ?? "Failed to analyze your transactions");
           return;
         }
-        onSuccess(data.session_id, data.spend_summary!);
+        onSuccess(data.session_id, data.spend_summary!, data.detected_card_ids);
       } catch {
         onError("Failed to analyze transactions. Please try again.");
       } finally {
@@ -220,6 +223,50 @@ function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Quiz Steps
 // ──────────────────────────────────────────────────────────────────────────────
+
+interface QuizStep0Props {
+  value: string[];
+  onChange: (v: string[]) => void;
+}
+
+const COUNTRY_OPTIONS = [
+  { label: "🇺🇸 US cards", value: "US" },
+  { label: "🇨🇦 Canadian cards", value: "CA" },
+];
+
+function Step0Country({ value, onChange }: QuizStep0Props) {
+  const toggle = (v: string) => {
+    if (value.includes(v)) {
+      if (value.length > 1) onChange(value.filter((x) => x !== v));
+    } else {
+      onChange([...value, v]);
+    }
+  };
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-gray-900 mb-1">Where do you want a card from?</h2>
+      <p className="text-sm text-gray-500 mb-5">Select one or both — we&apos;ll show cards you&apos;re eligible for.</p>
+      <div className="flex flex-col gap-3">
+        {COUNTRY_OPTIONS.map((opt) => {
+          const selected = value.includes(opt.value);
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => toggle(opt.value)}
+              className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 text-left transition-all ${selected ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300"}`}
+            >
+              <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${selected ? "border-blue-500 bg-blue-500" : "border-gray-300"}`}>
+                {selected && <Check size={12} className="text-white" />}
+              </span>
+              <span className={`font-medium text-base ${selected ? "text-blue-700" : "text-gray-700"}`}>{opt.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 interface QuizStep1Props {
   value: number | null;
@@ -744,7 +791,7 @@ function CardsPageInner() {
   const isCoconut = searchParams.get("coconut") === "1";
 
   const [stage, setStage] = useState<Stage>("entry");
-  const [quizStep, setQuizStep] = useState(0); // 0-4
+  const [quizStep, setQuizStep] = useState(0); // 0-5
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [spendSummary, setSpendSummary] = useState<SpendSummary | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -752,6 +799,7 @@ function CardsPageInner() {
   const [error, setError] = useState<string | null>(null);
 
   // Quiz answers
+  const [countries, setCountries] = useState<string[]>(["US"]);
   const [maxFee, setMaxFee] = useState<number | null>(null);
   const [networks, setNetworks] = useState<string[]>(["visa", "mastercard", "amex", "discover"]);
   const [existingCards, setExistingCards] = useState<string[]>([]);
@@ -774,6 +822,7 @@ function CardsPageInner() {
       const data = (await resp.json()) as {
         session_id?: string;
         spend_summary?: SpendSummary;
+        detected_card_ids?: string[];
         error?: string;
       };
       if (!resp.ok) {
@@ -788,6 +837,9 @@ function CardsPageInner() {
       }
       setSessionId(data.session_id!);
       setSpendSummary(data.spend_summary!);
+      if (data.detected_card_ids && data.detected_card_ids.length > 0) {
+        setExistingCards(data.detected_card_ids);
+      }
       setStage("quiz");
     } catch {
       setError("Failed to connect. Please try again.");
@@ -795,9 +847,12 @@ function CardsPageInner() {
     }
   };
 
-  const handlePlaidSuccess = (sid: string, summary: SpendSummary) => {
+  const handlePlaidSuccess = (sid: string, summary: SpendSummary, detectedCardIds?: string[]) => {
     setSessionId(sid);
     setSpendSummary(summary);
+    if (detectedCardIds && detectedCardIds.length > 0) {
+      setExistingCards(detectedCardIds);
+    }
     setStage("quiz");
   };
 
@@ -806,17 +861,18 @@ function CardsPageInner() {
   };
 
   const isStepValid = (): boolean => {
-    if (quizStep === 0) return maxFee !== null;
-    if (quizStep === 1) return networks.length > 0;
-    if (quizStep === 2) return true; // Optional
-    if (quizStep === 3) return isBusiness !== null;
-    if (quizStep === 4) return creditScore !== null;
+    if (quizStep === 0) return countries.length > 0;
+    if (quizStep === 1) return maxFee !== null;
+    if (quizStep === 2) return networks.length > 0;
+    if (quizStep === 3) return true; // Optional
+    if (quizStep === 4) return isBusiness !== null;
+    if (quizStep === 5) return creditScore !== null;
     return true;
   };
 
   const handleNext = async () => {
     if (!isStepValid()) return;
-    if (quizStep < 4) {
+    if (quizStep < 5) {
       setQuizStep((s) => s + 1);
       return;
     }
@@ -830,6 +886,7 @@ function CardsPageInner() {
     setError(null);
 
     const quiz: QuizAnswers = {
+      countries,
       max_annual_fee: maxFee ?? 9999,
       networks,
       existing_cards: existingCards,
@@ -967,31 +1024,34 @@ function CardsPageInner() {
             {/* Progress bar */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-gray-500 font-medium">Step {quizStep + 1} of 5</span>
-                <span className="text-xs text-gray-400">{Math.round(((quizStep + 1) / 5) * 100)}%</span>
+                <span className="text-xs text-gray-500 font-medium">Step {quizStep + 1} of 6</span>
+                <span className="text-xs text-gray-400">{Math.round(((quizStep + 1) / 6) * 100)}%</span>
               </div>
               <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-[#1e2021] rounded-full transition-all duration-300"
-                  style={{ width: `${((quizStep + 1) / 5) * 100}%` }}
+                  style={{ width: `${((quizStep + 1) / 6) * 100}%` }}
                 />
               </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-4">
               {quizStep === 0 && (
-                <Step1AnnualFee value={maxFee} onChange={setMaxFee} />
+                <Step0Country value={countries} onChange={setCountries} />
               )}
               {quizStep === 1 && (
-                <Step2Networks value={networks} onChange={setNetworks} />
+                <Step1AnnualFee value={maxFee} onChange={setMaxFee} />
               )}
               {quizStep === 2 && (
-                <Step3ExistingCards value={existingCards} onChange={setExistingCards} />
+                <Step2Networks value={networks} onChange={setNetworks} />
               )}
               {quizStep === 3 && (
-                <Step4PersonalBusiness value={isBusiness} onChange={setIsBusiness} />
+                <Step3ExistingCards value={existingCards} onChange={setExistingCards} />
               )}
               {quizStep === 4 && (
+                <Step4PersonalBusiness value={isBusiness} onChange={setIsBusiness} />
+              )}
+              {quizStep === 5 && (
                 <Step5CreditScore value={creditScore} onChange={setCreditScore} />
               )}
             </div>
@@ -1008,7 +1068,7 @@ function CardsPageInner() {
               disabled={!isStepValid()}
               className="w-full flex items-center justify-center gap-2 bg-[#1e2021] hover:bg-[#161819] disabled:opacity-50 text-white py-3.5 rounded-xl text-sm font-semibold transition-colors"
             >
-              {quizStep === 4 ? "Get my recommendations" : "Continue"}
+              {quizStep === 5 ? "Get my recommendations" : "Continue"}
               <ChevronRight size={15} />
             </button>
           </div>
