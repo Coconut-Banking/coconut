@@ -1,0 +1,111 @@
+/**
+ * POST /api/cards/analyze-coconut
+ * For existing Coconut users (requires Clerk auth).
+ * Fetches their last 3 months of transactions from Supabase, categorizes spend,
+ * and creates/updates a card_tool_sessions record.
+ */
+export const dynamic = "force-dynamic";
+
+import { NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { loadClerkAuth } from "@/lib/auth";
+import { getEffectiveUserId } from "@/lib/demo";
+import { categorizeTransactions } from "@/lib/card-recommendations";
+import { rateLimit } from "@/lib/rate-limit";
+
+export async function POST() {
+  const session = await loadClerkAuth();
+  if (!session.ok) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { userId: clerkUserId } = session;
+  const effectiveUserId = await getEffectiveUserId({ userId: clerkUserId });
+  if (!effectiveUserId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rl = rateLimit(`cards-analyze-coconut:${effectiveUserId}`, 10, 60_000);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
+  const db = getSupabaseAdmin();
+
+  // Fetch last 90 days of transactions
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 90);
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
+
+  const { data: transactions, error } = await db
+    .from("transactions")
+    .select("amount, primary_category, detailed_category, merchant_name, raw_name")
+    .eq("clerk_user_id", effectiveUserId)
+    .eq("is_pending", false)
+    .gte("date", fmt(startDate))
+    .lte("date", fmt(endDate))
+    .not("plaid_transaction_id", "like", "manual_%")
+    .order("date", { ascending: false })
+    .limit(2000);
+
+  if (error) {
+    console.error("[cards/analyze-coconut] db error:", error.message);
+    return NextResponse.json({ error: "Failed to fetch transactions" }, { status: 500 });
+  }
+
+  const rows = (transactions ?? []).map((tx) => ({
+    amount: tx.amount as number,
+    primary_category: tx.primary_category as string | null,
+    detailed_category: tx.detailed_category as string | null,
+    merchant_name: tx.merchant_name as string | null,
+    raw_name: tx.raw_name as string | null,
+  }));
+
+  const monthsAnalyzed = 3;
+  const spendSummary = categorizeTransactions(rows, monthsAnalyzed);
+
+  // Check if this user already has a card_tool_session from today
+  const { data: existingSession } = await db
+    .from("card_tool_sessions")
+    .select("id")
+    .eq("clerk_user_id", effectiveUserId)
+    .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .maybeSingle();
+
+  let sessionId: string;
+
+  if (existingSession) {
+    // Update existing session
+    sessionId = (existingSession as { id: string }).id;
+    await db
+      .from("card_tool_sessions")
+      .update({ spend_summary: spendSummary, recommendations: null, quiz_answers: null })
+      .eq("id", sessionId);
+  } else {
+    // Create new session
+    const { data: newSession, error: insertError } = await db
+      .from("card_tool_sessions")
+      .insert({
+        clerk_user_id: effectiveUserId,
+        spend_summary: spendSummary,
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !newSession) {
+      console.error("[cards/analyze-coconut] insert error:", insertError?.message);
+      return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
+    }
+    sessionId = (newSession as { id: string }).id;
+  }
+
+  const response = NextResponse.json({ session_id: sessionId, spend_summary: spendSummary });
+  response.cookies.set("card_session_id", sessionId, {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 30,
+    path: "/",
+    sameSite: "lax",
+  });
+
+  return response;
+}
