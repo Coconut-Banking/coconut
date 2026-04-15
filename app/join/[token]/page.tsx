@@ -90,7 +90,6 @@ export default async function JoinPage({
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
           {data.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={data.imageUrl} alt="" className="w-16 h-16 rounded-full mx-auto mb-5 object-cover" />
           ) : (
             <div className="w-14 h-14 bg-[#1e2021] rounded-2xl flex items-center justify-center mx-auto mb-5">

@@ -26,6 +26,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/splitwise/shadow-test",
   "/api/splitwise/shadow-reset",
   "/api/splitwise/shadow-crud-test",
+  // Mirror debug endpoints — admin auth handled in route (ENABLE_DEBUG_ENDPOINTS=true required)
+  "/api/debug/splitwise-mirror(.*)",
 ]);
 
 function isClerkRateLimitError(e: unknown): e is { status: number; retryAfter?: number } {
