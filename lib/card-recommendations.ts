@@ -180,6 +180,9 @@ export function getCardRecommendations(
     // Network preference
     if (quiz.networks.length > 0 && !quiz.networks.includes(card.network)) return false;
 
+    // Country eligibility
+    if (quiz.countries.length > 0 && !quiz.countries.includes(card.country ?? "US")) return false;
+
     // Business vs personal
     if (card.is_business !== quiz.is_business) return false;
 
@@ -260,14 +263,18 @@ export function matchPlaidAccountsToCards(
       const issuerNorm = normalizeName(expandAbbreviations(card.issuer));
 
       const stopWords = new Set(["card", "credit", "rewards", "visa", "mastercard", "the"]);
-      const cardWords = cardNorm.split(" ").filter((w) => w.length > 2 && !stopWords.has(w));
+      // Exclude issuer words so "american" + "express" don't count as card-specific matches
+      const issuerWords = new Set(issuerNorm.split(" ").filter((w) => w.length > 2));
+      const cardWords = cardNorm
+        .split(" ")
+        .filter((w) => w.length > 2 && !stopWords.has(w) && !issuerWords.has(w));
 
       const matchCount = cardWords.filter((w) => combined.includes(w)).length;
       const issuerMatch =
         combined.includes(issuerNorm) ||
         issuerNorm.split(" ").some((w) => w.length > 3 && combined.includes(w));
       const isMatch =
-        (issuerMatch && matchCount >= Math.min(2, cardWords.length)) ||
+        (issuerMatch && cardWords.length > 0 && matchCount >= Math.min(1, cardWords.length)) ||
         combined.includes(cardNorm);
 
       if (isMatch) {
