@@ -428,13 +428,13 @@ else:
         print('✅ end-to-end ok (' + ', '.join(r['group'] for r in results) + ')')
 " 2>/dev/null || echo "❌ parse error")
 
-  echo "Parity:    $parity_line"
-  echo "Heartbeat: $heartbeat_line"
-  echo "E2E:       $e2e_line"
+  echo "Parity check:       $parity_line"
+  echo "SW → mirror write:  $heartbeat_line"
+  echo "Coconut → SW write: $e2e_line"
   RESULTS+=("🪞 *Splitwise Mirror*
-  Parity: $parity_line
-  Heartbeat: $heartbeat_line
-  E2E: $e2e_line")
+  Parity check: $parity_line
+  SW → mirror write: $heartbeat_line
+  Coconut → SW write: $e2e_line")
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
