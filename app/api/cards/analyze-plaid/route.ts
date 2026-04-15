@@ -85,16 +85,18 @@ export async function POST(request: NextRequest) {
       const transactions = txResp.data.transactions;
 
       allTransactions = allTransactions.concat(
-        transactions.map((tx) => {
-          const pfc = tx.personal_finance_category;
-          return {
-            amount: tx.amount,
-            primary_category: pfc?.primary ?? (tx.category?.[0] ?? null),
-            detailed_category: pfc?.detailed ?? (tx.category?.[1] ?? null),
-            merchant_name: tx.merchant_name ?? null,
-            raw_name: tx.name ?? null,
-          };
-        })
+        transactions
+          .filter((tx) => !tx.pending)   // exclude pending — matches analyze-coconut behavior
+          .map((tx) => {
+            const pfc = tx.personal_finance_category;
+            return {
+              amount: tx.amount,
+              primary_category: pfc?.primary ?? (tx.category?.[0] ?? null),
+              detailed_category: pfc?.detailed ?? (tx.category?.[1] ?? null),
+              merchant_name: tx.merchant_name ?? null,
+              raw_name: tx.name ?? null,
+            };
+          })
       );
 
       offset += transactions.length;

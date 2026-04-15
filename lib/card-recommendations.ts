@@ -142,21 +142,22 @@ function buildReason(card: CreditCard, spend: SpendProfile, annualValue: number,
     }
   }
 
-  const netStr = `~$${Math.round(annualValue)}/year`;
+  const currencyPrefix = card.country === "CA" ? "CA$" : "$";
+  const netStr = `~${currencyPrefix}${Math.round(annualValue)}/year`;
 
   if (bestCat && bestEarnings > 0) {
     const rateForCat = rates[bestCat.rateKey] ?? rates["base"] ?? 1;
     const multiplierStr = rateForCat >= 2
       ? `${rateForCat}x on ${bestCat.label}`
       : `solid rewards on ${bestCat.label}`;
-    return `With your ${bestCat.label} spend, the ${multiplierStr} earns you ${netStr} net after the $${card.annual_fee} annual fee.`;
+    return `With your ${bestCat.label} spend, the ${multiplierStr} earns you ${netStr} net after the ${currencyPrefix}${card.annual_fee} annual fee.`;
   }
 
   if (card.annual_fee === 0) {
     return `A no-fee card that earns ${netStr} on your spending with no commitments.`;
   }
 
-  return `Estimated to return ${netStr} net after the $${card.annual_fee} annual fee based on your spending.`;
+  return `Estimated to return ${netStr} net after the ${currencyPrefix}${card.annual_fee} annual fee based on your spending.`;
 }
 
 /**

@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       user: { client_user_id: anonUserId },
       client_name: "Coconut Card Finder",
       products: [Products.Transactions],
-      country_codes: [CountryCode.Us],
+      country_codes: [CountryCode.Us, CountryCode.Ca],
       language: "en",
       transactions: { days_requested: 90 },
       redirect_uri: redirectUri,
