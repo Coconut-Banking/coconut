@@ -10,7 +10,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { loadClerkAuth } from "@/lib/auth";
 import { getEffectiveUserId } from "@/lib/demo";
-import { categorizeTransactions } from "@/lib/card-recommendations";
+import { categorizeTransactions, matchPlaidAccountsToCards } from "@/lib/card-recommendations";
+import type { CreditCard } from "@/lib/card-recommendations";
 import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST() {
@@ -64,6 +65,38 @@ export async function POST() {
   const monthsAnalyzed = 3;
   const spendSummary = categorizeTransactions(rows, monthsAnalyzed);
 
+  // Detect credit cards the user already has via their linked Plaid accounts
+  let detectedCardIds: string[] = [];
+  try {
+    const [accountsResp, cardsResp] = await Promise.all([
+      db
+        .from("accounts")
+        .select("name, subtype, plaid_item_id")
+        .eq("clerk_user_id", effectiveUserId)
+        .eq("type", "credit"),
+      db.from("credit_cards").select("id, name, issuer").eq("active", true),
+    ]);
+
+    if (accountsResp.data && accountsResp.data.length > 0 && cardsResp.data) {
+      // Get institution names for each item
+      const itemIds = [...new Set(accountsResp.data.map((a) => a.plaid_item_id).filter(Boolean))];
+      const { data: itemsData } = await db
+        .from("plaid_items")
+        .select("plaid_item_id, institution_name")
+        .in("plaid_item_id", itemIds as string[]);
+      const instMap = new Map((itemsData ?? []).map((i) => [i.plaid_item_id as string, (i.institution_name as string) ?? ""]));
+
+      const accountsForMatching = accountsResp.data.map((a) => ({
+        name: a.name as string,
+        official_name: null,
+        institution_name: instMap.get(a.plaid_item_id as string) ?? "",
+      }));
+      detectedCardIds = matchPlaidAccountsToCards(accountsForMatching, cardsResp.data as CreditCard[]);
+    }
+  } catch {
+    // Non-fatal — detection is best-effort
+  }
+
   // Check if this user already has a card_tool_session from today
   const { data: existingSession } = await db
     .from("card_tool_sessions")
@@ -99,7 +132,7 @@ export async function POST() {
     sessionId = (newSession as { id: string }).id;
   }
 
-  const response = NextResponse.json({ session_id: sessionId, spend_summary: spendSummary });
+  const response = NextResponse.json({ session_id: sessionId, spend_summary: spendSummary, detected_card_ids: detectedCardIds });
   response.cookies.set("card_session_id", sessionId, {
     httpOnly: true,
     maxAge: 60 * 60 * 24 * 30,

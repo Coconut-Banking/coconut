@@ -212,6 +212,74 @@ export function getCardRecommendations(
  * Categorize Plaid transactions into the 7 spend profile buckets.
  * Handles both Plaid's personal_finance_category and legacy category arrays.
  */
+/**
+ * Match Plaid credit card account names to known card IDs.
+ * Used to pre-populate the "cards you already have" step.
+ */
+export interface PlaidAccountForMatching {
+  name: string;
+  official_name?: string | null;
+  institution_name?: string | null;
+}
+
+function normalizeName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const ABBREV_MAP: Record<string, string> = {
+  "amex": "american express",
+  "boa": "bank of america",
+  "bofa": "bank of america",
+};
+
+function expandAbbreviations(s: string): string {
+  let result = s;
+  for (const [abbrev, full] of Object.entries(ABBREV_MAP)) {
+    result = result.replace(new RegExp(`\\b${abbrev}\\b`, "gi"), full);
+  }
+  return result;
+}
+
+export function matchPlaidAccountsToCards(
+  accounts: PlaidAccountForMatching[],
+  cards: CreditCard[]
+): string[] {
+  const matched = new Set<string>();
+
+  for (const account of accounts) {
+    const rawName = account.official_name ?? account.name;
+    const inst = account.institution_name ?? "";
+    const combined = normalizeName(expandAbbreviations(`${inst} ${rawName}`));
+
+    for (const card of cards) {
+      const cardNorm = normalizeName(expandAbbreviations(card.name));
+      const issuerNorm = normalizeName(expandAbbreviations(card.issuer));
+
+      const stopWords = new Set(["card", "credit", "rewards", "visa", "mastercard", "the"]);
+      const cardWords = cardNorm.split(" ").filter((w) => w.length > 2 && !stopWords.has(w));
+
+      const matchCount = cardWords.filter((w) => combined.includes(w)).length;
+      const issuerMatch =
+        combined.includes(issuerNorm) ||
+        issuerNorm.split(" ").some((w) => w.length > 3 && combined.includes(w));
+      const isMatch =
+        (issuerMatch && matchCount >= Math.min(2, cardWords.length)) ||
+        combined.includes(cardNorm);
+
+      if (isMatch) {
+        matched.add(card.id);
+        break;
+      }
+    }
+  }
+
+  return Array.from(matched);
+}
+
 export interface PlaidTransactionRow {
   amount: number;
   primary_category?: string | null;
