@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse } from "next/server";import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import { canAccessGroup } from "@/lib/group-access";
