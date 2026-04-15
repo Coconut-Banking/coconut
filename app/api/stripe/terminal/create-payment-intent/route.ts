@@ -99,10 +99,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Use the client-provided currency (e.g. "usd") if valid, otherwise default to USD.
-  // We no longer derive currency from the platform account country — that caused all
-  // payments to default to CAD because our platform Stripe account is Canadian.
-  const currency = clientCurrency ?? DEFAULT_CURRENCY;
+  // Always use USD for now — multi-currency support can be added later.
+  const currency = "usd";
 
   try {
     const piParams: Stripe.PaymentIntentCreateParams = {
