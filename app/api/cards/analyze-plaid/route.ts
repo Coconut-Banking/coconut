@@ -88,10 +88,12 @@ export async function POST(request: NextRequest) {
       raw_name?: string | null;
     }> = [];
 
+    // Cap at 5000 transactions — enough for accurate spend profiling, avoids Vercel 15s timeout
+    const MAX_TRANSACTIONS = 5000;
     let offset = 0;
     let totalTransactions = 1;
 
-    while (offset < totalTransactions) {
+    while (offset < totalTransactions && offset < MAX_TRANSACTIONS) {
       const txResp = await client.transactionsGet({
         access_token,
         start_date: fmt(startDate),
@@ -211,7 +213,7 @@ export async function POST(request: NextRequest) {
 
     sessionId = (session as { id: string }).id;
 
-    const response = NextResponse.json({ session_id: sessionId, spend_summary: finalSpendSummary, detected_card_ids: detectedCardIds });
+    const response = NextResponse.json({ session_id: sessionId, spend_summary: finalSpendSummary, detected_card_ids: detectedCardIds ?? [] });
     // Set httpOnly session cookie (30 days)
     response.cookies.set("card_session_id", sessionId, {
       httpOnly: true,

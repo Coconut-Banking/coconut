@@ -424,9 +424,10 @@ interface SimpleCard {
 interface QuizStep3Props {
   value: string[];
   onChange: (v: string[]) => void;
+  detectedCardIds?: string[];
 }
 
-function Step3ExistingCards({ value, onChange }: QuizStep3Props) {
+function Step3ExistingCards({ value, onChange, detectedCardIds = [] }: QuizStep3Props) {
   const [cards, setCards] = useState<SimpleCard[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -483,6 +484,16 @@ function Step3ExistingCards({ value, onChange }: QuizStep3Props) {
           className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e2021]/20"
         />
       </div>
+      {/* Detected cards banner */}
+      {detectedCardIds.length > 0 && !loading && (
+        <div className="mb-3 p-3 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-800">
+          <p className="font-semibold mb-1">
+            We detected {detectedCardIds.length} card{detectedCardIds.length > 1 ? "s" : ""} from your connected bank — pre-selected below.
+          </p>
+          <p className="text-blue-600">Deselect any you don{"'"}t actually have.</p>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-8">
           <Loader2 size={20} className="animate-spin text-gray-400" />
@@ -511,7 +522,12 @@ function Step3ExistingCards({ value, onChange }: QuizStep3Props) {
                     className={`w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 transition-colors text-left ${selected ? "bg-blue-50" : ""}`}
                   >
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{card.name}</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {card.name}
+                        {detectedCardIds.includes(card.id) && (
+                          <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">detected</span>
+                        )}
+                      </p>
                       <p className="text-xs text-gray-500">
                         {card.annual_fee === 0 ? "No annual fee" : `$${card.annual_fee}/yr`} · {NETWORK_LABELS[card.network] ?? card.network}
                       </p>
@@ -835,6 +851,8 @@ function CardsPageInner() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [spendSummary, setSpendSummary] = useState<SpendSummary | null>(null);
   const [banksConnected, setBanksConnected] = useState(0);
+  // IDs that were auto-detected from Plaid/Coconut accounts — shown as a hint in Step 3
+  const [autoDetectedCardIds, setAutoDetectedCardIds] = useState<string[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [allCardsMap, setAllCardsMap] = useState<Map<string, CardData>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -883,8 +901,9 @@ function CardsPageInner() {
       }
       setSessionId(data.session_id);
       setSpendSummary(data.spend_summary);
-      // Always overwrite existingCards so stale detections from a prior session don't persist
-      setExistingCards(data.detected_card_ids ?? []);
+      const detected = data.detected_card_ids ?? [];
+      setAutoDetectedCardIds(detected);
+      setExistingCards(detected);
       setStage("quiz");
     } catch {
       setError("Failed to connect. Please try again.");
@@ -895,17 +914,18 @@ function CardsPageInner() {
   const handlePlaidSuccess = (sid: string, summary: SpendSummary, detectedCardIds?: string[]) => {
     setSessionId(sid);
     setSpendSummary(summary);
-    // Always overwrite existingCards so stale detections from a prior session don't persist
-    setExistingCards(detectedCardIds ?? []);
+    const detected = detectedCardIds ?? [];
+    setAutoDetectedCardIds(detected);
+    setExistingCards(detected);
     setBanksConnected(1);
     setStage("quiz");
   };
 
   const handleAddBankSuccess = (_sid: string, summary: SpendSummary, detectedCardIds?: string[]) => {
-    // Server already merged spend; update state with merged result
     setSpendSummary(summary);
-    // Merge detected card IDs (union of both banks)
-    setExistingCards((prev) => Array.from(new Set([...prev, ...(detectedCardIds ?? [])])));
+    const newDetected = detectedCardIds ?? [];
+    setAutoDetectedCardIds((prev) => Array.from(new Set([...prev, ...newDetected])));
+    setExistingCards((prev) => Array.from(new Set([...prev, ...newDetected])));
     setBanksConnected((n) => n + 1);
   };
 
@@ -990,7 +1010,14 @@ function CardsPageInner() {
               if (quizStep > 0) {
                 setQuizStep((s) => s - 1);
               } else {
+                // Reset all session state so a fresh Plaid connect starts clean
                 setStage("entry");
+                setSessionId(null);
+                setSpendSummary(null);
+                setExistingCards([]);
+                setAutoDetectedCardIds([]);
+                setBanksConnected(0);
+                setQuizStep(0);
               }
             }}
             className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors"
@@ -1114,7 +1141,7 @@ function CardsPageInner() {
                 <Step2Networks value={networks} onChange={setNetworks} />
               )}
               {quizStep === 3 && (
-                <Step3ExistingCards value={existingCards} onChange={setExistingCards} />
+                <Step3ExistingCards value={existingCards} onChange={setExistingCards} detectedCardIds={autoDetectedCardIds} />
               )}
               {quizStep === 4 && (
                 <Step4PersonalBusiness value={isBusiness} onChange={setIsBusiness} />
