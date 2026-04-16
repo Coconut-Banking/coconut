@@ -39,7 +39,7 @@ function getAppScheme(): string {
   return sessionStorage.getItem(SCHEME_STORAGE_KEY) || DEFAULT_APP_SCHEME;
 }
 
-function ConnectedStep({ onAddAnother }: { onAddAnother?: () => void }) {
+function ConnectedStep({ onAddAnother, fromCards }: { onAddAnother?: () => void; fromCards?: boolean }) {
   const router = useRouter();
   const fromApp = isFromApp();
   const scheme = getAppScheme();
@@ -106,7 +106,9 @@ function ConnectedStep({ onAddAnother }: { onAddAnother?: () => void }) {
         </motion.div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Bank connected!</h2>
         <p className="text-sm text-gray-500 mb-6">
-          We&apos;re importing your transactions. This usually takes under a minute.
+          {fromCards
+            ? "Your bank from your card analysis is already connected — we're importing your transactions now."
+            : "We're importing your transactions. This usually takes under a minute."}
         </p>
         <button
           onClick={() => router.push("/app/dashboard")}
@@ -142,6 +144,8 @@ function ConnectBankContent() {
   const [loginRedirectUrl, setLoginRedirectUrl] = useState<string | null>(null);
   const [showLoginRetry, setShowLoginRetry] = useState(false);
   const [oauthInProgress, setOauthInProgress] = useState(false);
+  const [migratedFromCards, setMigratedFromCards] = useState(false);
+  const migrationAttempted = useRef(false);
 
   const logPlaidEvent = useCallback(
     (payload: Record<string, unknown>) => {
@@ -169,6 +173,23 @@ function ConnectBankContent() {
     if (!existing) sessionStorage.setItem(TRACE_STORAGE_KEY, id);
     setTraceId(id);
   }, []);
+
+  // Attempt to migrate a prior /cards Plaid connection — skips Plaid Link entirely
+  useEffect(() => {
+    if (!traceId || migrationAttempted.current) return;
+    migrationAttempted.current = true;
+    fetch("/api/cards/migrate-token", { method: "POST", credentials: "include" })
+      .then((res) => res.json().catch(() => ({ ok: false })))
+      .then((data: { ok?: boolean }) => {
+        if (data.ok) {
+          setMigratedFromCards(true);
+          setStep("connected");
+        }
+      })
+      .catch(() => {
+        // Non-fatal — fall through to normal Plaid Link
+      });
+  }, [traceId]);
 
   useEffect(() => {
     if (!traceId) return;
@@ -442,7 +463,7 @@ function ConnectBankContent() {
 
   if (fromApp) {
     if (step === "connected") {
-      return <ConnectedStep />;
+      return <ConnectedStep fromCards={migratedFromCards} />;
     }
     if (error) {
       const deepLink = `${getAppScheme()}://connected`;
@@ -630,6 +651,7 @@ function ConnectBankContent() {
 
             {step === "connected" && (
               <ConnectedStep
+                fromCards={migratedFromCards}
                 onAddAnother={() => {
                   setStep("link");
                   setLinkToken(null);
