@@ -200,6 +200,60 @@ describe("useSubscriptions – dismiss mountedRef guard", () => {
     await waitFor(() => expect(result.current.detecting).toBe(false));
   });
 
+  it("resets loading to false after detect() receives a non-200 response", async () => {
+    const fetchMock = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce({ ok: true, json: async () => [SUB] })
+      // POST detect returns non-200
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: "Detection failed. Please try again." }) });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSubscriptions());
+
+    // Wait for initial load to complete
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Trigger detect and wait for it to finish
+    await act(async () => {
+      await result.current.detect();
+    });
+
+    // loading must be false after the failed detect() call
+    expect(result.current.loading).toBe(false);
+    // detecting must also be false
+    expect(result.current.detecting).toBe(false);
+    // error should be set
+    expect(result.current.error).toBe("Detection failed. Please try again.");
+  });
+
+  it("resets loading to false after detect() throws a network error", async () => {
+    const fetchMock = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce({ ok: true, json: async () => [SUB] })
+      // POST detect throws
+      .mockRejectedValueOnce(new Error("network error"));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSubscriptions());
+
+    // Wait for initial load to complete
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Trigger detect and wait for it to finish
+    await act(async () => {
+      await result.current.detect();
+    });
+
+    // loading must be false after the network error
+    expect(result.current.loading).toBe(false);
+    // detecting must also be false
+    expect(result.current.detecting).toBe(false);
+  });
+
   it("calls fetchSubs when PATCH fails and component is still mounted (dismiss)", async () => {
     const fetchMock = vi
       .fn()
