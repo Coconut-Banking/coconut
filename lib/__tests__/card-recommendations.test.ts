@@ -358,4 +358,38 @@ describe("categorizeTransactions", () => {
     );
     expect(result.total).toBe(300);
   });
+
+  // BUG-CRITICAL-1: Coconut DB stores expenses as negative amounts (Plaid convention stores
+  // expenses as positive). analyze-coconut/route.ts must negate tx.amount before passing to
+  // categorizeTransactions — otherwise every expense row has amount <= 0 and gets skipped,
+  // producing an all-zero spend profile.
+  it("produces non-zero spend profile when rows use Coconut-convention negative amounts (negated before passing)", () => {
+    // Simulate what analyze-coconut/route.ts does AFTER the fix: negate DB amounts
+    const coconutDbRows = [
+      { amount: -120, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+      { amount: -300, primary_category: "GROCERIES", detailed_category: "SUPERMARKET" },
+      { amount: -80,  primary_category: "TRANSPORTATION", detailed_category: "GAS_AND_FUEL" },
+    ];
+    const negatedRows = coconutDbRows.map((tx) => ({ ...tx, amount: -tx.amount }));
+    const result = categorizeTransactions(negatedRows, 1);
+    expect(result.dining).toBe(120);
+    expect(result.groceries).toBe(300);
+    expect(result.gas).toBe(80);
+    expect(result.total).toBe(500);
+  });
+
+  it("produces all-zero spend profile when Coconut-convention negative amounts are NOT negated (demonstrates bug)", () => {
+    // Simulate the BUG: passing raw negative DB amounts directly (no negation)
+    const coconutDbRows = [
+      { amount: -120, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+      { amount: -300, primary_category: "GROCERIES", detailed_category: "SUPERMARKET" },
+      { amount: -80,  primary_category: "TRANSPORTATION", detailed_category: "GAS_AND_FUEL" },
+    ];
+    const result = categorizeTransactions(coconutDbRows, 1);
+    // All amounts are <= 0, so every row is skipped
+    expect(result.dining).toBe(0);
+    expect(result.groceries).toBe(0);
+    expect(result.gas).toBe(0);
+    expect(result.total).toBe(0);
+  });
 });
