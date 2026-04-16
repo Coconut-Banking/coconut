@@ -80,7 +80,10 @@ export function useSubscriptions() {
       if (mountedRef.current && !cancelled) setError("Detection failed. Please try again.");
     } finally {
       cancelled = true;
-      if (mountedRef.current) setDetecting(false);
+      if (mountedRef.current) {
+        setDetecting(false);
+        setLoading(false);
+      }
     }
   }, [fetchSubs]);
 

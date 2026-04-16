@@ -56,6 +56,7 @@ export async function saveGmailTokens(
       refresh_token: tokens.refresh_token ? encryptToken(tokens.refresh_token) : "",
       token_expiry: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
       email: email ?? null,
+      email_scan_enabled: true,
     },
     { onConflict: "clerk_user_id" }
   ).select().single();

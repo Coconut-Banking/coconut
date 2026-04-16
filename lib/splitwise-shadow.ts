@@ -52,13 +52,14 @@ export function isShadowWriteEnabled(): boolean {
  * Only dual-write for these Coconut groups.
  * If empty, all groups are eligible. If non-empty, only listed groups sync.
  */
-const SHADOW_ALLOWED_GROUPS: Set<string> = new Set([
-  "9f384109-df8c-43d0-a001-80e3207b2fa7", // Seattle
-  "850bf861-7b3c-482f-8ac3-dcf5abd43160", // San Francisco W26
-]);
+const SHADOW_ALLOWED_GROUPS: Set<string> = new Set();
 
 function isGroupAllowed(groupId: string): boolean {
-  return SHADOW_ALLOWED_GROUPS.size === 0 || SHADOW_ALLOWED_GROUPS.has(groupId);
+  if (SHADOW_ALLOWED_GROUPS.size > 0 && !SHADOW_ALLOWED_GROUPS.has(groupId)) {
+    console.log(`[shadow] Group ${groupId} not in allowlist — skipping`);
+    return false;
+  }
+  return true;
 }
 
 // ── Token resolution ─────────────────────────────────────────────────────────
@@ -129,11 +130,13 @@ function matchMembersPhantom(
 ): Map<string, number> {
   const coconutToSw = new Map<string, number>();
 
-  // Build a lookup: phantom email → mirror SW member ID
-  const phantomToMirrorId = new Map<string, number>();
+  // Build lookups: phantom email → mirror ID, real email → mirror ID, SW ID → mirror ID
+  const emailToMirrorId = new Map<string, number>();
+  const swIdToMirrorId = new Map<number, number>();
   for (const m of mirrorSwMembers) {
     const email = m.email?.trim().toLowerCase();
-    if (email) phantomToMirrorId.set(email, m.id);
+    if (email) emailToMirrorId.set(email, m.id);
+    swIdToMirrorId.set(m.id, m.id);
   }
 
   for (const cm of coconutMembers) {
@@ -144,19 +147,34 @@ function matchMembersPhantom(
     }
 
     if (realSwMembers) {
-      // SW-imported: find the real SW member, then find the phantom in the mirror
+      // SW-imported: find the real SW member ID first
       const realSwId = findRealSwMember(cm, realSwMembers);
       if (realSwId) {
-        const mirrorId = phantomToMirrorId.get(phantomEmail(realSwId));
-        if (mirrorId) {
-          coconutToSw.set(cm.id, mirrorId);
+        // Try 1: phantom email (mirror created by shadow system)
+        const mirrorIdByPhantom = emailToMirrorId.get(phantomEmail(realSwId));
+        if (mirrorIdByPhantom) {
+          coconutToSw.set(cm.id, mirrorIdByPhantom);
           continue;
+        }
+        // Try 2: direct SW ID match (mirror created with real members by debug tools)
+        if (swIdToMirrorId.has(realSwId)) {
+          coconutToSw.set(cm.id, realSwId);
+          continue;
+        }
+        // Try 3: real email match (mirror has real members)
+        const realEmail = cm.email?.trim().toLowerCase();
+        if (realEmail) {
+          const mirrorIdByEmail = emailToMirrorId.get(realEmail);
+          if (mirrorIdByEmail) {
+            coconutToSw.set(cm.id, mirrorIdByEmail);
+            continue;
+          }
         }
       }
     } else {
       // Non-SW group: phantom email is based on coconut member ID
       const pe = `phantom_cm_${cm.id}@${PHANTOM_DOMAIN}`;
-      const mirrorId = phantomToMirrorId.get(pe);
+      const mirrorId = emailToMirrorId.get(pe);
       if (mirrorId) {
         coconutToSw.set(cm.id, mirrorId);
         continue;
