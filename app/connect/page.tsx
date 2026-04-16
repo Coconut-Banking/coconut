@@ -451,6 +451,7 @@ function ConnectBankContent() {
   const hasAutoOpened = useRef(false);
   useEffect(() => {
     if (!linkToken || !ready || hasAutoOpened.current) return;
+    if (step === "connected") return;  // migration already succeeded — don't open Link
     if (receivedRedirectUri || fromApp) {
       hasAutoOpened.current = true;
       logPlaidEvent({
@@ -459,7 +460,7 @@ function ConnectBankContent() {
       });
       open();
     }
-  }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent, fromApp]);
+  }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent, fromApp, step]);
 
   if (fromApp) {
     if (step === "connected") {
