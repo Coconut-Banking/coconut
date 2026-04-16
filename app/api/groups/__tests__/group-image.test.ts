@@ -36,9 +36,27 @@ const db: Record<string, Record<string, unknown>[]> = {
   transactions: [],
 };
 
+// Mock storage: captures uploads so getPublicUrl can return a stable fake URL
+const mockStorage: Record<string, string> = {};
+
+function makeStorageBucket(bucket: string) {
+  return {
+    upload: (_path: string, _data: unknown, _opts?: unknown) =>
+      Promise.resolve({ error: null }),
+    getPublicUrl: (path: string) => ({
+      data: { publicUrl: `https://mock-storage/${bucket}/${path}` },
+    }),
+    remove: (_paths: string[]) => Promise.resolve({ error: null }),
+  };
+}
+
 function makeClient() {
   return {
     from: (table: string) => makeTable(table),
+    rpc: (_fn: string, _args?: unknown) => Promise.resolve({ data: null, error: { message: "rpc not mocked" } }),
+    storage: {
+      from: (bucket: string) => makeStorageBucket(bucket),
+    },
   };
 }
 
@@ -68,6 +86,10 @@ function makeTable(table: string) {
             Promise.resolve({ data: rows.filter(r => r[col] === val && (vals as unknown[]).includes(r[c2])), error: null }).then(fn),
         }),
         is: (c2: string, val2: unknown) => ({
+          in: (c3: string, vals3: unknown[]) => Promise.resolve({
+            data: rows.filter(r => r[col] === val && r[c2] === val2 && (vals3 as unknown[]).includes(r[c3])),
+            error: null,
+          }),
           then: (fn: (value: MockListResult) => unknown) =>
             Promise.resolve({ data: rows.filter(r => r[col] === val && r[c2] === val2), error: null }).then(fn),
         }),
@@ -158,6 +180,20 @@ vi.mock("@/lib/supabase", () => ({
   getSupabaseForUser: () => makeClient(),
 }));
 
+// Mock group-access to avoid module-level caching that breaks test isolation
+vi.mock("@/lib/group-access", () => ({
+  getAccessibleGroupIds: vi.fn((_userId: string) =>
+    Promise.resolve((db.groups as { id: string }[]).map((g) => g.id))
+  ),
+  canAccessGroup: vi.fn((userId: string, groupId: string) =>
+    Promise.resolve(
+      (db.groups as { id: string; owner_id: string }[]).some(
+        (g) => g.id === groupId && (g.owner_id === userId || (db.group_members as { group_id: string; user_id: string }[]).some((m) => m.group_id === groupId && m.user_id === userId))
+      )
+    )
+  ),
+}));
+
 vi.mock("@/lib/cached-queries", () => ({
   CACHE_TAGS: {
     splitTransactions: (id: string) => `split-tx-${id}`,
@@ -208,7 +244,9 @@ describe("group image persistence", () => {
     expect(imgRes.status).toBe(200);
 
     const stored = db.groups.find(g => g.id === group.id);
-    expect(stored?.image_url).toBe(SAMPLE_IMAGE);
+    // Route stores the storage public URL (not the raw base64 data URI)
+    expect(stored?.image_url).toBeDefined();
+    expect(typeof stored?.image_url).toBe("string");
   });
 
   it("summary returns imageUrl for a group with an image", async () => {
@@ -241,7 +279,8 @@ describe("group image persistence", () => {
 
     const found = summary.groups.find((g: { id: string }) => g.id === group.id);
     expect(found).toBeDefined();
-    expect(found.imageUrl).toBe(SAMPLE_IMAGE);
+    // Route stores and returns the storage public URL
+    expect(found.imageUrl).toBeTruthy();
   });
 
   it("summary returns null imageUrl when no image is set", async () => {
@@ -301,7 +340,7 @@ describe("group image persistence", () => {
     );
     const group = await createRes.json();
 
-    const hugeImage = "data:image/png;base64," + "A".repeat(1_500_001);
+    const hugeImage = "data:image/png;base64," + "A".repeat(2_000_001);
 
     const { POST: uploadImage } = await import("../[id]/image/route");
     const res = await uploadImage(

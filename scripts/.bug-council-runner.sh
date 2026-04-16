@@ -28,6 +28,10 @@ DATE_TAG=$(date +%Y%m%d)
 : "${COCONUT_APP_REPO:="$(dirname "$COCONUT_REPO")/coconut-app"}"
 
 LOG_DIR="$COCONUT_REPO/.bug-council-logs"
+STATE_FILE="$LOG_DIR/.last-successful-run"
+
+: "${COCONUT_PROD_URL:="https://coconut-lemon.vercel.app"}"
+: "${SUPABASE_SERVICE_ROLE_KEY:=""}"
 
 # Repo configs: name|full_repo|main_repo_path|worktree_parent|has_ci|claude_command
 WORKTREE_BASE="$(dirname "$COCONUT_REPO")"
@@ -354,6 +358,85 @@ https://github.com/$full_repo/pull/$pr_number")
   esac
 }
 
+# ── Splitwise parity check ────────────────────────────────────────────────────
+run_parity_check() {
+  echo ""
+  echo "================================================================"
+  echo "  Splitwise Mirror Parity Check"
+  echo "================================================================"
+
+  if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+    echo "SUPABASE_SERVICE_ROLE_KEY not set — skipping parity check"
+    RESULTS+=("Mirror parity: skipped (no service key)")
+    return
+  fi
+
+  local response
+  response=$(curl -s --max-time 90 \
+    -H "x-admin-key: $SUPABASE_SERVICE_ROLE_KEY" \
+    "$COCONUT_PROD_URL/api/cron/splitwise-parity" 2>/dev/null || echo "")
+
+  if [ -z "$response" ]; then
+    echo "Parity check failed — could not reach $COCONUT_PROD_URL"
+    RESULTS+=("Mirror parity: ❌ unreachable")
+    return
+  fi
+
+  local ok
+  ok=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('ok') else 'false')" 2>/dev/null || echo "error")
+
+  local parity_line heartbeat_line e2e_line
+  parity_line=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+results=d.get('parity',[])
+if not results:
+    print('✅ no mirrors configured')
+else:
+    bad=[r['group'] for r in results if not r.get('parity')]
+    if bad:
+        print('⚠️ drift in: ' + ', '.join(bad))
+    else:
+        print('✅ ' + ', '.join(r['group'] for r in results) + ' in sync')
+" 2>/dev/null || echo "❌ parse error")
+
+  heartbeat_line=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+results=d.get('heartbeat',[])
+if not results:
+    print('✅ no mirrors configured')
+else:
+    bad=[r['group'] for r in results if not r.get('ok')]
+    if bad:
+        print('❌ write pipeline broken: ' + ', '.join(bad))
+    else:
+        print('✅ write pipeline ok (' + ', '.join(r['group'] for r in results) + ')')
+" 2>/dev/null || echo "❌ parse error")
+
+  e2e_line=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+results=d.get('e2e',[])
+if not results:
+    print('✅ no mirrors configured')
+else:
+    bad=[r['group'] for r in results if not r.get('ok')]
+    if bad:
+        print('❌ E2E failed: ' + ', '.join(bad))
+    else:
+        print('✅ end-to-end ok (' + ', '.join(r['group'] for r in results) + ')')
+" 2>/dev/null || echo "❌ parse error")
+
+  echo "Parity check:       $parity_line"
+  echo "SW mirror write:    $heartbeat_line"
+  echo "Coconut → SW write: $e2e_line"
+  RESULTS+=("🪞 *Splitwise Mirror*
+  Parity check: $parity_line
+  SW mirror write: $heartbeat_line
+  Coconut → SW write: $e2e_line")
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 mkdir -p "$LOG_DIR"
@@ -385,6 +468,11 @@ for config in "${REPO_CONFIGS[@]}"; do
   IFS='|' read -r name full_repo main_repo work_dir has_ci claude_cmd <<< "$config"
   run_for_repo "$name" "$full_repo" "$main_repo" "$work_dir" "$has_ci" "$claude_cmd" || true
 done
+
+run_parity_check || true
+
+# ── Save state: record this run's HEAD SHA so next run knows what changed ────
+git -C "$COCONUT_REPO" rev-parse HEAD > "$STATE_FILE" 2>/dev/null || true
 
 # ── Consolidated notification ────────────────────────────────────────────────
 TELEGRAM_MSG="*Bug Council v2 Complete*"

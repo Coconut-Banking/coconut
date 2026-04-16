@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse } from "next/server";import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import { canAccessGroup } from "@/lib/group-access";
@@ -40,13 +39,16 @@ export async function POST(req: NextRequest) {
   }
 
   const amountCents = Math.round(amount * 100);
+  const clientCurrency = typeof body.currency === "string" && /^[a-zA-Z]{3}$/.test(body.currency)
+    ? body.currency.toLowerCase()
+    : null;
   const stripe = new Stripe(key);
   const db = getSupabase();
 
-  const metadata: Record<string, string> = {};
-
-  // Fire stripe.accounts.retrieve() immediately — it's independent of all DB queries
+  // Fire stripe.accounts.retrieve() to get platform account country for currency mapping
   const stripeAcctPromise = stripe.accounts.retrieve().catch(() => null);
+
+  const metadata: Record<string, string> = {};
 
   if (body.groupId && body.payerMemberId && body.receiverMemberId) {
     const allowed = await canAccessGroup(userId, body.groupId);
@@ -100,32 +102,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Stripe Terminal (card_present) requires the PaymentIntent currency to match
-  // the Stripe account's country — e.g. a CA account MUST use "cad", even if
-  // the expense itself is denominated in USD. We always derive the Terminal
-  // currency from the account country and store the original expense currency
-  // in metadata so settlement logic can reconcile later.
-  const clientCurrency = typeof body.currency === "string" && /^[a-zA-Z]{3}$/.test(body.currency)
-    ? body.currency.toLowerCase()
-    : null;
-
+  // Stripe Terminal card_present currency MUST match the platform account's country.
+  // A Canadian platform account must use CAD — USD will be rejected by Stripe.
+  // To collect USD, the platform Stripe account needs to be a US account.
   const COUNTRY_TO_CURRENCY: Record<string, string> = {
     CA: "cad", US: "usd", GB: "gbp", AU: "aud", NZ: "nzd",
-    SG: "sgd", HK: "hkd", JP: "jpy", EU: "eur",
+    SG: "sgd", HK: "hkd", JP: "jpy",
     DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur",
     IE: "eur", AT: "eur", BE: "eur", FI: "eur", PT: "eur",
   };
-
-  let currency = DEFAULT_CURRENCY;
   const acct = await stripeAcctPromise;
-  if (acct) {
-    const country = (acct.country ?? "").toUpperCase();
-    currency = COUNTRY_TO_CURRENCY[country] ?? DEFAULT_CURRENCY;
-  }
-
-  if (clientCurrency && clientCurrency !== currency) {
-    metadata.original_currency = clientCurrency;
-  }
+  const platformCountry = (acct?.country ?? "").toUpperCase();
+  const currency = COUNTRY_TO_CURRENCY[platformCountry] ?? DEFAULT_CURRENCY;
 
   try {
     const piParams: Stripe.PaymentIntentCreateParams = {

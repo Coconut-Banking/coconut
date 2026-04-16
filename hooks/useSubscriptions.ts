@@ -84,7 +84,10 @@ export function useSubscriptions() {
       }
     } finally {
       cancelled = true;
-      if (mountedRef.current) setDetecting(false);
+      if (mountedRef.current) {
+        setDetecting(false);
+        setLoading(false);
+      }
     }
   }, [fetchSubs]);
 

@@ -1,8 +1,13 @@
 import { getSupabase } from "./supabase";
 import { RECEIPT_MATCH } from "./config";
 
+// Regex that strips POS processor prefixes (Square, Toast, PayPal, Shopify, etc.)
+// before normalization so "SQ *MENSHO" and "Mensho Tokyo SF" compare correctly.
+const POS_PREFIX_RE = /^(?:sq\s?\*|tst\s?\*?|pp\s?\*|paypal\s+|sp\s?\*|google\s?\*|amzn\*|checkcard\s+|pos\s+)/i;
+
 export function normalizeMerchant(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+  const stripped = s.replace(POS_PREFIX_RE, "");
+  return stripped.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function sanitizeForIlike(s: string): string {
@@ -51,6 +56,13 @@ const MERCHANT_ALIASES: Record<string, string[]> = {
   lowes: ["lowes", "lowe"],
   fantuan: ["fantuan", "fantuanorder"],
   skipthedishes: ["skip the dishes", "skipthedishes"],
+  sephora: ["sephora"],
+  nike: ["nike"],
+  chewy: ["chewy"],
+  etsy: ["etsy"],
+  disney: ["disney", "disney plus", "disneyplus"],
+  github: ["github"],
+  openai: ["openai", "openai chatgpt"],
 };
 
 const POS_PREFIXES = [
@@ -70,19 +82,47 @@ function stripPosPrefix(merchant: string): string {
   return merchant;
 }
 
-function resolveAliases(merchant: string): string[] {
+/**
+ * Returns the canonical alias group key(s) that a merchant belongs to.
+ * Used ONLY for group-membership checks (same group = same merchant).
+ * Intentionally excludes sub-tokens to prevent cross-group collisions
+ * (e.g. "airlines" appearing in both Delta and United).
+ */
+function resolveAliasGroups(merchant: string): string[] {
   const norm = normalizeMerchant(merchant);
-  const extra: string[] = [];
+  const groups: string[] = [];
   for (const [canonical, aliases] of Object.entries(MERCHANT_ALIASES)) {
     if (aliases.some((a) => norm.includes(a)) || norm.includes(canonical)) {
-      extra.push(canonical);
+      groups.push(canonical);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Returns all alias tokens (canonical key + individual words from alias strings)
+ * for a merchant. Used for keyword extraction.
+ * Stop words and short tokens are filtered to avoid generic tokens (e.g. "air")
+ * from alias phrases causing cross-group false positives.
+ */
+function resolveAliasKeywords(merchant: string): string[] {
+  const norm = normalizeMerchant(merchant);
+  const tokens: string[] = [];
+  for (const [canonical, aliases] of Object.entries(MERCHANT_ALIASES)) {
+    if (aliases.some((a) => norm.includes(a)) || norm.includes(canonical)) {
+      if (!RECEIPT_MATCH.STOP_WORDS.has(canonical) && canonical.length >= RECEIPT_MATCH.MIN_KEYWORD_LENGTH) {
+        tokens.push(canonical);
+      }
       for (const a of aliases) {
-        const kw = a.split(" ")[0];
-        if (kw.length >= 3 && !extra.includes(kw)) extra.push(kw);
+        for (const word of a.split(" ")) {
+          if (word.length >= RECEIPT_MATCH.MIN_KEYWORD_LENGTH && !RECEIPT_MATCH.STOP_WORDS.has(word) && !tokens.includes(word)) {
+            tokens.push(word);
+          }
+        }
       }
     }
   }
-  return extra;
+  return tokens;
 }
 
 export function extractKeywords(merchant: string): string[] {
@@ -95,7 +135,7 @@ export function extractKeywords(merchant: string): string[] {
     .map(sanitizeForIlike)
     .filter((w) => w.length > 0);
 
-  const aliasKeywords = resolveAliases(merchant)
+  const aliasKeywords = resolveAliasKeywords(merchant)
     .map(sanitizeForIlike)
     .filter((w) => w.length > 0);
 
@@ -107,7 +147,7 @@ export function extractKeywords(merchant: string): string[] {
       result.push(w);
     }
   }
-  return result.slice(0, 5);
+  return result.slice(0, RECEIPT_MATCH.MAX_KEYWORDS);
 }
 
 export function merchantsMatch(receiptMerchant: string, txMerchant: string): boolean {
@@ -123,21 +163,41 @@ export function merchantsMatch(receiptMerchant: string, txMerchant: string): boo
   const bKeywords = b.split(" ").filter((w) => w.length >= 3);
   if (bKeywords.some((kw) => a.includes(kw))) return true;
 
-  const aAliases = resolveAliases(receiptMerchant);
-  const bAliases = resolveAliases(stripPosPrefix(txMerchant));
-  if (aAliases.length > 0 && bAliases.length > 0) {
-    if (aAliases.some((aa) => bAliases.includes(aa))) return true;
+  // Group check: same canonical alias group = same merchant
+  const aGroups = resolveAliasGroups(receiptMerchant);
+  const bGroups = resolveAliasGroups(txMerchant);
+  if (aGroups.length > 0 && bGroups.length > 0) {
+    if (aGroups.some((g) => bGroups.includes(g))) return true;
   }
-  if (aAliases.some((aa) => b.includes(aa))) return true;
-  if (bAliases.some((ba) => a.includes(ba))) return true;
+
+  // Keyword check: alias tokens from one side appear as whole words in the other.
+  // Use word-token matching (not substring) to prevent e.g. "delta" alias token
+  // "air" matching inside "united airlines".
+  const aWords = new Set(a.split(" "));
+  const bWords = new Set(b.split(" "));
+  const aKeywordAliases = resolveAliasKeywords(receiptMerchant);
+  const bKeywordAliases = resolveAliasKeywords(txMerchant);
+  if (aKeywordAliases.some((kw) => bWords.has(kw))) return true;
+  if (bKeywordAliases.some((kw) => aWords.has(kw))) return true;
 
   return false;
 }
 
-function amountWithinTolerance(receiptAmount: number, txAmount: number): boolean {
-  // Exact match only — $0.01 rounding buffer for floating-point representation.
-  // Loose dollar/percent tolerances caused too many false matches on small amounts.
-  return Math.abs(txAmount - receiptAmount) <= 0.01;
+/**
+ * Tiered amount tolerance:
+ * - merchantMatched=true: min($DOLLARS, PERCENT*receiptAmount) — generous for known merchants
+ * - merchantMatched=false: exact $0.01 — tight for amount-only Strategy 3 matches
+ */
+function amountWithinTolerance(receiptAmount: number, txAmount: number, merchantMatched = false): boolean {
+  const diff = Math.abs(txAmount - receiptAmount);
+  if (merchantMatched) {
+    const tolerance = Math.min(
+      RECEIPT_MATCH.AMOUNT_TOLERANCE_DOLLARS,
+      receiptAmount * RECEIPT_MATCH.AMOUNT_TOLERANCE_PERCENT
+    );
+    return diff <= Math.max(tolerance, RECEIPT_MATCH.AMOUNT_TOLERANCE_EXACT);
+  }
+  return diff <= RECEIPT_MATCH.AMOUNT_TOLERANCE_EXACT;
 }
 
 /**
@@ -147,8 +207,8 @@ function amountWithinTolerance(receiptAmount: number, txAmount: number): boolean
  */
 function knownMerchantsConflict(m1: string, m2: string): boolean {
   if (!m1 || !m2) return false;
-  const a1 = resolveAliases(m1);
-  const a2 = resolveAliases(m2);
+  const a1 = resolveAliasGroups(m1);
+  const a2 = resolveAliasGroups(m2);
   // Both are recognised merchants and share no alias group → definitively different
   return a1.length > 0 && a2.length > 0 && !a1.some((a) => a2.includes(a));
 }
@@ -174,12 +234,13 @@ export function scoreCandidates(
       };
     })
     .filter((s) => {
-      if (!amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff)) return false;
+      const txMerch = s.normalized_merchant || s.merchant_name || "";
+      const merchantMatched = Boolean(receiptMerchant && txMerch && merchantsMatch(receiptMerchant, txMerch));
 
-      if (receiptMerchant) {
-        const txMerch = s.normalized_merchant || s.merchant_name || "";
-        if (txMerch && !merchantsMatch(receiptMerchant, txMerch)) return false;
-      }
+      if (!amountWithinTolerance(receiptAmount, receiptAmount + s.amountDiff, merchantMatched)) return false;
+
+      // If a merchant is provided but doesn't match, reject (unless merchantMatched is true)
+      if (receiptMerchant && txMerch && !merchantMatched) return false;
 
       return true;
     })
@@ -226,16 +287,17 @@ export async function matchReceiptsToTransactions(
     (alreadyLinked ?? []).map((r) => r.transaction_id as string).filter(Boolean)
   );
 
-  const windowDays = RECEIPT_MATCH.DATE_WINDOW_DAYS;
+  const windowBeforeDays = RECEIPT_MATCH.WINDOW_BEFORE_DAYS;
+  const windowAfterDays = RECEIPT_MATCH.WINDOW_AFTER_DAYS;
 
-  // Collect the overall date range covering ALL receipts (+ window on each side)
+  // Collect the overall date range covering ALL receipts (+ asymmetric window)
   let globalMinDate: Date | null = null;
   let globalMaxDate: Date | null = null;
   for (const receipt of receipts) {
     if (!receipt.date) continue;
     const d = new Date(receipt.date);
-    const lo = new Date(d); lo.setDate(lo.getDate() - windowDays);
-    const hi = new Date(d); hi.setDate(hi.getDate() + windowDays);
+    const lo = new Date(d); lo.setDate(lo.getDate() - windowBeforeDays);
+    const hi = new Date(d); hi.setDate(hi.getDate() + windowAfterDays);
     if (!globalMinDate || lo < globalMinDate) globalMinDate = lo;
     if (!globalMaxDate || hi > globalMaxDate) globalMaxDate = hi;
   }
@@ -252,8 +314,6 @@ export async function matchReceiptsToTransactions(
       .lte("date", globalMaxDate.toISOString().split("T")[0]);
     allCandidates = (txRows ?? []) as TxCandidate[];
   }
-
-  const tightWindowDays = 5;
 
   let matched = 0;
   const pendingUpdates: Array<{ id: string; transaction_id: string }> = [];
@@ -277,13 +337,13 @@ export async function matchReceiptsToTransactions(
     let tightEnd: string | undefined;
     if (receiptDate) {
       const dateObj = new Date(receiptDate);
-      const start = new Date(dateObj); start.setDate(start.getDate() - windowDays);
-      const end = new Date(dateObj); end.setDate(end.getDate() + windowDays);
+      const start = new Date(dateObj); start.setDate(start.getDate() - windowBeforeDays);
+      const end = new Date(dateObj); end.setDate(end.getDate() + windowAfterDays);
       dateStart = start.toISOString().split("T")[0];
       dateEnd = end.toISOString().split("T")[0];
 
-      const ts = new Date(dateObj); ts.setDate(ts.getDate() - tightWindowDays);
-      const te = new Date(dateObj); te.setDate(te.getDate() + tightWindowDays);
+      const ts = new Date(dateObj); ts.setDate(ts.getDate() - RECEIPT_MATCH.TIGHT_WINDOW_BEFORE_DAYS);
+      const te = new Date(dateObj); te.setDate(te.getDate() + RECEIPT_MATCH.TIGHT_WINDOW_AFTER_DAYS);
       tightStart = ts.toISOString().split("T")[0];
       tightEnd = te.toISOString().split("T")[0];
     }
@@ -342,7 +402,7 @@ export async function matchReceiptsToTransactions(
               txAmount,
             };
           })
-          .filter((s) => amountWithinTolerance(tryAmount, tryAmount + s.amountDiff) && isFinite(s.dateDiff))
+          .filter((s) => amountWithinTolerance(tryAmount, tryAmount + s.amountDiff, true) && isFinite(s.dateDiff))
           .sort((a, b) => a.amountDiff - b.amountDiff || a.dateDiff - b.dateDiff);
 
         if (scored.length > 0) {
@@ -393,7 +453,7 @@ export async function matchReceiptsToTransactions(
         })
         .sort((a, b) => a.amountDiff - b.amountDiff);
       const best = closest[0];
-      let reason = `no candidates in ±${windowDays}d window`;
+      let reason = `no candidates in -${windowBeforeDays}/+${windowAfterDays}d window`;
       if (best) {
         const parts: string[] = [];
         if (best.amountDiff > 0.01) parts.push(`closest amount diff=$${best.amountDiff.toFixed(2)}`);
