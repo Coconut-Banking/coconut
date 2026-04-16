@@ -36,6 +36,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "quiz_answers required" }, { status: 400 });
   }
 
+  // Validate required fields so the engine doesn't silently produce wrong results
+  const validBuckets = ["excellent", "good", "fair", "poor"];
+  if (
+    !Array.isArray(quizAnswers.countries) || quizAnswers.countries.length === 0 ||
+    typeof quizAnswers.max_annual_fee !== "number" ||
+    !Array.isArray(quizAnswers.networks) || quizAnswers.networks.length === 0 ||
+    !Array.isArray(quizAnswers.existing_cards) ||
+    typeof quizAnswers.is_business !== "boolean" ||
+    !validBuckets.includes(quizAnswers.credit_score_bucket)
+  ) {
+    return NextResponse.json({ error: "Invalid quiz_answers" }, { status: 400 });
+  }
+
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const rl = rateLimit(`cards-recommend:${ip}`, 20, 60_000);
   if (!rl.success) {

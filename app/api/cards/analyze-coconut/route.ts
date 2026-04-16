@@ -97,22 +97,24 @@ export async function POST() {
     // Non-fatal — detection is best-effort
   }
 
-  // Check if this user already has a card_tool_session from today
+  // Reuse a session from the last 24h only if the user hasn't started the quiz yet
+  // (quiz_answers being set means they're mid-flow — overwriting would erase their progress)
   const { data: existingSession } = await db
     .from("card_tool_sessions")
     .select("id")
     .eq("clerk_user_id", effectiveUserId)
     .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .is("quiz_answers", null)
     .maybeSingle();
 
   let sessionId: string;
 
   if (existingSession) {
-    // Update existing session
+    // Update existing pre-quiz session with fresh spend data
     sessionId = (existingSession as { id: string }).id;
     await db
       .from("card_tool_sessions")
-      .update({ spend_summary: spendSummary, recommendations: null, quiz_answers: null })
+      .update({ spend_summary: spendSummary })
       .eq("id", sessionId);
   } else {
     // Create new session
