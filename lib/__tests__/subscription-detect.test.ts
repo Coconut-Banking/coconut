@@ -1,104 +1,185 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../supabase", () => ({ getSupabase: vi.fn() }));
-vi.mock("../subscription-config", () => ({ shouldExcludeAsSubscription: vi.fn(() => false) }));
-vi.mock("../known-subscriptions", () => ({ matchKnownSubscription: vi.fn(() => null) }));
+/**
+ * Tests for saveDetectedSubscriptions error propagation.
+ * BUG-RESILIENCE-1: .update()/.upsert() calls inside Promise.all() were missing
+ * error destructuring, silently swallowing Supabase DB errors.
+ */
 
-import { getSupabase } from "../supabase";
-import { saveDetectedSubscriptions, type DetectedSubscription } from "../subscription-detect";
+// Configurable mock functions — reset in beforeEach
+const mockSelectResult = vi.fn();
+const mockUpdateResult = vi.fn();
+const mockUpsertResult = vi.fn();
 
-const mockGetSupabase = vi.mocked(getSupabase);
-
-const DETECTED: DetectedSubscription = {
-  merchantName: "Netflix",
-  normalizedMerchant: "netflix",
-  amount: 15.99,
-  frequency: "monthly",
-  lastChargeDate: "2026-04-01",
-  nextDueDate: "2026-05-01",
-  primaryCategory: "Entertainment",
-  transactionCount: 3,
-  transactionIds: [],
-  transactionDetails: [],
-  source: "known",
-  confidence: 0.95,
-};
-
-function makeQueryBuilder(overrides: Record<string, unknown> = {}) {
-  const builder: Record<string, unknown> = {
-    select: vi.fn(),
-    update: vi.fn(),
-    upsert: vi.fn(),
-    eq: vi.fn(),
-    neq: vi.fn(),
-    in: vi.fn(),
-    then: undefined,
-    ...overrides,
-  };
-  // Make each method return the builder itself for chaining by default
-  (builder.select as ReturnType<typeof vi.fn>).mockReturnValue(builder);
-  (builder.update as ReturnType<typeof vi.fn>).mockReturnValue(builder);
-  (builder.upsert as ReturnType<typeof vi.fn>).mockReturnValue(builder);
-  (builder.eq as ReturnType<typeof vi.fn>).mockReturnValue(builder);
-  (builder.neq as ReturnType<typeof vi.fn>).mockReturnValue(builder);
-  (builder.in as ReturnType<typeof vi.fn>).mockReturnValue(builder);
-  return builder;
+/**
+ * Build a fully chainable Supabase query builder that terminates with a
+ * given result mock. Every builder method (eq, neq, in, order, select,
+ * update, upsert) returns the same chain so any call sequence resolves.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeChainable(terminal: (...args: any[]) => any): any {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chain: Record<string, (...args: any[]) => any> = {};
+  const methods = ["eq", "neq", "in", "order", "select", "update", "upsert", "lt", "gte"];
+  for (const m of methods) {
+    chain[m] = () => chain;
+  }
+  // Make the chain itself thenable so `await chain` resolves via the terminal mock.
+  chain["then"] = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+    terminal().then(resolve, reject);
+  return chain;
 }
 
-describe("saveDetectedSubscriptions – Promise.all error propagation", () => {
+vi.mock("../supabase", () => ({
+  getSupabase: () => ({
+    from: (table: string) => {
+      if (table === "subscriptions") {
+        return {
+          // Phase 1 select — batch fetch existing subs: .select().eq().in()
+          select: () => makeChainable(mockSelectResult),
+          // Update path (Phase 2)
+          update: (_data: unknown) => makeChainable(mockUpdateResult),
+          // Upsert path (Phase 2 new subs, and Phase 3 subscription_transactions)
+          upsert: (_rows: unknown, _opts?: unknown) => makeChainable(mockUpsertResult),
+        };
+      }
+      // subscription_transactions and transactions tables — safe no-ops
+      const noop = vi.fn().mockResolvedValue({ data: null, error: null });
+      return {
+        select: () => makeChainable(vi.fn().mockResolvedValue({ data: [], error: null })),
+        upsert: () => makeChainable(noop),
+        delete: () => makeChainable(noop),
+      };
+    },
+  }),
+}));
+
+import { saveDetectedSubscriptions } from "../subscription-detect";
+import type { DetectedSubscription } from "../subscription-detect";
+
+function makeDetected(overrides?: Partial<DetectedSubscription>): DetectedSubscription {
+  return {
+    merchantName: "Netflix",
+    normalizedMerchant: "netflix",
+    amount: 15.99,
+    frequency: "monthly",
+    lastChargeDate: "2025-03-01",
+    nextDueDate: "2025-04-01",
+    primaryCategory: "SUBSCRIPTIONS",
+    transactionCount: 3,
+    transactionIds: [],
+    transactionDetails: [],
+    source: "known",
+    confidence: 0.95,
+    ...overrides,
+  };
+}
+
+describe("saveDetectedSubscriptions — error propagation (BUG-RESILIENCE-1)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("throws when .update() returns { error } (existing subscription path)", async () => {
-    const dbError = new Error("DB update error");
-
-    // We need two different "from" calls:
-    // 1st: SELECT existing subscriptions → returns existing row so code takes toUpdate path
-    // 2nd: the actual UPDATE call → returns { error }
-
-    let callCount = 0;
-    const selectBuilder = makeQueryBuilder();
-    // The select chain terminates with a promise-like that resolves to { data: [existing] }
-    (selectBuilder.in as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: [{ id: "sub-existing-1", status: "active", amount: 15.99, normalized_merchant: "netflix" }],
+  describe("empty detected list", () => {
+    it("returns immediately without touching the DB", async () => {
+      await expect(saveDetectedSubscriptions("user-1", [])).resolves.toBeUndefined();
+      expect(mockSelectResult).not.toHaveBeenCalled();
+      expect(mockUpdateResult).not.toHaveBeenCalled();
+      expect(mockUpsertResult).not.toHaveBeenCalled();
     });
-
-    const updateBuilder = makeQueryBuilder();
-    // The update chain terminates (after .neq()) with a promise-like that resolves to { error }
-    (updateBuilder.neq as ReturnType<typeof vi.fn>).mockResolvedValue({ error: dbError });
-
-    mockGetSupabase.mockReturnValue({
-      from: vi.fn(() => {
-        callCount++;
-        if (callCount === 1) return selectBuilder as unknown as ReturnType<ReturnType<typeof getSupabase>["from"]>;
-        return updateBuilder as unknown as ReturnType<ReturnType<typeof getSupabase>["from"]>;
-      }),
-    } as unknown as ReturnType<typeof getSupabase>);
-
-    await expect(saveDetectedSubscriptions("user-1", [DETECTED])).rejects.toThrow("DB update error");
   });
 
-  it("throws when .upsert() returns { error } (new subscription path)", async () => {
-    const dbError = new Error("DB upsert error");
+  describe("update path — existing subscription", () => {
+    it("resolves silently when the update succeeds", async () => {
+      mockSelectResult.mockResolvedValue({
+        data: [{ id: "sub-1", status: "active", amount: 14.99, normalized_merchant: "netflix" }],
+        error: null,
+      });
+      mockUpdateResult.mockResolvedValue({ data: null, error: null });
 
-    let callCount = 0;
-    const selectBuilder = makeQueryBuilder();
-    // SELECT returns empty → code takes toUpsert path
-    (selectBuilder.in as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] });
+      await expect(
+        saveDetectedSubscriptions("user-1", [makeDetected()])
+      ).resolves.toBeUndefined();
+    });
 
-    const upsertBuilder = makeQueryBuilder();
-    // upsert resolves to { error }
-    (upsertBuilder.upsert as ReturnType<typeof vi.fn>).mockResolvedValue({ error: dbError });
+    it("throws when the Supabase update returns an error (BUG: was silently swallowed)", async () => {
+      // Existing record — triggers UPDATE path
+      mockSelectResult.mockResolvedValue({
+        data: [{ id: "sub-1", status: "active", amount: 14.99, normalized_merchant: "netflix" }],
+        error: null,
+      });
+      // Simulate a DB error on update
+      mockUpdateResult.mockResolvedValue({
+        data: null,
+        error: { message: "update constraint violation" },
+      });
 
-    mockGetSupabase.mockReturnValue({
-      from: vi.fn(() => {
-        callCount++;
-        if (callCount === 1) return selectBuilder as unknown as ReturnType<ReturnType<typeof getSupabase>["from"]>;
-        return upsertBuilder as unknown as ReturnType<ReturnType<typeof getSupabase>["from"]>;
-      }),
-    } as unknown as ReturnType<typeof getSupabase>);
+      await expect(
+        saveDetectedSubscriptions("user-1", [makeDetected()])
+      ).rejects.toThrow("Failed to update subscription sub-1: update constraint violation");
+    });
 
-    await expect(saveDetectedSubscriptions("user-1", [DETECTED])).rejects.toThrow("DB upsert error");
+    it("throws when one of multiple updates fails", async () => {
+      mockSelectResult.mockResolvedValue({
+        data: [
+          { id: "sub-1", status: "active", amount: 14.99, normalized_merchant: "netflix" },
+          { id: "sub-2", status: "active", amount: 9.99, normalized_merchant: "spotify" },
+        ],
+        error: null,
+      });
+      // First update OK, second fails
+      mockUpdateResult
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValueOnce({ data: null, error: { message: "row lock timeout" } });
+
+      const detected = [
+        makeDetected({ normalizedMerchant: "netflix", merchantName: "Netflix" }),
+        makeDetected({ normalizedMerchant: "spotify", merchantName: "Spotify", amount: 9.99 }),
+      ];
+      await expect(saveDetectedSubscriptions("user-1", detected)).rejects.toThrow(
+        "row lock timeout"
+      );
+    });
+  });
+
+  describe("upsert path — new subscription", () => {
+    it("resolves silently when the upsert succeeds", async () => {
+      // No existing record — triggers upsert path
+      mockSelectResult.mockResolvedValue({ data: [], error: null });
+      mockUpsertResult.mockResolvedValue({ data: null, error: null });
+
+      await expect(
+        saveDetectedSubscriptions("user-1", [makeDetected()])
+      ).resolves.toBeUndefined();
+    });
+
+    it("throws when the Supabase upsert returns an error (BUG: was silently swallowed)", async () => {
+      // No existing record — triggers upsert path
+      mockSelectResult.mockResolvedValue({ data: [], error: null });
+      // Simulate a DB error on upsert
+      mockUpsertResult.mockResolvedValue({
+        data: null,
+        error: { message: "duplicate key violation" },
+      });
+
+      await expect(
+        saveDetectedSubscriptions("user-1", [makeDetected()])
+      ).rejects.toThrow("Failed to upsert subscriptions: duplicate key violation");
+    });
+  });
+
+  describe("dismissed subscription", () => {
+    it("skips update/upsert for a dismissed subscription", async () => {
+      mockSelectResult.mockResolvedValue({
+        data: [{ id: "sub-3", status: "dismissed", amount: 15.99, normalized_merchant: "netflix" }],
+        error: null,
+      });
+
+      await saveDetectedSubscriptions("user-1", [makeDetected()]);
+
+      // No update or upsert should be called
+      expect(mockUpdateResult).not.toHaveBeenCalled();
+      expect(mockUpsertResult).not.toHaveBeenCalled();
+    });
   });
 });
