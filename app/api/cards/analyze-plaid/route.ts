@@ -17,6 +17,27 @@ type AnalyzePlaidBody = {
   public_token?: string;
 };
 
+type SpendSummary = {
+  dining: number; travel: number; groceries: number; gas: number;
+  streaming: number; transit: number; other: number; total: number;
+  months_analyzed: number;
+};
+
+function mergeSpendSummaries(a: SpendSummary, b: SpendSummary): SpendSummary {
+  // Both are monthly averages over the same 90-day window — add category-by-category
+  return {
+    dining: a.dining + b.dining,
+    travel: a.travel + b.travel,
+    groceries: a.groceries + b.groceries,
+    gas: a.gas + b.gas,
+    streaming: a.streaming + b.streaming,
+    transit: a.transit + b.transit,
+    other: a.other + b.other,
+    total: a.total + b.total,
+    months_analyzed: Math.max(a.months_analyzed, b.months_analyzed),
+  };
+}
+
 export async function POST(request: NextRequest) {
   let body: AnalyzePlaidBody;
   try {
@@ -136,16 +157,49 @@ export async function POST(request: NextRequest) {
       // Non-fatal — detection is best-effort
     }
 
-    // Encrypt the access token for storage
-    const encryptedToken = encryptToken(access_token);
+    // Check if there's an existing session to merge into (user adding a second bank)
+    const existingSessionId = request.cookies.get("card_session_id")?.value;
+    let finalSpendSummary = spendSummary;
+    let sessionId: string;
 
-    // Create card_tool_sessions record
+    if (existingSessionId) {
+      const { data: existingSession } = await db
+        .from("card_tool_sessions")
+        .select("spend_summary")
+        .eq("id", existingSessionId)
+        .single();
+
+      if (existingSession?.spend_summary) {
+        finalSpendSummary = mergeSpendSummaries(
+          existingSession.spend_summary as SpendSummary,
+          spendSummary
+        );
+        // Update existing session with merged spend
+        const { error: updateError } = await db
+          .from("card_tool_sessions")
+          .update({ spend_summary: finalSpendSummary })
+          .eq("id", existingSessionId);
+        if (updateError) {
+          console.error("[cards/analyze-plaid] session merge failed:", updateError.message);
+          return NextResponse.json({ error: "Failed to merge bank data" }, { status: 500 });
+        }
+        sessionId = existingSessionId;
+        return NextResponse.json({
+          session_id: sessionId,
+          spend_summary: finalSpendSummary,
+          detected_card_ids: detectedCardIds,
+        });
+      }
+    }
+
+    // No existing session — create a new one
+    const encryptedToken = encryptToken(access_token);
     const { data: session, error } = await db
       .from("card_tool_sessions")
       .insert({
         plaid_access_token: encryptedToken,
         plaid_item_id: item_id,
-        spend_summary: spendSummary,
+        spend_summary: finalSpendSummary,
       })
       .select("id")
       .single();
@@ -155,9 +209,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
     }
 
-    const sessionId = (session as { id: string }).id;
+    sessionId = (session as { id: string }).id;
 
-    const response = NextResponse.json({ session_id: sessionId, spend_summary: spendSummary, detected_card_ids: detectedCardIds });
+    const response = NextResponse.json({ session_id: sessionId, spend_summary: finalSpendSummary, detected_card_ids: detectedCardIds });
     // Set httpOnly session cookie (30 days)
     response.cookies.set("card_session_id", sessionId, {
       httpOnly: true,
