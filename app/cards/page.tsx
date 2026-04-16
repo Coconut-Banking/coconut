@@ -437,7 +437,10 @@ function Step3ExistingCards({ value, onChange, detectedCardIds = [] }: QuizStep3
     setLoading(true);
     setFetchError(false);
     fetch("/api/cards/list")
-      .then((r) => r.json() as Promise<{ cards: SimpleCard[] }>)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<{ cards: SimpleCard[] }>;
+      })
       .then((d) => setCards(d.cards ?? []))
       .catch(() => setFetchError(true))
       .finally(() => setLoading(false));
