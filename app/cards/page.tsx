@@ -123,9 +123,11 @@ function formatCurrency(n: number, country?: string | null) {
 interface PlaidConnectButtonProps {
   onSuccess: (sessionId: string, spendSummary: SpendSummary, detectedCardIds?: string[]) => void;
   onError: (msg: string) => void;
+  compact?: boolean;
+  label?: string;
 }
 
-function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
+function PlaidConnectButton({ onSuccess, onError, compact, label }: PlaidConnectButtonProps) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isExchanging, setIsExchanging] = useState(false);
@@ -200,6 +202,28 @@ function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
     }
   }, [ready, linkToken, open]);
 
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={isLoading || isExchanging}
+        className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors font-medium"
+      >
+        {isLoading || isExchanging ? (
+          <>
+            <Loader2 size={13} className="animate-spin" />
+            {isExchanging ? "Analyzing…" : "Connecting…"}
+          </>
+        ) : (
+          <>
+            + {label ?? "Add another bank"}
+          </>
+        )}
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -214,7 +238,7 @@ function PlaidConnectButton({ onSuccess, onError }: PlaidConnectButtonProps) {
         </>
       ) : (
         <>
-          Connect your bank
+          {label ?? "Connect your bank"}
           <ChevronRight size={15} />
         </>
       )}
@@ -810,6 +834,7 @@ function CardsPageInner() {
   const [quizStep, setQuizStep] = useState(0); // 0-5
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [spendSummary, setSpendSummary] = useState<SpendSummary | null>(null);
+  const [banksConnected, setBanksConnected] = useState(0);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [allCardsMap, setAllCardsMap] = useState<Map<string, CardData>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -872,7 +897,16 @@ function CardsPageInner() {
     setSpendSummary(summary);
     // Always overwrite existingCards so stale detections from a prior session don't persist
     setExistingCards(detectedCardIds ?? []);
+    setBanksConnected(1);
     setStage("quiz");
+  };
+
+  const handleAddBankSuccess = (_sid: string, summary: SpendSummary, detectedCardIds?: string[]) => {
+    // Server already merged spend; update state with merged result
+    setSpendSummary(summary);
+    // Merge detected card IDs (union of both banks)
+    setExistingCards((prev) => Array.from(new Set([...prev, ...(detectedCardIds ?? [])])));
+    setBanksConnected((n) => n + 1);
   };
 
   const handlePlaidError = (msg: string) => {
@@ -1040,6 +1074,21 @@ function CardsPageInner() {
         {/* ── Stage: Quiz ── */}
         {stage === "quiz" && (
           <div>
+            {/* Multi-bank indicator (non-Coconut path only) */}
+            {!isCoconut && banksConnected > 0 && (
+              <div className="flex items-center justify-between mb-4 px-1">
+                <span className="flex items-center gap-1.5 text-xs text-green-700 font-medium">
+                  <Check size={13} className="text-green-600" />
+                  {banksConnected === 1 ? "1 bank connected" : `${banksConnected} banks connected`}
+                </span>
+                <PlaidConnectButton
+                  onSuccess={handleAddBankSuccess}
+                  onError={setError}
+                  compact
+                />
+              </div>
+            )}
+
             {/* Progress bar */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-2">
