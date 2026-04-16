@@ -176,10 +176,15 @@ export async function POST(request: NextRequest) {
           existingSession.spend_summary as SpendSummary,
           spendSummary
         );
-        // Update existing session with merged spend
+        // Update existing session with merged spend and new bank's token
+        const encryptedToken = encryptToken(access_token);
         const { error: updateError } = await db
           .from("card_tool_sessions")
-          .update({ spend_summary: finalSpendSummary })
+          .update({
+            spend_summary: finalSpendSummary,
+            plaid_access_token: encryptedToken,
+            plaid_item_id: item_id,
+          })
           .eq("id", existingSessionId);
         if (updateError) {
           console.error("[cards/analyze-plaid] session merge failed:", updateError.message);
