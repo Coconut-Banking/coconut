@@ -66,12 +66,16 @@ export interface CardRecommendation {
   upgrade_from?: string; // e.g. "vs your current average of $X back"
 }
 
-/** Map credit score bucket to a minimum score value for filtering */
+/** Map credit score bucket to a minimum score value for filtering.
+ *  Cards with credit_score_minimum > this value are excluded.
+ *  Ranges align with standard FICO tiers so mid-tier cards (700 req.)
+ *  correctly appear for "good" users and ultra-premium cards (750 req.)
+ *  appear for "excellent" users. */
 const CREDIT_SCORE_MAP: Record<QuizAnswers["credit_score_bucket"], number> = {
-  excellent: 740,
-  good: 670,
-  fair: 580,
-  poor: 0,
+  excellent: 760, // 740+ FICO — qualifies for virtually every card including ultra-premium
+  good: 700,      // 670–739 FICO — qualifies for most standard and mid-premium cards
+  fair: 640,      // 580–669 FICO — qualifies for entry-level, student and secured cards
+  poor: 580,      // <580 FICO — secured / no-credit-check cards only
 };
 
 /**
@@ -127,6 +131,7 @@ function buildReason(card: CreditCard, spend: SpendProfile, annualValue: number,
     { label: "gas", key: "gas", rateKey: "gas" },
     { label: "streaming", key: "streaming", rateKey: "streaming" },
     { label: "transit", key: "transit", rateKey: "transit" },
+    { label: "everyday purchases", key: "other", rateKey: "base" },
   ];
 
   let bestCat: SpendCat | null = null;
