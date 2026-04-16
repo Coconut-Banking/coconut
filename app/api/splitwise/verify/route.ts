@@ -250,9 +250,7 @@ export async function GET() {
       }
 
       // Count non-deleted mirror expenses
-      const mirrorExpenseCount = (swMirror as { expenses?: unknown[] }).expenses
-        ? 0
-        : swMirror.simplified_debts?.length ?? 0;
+      const mirrorExpenseCount = ((swMirror as { expenses?: unknown[] }).expenses as unknown[] | undefined)?.length ?? 0;
 
       // Compare per-member per-currency
       const memberDrifts: MemberDrift[] = [];
