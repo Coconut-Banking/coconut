@@ -965,10 +965,10 @@ function CardsPageInner() {
             Back
           </button>
         )}
-        <div className="flex items-center gap-2.5 mx-auto">
+        <a href="https://coconut-app.dev" className="flex items-center gap-2.5 mx-auto hover:opacity-80 transition-opacity">
           <img src="/brand/coconut-mark.jpg" alt="Coconut" className="w-6 h-6 rounded-md" />
           <span className="text-sm font-semibold text-gray-700">Coconut</span>
-        </div>
+        </a>
         <div className="w-12" />
       </div>
 
