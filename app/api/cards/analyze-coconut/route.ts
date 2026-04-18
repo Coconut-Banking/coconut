@@ -55,7 +55,7 @@ export async function POST() {
   }
 
   const rows = (transactions ?? []).map((tx) => ({
-    amount: tx.amount as number,
+    amount: -(tx.amount as number),
     primary_category: tx.primary_category as string | null,
     detailed_category: tx.detailed_category as string | null,
     merchant_name: tx.merchant_name as string | null,
