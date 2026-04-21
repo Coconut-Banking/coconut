@@ -322,11 +322,23 @@ describe("categorizeTransactions", () => {
     expect(result.other).toBe(50);
   });
 
-  it("ignores negative amounts (credits/refunds)", () => {
+  it("counts negative amounts as expenses (DB stores expenses negated)", () => {
+    // Coconut DB transactions are stored as negative numbers; Math.abs ensures they are counted
+    const result = categorizeTransactions(
+      [
+        { amount: -100, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+        { amount: -30, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+      ],
+      1
+    );
+    expect(result.dining).toBe(130);
+  });
+
+  it("skips zero-amount transactions", () => {
     const result = categorizeTransactions(
       [
         { amount: 100, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
-        { amount: -30, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+        { amount: 0, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
       ],
       1
     );

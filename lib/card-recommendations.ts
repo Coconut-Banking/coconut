@@ -152,6 +152,11 @@ function buildReason(card: CreditCard, spend: SpendProfile, annualValue: number,
 
   if (bestCat && bestEarnings > 0) {
     const rateForCat = rates[bestCat.rateKey] ?? rates["base"] ?? 1;
+    if (bestCat.key === "other") {
+      return rateForCat >= 2
+        ? `Earns ${rateForCat}x on all purchases, returning ${netStr} net after the ${currencyPrefix}${card.annual_fee} annual fee.`
+        : `With your everyday spending, the solid rewards return you ${netStr} net after the ${currencyPrefix}${card.annual_fee} annual fee.`;
+    }
     const multiplierStr = rateForCat >= 2
       ? `${rateForCat}x on ${bestCat.label}`
       : `solid rewards on ${bestCat.label}`;
@@ -318,8 +323,8 @@ export function categorizeTransactions(
   };
 
   for (const tx of transactions) {
-    // Only count positive amounts (expenses, not income)
-    if (tx.amount <= 0) continue;
+    // Skip zero-amount transactions; negative amounts are valid DB expenses (stored negated)
+    if (tx.amount === 0) continue;
 
     const primary = (tx.primary_category ?? "").toUpperCase();
     const detailed = (tx.detailed_category ?? "").toUpperCase();
@@ -373,7 +378,7 @@ export function categorizeTransactions(
       category = "transit";
     }
 
-    totals[category] += tx.amount;
+    totals[category] += Math.abs(tx.amount);
   }
 
   const months = monthsAnalyzed || 1;
