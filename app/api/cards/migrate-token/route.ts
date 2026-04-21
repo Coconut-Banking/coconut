@@ -128,7 +128,16 @@ export async function POST() {
         // Save the token — institution info fetched above
         await savePlaidToken(effectiveUserId, accessToken, cs.plaid_item_id, institutionName, institutionId);
       } catch (itemGetErr) {
-        console.warn("[cards/migrate-token] itemGet failed, saving without institution info:", itemGetErr instanceof Error ? itemGetErr.message : itemGetErr);
+        const errData = (itemGetErr as { response?: { data?: { error_code?: string } } })
+          ?.response?.data;
+        const hardInvalidCodes = new Set([
+          "INVALID_ACCESS_TOKEN", "ITEM_NOT_FOUND", "ITEM_LOCKED",
+        ]);
+        if (errData?.error_code && hardInvalidCodes.has(errData.error_code)) {
+          console.warn("[cards/migrate-token] token is invalid, skipping save:", errData.error_code);
+          return NextResponse.json({ ok: false, reason: "invalid_token" });
+        }
+        console.warn("[cards/migrate-token] itemGet failed (transient), saving without institution info:", itemGetErr instanceof Error ? itemGetErr.message : itemGetErr);
         await savePlaidToken(effectiveUserId, accessToken, cs.plaid_item_id, null, null);
       }
     } else {
