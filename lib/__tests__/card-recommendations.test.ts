@@ -359,3 +359,59 @@ describe("categorizeTransactions", () => {
     expect(result.total).toBe(300);
   });
 });
+
+// ── BUG-CRITICAL-1: Coconut DB sign convention (analyze-coconut route) ────────
+//
+// Coconut DB stores expenses as NEGATIVE amounts. categorizeTransactions()
+// follows Plaid convention (positive = expense) and guards `if (tx.amount <= 0) continue`.
+// The analyze-coconut route MUST negate amounts before calling categorizeTransactions(),
+// otherwise every expense is skipped and the spend summary is all zeros.
+
+describe("categorizeTransactions — Coconut DB sign convention (BUG-CRITICAL-1)", () => {
+  it("returns all-zero spend when DB amounts are passed without negation (demonstrates the bug)", () => {
+    // Simulate what analyze-coconut route did BEFORE the fix:
+    // DB rows have negative amounts, passed directly without negation.
+    const dbRows = [
+      { amount: -60, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+      { amount: -200, primary_category: "GROCERIES", detailed_category: "SUPERMARKET" },
+      { amount: -80, primary_category: "TRANSPORTATION", detailed_category: "GAS_AND_FUEL" },
+    ];
+    const result = categorizeTransactions(dbRows, 1);
+    // All amounts are <= 0, so they are all skipped — zero spend profile
+    expect(result.dining).toBe(0);
+    expect(result.groceries).toBe(0);
+    expect(result.gas).toBe(0);
+    expect(result.total).toBe(0);
+  });
+
+  it("produces correct non-zero spend when DB amounts are negated before categorization (verifies the fix)", () => {
+    // Simulate what analyze-coconut route does AFTER the fix:
+    // DB rows have negative amounts, negated to positive before categorization.
+    const dbRows = [
+      { amount: -60, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+      { amount: -200, primary_category: "GROCERIES", detailed_category: "SUPERMARKET" },
+      { amount: -80, primary_category: "TRANSPORTATION", detailed_category: "GAS_AND_FUEL" },
+    ];
+    const negatedRows = dbRows.map((tx) => ({ ...tx, amount: -(tx.amount) }));
+    const result = categorizeTransactions(negatedRows, 1);
+    expect(result.dining).toBe(60);
+    expect(result.groceries).toBe(200);
+    expect(result.gas).toBe(80);
+    expect(result.total).toBe(340);
+  });
+
+  it("correctly divides negated DB amounts by months_analyzed", () => {
+    // 3 months of DB transactions — each expense is negative
+    const dbRows = [
+      { amount: -300, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS" },
+      { amount: -600, primary_category: "GROCERIES", detailed_category: "SUPERMARKET" },
+    ];
+    const negatedRows = dbRows.map((tx) => ({ ...tx, amount: -(tx.amount) }));
+    const result = categorizeTransactions(negatedRows, 3);
+    // 300 / 3 = 100 dining/month, 600 / 3 = 200 groceries/month
+    expect(result.dining).toBe(100);
+    expect(result.groceries).toBe(200);
+    expect(result.total).toBe(300);
+    expect(result.months_analyzed).toBe(3);
+  });
+});

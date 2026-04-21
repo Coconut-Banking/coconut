@@ -54,8 +54,11 @@ export async function POST() {
     return NextResponse.json({ error: "Failed to fetch transactions" }, { status: 500 });
   }
 
+  // Coconut DB stores expenses as negative amounts; categorizeTransactions()
+  // follows Plaid convention (positive = expense) and skips amounts <= 0.
+  // Negate to convert DB sign convention → Plaid sign convention.
   const rows = (transactions ?? []).map((tx) => ({
-    amount: tx.amount as number,
+    amount: -(tx.amount as number),
     primary_category: tx.primary_category as string | null,
     detailed_category: tx.detailed_category as string | null,
     merchant_name: tx.merchant_name as string | null,
