@@ -137,7 +137,7 @@ beforeEach(() => {
 
   mockGetEffectiveUserId.mockResolvedValue("effective_user_test");
 
-  mockRateLimit.mockReturnValue({ success: true, remaining: 9, reset: Date.now() + 60_000 });
+  mockRateLimit.mockReturnValue({ success: true, remaining: 9 });
 });
 
 afterEach(() => {
@@ -167,7 +167,7 @@ describe("BUG-CRITICAL-1: DB amounts negated before categorization", () => {
         },
       ],
     });
-    mockGetSupabaseAdmin.mockReturnValue(db as ReturnType<typeof getSupabaseAdmin>);
+    mockGetSupabaseAdmin.mockReturnValue(db as unknown as ReturnType<typeof getSupabaseAdmin>);
 
     const res = await POST();
     expect(res.status).toBe(200);
@@ -191,7 +191,7 @@ describe("BUG-CRITICAL-1: DB amounts negated before categorization", () => {
         },
       ],
     });
-    mockGetSupabaseAdmin.mockReturnValue(db as ReturnType<typeof getSupabaseAdmin>);
+    mockGetSupabaseAdmin.mockReturnValue(db as unknown as ReturnType<typeof getSupabaseAdmin>);
 
     const res = await POST();
     expect(res.status).toBe(200);
@@ -212,7 +212,7 @@ describe("BUG-CRITICAL-1: DB amounts negated before categorization", () => {
         { amount: -600, primary_category: "TRAVEL", detailed_category: "AIRLINES", merchant_name: null, raw_name: null },
       ],
     });
-    mockGetSupabaseAdmin.mockReturnValue(db as ReturnType<typeof getSupabaseAdmin>);
+    mockGetSupabaseAdmin.mockReturnValue(db as unknown as ReturnType<typeof getSupabaseAdmin>);
 
     const res = await POST();
     const json = await res.json();
@@ -229,7 +229,7 @@ describe("BUG-CRITICAL-1: DB amounts negated before categorization", () => {
         { amount: -90, primary_category: "FOOD_AND_DRINK", detailed_category: "RESTAURANTS", merchant_name: null, raw_name: null },
       ],
     });
-    mockGetSupabaseAdmin.mockReturnValue(db as ReturnType<typeof getSupabaseAdmin>);
+    mockGetSupabaseAdmin.mockReturnValue(db as unknown as ReturnType<typeof getSupabaseAdmin>);
 
     const res = await POST();
     const json = await res.json();
@@ -257,7 +257,7 @@ describe("BUG-RESILIENCE-1: DB update error surfaces as HTTP 500", () => {
       existingSession: { id: "existing-session-abc" },
       updateError: { message: "DB connection timeout" },
     });
-    mockGetSupabaseAdmin.mockReturnValue(db as ReturnType<typeof getSupabaseAdmin>);
+    mockGetSupabaseAdmin.mockReturnValue(db as unknown as ReturnType<typeof getSupabaseAdmin>);
 
     const res = await POST();
     expect(res.status).toBe(500);
@@ -274,7 +274,7 @@ describe("BUG-RESILIENCE-1: DB update error surfaces as HTTP 500", () => {
       existingSession: { id: "existing-session-abc" },
       updateError: null, // no error
     });
-    mockGetSupabaseAdmin.mockReturnValue(db as ReturnType<typeof getSupabaseAdmin>);
+    mockGetSupabaseAdmin.mockReturnValue(db as unknown as ReturnType<typeof getSupabaseAdmin>);
 
     const res = await POST();
     expect(res.status).toBe(200);
@@ -291,7 +291,7 @@ describe("BUG-RESILIENCE-1: DB update error surfaces as HTTP 500", () => {
       existingSession: null,
       insertResult: { data: { id: "brand-new-session" }, error: null },
     });
-    mockGetSupabaseAdmin.mockReturnValue(db as ReturnType<typeof getSupabaseAdmin>);
+    mockGetSupabaseAdmin.mockReturnValue(db as unknown as ReturnType<typeof getSupabaseAdmin>);
 
     const res = await POST();
     expect(res.status).toBe(200);
