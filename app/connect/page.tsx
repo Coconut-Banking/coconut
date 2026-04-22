@@ -450,6 +450,7 @@ function ConnectBankContent() {
 
   const hasAutoOpened = useRef(false);
   useEffect(() => {
+    if (step === "connected") return;
     if (!linkToken || !ready || hasAutoOpened.current) return;
     if (receivedRedirectUri || fromApp) {
       hasAutoOpened.current = true;
@@ -459,7 +460,7 @@ function ConnectBankContent() {
       });
       open();
     }
-  }, [receivedRedirectUri, linkToken, ready, open, logPlaidEvent, fromApp]);
+  }, [step, receivedRedirectUri, linkToken, ready, open, logPlaidEvent, fromApp]);
 
   if (fromApp) {
     if (step === "connected") {
