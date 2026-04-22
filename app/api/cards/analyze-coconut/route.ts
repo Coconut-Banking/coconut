@@ -112,10 +112,14 @@ export async function POST() {
   if (existingSession) {
     // Update existing pre-quiz session with fresh spend data
     sessionId = (existingSession as { id: string }).id;
-    await db
+    const { error: updateError } = await db
       .from("card_tool_sessions")
       .update({ spend_summary: spendSummary })
       .eq("id", sessionId);
+    if (updateError) {
+      console.error("[cards/analyze-coconut] update error:", updateError.message);
+      return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
+    }
   } else {
     // Create new session
     const { data: newSession, error: insertError } = await db
