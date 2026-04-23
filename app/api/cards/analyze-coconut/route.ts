@@ -55,7 +55,7 @@ export async function POST() {
   }
 
   const rows = (transactions ?? []).map((tx) => ({
-    amount: tx.amount as number,
+    amount: -(tx.amount as number),
     primary_category: tx.primary_category as string | null,
     detailed_category: tx.detailed_category as string | null,
     merchant_name: tx.merchant_name as string | null,
@@ -112,10 +112,14 @@ export async function POST() {
   if (existingSession) {
     // Update existing pre-quiz session with fresh spend data
     sessionId = (existingSession as { id: string }).id;
-    await db
+    const { error: updateError } = await db
       .from("card_tool_sessions")
       .update({ spend_summary: spendSummary })
       .eq("id", sessionId);
+    if (updateError) {
+      console.error("[cards/analyze-coconut] update error:", updateError.message);
+      return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
+    }
   } else {
     // Create new session
     const { data: newSession, error: insertError } = await db
