@@ -54,7 +54,7 @@ vi.mock("../supabase", () => ({
   }),
 }));
 
-import { saveDetectedSubscriptions } from "../subscription-detect";
+import { saveDetectedSubscriptions, deleteExcludedSubscriptions } from "../subscription-detect";
 import type { DetectedSubscription } from "../subscription-detect";
 
 function makeDetected(overrides?: Partial<DetectedSubscription>): DetectedSubscription {
@@ -181,5 +181,28 @@ describe("saveDetectedSubscriptions — error propagation (BUG-RESILIENCE-1)", (
       expect(mockUpdateResult).not.toHaveBeenCalled();
       expect(mockUpsertResult).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("deleteExcludedSubscriptions — SELECT error propagation (BUG-RESILIENCE-1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("throws when the Supabase SELECT returns an error instead of silently returning 0", async () => {
+    mockSelectResult.mockResolvedValue({
+      data: null,
+      error: { message: "connection timeout" },
+    });
+
+    await expect(deleteExcludedSubscriptions("user-1")).rejects.toThrow(
+      "Failed to load subscriptions: connection timeout"
+    );
+  });
+
+  it("returns 0 when SELECT returns empty rows (no error)", async () => {
+    mockSelectResult.mockResolvedValue({ data: [], error: null });
+
+    await expect(deleteExcludedSubscriptions("user-1")).resolves.toBe(0);
   });
 });
