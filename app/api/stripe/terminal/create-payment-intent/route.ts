@@ -34,11 +34,13 @@ export async function POST(req: NextRequest) {
   }
 
   const amount = Number(body.amount);
+  console.log(`[terminal] create-payment-intent: raw body.amount=${body.amount} parsed=${amount} key_prefix=${key.slice(0,10)}`);
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "Valid amount required" }, { status: 400 });
   }
 
   const amountCents = Math.round(amount * 100);
+  console.log(`[terminal] amountCents=${amountCents}`);
   const clientCurrency = typeof body.currency === "string" && /^[a-zA-Z]{3}$/.test(body.currency)
     ? body.currency.toLowerCase()
     : null;
