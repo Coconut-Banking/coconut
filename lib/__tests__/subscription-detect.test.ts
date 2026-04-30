@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockSelectResult = vi.fn();
 const mockUpdateResult = vi.fn();
 const mockUpsertResult = vi.fn();
+const mockDeleteResult = vi.fn();
 
 /**
  * Build a fully chainable Supabase query builder that terminates with a
@@ -36,11 +37,14 @@ vi.mock("../supabase", () => ({
       if (table === "subscriptions") {
         return {
           // Phase 1 select — batch fetch existing subs: .select().eq().in()
+          // Also used by deleteExcludedSubscriptions SELECT
           select: () => makeChainable(mockSelectResult),
           // Update path (Phase 2)
           update: (_data: unknown) => makeChainable(mockUpdateResult),
           // Upsert path (Phase 2 new subs, and Phase 3 subscription_transactions)
           upsert: (_rows: unknown, _opts?: unknown) => makeChainable(mockUpsertResult),
+          // Delete path (deleteExcludedSubscriptions)
+          delete: () => makeChainable(mockDeleteResult),
         };
       }
       // subscription_transactions and transactions tables — safe no-ops
@@ -54,7 +58,7 @@ vi.mock("../supabase", () => ({
   }),
 }));
 
-import { saveDetectedSubscriptions } from "../subscription-detect";
+import { saveDetectedSubscriptions, deleteExcludedSubscriptions } from "../subscription-detect";
 import type { DetectedSubscription } from "../subscription-detect";
 
 function makeDetected(overrides?: Partial<DetectedSubscription>): DetectedSubscription {
@@ -181,5 +185,30 @@ describe("saveDetectedSubscriptions — error propagation (BUG-RESILIENCE-1)", (
       expect(mockUpdateResult).not.toHaveBeenCalled();
       expect(mockUpsertResult).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("deleteExcludedSubscriptions — SELECT error propagation (BUG-RESILIENCE-1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("throws when the Supabase SELECT returns an error instead of silently returning 0", async () => {
+    // Mock the SELECT to return an error (e.g. connection timeout)
+    mockSelectResult.mockResolvedValue({
+      data: null,
+      error: { message: "connection timeout" },
+    });
+
+    await expect(deleteExcludedSubscriptions("user-1")).rejects.toThrow(
+      "Failed to load subscriptions: connection timeout"
+    );
+  });
+
+  it("returns 0 when SELECT succeeds but there are no active subscriptions", async () => {
+    mockSelectResult.mockResolvedValue({ data: [], error: null });
+
+    const result = await deleteExcludedSubscriptions("user-1");
+    expect(result).toBe(0);
   });
 });
