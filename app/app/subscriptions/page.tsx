@@ -4,6 +4,7 @@ import { RefreshCw, HelpCircle } from "lucide-react";
 import { motion } from "motion/react";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useCurrency } from "@/hooks/useCurrency";
+import { convertCurrency } from "@/lib/currency";
 
 function MerchantAvatar({ name, color }: { name: string; color: string }) {
   return (
@@ -18,7 +19,7 @@ function MerchantAvatar({ name, color }: { name: string; color: string }) {
 
 export default function SubscriptionsPage() {
   const { subscriptions, totalMonthly, totalAnnual, loading, detecting, error, detect, dismiss, dismissPriceChange } = useSubscriptions();
-  const { format: fc, formatAbs: fca } = useCurrency();
+  const { format: fc, formatAbs: fca, currencyCode } = useCurrency();
 
   if (loading) {
     return (
@@ -47,7 +48,7 @@ export default function SubscriptionsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Subscriptions</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {subscriptions.length} active · {fc(totalMonthly)}/mo · {fc(totalAnnual)}/yr
+          {subscriptions.length} active · {fc(convertCurrency(totalMonthly, "USD", currencyCode))}/mo · {fc(convertCurrency(totalAnnual, "USD", currencyCode))}/yr
         </p>
       </div>
       <button
@@ -71,11 +72,11 @@ export default function SubscriptionsPage() {
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-white rounded-2xl border border-gray-100 p-4">
               <div className="text-xs text-gray-400 mb-1">Monthly</div>
-              <div className="text-xl font-bold text-gray-900">{fc(totalMonthly)}</div>
+              <div className="text-xl font-bold text-gray-900">{fc(convertCurrency(totalMonthly, "USD", currencyCode))}</div>
             </div>
             <div className="bg-white rounded-2xl border border-gray-100 p-4">
               <div className="text-xs text-gray-400 mb-1">Annual</div>
-              <div className="text-xl font-bold text-gray-900">{fc(totalAnnual)}</div>
+              <div className="text-xl font-bold text-gray-900">{fc(convertCurrency(totalAnnual, "USD", currencyCode))}</div>
             </div>
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -108,7 +109,7 @@ export default function SubscriptionsPage() {
                         }`}
                         title="Click to dismiss"
                       >
-                        {sub.priceChange.change > 0 ? "↑" : "↓"} {fca(sub.priceChange.change)}
+                        {sub.priceChange.change > 0 ? "↑" : "↓"} {fca(convertCurrency(sub.priceChange.change, "USD", currencyCode))}
                       </button>
                     )}
                   </div>
@@ -118,7 +119,7 @@ export default function SubscriptionsPage() {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-bold text-gray-900">
-                    {fca(sub.amount)}/{sub.frequency === "yearly" ? "yr" : sub.frequency === "semiannual" ? "6mo" : sub.frequency === "quarterly" ? "qtr" : sub.frequency === "biweekly" ? "2wk" : sub.frequency === "weekly" ? "wk" : "mo"}
+                    {fca(convertCurrency(sub.amount, "USD", currencyCode))}/{sub.frequency === "yearly" ? "yr" : sub.frequency === "semiannual" ? "6mo" : sub.frequency === "quarterly" ? "qtr" : sub.frequency === "biweekly" ? "2wk" : sub.frequency === "weekly" ? "wk" : "mo"}
                   </div>
                 </div>
                 <button
@@ -159,7 +160,7 @@ export default function SubscriptionsPage() {
                     <div key={sub.id}>
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="text-gray-600">{sub.merchant}</span>
-                        <span className="text-gray-500">{fc(yearly)}/yr</span>
+                        <span className="text-gray-500">{fc(convertCurrency(yearly, "USD", currencyCode))}/yr</span>
                       </div>
                       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <motion.div
