@@ -15,11 +15,16 @@ export async function GET() {
   }
 
   const db = getSupabaseAdmin();
-  const { data } = await db
+  const { data, error } = await db
     .from("users")
     .select("tier")
     .eq("clerk_user_id", clerkAuth.userId)
     .single();
+
+  if (error) {
+    console.error("[user/tier] GET failed:", error.message);
+    return NextResponse.json({ error: "Failed to fetch tier" }, { status: 500 });
+  }
 
   return NextResponse.json({ tier: data?.tier ?? "free" }, {
     headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=600" },

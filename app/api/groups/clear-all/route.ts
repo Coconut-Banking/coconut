@@ -40,10 +40,14 @@ export async function POST() {
   await safeDelete("splitwise_tokens", { col: "clerk_user_id", val: userId });
 
   // 2. Find + delete owned groups (with all children)
-  const { data: ownedGroups } = await db
+  const { data: ownedGroups, error: ownedGroupsError } = await db
     .from("groups")
     .select("id")
     .eq("owner_id", userId);
+  if (ownedGroupsError) {
+    console.error("[clear-all] Failed to fetch owned groups:", ownedGroupsError.message);
+    return NextResponse.json({ error: "Failed to fetch owned groups" }, { status: 500 });
+  }
   const ownedIds = (ownedGroups ?? []).map((g) => g.id);
   log.push(`owned groups: ${ownedIds.length}`);
 
