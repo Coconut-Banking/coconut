@@ -4,12 +4,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * Tests for saveDetectedSubscriptions error propagation.
  * BUG-RESILIENCE-1: .update()/.upsert() calls inside Promise.all() were missing
  * error destructuring, silently swallowing Supabase DB errors.
+ *
+ * BUG-CRITICAL-2: deleteExcludedSubscriptions SELECT missing { error } destructuring —
+ * a DB failure silently returned 0 instead of throwing.
  */
 
 // Configurable mock functions — reset in beforeEach
 const mockSelectResult = vi.fn();
 const mockUpdateResult = vi.fn();
 const mockUpsertResult = vi.fn();
+const mockDeleteResult = vi.fn();
 
 /**
  * Build a fully chainable Supabase query builder that terminates with a
@@ -41,6 +45,8 @@ vi.mock("../supabase", () => ({
           update: (_data: unknown) => makeChainable(mockUpdateResult),
           // Upsert path (Phase 2 new subs, and Phase 3 subscription_transactions)
           upsert: (_rows: unknown, _opts?: unknown) => makeChainable(mockUpsertResult),
+          // Delete path (deleteExcludedSubscriptions)
+          delete: () => makeChainable(mockDeleteResult),
         };
       }
       // subscription_transactions and transactions tables — safe no-ops
@@ -54,7 +60,7 @@ vi.mock("../supabase", () => ({
   }),
 }));
 
-import { saveDetectedSubscriptions } from "../subscription-detect";
+import { saveDetectedSubscriptions, deleteExcludedSubscriptions } from "../subscription-detect";
 import type { DetectedSubscription } from "../subscription-detect";
 
 function makeDetected(overrides?: Partial<DetectedSubscription>): DetectedSubscription {
@@ -78,6 +84,7 @@ function makeDetected(overrides?: Partial<DetectedSubscription>): DetectedSubscr
 describe("saveDetectedSubscriptions — error propagation (BUG-RESILIENCE-1)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDeleteResult.mockResolvedValue({ data: null, error: null });
   });
 
   describe("empty detected list", () => {
@@ -181,5 +188,30 @@ describe("saveDetectedSubscriptions — error propagation (BUG-RESILIENCE-1)", (
       expect(mockUpdateResult).not.toHaveBeenCalled();
       expect(mockUpsertResult).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("deleteExcludedSubscriptions — SELECT error handling (BUG-CRITICAL-2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDeleteResult.mockResolvedValue({ data: null, error: null });
+  });
+
+  it("throws when the Supabase SELECT returns an error (BUG: was silently returning 0)", async () => {
+    // Simulate a DB error on the initial SELECT
+    mockSelectResult.mockResolvedValue({
+      data: null,
+      error: { message: "permission denied for table subscriptions" },
+    });
+
+    await expect(deleteExcludedSubscriptions("user-1")).rejects.toThrow(
+      "Failed to load subscriptions: permission denied for table subscriptions"
+    );
+  });
+
+  it("returns 0 when the SELECT returns an empty list (no active subscriptions)", async () => {
+    mockSelectResult.mockResolvedValue({ data: [], error: null });
+
+    await expect(deleteExcludedSubscriptions("user-1")).resolves.toBe(0);
   });
 });
