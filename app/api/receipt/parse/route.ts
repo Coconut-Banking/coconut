@@ -60,13 +60,27 @@ export async function POST(req: NextRequest) {
       const sharp = (await import("sharp")).default;
       finalBuffer = Buffer.from(await sharp(buffer).jpeg({ quality: 90 }).toBuffer());
       mimeType = "image/jpeg";
-      console.log("[receipt-parse] converted HEIC to JPEG, new size:", finalBuffer.length);
-    } catch (convErr) {
-      console.error("[receipt-parse] HEIC conversion failed:", convErr);
-      return NextResponse.json(
-        { error: "Unsupported image format (HEIC). Please use JPEG or PNG." },
-        { status: 400 }
-      );
+      console.log("[receipt-parse] converted HEIC to JPEG via sharp, new size:", finalBuffer.length);
+    } catch (sharpErr) {
+      console.warn("[receipt-parse] sharp HEIC failed, trying heic-convert:", sharpErr);
+      try {
+        const heicConvert = (await import("heic-convert")).default;
+        finalBuffer = Buffer.from(
+          await heicConvert({
+            buffer,
+            format: "JPEG",
+            quality: 0.9,
+          })
+        );
+        mimeType = "image/jpeg";
+        console.log("[receipt-parse] converted HEIC to JPEG via heic-convert, new size:", finalBuffer.length);
+      } catch (convErr) {
+        console.error("[receipt-parse] HEIC conversion failed:", convErr);
+        return NextResponse.json(
+          { error: "Unsupported image format (HEIC). Please use JPEG or PNG." },
+          { status: 400 }
+        );
+      }
     }
   } else {
     mimeType = detectedFormat === "jpeg" ? "image/jpeg"
