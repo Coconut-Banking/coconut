@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
-import { getMaxSettlementAllowed } from "@/lib/group-balances";
+import { recordStripeSettlement } from "@/lib/stripe-settlement-record";
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -44,61 +44,58 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  // Terminal Tap to Pay: PaymentIntent succeeded with settlement metadata
+  async function recordFromPaymentIntent(
+    pi: Stripe.PaymentIntent,
+    source: "terminal" | "payment_link",
+  ): Promise<NextResponse | null> {
+    const { group_id, payer_member_id, receiver_member_id } = pi.metadata ?? {};
+    if (!group_id || !payer_member_id || !receiver_member_id) return null;
+
+    const amountCents = pi.amount_received ?? pi.amount ?? 0;
+    const currency = (pi.currency ?? "usd").toUpperCase();
+    const result = await recordStripeSettlement({
+      groupId: group_id,
+      payerMemberId: payer_member_id,
+      receiverMemberId: receiver_member_id,
+      amount: amountCents / 100,
+      currency,
+      externalReference: pi.id,
+      source,
+    });
+
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return null;
+  }
+
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
-    const { group_id, payer_member_id, receiver_member_id, source } = pi.metadata ?? {};
+    const source = pi.metadata?.source;
+    if (source === "terminal" || source === "payment_link") {
+      const errRes = await recordFromPaymentIntent(pi, source);
+      if (errRes) return errRes;
+    }
+  }
 
-    if (source === "terminal" && group_id && payer_member_id && receiver_member_id) {
-      const db = getSupabase();
-
-      const { data: existing } = await db
-        .from("settlements")
-        .select("id")
-        .eq("external_reference", pi.id)
-        .maybeSingle();
-
-      if (existing) return NextResponse.json({ received: true });
-
-      const amountCents = pi.amount_received ?? pi.amount ?? 0;
-      const amount = amountCents / 100;
-
-      const piCurrency = (pi.currency ?? pi.metadata?.original_currency ?? "usd").toUpperCase();
-
-      const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
-        group_id,
-        payer_member_id,
-        receiver_member_id,
-        piCurrency
-      );
-
-      if (!allowed || maxAmount <= 0) {
-        console.error("[stripe-webhook] terminal settlement not allowed — returning 500 for retry:", { allowed, maxAmount, reason });
-        return NextResponse.json({ error: "Settlement validation failed" }, { status: 500 });
-      } else {
-        const amountToInsert = Math.min(amount, maxAmount);
-        const { error } = await db.from("settlements").insert({
-          group_id,
-          payer_member_id,
-          receiver_member_id,
-          amount: Math.round(amountToInsert * 100) / 100,
-          method: "stripe",
-          status: "completed",
-          external_reference: pi.id,
-          iso_currency_code: piCurrency,
-        });
-
-        if (error) {
-          console.error("[stripe-webhook] terminal settlement insert failed:", error);
-          return NextResponse.json({ error: "DB insert failed" }, { status: 500 });
-        } else {
-          console.log("[stripe-webhook] terminal settlement recorded", { group_id, amount: amountToInsert });
-        }
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    if (session.metadata?.source === "payment_link" && session.payment_intent) {
+      const piId =
+        typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : session.payment_intent.id;
+      try {
+        const pi = await stripe.paymentIntents.retrieve(piId);
+        const errRes = await recordFromPaymentIntent(pi, "payment_link");
+        if (errRes) return errRes;
+      } catch (e) {
+        console.error("[stripe-webhook] checkout.session.completed PI retrieve failed:", e);
+        return NextResponse.json({ error: "Could not record settlement" }, { status: 500 });
       }
     }
   }
 
-  // Stripe Connect: update onboarding status when account details change
   if (event.type === "account.updated") {
     const account = event.data.object as Stripe.Account;
     const db = getSupabase();
