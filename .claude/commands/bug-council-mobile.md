@@ -4,6 +4,8 @@ You are the **Bug Council Orchestrator** for the Coconut mobile app (Expo/React 
 
 **Core principle**: Every bug must be provable. If you can't describe a concrete scenario where a real user hits it, it's not a bug.
 
+**v3 rules**: Read `docs/BUG_COUNCIL_FALSE_POSITIVES.md` in the coconut repo (path given in runner extras). **Never open a PR** for fixes already on `origin/main`, lockfile-only diffs, or doc-only audit-history lines.
+
 ---
 
 ## Phase 0: Health Check
@@ -21,20 +23,16 @@ Record:
 - **Baseline type errors**: any tsc errors already present (these are NOT new bugs)
 - **Baseline test failures**: any tests already failing (these are NOT new bugs)
 
-### Step 2: Identify recent changes
+### Step 2: Identify recent changes (since last successful audit)
+
+The runner provides `DIFF_BASE` in the v3 extras block. Use:
 
 ```bash
-LAST_AUDIT=$(git describe --tags --abbrev=0 --match 'bug-council-*' 2>/dev/null || echo '')
-if [ -z "$LAST_AUDIT" ]; then
-  DIFF_BASE="HEAD~50"
-else
-  DIFF_BASE="$LAST_AUDIT"
-fi
-echo "=== CHANGED FILES SINCE $DIFF_BASE ===" && git diff --name-only "$DIFF_BASE"..HEAD
-echo "=== DIFF STAT ===" && git diff --stat "$DIFF_BASE"..HEAD
+echo "=== CHANGED ON MAIN SINCE LAST AUDIT ===" && git diff --name-only "$DIFF_BASE"..origin/main
+echo "=== DIFF STAT ===" && git diff --stat "$DIFF_BASE"..origin/main
 ```
 
-Save the list of changed files. Agents will prioritize these.
+Save the list. Agents must spend **most of their time** on these files before broad domain sweeps.
 
 ### Step 3: Create the branch
 
@@ -153,7 +151,12 @@ If you find NO bugs: "CLEAN: No bugs found in {DOMAIN_NAME}. Files investigated:
 
 ## Phase 2: Verify
 
-After ALL 4 agents return, collect their findings and spawn ONE **Devil's Advocate** agent.
+After ALL 4 agents return:
+
+1. Read `docs/BUG_COUNCIL_FALSE_POSITIVES.md` (coconut repo) and reject matching reports unless `git show origin/main:FILE` proves the bug still exists.
+2. For each remaining bug, run a quick main check: `git grep -n '{pattern}' origin/main -- path/` or read the file on main.
+
+Then spawn ONE **Devil's Advocate** agent.
 
 ### Devil's Advocate Prompt
 
@@ -217,15 +220,16 @@ You are a Bug Fixer agent for a React Native / Expo app. Fix ONE bug.
 
 ## Instructions
 
-1. Read the file(s) in the bug report. Confirm the bug exists as described.
-2. Implement the MINIMUM fix. Do not refactor, do not improve surrounding code, do not add comments.
-3. Write a jest test for the fix:
+1. Read the file(s) on **origin/main** (`git show origin/main:path`). If main already has the fix → **SKIP: already on main** (no commit).
+2. Confirm the bug exists on main before editing.
+3. Implement the MINIMUM fix. **Never modify `package-lock.json`** unless a dependency bug was verified and `npm install` was required. Do not refactor unrelated code.
+4. Write a jest test for the fix:
    - The test should FAIL against the old code and PASS with the fix
    - Place it next to the source file (e.g., `lib/foo.ts` → `lib/foo.test.ts`, or add to existing test file)
    - For pure logic (lib/, hooks/ helpers): always write a test
    - For React component rendering or native-only behavior: document a manual test instead and explain why a unit test isn't practical
-4. Run the test to verify: `npx jest {test_file} --verbose`
-5. Stage and commit:
+5. Run the test to verify: `npx jest {test_file} --verbose`
+6. Stage and commit:
    ```
    fix({DOMAIN_CODE}): {bug title}
 
@@ -235,8 +239,8 @@ You are a Bug Fixer agent for a React Native / Expo app. Fix ONE bug.
    Severity: {P0|P1|P2}
    Test: {test file path, or "manual: {reason}"}
    ```
-6. Do NOT push. Do NOT create a PR.
-7. If the bug does not exist as described, respond with "SKIP: {reason}" and do NOT commit.
+7. Do NOT push. Do NOT create a PR.
+8. If the bug does not exist as described, respond with "SKIP: {reason}" and do NOT commit.
 ```
 
 ### Execution Strategy
@@ -285,7 +289,9 @@ Look at all verified bugs (including disproved and deferred). If 2+ bugs share a
 
 ### Step 3: Update cursor rules (if warranted)
 
-If a pattern appeared 3+ times, read `.cursor/rules/common-bugs.mdc` (create if needed) in the coconut-app repo. Append the pattern. Format:
+Only if a **new** pattern appeared 3+ times **and** you fixed real code bugs. Do **not** open a PR that only appends audit-history lines to `common-bugs.mdc`.
+
+If warranted, read `.cursor/rules/common-bugs.mdc` (create if needed) in the coconut-app repo. Append the pattern. Format:
 
 ```markdown
 ---
@@ -301,9 +307,15 @@ globs:
 - Call `setLoading(false)` unconditionally in `finally` — never gate on flags
 ```
 
-### Step 4: Create PR
+### Step 4: Create PR (only if there are fix commits)
 
 ```bash
+# Must have at least one fix commit vs main
+git log --oneline origin/main..HEAD | grep -E '^[a-f0-9]+ fix' || { echo "PR_NUMBER=none"; exit 0; }
+
+# Reject lockfile-only or doc-only diffs
+git diff --name-only origin/main..HEAD | grep -qvE '^(package-lock\.json|\.cursor/rules/common-bugs\.mdc)$' || { echo "PR_NUMBER=none"; exit 0; }
+
 gh pr create --title "fix: bug council audit (mobile) — {N} bugs fixed" --body "$(cat <<'EOF'
 ## Bug Council Audit Results (Mobile)
 
@@ -344,10 +356,12 @@ gh pr create --title "fix: bug council audit (mobile) — {N} bugs fixed" --body
 - [x] `npm test` — passes ({N} new tests added, all green)
 
 ---
-Generated by Bug Council v2 (evidence-based, mobile)
+Generated by Bug Council v3 (evidence-based, mobile)
 EOF
 )"
 ```
+
+After create, print: `PR_NUMBER=<number>`. If skipped: `PR_NUMBER=none`.
 
 ### Step 5: Get CI green
 
@@ -365,5 +379,7 @@ EOF
 - Do NOT add features, comments, documentation, or type annotations to unchanged code
 - Each fix is the minimum change necessary
 - Bugs requiring product decisions: report but do NOT fix
-- All fixes go on ONE branch, ONE PR
+- All fixes go on ONE branch, ONE PR per run
+- **Never** stack duplicate PRs — runner keeps at most one open `fix/bug-council-*` PR
 - False positives damage trust — be precise, not prolific
+- **Never** send Stripe PI amounts in cents from mobile (backend converts dollars)

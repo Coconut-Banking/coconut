@@ -1,6 +1,6 @@
 #!/bin/bash
-# Bug Council Runner — Runs the daily bug council audit for BOTH repos (coconut + coconut-app),
-# polls CI, and sends ONE consolidated Telegram notification.
+# Bug Council Runner v3 — Runs the daily bug council audit for BOTH repos (coconut + coconut-app),
+# prunes stale PRs, gates low-value diffs, and sends ONE consolidated Telegram notification.
 # Uses dedicated git worktrees so it never touches your main checkouts.
 #
 # Usage:
@@ -12,6 +12,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COCONUT_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=bug-council-lib.sh
+source "$SCRIPT_DIR/bug-council-lib.sh"
+export BUG_COUNCIL_LOG_DIR="$COCONUT_REPO/.bug-council-logs"
+export COCONUT_REPO
 
 export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$PATH"
 
@@ -27,8 +31,7 @@ DATE_TAG=$(date +%Y%m%d)
 
 : "${COCONUT_APP_REPO:="$(dirname "$COCONUT_REPO")/coconut-app"}"
 
-LOG_DIR="$COCONUT_REPO/.bug-council-logs"
-STATE_FILE="$LOG_DIR/.last-successful-run"
+LOG_DIR="$BUG_COUNCIL_LOG_DIR"
 
 : "${COCONUT_PROD_URL:="https://coconut-lemon.vercel.app"}"
 : "${SUPABASE_SERVICE_ROLE_KEY:=""}"
@@ -165,8 +168,11 @@ run_for_repo() {
 
   echo ""
   echo "================================================================"
-  echo "  Bug Council v2: $name ($label)"
+  echo "  Bug Council v3: $name ($label)"
   echo "================================================================"
+
+  bug_council_log "Pruning stale open PRs on $full_repo..."
+  bug_council_prune_open_prs "$full_repo"
 
   # Ensure worktree parent dir exists
   mkdir -p "$(dirname "$work_dir")"
@@ -193,9 +199,14 @@ run_for_repo() {
     claude_prompt=$(cat "$COCONUT_REPO/.claude/commands/$claude_cmd")
   fi
 
-  echo "Starting Bug Council v2 audit for $name..."
+  local prompt_extras
+  prompt_extras=$(bug_council_prompt_extras "$name" "$full_repo" "$work_dir")
+
+  echo "Starting Bug Council v3 audit for $name..."
   local claude_output
   claude_output=$("$CLAUDE" -p "$claude_prompt
+
+$prompt_extras
 
 Execute the Bug Council exactly as described above. This is an automated run. Do not ask for confirmation — proceed through all phases automatically.
 
@@ -220,13 +231,20 @@ If no bugs were found and no PR was created, output: PR_NUMBER=none" \
       --jq '.[] | select(.headRefName | startswith("fix/bug-council")) | .number' 2>/dev/null | head -1 || true)
   fi
 
-  if [ -z "$pr_number" ]; then
+  if [ -z "$pr_number" ] || [ "$pr_number" = "none" ]; then
     echo "No PR found for $name. Clean audit or failure — check logs."
-    RESULTS+=("$name ($label): clean (no bugs found)")
+    bug_council_save_state "$name" "$work_dir"
+    RESULTS+=("$name ($label): clean (no bugs / no PR)")
     return
   fi
 
   echo "PR #$pr_number created for $name."
+
+  if ! bug_council_gate_pr "$pr_number" "$full_repo"; then
+    RESULTS+=("$name ($label): PR #$pr_number auto-closed (failed quality gate — see logs)")
+    bug_council_save_state "$name" "$work_dir"
+    return
+  fi
 
   # ── Auto-resolve merge conflicts ───────────────────────────────────────────
   local mergeable
@@ -329,6 +347,10 @@ Do NOT create a new PR." \
 EOF
 )"
         ci_result="failing"
+        fail_kind=$(bug_council_classify_pr "$pr_number" "$full_repo")
+        if [ "$fail_kind" = "lockfile_only" ] || [ "$fail_kind" = "empty" ] || [ "$fail_kind" = "doc_only" ]; then
+          bug_council_close_pr "$pr_number" "$full_repo" "Auto-closed: CI failed and PR failed quality gate ($fail_kind)."
+        fi
         break
       fi
     fi
@@ -338,6 +360,7 @@ EOF
 
   case "$ci_result" in
     passed)
+      bug_council_save_state "$name" "$work_dir"
       RESULTS+=("$name ($label): PR #$pr_number — CI passing
 https://github.com/$full_repo/pull/$pr_number")
       ;;
@@ -356,85 +379,6 @@ EOF
 https://github.com/$full_repo/pull/$pr_number")
       ;;
   esac
-}
-
-# ── Splitwise parity check ────────────────────────────────────────────────────
-run_parity_check() {
-  echo ""
-  echo "================================================================"
-  echo "  Splitwise Mirror Parity Check"
-  echo "================================================================"
-
-  if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-    echo "SUPABASE_SERVICE_ROLE_KEY not set — skipping parity check"
-    RESULTS+=("Mirror parity: skipped (no service key)")
-    return
-  fi
-
-  local response
-  response=$(curl -s --max-time 90 \
-    -H "x-admin-key: $SUPABASE_SERVICE_ROLE_KEY" \
-    "$COCONUT_PROD_URL/api/cron/splitwise-parity" 2>/dev/null || echo "")
-
-  if [ -z "$response" ]; then
-    echo "Parity check failed — could not reach $COCONUT_PROD_URL"
-    RESULTS+=("Mirror parity: ❌ unreachable")
-    return
-  fi
-
-  local ok
-  ok=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('ok') else 'false')" 2>/dev/null || echo "error")
-
-  local parity_line heartbeat_line e2e_line
-  parity_line=$(echo "$response" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-results=d.get('parity',[])
-if not results:
-    print('✅ no mirrors configured')
-else:
-    bad=[r['group'] for r in results if not r.get('parity')]
-    if bad:
-        print('⚠️ drift in: ' + ', '.join(bad))
-    else:
-        print('✅ ' + ', '.join(r['group'] for r in results) + ' in sync')
-" 2>/dev/null || echo "❌ parse error")
-
-  heartbeat_line=$(echo "$response" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-results=d.get('heartbeat',[])
-if not results:
-    print('✅ no mirrors configured')
-else:
-    bad=[r['group'] for r in results if not r.get('ok')]
-    if bad:
-        print('❌ write pipeline broken: ' + ', '.join(bad))
-    else:
-        print('✅ write pipeline ok (' + ', '.join(r['group'] for r in results) + ')')
-" 2>/dev/null || echo "❌ parse error")
-
-  e2e_line=$(echo "$response" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-results=d.get('e2e',[])
-if not results:
-    print('✅ no mirrors configured')
-else:
-    bad=[r['group'] for r in results if not r.get('ok')]
-    if bad:
-        print('❌ E2E failed: ' + ', '.join(bad))
-    else:
-        print('✅ end-to-end ok (' + ', '.join(r['group'] for r in results) + ')')
-" 2>/dev/null || echo "❌ parse error")
-
-  echo "Parity check:       $parity_line"
-  echo "SW mirror write:    $heartbeat_line"
-  echo "Coconut → SW write: $e2e_line"
-  RESULTS+=("🪞 *Splitwise Mirror*
-  Parity check: $parity_line
-  SW mirror write: $heartbeat_line
-  Coconut → SW write: $e2e_line")
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -469,13 +413,8 @@ for config in "${REPO_CONFIGS[@]}"; do
   run_for_repo "$name" "$full_repo" "$main_repo" "$work_dir" "$has_ci" "$claude_cmd" || true
 done
 
-run_parity_check || true
-
-# ── Save state: record this run's HEAD SHA so next run knows what changed ────
-git -C "$COCONUT_REPO" rev-parse HEAD > "$STATE_FILE" 2>/dev/null || true
-
 # ── Consolidated notification ────────────────────────────────────────────────
-TELEGRAM_MSG="*Bug Council v2 Complete*"
+TELEGRAM_MSG="*Bug Council v3 Complete*"
 for result in "${RESULTS[@]}"; do
   TELEGRAM_MSG="$TELEGRAM_MSG
 

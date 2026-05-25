@@ -1,6 +1,7 @@
 #!/bin/bash
-# Bug Council v2 — Local Cron Setup
+# Bug Council v3 — Local Cron Setup
 # Runs the bug council audit every weekday at 9 AM local time.
+# v3: prunes stale PRs, gates empty/lockfile-only diffs, checks fixes against main before opening PRs.
 # Requires: Claude Code CLI installed and authenticated (claude login).
 #
 # Usage:
@@ -35,7 +36,7 @@ case "${1:-install}" in
     ;;
 
   run)
-    echo "Running bug council v2 (full audit, both repos)..."
+    echo "Running bug council v3 (full audit, both repos)..."
     cd "$REPO_DIR"
     git fetch origin main && git checkout main && git pull origin main
     exec "$RUNNER"
@@ -55,7 +56,7 @@ case "${1:-install}" in
 
   status)
     if launchctl list | grep -q "$LABEL"; then
-      echo "Bug council v2 is INSTALLED and scheduled."
+      echo "Bug council v3 is INSTALLED and scheduled."
       echo "Plist:  $PLIST"
       echo "Runner: $RUNNER"
       echo "Logs:   $LOG_DIR/"
@@ -149,7 +150,7 @@ PLIST
 launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST"
 
 echo ""
-echo "Bug Council v2 cron job installed."
+echo "Bug Council v3 cron job installed."
 echo ""
 echo "  Schedule:  Weekdays at 9:00 AM (local time)"
 echo "  Runner:    $RUNNER"
