@@ -5,7 +5,6 @@ import { revalidateTag } from "next/cache";
 import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
-import { shadowDeleteExpense, shadowUpdateExpense } from "@/lib/splitwise-shadow";
 
 export async function DELETE(
   _req: NextRequest,
@@ -36,10 +35,6 @@ export async function DELETE(
       .maybeSingle();
     linkedTxClerkUserId = (tx?.clerk_user_id as string | undefined) ?? null;
   }
-
-  void shadowDeleteExpense(userId, id).catch((err) =>
-    console.error("[shadow] split-tx delete failed:", err)
-  );
 
   await db.from("split_transactions").delete().eq("id", id);
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
@@ -165,27 +160,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Failed to update expense" }, { status: 500 });
   }
 
-  let shadowPayerMemberId: string | undefined = payerMemberId ?? undefined;
-  if (sharesForRpc && sharesForRpc.length > 0 && !shadowPayerMemberId) {
-    const { data: payerRow } = await db
-      .from("split_transactions")
-      .select("payer_member_id")
-      .eq("id", id)
-      .maybeSingle();
-    shadowPayerMemberId = (payerRow?.payer_member_id as string | undefined) ?? undefined;
-  }
-
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
-
-  void shadowUpdateExpense({
-    clerkUserId: userId,
-    splitTransactionId: id,
-    groupId: result.groupId,
-    description: description ?? undefined,
-    amount: newAmount ?? undefined,
-    payerMemberId: shadowPayerMemberId,
-    shares: sharesForRpc && sharesForRpc.length > 0 ? sharesForRpc : undefined,
-  }).catch((err) => console.error("[shadow] split-tx update failed:", err));
 
   return NextResponse.json({ ok: true, id });
 }

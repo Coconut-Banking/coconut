@@ -13,8 +13,6 @@ import {
 import { createRecurringExpense, processRecurringExpenses } from "@/lib/recurring-expenses";
 import { formatCurrency } from "@/lib/currency";
 import { notifyGroupMembers } from "@/lib/push-sender";
-import { shadowCreateExpense } from "@/lib/splitwise-shadow";
-
 
 let _hasPayerAndDateCols: boolean | null = null;
 
@@ -156,19 +154,6 @@ export async function POST(req: NextRequest) {
         { type: "manual_expense", groupId, splitTransactionId: splitTxId! }
       );
 
-      if (effectivePayer) {
-        void shadowCreateExpense({
-          clerkUserId: userId,
-          groupId,
-          splitTransactionId: splitTxId!,
-          amount,
-          description,
-          currency,
-          date: expenseDate,
-          payerMemberId: effectivePayer,
-          shares,
-        }).catch((err) => console.error("[shadow] manual-expense create failed:", err));
-      }
     });
   } else {
     // ── Slow path: personKey / equal-split — needs member lookup first ──
@@ -347,17 +332,6 @@ export async function POST(req: NextRequest) {
       { type: "manual_expense", groupId, splitTransactionId: splitTxId }
     );
 
-    void shadowCreateExpense({
-      clerkUserId: userId,
-      groupId,
-      splitTransactionId: splitTxId,
-      amount,
-      description,
-      currency,
-      date: expenseDate,
-      payerMemberId: effectivePayer,
-      shares,
-    }).catch((err) => console.error("[shadow] manual-expense create failed:", err));
   }
 
   revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");

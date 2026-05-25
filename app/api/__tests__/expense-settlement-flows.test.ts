@@ -422,13 +422,6 @@ vi.mock("@/lib/push-sender", () => ({
   notifyGroupMembers: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@/lib/splitwise-shadow", () => ({
-  shadowCreateExpense: vi.fn().mockResolvedValue(undefined),
-  shadowDeleteExpense: vi.fn().mockResolvedValue(undefined),
-  shadowUpdateExpense: vi.fn().mockResolvedValue(undefined),
-  shadowRecordSettlement: vi.fn().mockResolvedValue(undefined),
-}));
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function addGroup(
