@@ -137,6 +137,11 @@ async function paddleAistudioOcr(
   }
 }
 
+/** On by default — removes promos, addresses, and noisy OCR lines. Set RECEIPT_SKIP_LLM_CLEANUP=true to skip (~1–2s). */
+function shouldRunLlmCleanup(): boolean {
+  return process.env.RECEIPT_SKIP_LLM_CLEANUP !== "true";
+}
+
 /** LLM cleanup stage: remove irrelevant lines, normalize item names for super clean output. */
 async function cleanReceiptWithLLM(parsed: ParsedReceipt): Promise<ParsedReceipt> {
   if (!openai) return parsed;
@@ -209,9 +214,11 @@ export async function parseReceiptImage(
     if (text && text.trim()) {
       try {
         const parsed = await parseReceiptFromText(text);
-        const cleaned = await cleanReceiptWithLLM(parsed);
-        assertParsedReceiptHasContent(cleaned);
-        return cleaned;
+        const result = shouldRunLlmCleanup()
+          ? await cleanReceiptWithLLM(parsed)
+          : parsed;
+        assertParsedReceiptHasContent(result);
+        return result;
       } catch (e) {
         console.warn(
           "[receipt-ocr] GPT parse of PaddleOCR text failed, trying next:",
@@ -233,9 +240,11 @@ export async function parseReceiptImage(
       });
       if (res.ok) {
         const data = validateParsedReceipt(await res.json());
-        const cleaned = await cleanReceiptWithLLM(data);
-        assertParsedReceiptHasContent(cleaned);
-        return cleaned;
+        const result = shouldRunLlmCleanup()
+          ? await cleanReceiptWithLLM(data)
+          : data;
+        assertParsedReceiptHasContent(result);
+        return result;
       }
     } catch (e) {
       console.warn("[receipt-ocr] PaddleOCR API failed, falling back to GPT:", e);
@@ -262,7 +271,8 @@ export async function parseReceiptImage(
             type: "image_url",
             image_url: {
               url: `data:${mimeType};base64,${imageBase64}`,
-              detail: "high",
+              // Images are downscaled server-side; "auto" avoids redundant high-res tokens.
+              detail: "auto",
             },
           },
         ],
@@ -280,7 +290,9 @@ export async function parseReceiptImage(
   } catch (e) {
     throw new Error(`[receipt-ocr] Malformed AI response when parsing receipt image: ${e instanceof Error ? e.message : String(e)}`);
   }
-  const cleaned = await cleanReceiptWithLLM(parsed);
-  assertParsedReceiptHasContent(cleaned);
-  return cleaned;
+  const result = shouldRunLlmCleanup()
+    ? await cleanReceiptWithLLM(parsed)
+    : parsed;
+  assertParsedReceiptHasContent(result);
+  return result;
 }

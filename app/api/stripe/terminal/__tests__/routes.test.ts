@@ -25,4 +25,9 @@ describe("Stripe Terminal API routes", () => {
     const mod = await import("../../connect/dashboard-link/route");
     expect(mod.POST).toBeDefined();
   });
+
+  it("create-payment-link POST compiles and exports", async () => {
+    const mod = await import("../../create-payment-link/route");
+    expect(mod.POST).toBeDefined();
+  });
 });

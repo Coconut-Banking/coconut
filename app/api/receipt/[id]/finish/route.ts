@@ -6,6 +6,14 @@ import { getSupabase } from "@/lib/supabase";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import { canAccessGroup } from "@/lib/group-access";
 import { paidAmountFromSplitRow } from "@/lib/split-transaction-helpers";
+import {
+  buildMemberNameMap,
+  collectMissingAssigneeNames,
+  peopleToEnsureInGroup,
+  resolveAssignmentMemberId,
+  type ReceiptFinishPerson,
+} from "@/lib/receipt-finish-members";
+import { findClerkUserIdByEmail } from "@/lib/clerk-user-lookup";
 
 export async function POST(
   req: NextRequest,
@@ -14,7 +22,10 @@ export async function POST(
   const [{ userId }, { id }, body] = await Promise.all([
     auth(),
     params,
-    req.json().catch(() => null) as Promise<{ groupId?: string } | null>,
+    req.json().catch(() => null) as Promise<{
+      groupId?: string;
+      people?: Array<{ name?: string; email?: string | null }>;
+    } | null>,
   ]);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,10 +78,63 @@ export async function POST(
   if (groupError || !group) {
     return NextResponse.json({ error: "Group not found" }, { status: 404 });
   }
-  const members = membersResult.data;
-  if (!members || members.length === 0) {
+  let members = membersResult.data ?? [];
+  if (members.length === 0) {
     return NextResponse.json({ error: "No members in group" }, { status: 400 });
   }
+
+  const people: ReceiptFinishPerson[] = Array.isArray(body.people)
+    ? body.people
+        .filter((p) => typeof p?.name === "string" && p.name.trim())
+        .map((p) => ({
+          name: p.name!.trim(),
+          email: typeof p.email === "string" ? p.email : null,
+        }))
+    : [];
+
+  const assigneeNames: string[] = [];
+  for (const item of receipt.receipt_items ?? []) {
+    for (const a of item.receipt_assignments ?? []) {
+      if (a.assignee_name) assigneeNames.push(a.assignee_name);
+    }
+  }
+
+  let memberByName = buildMemberNameMap(members);
+  const missingNames = collectMissingAssigneeNames(assigneeNames, memberByName);
+  const toAdd = peopleToEnsureInGroup(people, missingNames);
+
+  for (const person of toAdd) {
+    const key = person.name.toLowerCase();
+    if (memberByName.has(key)) continue;
+
+    let linkedUserId: string | null = null;
+    const email = person.email?.trim().toLowerCase() ?? null;
+    if (email) {
+      linkedUserId = await findClerkUserIdByEmail(email);
+    }
+
+    const { data: inserted, error: insertErr } = await db
+      .from("group_members")
+      .insert({
+        group_id: groupId,
+        user_id: linkedUserId,
+        email,
+        display_name: person.name.slice(0, 100),
+      })
+      .select("id, display_name, user_id, email")
+      .single();
+
+    if (insertErr) {
+      console.error("[receipt/finish] add member:", insertErr.message, person.name);
+      continue;
+    }
+    if (inserted) {
+      members = [...members, inserted];
+      memberByName = buildMemberNameMap(members);
+    }
+  }
+
+  const memberIdsInGroup = new Set(members.map((m) => m.id));
 
   // Find the payer (current user's member ID)
   const payerMember = members.find(m => m.user_id === userId);
@@ -84,11 +148,6 @@ export async function POST(
   const tip = receipt.tip || 0;
   const extraPercentage = subtotal > 0 ? (tax + tip) / subtotal : 0;
 
-  // Create member name to ID mapping
-  const memberByName = new Map(
-    members.map(m => [m.display_name?.toLowerCase(), m.id])
-  );
-
   // Process assignments and create shares
   const sharesByMember = new Map<string, number>();
 
@@ -101,18 +160,13 @@ export async function POST(
       const shareAmount = itemWithExtra / assignments.length;
 
       for (const assignment of assignments) {
-        // Try to match assignment to group member
-        let memberId = assignment.member_id;
+        const memberId = resolveAssignmentMemberId(
+          assignment,
+          memberByName,
+          memberIdsInGroup,
+        );
 
-        if (!memberId) {
-          // Try to find member by name
-          memberId = memberByName.get(assignment.assignee_name?.toLowerCase()) || null;
-        }
-
-        if (!memberId) {
-          // If no match, create as guest member or skip
-          continue;
-        }
+        if (!memberId) continue;
 
         const current = sharesByMember.get(memberId) || 0;
         sharesByMember.set(memberId, current + shareAmount);

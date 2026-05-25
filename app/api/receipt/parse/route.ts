@@ -5,6 +5,7 @@ import { getSupabase } from "@/lib/supabase";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
 import { isNotAReceiptError } from "@/lib/receipt-errors";
 import { rateLimit } from "@/lib/rate-limit";
+import { optimizeReceiptImageForOcr } from "@/lib/receipt-image-prepare";
 
 function detectImageFormat(buf: Buffer): string {
   if (buf[0] === 0xFF && buf[1] === 0xD8) return "jpeg";
@@ -90,6 +91,11 @@ export async function POST(req: NextRequest) {
       : detectedFormat === "webp" ? "image/webp"
       : rawMime;
   }
+
+  const optimized = await optimizeReceiptImageForOcr(finalBuffer, mimeType);
+  finalBuffer = optimized.buffer;
+  mimeType = optimized.mimeType;
+  console.log("[receipt-parse] optimized size:", finalBuffer.length, "mime:", mimeType);
 
   const base64 = finalBuffer.toString("base64");
 
