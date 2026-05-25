@@ -15,4 +15,14 @@ describe("Stripe Terminal API routes", () => {
     const mod = await import("../create-payment-intent/route");
     expect(mod.POST).toBeDefined();
   });
+
+  it("wallet GET compiles and exports", async () => {
+    const mod = await import("../../wallet/route");
+    expect(mod.GET).toBeDefined();
+  });
+
+  it("dashboard-link POST compiles and exports", async () => {
+    const mod = await import("../../connect/dashboard-link/route");
+    expect(mod.POST).toBeDefined();
+  });
 });

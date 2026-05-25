@@ -1,4 +1,9 @@
 import OpenAI from "openai";
+import {
+  assertIsReceiptClassification,
+  assertParsedReceiptHasContent,
+  classifyReceiptImage,
+} from "./receipt-classify";
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -194,6 +199,9 @@ export async function parseReceiptImage(
   imageBase64: string,
   mimeType: string
 ): Promise<ParsedReceipt> {
+  const classification = await classifyReceiptImage(imageBase64, mimeType);
+  assertIsReceiptClassification(classification);
+
   // 1. PaddleOCR AI Studio (layout-parsing API)
   if (paddleAistudioToken) {
     const fileType: 0 | 1 = mimeType === "application/pdf" ? 0 : 1;
@@ -201,7 +209,9 @@ export async function parseReceiptImage(
     if (text && text.trim()) {
       try {
         const parsed = await parseReceiptFromText(text);
-        return await cleanReceiptWithLLM(parsed);
+        const cleaned = await cleanReceiptWithLLM(parsed);
+        assertParsedReceiptHasContent(cleaned);
+        return cleaned;
       } catch (e) {
         console.warn(
           "[receipt-ocr] GPT parse of PaddleOCR text failed, trying next:",
@@ -223,7 +233,9 @@ export async function parseReceiptImage(
       });
       if (res.ok) {
         const data = validateParsedReceipt(await res.json());
-        return await cleanReceiptWithLLM(data);
+        const cleaned = await cleanReceiptWithLLM(data);
+        assertParsedReceiptHasContent(cleaned);
+        return cleaned;
       }
     } catch (e) {
       console.warn("[receipt-ocr] PaddleOCR API failed, falling back to GPT:", e);
@@ -268,5 +280,7 @@ export async function parseReceiptImage(
   } catch (e) {
     throw new Error(`[receipt-ocr] Malformed AI response when parsing receipt image: ${e instanceof Error ? e.message : String(e)}`);
   }
-  return await cleanReceiptWithLLM(parsed);
+  const cleaned = await cleanReceiptWithLLM(parsed);
+  assertParsedReceiptHasContent(cleaned);
+  return cleaned;
 }

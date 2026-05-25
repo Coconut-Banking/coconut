@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getSupabase } from "@/lib/supabase";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
+import { isNotAReceiptError } from "@/lib/receipt-errors";
 import { rateLimit } from "@/lib/rate-limit";
 
 function detectImageFormat(buf: Buffer): string {
@@ -97,6 +98,16 @@ export async function POST(req: NextRequest) {
   try {
     parsed = await parseReceiptImage(base64, mimeType);
   } catch (error) {
+    if (isNotAReceiptError(error)) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code,
+          document_type: error.documentType,
+        },
+        { status: 422 }
+      );
+    }
     console.error("OCR failed:", error);
     return NextResponse.json({ error: "Failed to parse receipt" }, { status: 500 });
   }

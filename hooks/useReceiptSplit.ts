@@ -86,7 +86,13 @@ export function useReceiptSplit() {
         body: formData,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Parse failed");
+      if (!res.ok) {
+        const msg =
+          data.code === "not_a_receipt"
+            ? (data.error ?? "We couldn't find a receipt in this image.")
+            : (data.error ?? "Parse failed");
+        throw new Error(msg);
+      }
 
       const items = (data.receipt_items ?? [])
         .sort(
