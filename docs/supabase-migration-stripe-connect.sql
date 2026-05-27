@@ -8,6 +8,9 @@ create table if not exists stripe_connected_accounts (
   onboarding_complete boolean not null default false,
   charges_enabled     boolean not null default false,
   payouts_enabled     boolean not null default false,
+  last_auto_payout_at timestamptz,
+  auto_payout_enabled boolean not null default false,
+  auto_payout_threshold_usd smallint,
   created_at          timestamptz default now()
 );
 

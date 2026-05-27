@@ -59,7 +59,8 @@ export async function ensureStripeConnectAccount(params: {
     },
     settings: {
       payouts: {
-        schedule: { interval: "daily" },
+        // Manual: Coconut triggers bank transfers when balance >= AUTO_PAYOUT_THRESHOLD_USD.
+        schedule: { interval: "manual" },
       },
     },
     metadata: { clerk_user_id: userId },

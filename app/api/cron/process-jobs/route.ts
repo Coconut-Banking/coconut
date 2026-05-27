@@ -10,6 +10,8 @@ import { CACHE_TAGS } from "@/lib/cached-queries";
 
 const DAILY_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let _lastDailyRefreshCheck = 0;
+let _lastAutoPayoutCheck = 0;
+const AUTO_PAYOUT_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Once per day, find Plaid Items that haven't been refreshed in 24h and sync them
@@ -48,6 +50,29 @@ async function runDailyRefreshIfNeeded(db: ReturnType<typeof getSupabase>) {
     }
   } catch (e) {
     console.warn("[cron] daily refresh check failed:", e instanceof Error ? e.message : e);
+  }
+}
+
+/** Hourly: payout Connect balances over AUTO_PAYOUT_THRESHOLD_USD to linked banks. */
+async function runAutoPayoutsIfNeeded() {
+  const now = Date.now();
+  if (now - _lastAutoPayoutCheck < AUTO_PAYOUT_CHECK_INTERVAL_MS) return;
+  _lastAutoPayoutCheck = now;
+
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) return;
+
+  try {
+    const Stripe = (await import("stripe")).default;
+    const stripe = new Stripe(key);
+    const db = getSupabase();
+    const { runAutoPayoutBatch } = await import("@/lib/stripe-auto-payout");
+    const result = await runAutoPayoutBatch({ stripe, db, limit: 30 });
+    if (result.triggered > 0 || result.errors > 0) {
+      console.log("[cron] auto-payout batch", result);
+    }
+  } catch (e) {
+    console.warn("[cron] auto-payout failed:", e instanceof Error ? e.message : e);
   }
 }
 
@@ -90,6 +115,7 @@ export async function GET(req: NextRequest) {
     // No pending jobs — check for stale Plaid Items that need a daily safety-net refresh.
     // transactionsRefresh costs $0.12/call so we only do this once per 24h per Item.
     await runDailyRefreshIfNeeded(db);
+    await runAutoPayoutsIfNeeded();
     return NextResponse.json({ processed: 0 });
   }
 
@@ -151,6 +177,8 @@ export async function GET(req: NextRequest) {
 
   const processed = jobResults.filter(Boolean).length;
   const failed = jobResults.filter((r) => !r).length;
+
+  await runAutoPayoutsIfNeeded();
 
   return NextResponse.json({ processed, failed, total: jobs.length });
 }

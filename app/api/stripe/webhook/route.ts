@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
 import { recordStripeSettlement } from "@/lib/stripe-settlement-record";
+import { resolveUserAutoPayoutSettings, tryAutoPayoutForAccount } from "@/lib/stripe-auto-payout";
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -66,7 +67,51 @@ export async function POST(req: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+
+    void maybeAutoPayoutReceiver(receiver_member_id).catch((e) =>
+      console.warn("[stripe-webhook] auto-payout check failed:", e instanceof Error ? e.message : e),
+    );
+
     return null;
+  }
+
+  async function maybeAutoPayoutReceiver(receiverMemberId: string) {
+    if (!stripe) return;
+    const db = getSupabase();
+    const { data: member } = await db
+      .from("group_members")
+      .select("user_id")
+      .eq("id", receiverMemberId)
+      .maybeSingle();
+    if (!member?.user_id) return;
+
+    const { data: connect } = await db
+      .from("stripe_connected_accounts")
+      .select(
+        "stripe_account_id, last_auto_payout_at, auto_payout_enabled, auto_payout_threshold_usd",
+      )
+      .eq("clerk_user_id", member.user_id)
+      .eq("payouts_enabled", true)
+      .eq("auto_payout_enabled", true)
+      .maybeSingle();
+    if (!connect?.stripe_account_id) return;
+
+    const userSettings = resolveUserAutoPayoutSettings(connect);
+    const attempt = await tryAutoPayoutForAccount({
+      stripe,
+      db,
+      stripeAccountId: connect.stripe_account_id,
+      clerkUserId: member.user_id,
+      lastAutoPayoutAt: connect.last_auto_payout_at as string | null,
+      userSettings,
+    });
+    if (attempt.status === "triggered") {
+      console.log("[stripe-webhook] auto-payout triggered", {
+        user: member.user_id,
+        payoutId: attempt.payoutId,
+        amountUsd: attempt.amountUsd,
+      });
+    }
   }
 
   if (event.type === "payment_intent.succeeded") {

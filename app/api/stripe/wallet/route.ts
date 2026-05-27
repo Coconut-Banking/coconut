@@ -20,7 +20,9 @@ export async function GET() {
   const db = getSupabase();
   const { data: connectRow } = await db
     .from("stripe_connected_accounts")
-    .select("stripe_account_id, charges_enabled, payouts_enabled, onboarding_complete")
+    .select(
+      "stripe_account_id, charges_enabled, payouts_enabled, onboarding_complete, auto_payout_enabled, auto_payout_threshold_usd",
+    )
     .eq("clerk_user_id", userId)
     .maybeSingle();
 
@@ -66,6 +68,8 @@ export async function GET() {
     chargesEnabled,
     payoutsEnabled,
     hasAccount,
+    autoPayoutEnabled: connectRow?.auto_payout_enabled,
+    autoPayoutThresholdUsd: connectRow?.auto_payout_threshold_usd,
   });
 
   return NextResponse.json(wallet, {

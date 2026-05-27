@@ -33,6 +33,23 @@ describe("computeWalletDisplay", () => {
     expect(wallet.totalCollected).toBe(50);
     expect(wallet.canCashOut).toBe(true);
     expect(wallet.canSetupPayouts).toBe(false);
+    expect(wallet.autoPayout.enabled).toBe(false);
+  });
+
+  it("shows auto payout when user opted in", () => {
+    const wallet = computeWalletDisplay({
+      currency: "USD",
+      coconutHeld: 0,
+      stripeAvailable: 30,
+      stripePending: 0,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      hasAccount: true,
+      autoPayoutEnabled: true,
+      autoPayoutThresholdUsd: 100,
+    });
+    expect(wallet.autoPayout.enabled).toBe(true);
+    expect(wallet.autoPayout.thresholdUsd).toBe(100);
   });
 
   it("blocks cash out until payouts are enabled", () => {

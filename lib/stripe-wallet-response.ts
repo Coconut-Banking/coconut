@@ -1,4 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  AUTO_PAYOUT_THRESHOLDS_USD,
+  resolveUserAutoPayoutSettings,
+  type AutoPayoutThresholdUsd,
+} from "@/lib/stripe-auto-payout";
 import { sumSettlementAmounts } from "@/lib/stripe-wallet";
 
 export type WalletDisplay = {
@@ -16,6 +21,11 @@ export type WalletDisplay = {
   payoutsEnabled: boolean;
   canCashOut: boolean;
   canSetupPayouts: boolean;
+  autoPayout: {
+    enabled: boolean;
+    thresholdUsd: AutoPayoutThresholdUsd | null;
+    allowedThresholds: readonly AutoPayoutThresholdUsd[];
+  };
 };
 
 export async function fetchCoconutHeldForMembers(
@@ -44,6 +54,8 @@ export function computeWalletDisplay(params: {
   chargesEnabled: boolean;
   payoutsEnabled: boolean;
   hasAccount: boolean;
+  autoPayoutEnabled?: boolean;
+  autoPayoutThresholdUsd?: number | null;
 }): WalletDisplay {
   const stripeAvail = params.stripeAvailable ?? 0;
   const stripePend = params.stripePending ?? 0;
@@ -56,6 +68,17 @@ export function computeWalletDisplay(params: {
   const pending = params.chargesEnabled ? stripePend : 0;
   const totalCollected =
     Math.round((params.coconutHeld + stripeAvail + stripePend) * 100) / 100;
+
+  const userAuto = resolveUserAutoPayoutSettings({
+    auto_payout_enabled: params.autoPayoutEnabled,
+    auto_payout_threshold_usd: params.autoPayoutThresholdUsd,
+  });
+  const autoPayout = {
+    enabled: Boolean(params.payoutsEnabled && userAuto.enabled),
+    thresholdUsd:
+      params.payoutsEnabled && userAuto.enabled ? userAuto.thresholdUsd : null,
+    allowedThresholds: AUTO_PAYOUT_THRESHOLDS_USD,
+  };
 
   return {
     currency: params.currency,
@@ -70,5 +93,6 @@ export function computeWalletDisplay(params: {
     payoutsEnabled: params.payoutsEnabled,
     canCashOut: params.chargesEnabled && params.payoutsEnabled && params.hasAccount,
     canSetupPayouts: !params.chargesEnabled || !params.payoutsEnabled,
+    autoPayout,
   };
 }
