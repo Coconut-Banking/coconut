@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { verifyPayLinkToken } from "@/lib/pay-link-token";
 import { createPayLinkCheckoutSession, PayLinkCheckoutError } from "@/lib/stripe-pay-link";
+import { getSupabase } from "@/lib/supabase";
 
 type RouteContext = { params: Promise<{ token: string }> };
 
@@ -25,10 +26,20 @@ export async function POST(_req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Invalid or expired payment link" }, { status });
   }
 
+  const db = getSupabase();
+  const { data: billRow } = await db
+    .from("payment_requests")
+    .select("id")
+    .eq("pay_link_token", token)
+    .eq("status", "pending")
+    .maybeSingle();
+
   const stripe = new Stripe(key);
 
   try {
-    const session = await createPayLinkCheckoutSession(stripe, verified.payload, token);
+    const session = await createPayLinkCheckoutSession(stripe, verified.payload, token, {
+      paymentRequestId: billRow?.id,
+    });
     return NextResponse.json({ url: session.url, sessionId: session.sessionId });
   } catch (e) {
     if (e instanceof PayLinkCheckoutError) {

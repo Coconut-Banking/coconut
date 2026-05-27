@@ -166,3 +166,26 @@ export async function notifyGroupMembers(
     );
   }
 }
+
+
+/** Push to specific Clerk user ids (e.g. bill payer / receiver). */
+export async function notifyUsers(
+  userIds: string[],
+  title: string,
+  body: string,
+  data?: object,
+): Promise<void> {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (unique.length === 0) return;
+
+  const db = getSupabaseAdmin();
+  const { data: tokenRows } = await db
+    .from("push_tokens")
+    .select("token")
+    .in("clerk_user_id", unique);
+
+  const tokens = (tokenRows ?? []).map((r) => r.token).filter(Boolean);
+  if (tokens.length === 0) return;
+
+  await sendPushNotificationBatch(tokens, title, body, data);
+}

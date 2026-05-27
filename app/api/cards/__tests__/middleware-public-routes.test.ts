@@ -39,6 +39,12 @@ describe("middleware.ts isPublicRoute (BUG-CRITICAL-1)", () => {
     expect(middlewareSrc).toContain('"/api/cards/recommend"');
   });
 
+  it("includes /pay and /collect for guest payment and table collection", () => {
+    expect(middlewareSrc).toContain('"/pay(.*)"');
+    expect(middlewareSrc).toContain('"/collect(.*)"');
+    expect(middlewareSrc).toContain('"/receipt/collect(.*)"');
+  });
+
   it("does NOT include /api/cards/analyze-coconut as public (requires Coconut user auth)", () => {
     // analyze-coconut must remain protected — should NOT appear in the isPublicRoute list
     const publicRouteBlock = middlewareSrc.match(

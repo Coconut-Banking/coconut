@@ -10,7 +10,7 @@ export async function GET() {
       details: [
         {
           appIDs: [`${teamId}.com.coconut.app`, `${teamId}.com.coconut.app.dev`],
-          paths: ["/join/*"],
+          paths: ["/join/*", "/pay/*", "/collect/*", "/receipt/collect/*"],
         },
       ],
     },

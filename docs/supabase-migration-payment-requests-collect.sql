@@ -1,0 +1,3 @@
+-- Payment requests, collect sessions, receipt table collection
+-- Apply: supabase/migrations/20260528_payment_requests_and_collect.sql
+-- Or paste that file into the Supabase SQL Editor.

@@ -3,6 +3,8 @@ import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
 import { recordStripeSettlement } from "@/lib/stripe-settlement-record";
 import { resolveUserAutoPayoutSettings, tryAutoPayoutForAccount } from "@/lib/stripe-auto-payout";
+import { markPaymentRequestPaid } from "@/lib/payment-requests";
+import { notifyUsers } from "@/lib/push-sender";
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -66,6 +68,41 @@ export async function POST(req: NextRequest) {
 
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+
+    const paymentRequestId = pi.metadata?.payment_request_id;
+    if (paymentRequestId) {
+      const prResult = await markPaymentRequestPaid({
+        paymentRequestId,
+        externalReference: pi.id,
+        resolutionMethod: "stripe",
+      });
+      if (prResult.updated) {
+        const { data: pr } = await getSupabase()
+          .from("payment_requests")
+          .select("label, amount, receiver_member_id, payer_member_id")
+          .eq("id", paymentRequestId)
+          .maybeSingle();
+        if (pr) {
+          const { data: members } = await getSupabase()
+            .from("group_members")
+            .select("id, user_id, display_name")
+            .in("id", [pr.receiver_member_id, pr.payer_member_id]);
+          const payer = members?.find((m) => m.id === pr.payer_member_id);
+          const receiver = members?.find((m) => m.id === pr.receiver_member_id);
+          const label = pr.label ?? "your bill";
+          const amt = Number(pr.amount).toFixed(2);
+          if (receiver?.user_id) {
+            void notifyUsers(
+              [receiver.user_id],
+              "Payment received",
+              `${payer?.display_name ?? "Someone"} paid $${amt} for ${label}`,
+              { type: "bill_paid", paymentRequestId },
+            );
+          }
+        }
+      }
     }
 
     void maybeAutoPayoutReceiver(receiver_member_id).catch((e) =>

@@ -125,6 +125,7 @@ export async function createPayLinkCheckoutSession(
   stripe: Stripe,
   payload: PayLinkPayload,
   token: string,
+  opts?: { paymentRequestId?: string },
 ): Promise<{ url: string; sessionId: string }> {
   const amountResult = await resolvePayLinkAmount(payload);
   if (!amountResult.ok) {
@@ -143,6 +144,7 @@ export async function createPayLinkCheckoutSession(
     payer_member_id: payload.payerMemberId,
     receiver_member_id: payload.receiverMemberId,
     source: "payment_link",
+    ...(opts?.paymentRequestId ? { payment_request_id: opts.paymentRequestId } : {}),
   };
 
   const paymentIntentData: Stripe.Checkout.SessionCreateParams.PaymentIntentData = {

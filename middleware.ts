@@ -20,6 +20,12 @@ const isPublicRoute = createRouteMatcher([
   // Mobile app handoff — returns HTML that meta-refreshes to the custom scheme deep link.
   "/api/connect/app-done",
   "/join(.*)",
+  "/pay(.*)",
+  "/api/pay(.*)",
+  "/collect(.*)",
+  "/api/collect(.*)",
+  "/receipt/collect(.*)",
+  "/api/receipt/collect(.*)",
   "/api/invite(.*)",
   // Card recommendation tool — designed for unauthenticated (new) users
   "/cards",
