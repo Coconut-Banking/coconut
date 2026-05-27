@@ -283,7 +283,7 @@ export async function GET(request: NextRequest) {
           try {
             const { error: rpcErr } = await adminDbBg.rpc("batch_update_merchant_llm", {
               p_clerk_user_id: uid,
-              p_updates: JSON.stringify(toPersist.map(u => ({ id: u.id, value: u.value }))),
+              p_updates: toPersist.map((u) => ({ id: u.id, value: u.value })),
             });
             if (rpcErr) {
               console.warn("[transactions] batch_update_merchant_llm RPC failed:", rpcErr.message);

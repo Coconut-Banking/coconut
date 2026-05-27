@@ -20,13 +20,20 @@ export async function POST(_req: NextRequest) {
   const db = getSupabase();
   const { data: row } = await db
     .from("stripe_connected_accounts")
-    .select("stripe_account_id, charges_enabled")
+    .select("stripe_account_id, charges_enabled, payouts_enabled")
     .eq("clerk_user_id", userId)
     .maybeSingle();
 
   if (!row?.stripe_account_id || !row.charges_enabled) {
     return NextResponse.json(
       { error: "Complete payment setup before cashing out." },
+      { status: 400 }
+    );
+  }
+
+  if (!row.payouts_enabled) {
+    return NextResponse.json(
+      { error: "Add your bank account in payout setup to cash out." },
       { status: 400 }
     );
   }

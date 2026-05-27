@@ -23,6 +23,42 @@ CREATE POLICY "subscriptions_update_own" ON subscriptions
 CREATE POLICY "subscriptions_delete_own" ON subscriptions
   FOR DELETE USING (clerk_user_id = requesting_user_id());
 
+-- subscription_transactions: access via owning subscription
+ALTER TABLE subscription_transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "subscription_transactions_select_own" ON subscription_transactions;
+DROP POLICY IF EXISTS "subscription_transactions_insert_own" ON subscription_transactions;
+DROP POLICY IF EXISTS "subscription_transactions_update_own" ON subscription_transactions;
+DROP POLICY IF EXISTS "subscription_transactions_delete_own" ON subscription_transactions;
+
+CREATE POLICY "subscription_transactions_select_own" ON subscription_transactions
+  FOR SELECT USING (
+    subscription_id IN (
+      SELECT id FROM subscriptions WHERE clerk_user_id = requesting_user_id()
+    )
+  );
+
+CREATE POLICY "subscription_transactions_insert_own" ON subscription_transactions
+  FOR INSERT WITH CHECK (
+    subscription_id IN (
+      SELECT id FROM subscriptions WHERE clerk_user_id = requesting_user_id()
+    )
+  );
+
+CREATE POLICY "subscription_transactions_update_own" ON subscription_transactions
+  FOR UPDATE USING (
+    subscription_id IN (
+      SELECT id FROM subscriptions WHERE clerk_user_id = requesting_user_id()
+    )
+  );
+
+CREATE POLICY "subscription_transactions_delete_own" ON subscription_transactions
+  FOR DELETE USING (
+    subscription_id IN (
+      SELECT id FROM subscriptions WHERE clerk_user_id = requesting_user_id()
+    )
+  );
+
 -- Receipt scans: replace permissive policy with user-scoped
 DROP POLICY IF EXISTS "receipt_scans_all" ON receipt_scans;
 

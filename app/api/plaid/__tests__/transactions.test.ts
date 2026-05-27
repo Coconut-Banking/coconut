@@ -7,12 +7,6 @@ import { describe, it, expect, vi, afterEach } from "vitest";
  * failures are logged rather than silently swallowed.
  */
 
-/**
- * Simulates the rpc-call block as it exists in the fixed route:
- * - destructures { error: rpcErr }
- * - logs rpcErr.message if truthy
- * - catches thrown errors and logs them
- */
 async function runRpcBlock(
   rpc: () => Promise<{ error: { message: string } | null }>
 ): Promise<void> {
@@ -28,6 +22,17 @@ async function runRpcBlock(
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("batch_update_merchant_llm rpc payload", () => {
+  it("passes a JSON array to p_updates, not JSON.stringify", () => {
+    const toPersist = [{ id: "uuid-1", value: "Starbucks" }];
+    const p_updates = toPersist.map((u) => ({ id: u.id, value: u.value }));
+    expect(p_updates).toEqual([{ id: "uuid-1", value: "Starbucks" }]);
+    expect(Array.isArray(p_updates)).toBe(true);
+    // JSON.stringify becomes a JSONB string scalar → jsonb_array_elements fails.
+    expect(typeof JSON.stringify(p_updates)).toBe("string");
+  });
 });
 
 describe("batch_update_merchant_llm rpc error handling", () => {

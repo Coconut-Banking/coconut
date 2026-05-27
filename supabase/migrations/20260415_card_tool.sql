@@ -42,3 +42,7 @@ create index if not exists card_tool_sessions_clerk_user_id_idx on card_tool_ses
 
 -- Index for expired session cleanup
 create index if not exists card_tool_sessions_expires_at_idx on card_tool_sessions(expires_at);
+
+-- RLS: server-only (see 20260524_enable_rls_server_tables.sql)
+alter table credit_cards enable row level security;
+alter table card_tool_sessions enable row level security;

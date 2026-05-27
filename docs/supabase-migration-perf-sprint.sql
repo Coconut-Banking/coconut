@@ -52,13 +52,25 @@ SECURITY DEFINER
 AS $$
 DECLARE
   v_updated INT;
+  v_updates JSONB;
 BEGIN
+  -- Accept a JSON array or a JSON string containing an array (legacy double-encoding).
+  v_updates := CASE jsonb_typeof(p_updates)
+    WHEN 'array' THEN p_updates
+    WHEN 'string' THEN (p_updates #>> '{}')::jsonb
+    ELSE '[]'::jsonb
+  END;
+
+  IF jsonb_typeof(v_updates) IS DISTINCT FROM 'array' THEN
+    RETURN 0;
+  END IF;
+
   UPDATE transactions AS t
      SET merchant_display_llm = elem.value
     FROM (
       SELECT (e->>'id')::uuid   AS id,
              (e->>'value')::text AS value
-        FROM jsonb_array_elements(p_updates) AS e
+        FROM jsonb_array_elements(v_updates) AS e
     ) AS elem
    WHERE t.id = elem.id
      AND t.clerk_user_id = p_clerk_user_id;

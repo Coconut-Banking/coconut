@@ -16,6 +16,16 @@ describe("Stripe Terminal API routes", () => {
     expect(mod.POST).toBeDefined();
   });
 
+  it("record-settlement POST compiles and exports", async () => {
+    const mod = await import("../record-settlement/route");
+    expect(mod.POST).toBeDefined();
+  });
+
+  it("account-session POST compiles and exports", async () => {
+    const mod = await import("../../connect/account-session/route");
+    expect(mod.POST).toBeDefined();
+  });
+
   it("wallet GET compiles and exports", async () => {
     const mod = await import("../../wallet/route");
     expect(mod.GET).toBeDefined();

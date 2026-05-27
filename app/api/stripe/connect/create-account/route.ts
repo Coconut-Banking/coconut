@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
+import { ensureStripeConnectAccount } from "@/lib/stripe-connect-account";
 
 /**
  * POST /api/stripe/connect/create-account
- * Creates a Stripe Express connected account for the current user and returns
- * an Account Link URL for hosted onboarding. If the user already has an account,
- * returns a fresh onboarding link instead.
+ * Creates a Stripe Express connected account for the current user.
+ * Default: returns an Account Link URL for hosted onboarding.
+ * Body `{ embedded: true }`: skips Account Link (use account-session + embedded UI).
  */
 export async function POST(req: Request) {
   const { userId } = await auth();
@@ -21,82 +22,25 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const scheme = (body as { scheme?: string }).scheme ?? "coconut";
+  const embedded = (body as { embedded?: boolean }).embedded === true;
 
   try {
     const stripe = new Stripe(key);
     const db = getSupabase();
+    const user = await currentUser();
 
-    const [{ data: existing, error: selectError }, user] = await Promise.all([
-      db
-        .from("stripe_connected_accounts")
-        .select("stripe_account_id, onboarding_complete")
-        .eq("clerk_user_id", userId)
-        .maybeSingle(),
-      currentUser(),
-    ]);
+    const { accountId, created } = await ensureStripeConnectAccount({
+      stripe,
+      db,
+      userId,
+      email: user?.emailAddresses?.[0]?.emailAddress ?? undefined,
+      firstName: user?.firstName ?? undefined,
+      lastName: user?.lastName ?? undefined,
+      phone: user?.phoneNumbers?.[0]?.phoneNumber ?? undefined,
+    });
 
-    if (selectError) {
-      console.error("[stripe-connect] db select failed:", selectError);
-      return NextResponse.json({ error: "Database error: " + selectError.message }, { status: 500 });
-    }
-
-    let accountId: string;
-
-    if (existing) {
-      accountId = existing.stripe_account_id;
-    } else {
-      const email = user?.emailAddresses?.[0]?.emailAddress ?? undefined;
-      const firstName = user?.firstName ?? undefined;
-      const lastName = user?.lastName ?? undefined;
-      const phone = user?.phoneNumbers?.[0]?.phoneNumber ?? undefined;
-
-      const account = await stripe.accounts.create({
-        type: "express",
-        country: "US",
-        email,
-        business_type: "individual",
-        business_profile: {
-          url: "https://coconut-app.dev",
-          mcc: "7372",
-          product_description: "Peer-to-peer expense splitting and payments via the Coconut app",
-        },
-        individual: {
-          email,
-          first_name: firstName,
-          last_name: lastName,
-          phone,
-          relationship: {
-            title: "Individual",
-          },
-        },
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-        settings: {
-          payouts: {
-            schedule: { interval: "daily" },
-          },
-        },
-        metadata: { clerk_user_id: userId },
-      });
-
-      const { error: insertError } = await db
-        .from("stripe_connected_accounts")
-        .insert({
-          clerk_user_id: userId,
-          stripe_account_id: account.id,
-          onboarding_complete: false,
-          charges_enabled: false,
-          payouts_enabled: false,
-        });
-
-      if (insertError) {
-        console.error("[stripe-connect] insert failed:", insertError);
-        return NextResponse.json({ error: "Failed to save account: " + insertError.message }, { status: 500 });
-      }
-
-      accountId = account.id;
+    if (embedded) {
+      return NextResponse.json({ accountId, created, embedded: true });
     }
 
     const appUrl = process.env.APP_URL ?? "https://coconut-app.dev";
@@ -107,7 +51,7 @@ export async function POST(req: Request) {
       type: "account_onboarding",
     });
 
-    return NextResponse.json({ url: accountLink.url, accountId });
+    return NextResponse.json({ url: accountLink.url, accountId, created });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[stripe-connect] create-account error:", msg);

@@ -26,3 +26,6 @@ create index if not exists job_queue_processing_idx
 -- Auto-clean jobs older than 7 days (keeps table small)
 -- Run manually or add to a weekly maintenance cron:
 -- delete from job_queue where created_at < now() - interval '7 days';
+
+-- RLS: server-only (see 20260524_enable_rls_server_tables.sql)
+alter table job_queue enable row level security;

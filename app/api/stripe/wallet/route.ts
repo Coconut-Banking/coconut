@@ -3,14 +3,15 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
+import { pickBalanceAmount } from "@/lib/stripe-wallet";
 import {
-  pickBalanceAmount,
-  sumSettlementAmounts,
-} from "@/lib/stripe-wallet";
+  computeWalletDisplay,
+  fetchCoconutHeldForMembers,
+} from "@/lib/stripe-wallet-response";
 
 /**
  * GET /api/stripe/wallet
- * Coconut account balance: held on platform (pre-Connect) + Stripe Connect balance when set up.
+ * Coconut account balance: platform-held (pre-Connect) + Stripe Connect balance when set up.
  */
 export async function GET() {
   const { userId } = await auth();
@@ -33,20 +34,8 @@ export async function GET() {
     .eq("user_id", userId);
 
   const memberIds = (memberRows ?? []).map((m) => m.id);
-  let coconutHeld = 0;
   const currency = "USD";
-
-  if (memberIds.length > 0 && !chargesEnabled) {
-    const { data: settlements } = await db
-      .from("settlements")
-      .select("amount, iso_currency_code")
-      .in("receiver_member_id", memberIds)
-      .eq("status", "completed")
-      .eq("method", "stripe")
-      .not("external_reference", "is", null);
-
-    coconutHeld = sumSettlementAmounts(settlements ?? [], currency);
-  }
+  const coconutHeld = await fetchCoconutHeldForMembers(db, memberIds, currency);
 
   let stripeAvailable: number | null = null;
   let stripePending: number | null = null;
@@ -69,31 +58,19 @@ export async function GET() {
     }
   }
 
-  const displayAvailable =
-    chargesEnabled && stripeAvailable != null
-      ? stripeAvailable
-      : coconutHeld;
-  const displayPending = chargesEnabled ? (stripePending ?? 0) : 0;
+  const wallet = computeWalletDisplay({
+    currency: balanceCurrency.toUpperCase(),
+    coconutHeld,
+    stripeAvailable,
+    stripePending,
+    chargesEnabled,
+    payoutsEnabled,
+    hasAccount,
+  });
 
-  return NextResponse.json(
-    {
-      currency: balanceCurrency.toUpperCase(),
-      coconutHeld,
-      stripeAvailable,
-      stripePending,
-      /** Primary number for UI — Connect available or held on Coconut. */
-      available: displayAvailable,
-      pending: displayPending,
-      hasAccount,
-      chargesEnabled,
-      payoutsEnabled,
-      canCashOut: chargesEnabled && hasAccount,
-      canSetupPayouts: !chargesEnabled || !payoutsEnabled,
+  return NextResponse.json(wallet, {
+    headers: {
+      "Cache-Control": "private, max-age=15, stale-while-revalidate=60",
     },
-    {
-      headers: {
-        "Cache-Control": "private, max-age=15, stale-while-revalidate=60",
-      },
-    }
-  );
+  });
 }
