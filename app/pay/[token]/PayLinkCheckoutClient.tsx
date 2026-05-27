@@ -167,6 +167,12 @@ export function PayLinkCheckoutClient({
           <p className="mt-4 text-center text-xs text-gray-400">
             Secure checkout by Stripe · Apple Pay available in Safari
           </p>
+          <a
+            href={`coconut://pay/${encodeURIComponent(token)}`}
+            className="mt-6 block text-center text-sm font-medium text-[#1e2021] underline-offset-2 hover:underline"
+          >
+            Open in Coconut app
+          </a>
         </>
       )}
     </motion.div>

@@ -12,13 +12,20 @@ const COLLECT_HOURS = 24;
  * Opens a table collection session; returns QR URL for guests.
  */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: receiptId } = await params;
+  let body: { groupId?: string } = {};
+  try {
+    body = await req.json();
+  } catch {
+    /* optional body */
+  }
+
   const db = getSupabase();
 
   const { data: receipt, error: receiptErr } = await db
@@ -31,11 +38,17 @@ export async function POST(
   if (receiptErr || !receipt) {
     return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
   }
-  if (!receipt.group_id) {
-    return NextResponse.json({ error: "Assign this receipt to a group first" }, { status: 400 });
+
+  const groupId = body.groupId ?? receipt.group_id;
+  if (!groupId) {
+    return NextResponse.json({ error: "groupId required" }, { status: 400 });
   }
 
-  const allowed = await canAccessGroup(userId, receipt.group_id);
+  if (!receipt.group_id) {
+    await db.from("receipt_scans").update({ group_id: groupId }).eq("id", receiptId);
+  }
+
+  const allowed = await canAccessGroup(userId, groupId);
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const expiresAt = new Date(Date.now() + COLLECT_HOURS * 60 * 60 * 1000).toISOString();
@@ -43,7 +56,7 @@ export async function POST(
   const { data: session, error: sessionErr } = await db
     .from("collect_sessions")
     .insert({
-      group_id: receipt.group_id,
+      group_id: groupId,
       host_clerk_user_id: userId,
       session_type: "receipt",
       payload: { receiptScanId: receiptId },
@@ -61,7 +74,7 @@ export async function POST(
   const { data: members } = await db
     .from("group_members")
     .select("id, display_name")
-    .eq("group_id", receipt.group_id);
+    .eq("group_id", groupId);
 
   if (members?.length) {
     await db.from("receipt_collect_participants").upsert(
