@@ -15,6 +15,8 @@ export function ReceiptCollectClient({ token }: { token: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [guestName, setGuestName] = useState("");
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -99,24 +101,78 @@ export function ReceiptCollectClient({ token }: { token: string }) {
     );
   }
 
+  const joinAsGuest = async () => {
+    const name = guestName.trim();
+    if (!name) return;
+    setJoining(true);
+    try {
+      const res = await fetch(`/api/receipt/collect/${encodeURIComponent(token)}/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Could not join");
+        return;
+      }
+      setMemberId(data.memberId);
+      setParticipants((prev) => [
+        ...prev,
+        { member_id: data.memberId, display_name: name, status: "invited" },
+      ]);
+    } catch {
+      setError("Network error");
+    } finally {
+      setJoining(false);
+    }
+  };
+
   if (!memberId) {
+    const listed = participants.filter(
+      (p) => p.display_name.toLowerCase() !== "you" || participants.length > 1,
+    );
     return (
       <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <h1 className="text-xl font-bold text-[#1e2021]">{merchantName}</h1>
-        <p className="mt-1 text-sm text-gray-500">Pick your name</p>
-        <div className="mt-6 grid grid-cols-2 gap-2">
-          {participants.map((p) => (
-            <button
-              key={p.member_id}
-              type="button"
-              disabled={p.status === "submitted"}
-              onClick={() => setMemberId(p.member_id)}
-              className="rounded-xl border border-gray-200 bg-[#F5F3F2] px-3 py-3 text-sm font-semibold text-[#1e2021] disabled:opacity-40"
-            >
-              {p.display_name}
-              {p.status === "submitted" ? " ✓" : ""}
-            </button>
-          ))}
+        <p className="mt-1 text-sm text-gray-500">
+          {listed.length > 0 ? "Pick your name" : "Enter your name to join"}
+        </p>
+        {listed.length > 0 ? (
+          <div className="mt-6 grid grid-cols-2 gap-2">
+            {listed.map((p) => (
+              <button
+                key={p.member_id}
+                type="button"
+                disabled={p.status === "submitted"}
+                onClick={() => setMemberId(p.member_id)}
+                className="rounded-xl border border-gray-200 bg-[#F5F3F2] px-3 py-3 text-sm font-semibold text-[#1e2021] disabled:opacity-40"
+              >
+                {p.display_name}
+                {p.status === "submitted" ? " ✓" : ""}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-[#F5F3F2] p-4">
+          <input
+            type="text"
+            value={guestName}
+            onChange={(e) => setGuestName(e.target.value)}
+            placeholder="Your name"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-[#1e2021]"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void joinAsGuest();
+            }}
+          />
+          <button
+            type="button"
+            disabled={joining || !guestName.trim()}
+            onClick={() => void joinAsGuest()}
+            className="w-full rounded-xl bg-[#1e2021] py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {joining ? "Joining…" : "Continue"}
+          </button>
         </div>
       </div>
     );
