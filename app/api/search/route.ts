@@ -20,7 +20,9 @@ export async function GET(request: NextRequest) {
 
   const q = request.nextUrl.searchParams.get("q") ?? "";
   const limit = Math.min(Number(request.nextUrl.searchParams.get("limit")) || SEARCH.DEFAULT_LIMIT, SEARCH.MAX_LIMIT);
-  const bypassCache = request.nextUrl.searchParams.get("refresh") === "1";
+  if (!q.trim()) {
+    return NextResponse.json([], { headers: { "Cache-Control": "private, max-age=30" } });
+  }
 
   try {
     const token = session.userId ? await getCachedSupabaseToken(session.getToken, session.userId) : null;
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
       .eq("clerk_user_id", userId)
       .order("date", { ascending: false })
       .order("id", { ascending: false })
-      .limit(bypassCache ? 2000 : 2000);
+      .limit(q.trim().length > 0 ? Math.min(SEARCH.TX_FETCH_LIMIT, 600) : 0);
     if (error) throw new Error(error.message);
 
     const transactions = (rows ?? []).map((r) => ({

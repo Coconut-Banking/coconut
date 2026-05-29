@@ -114,22 +114,7 @@ export async function POST(
     return NextResponse.json({ error: "Could not start collection" }, { status: 500 });
   }
 
-  const { data: members } = await db
-    .from("group_members")
-    .select("id, display_name")
-    .eq("group_id", groupId);
-
-  if (members?.length) {
-    await db.from("receipt_collect_participants").upsert(
-      members.map((m) => ({
-        collect_session_id: session.id,
-        member_id: m.id,
-        display_name: m.display_name ?? "Guest",
-        status: "invited",
-      })),
-      { onConflict: "collect_session_id,member_id" },
-    );
-  }
+  // Guests are added only when they join via the link (not the host roster).
 
   await db
     .from("receipt_scans")

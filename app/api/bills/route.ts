@@ -5,7 +5,7 @@ import { loadClerkAuth } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { payUrlForStoredToken } from "@/lib/payment-requests";
 
-type Tab = "to_pay" | "waiting_on" | "paid";
+type Tab = "to_pay" | "waiting_on" | "paid" | "collecting";
 
 export async function GET(req: NextRequest) {
   const auth = await loadClerkAuth();
@@ -25,8 +25,102 @@ export async function GET(req: NextRequest) {
     .eq("user_id", userId);
 
   const memberIds = (myMembers ?? []).map((m) => m.id);
-  if (memberIds.length === 0) {
+  if (memberIds.length === 0 && tab !== "collecting") {
     return NextResponse.json({ bills: [], counts: { to_pay: 0, waiting_on: 0 } });
+  }
+
+  if (tab === "collecting") {
+    const { data: scans, error: scanErr } = await db
+      .from("receipt_scans")
+      .select("id, group_id, merchant_name, total, status, collect_session_id, created_at")
+      .eq("clerk_user_id", userId)
+      .eq("status", "collecting")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (scanErr) {
+      console.error("[bills] collecting:", scanErr);
+      return NextResponse.json({ error: "Failed to load bills" }, { status: 500 });
+    }
+
+    const sessionIds = (scans ?? [])
+      .map((s) => s.collect_session_id)
+      .filter((id): id is string => Boolean(id));
+
+    const guestStats = new Map<string, { total: number; submitted: number }>();
+    if (sessionIds.length > 0) {
+      const { data: parts } = await db
+        .from("receipt_collect_participants")
+        .select("collect_session_id, status, member_id")
+        .in("collect_session_id", sessionIds);
+
+      const groupIds = [...new Set((scans ?? []).map((s) => s.group_id).filter(Boolean))] as string[];
+      const hostMemberByGroup = new Map<string, string>();
+      if (groupIds.length > 0) {
+        const { data: hostMembers } = await db
+          .from("group_members")
+          .select("id, group_id")
+          .in("group_id", groupIds)
+          .eq("user_id", userId);
+        for (const hm of hostMembers ?? []) {
+          hostMemberByGroup.set(hm.group_id, hm.id);
+        }
+      }
+
+      for (const sid of sessionIds) {
+        guestStats.set(sid, { total: 0, submitted: 0 });
+      }
+      for (const scan of scans ?? []) {
+        if (!scan.collect_session_id || !scan.group_id) continue;
+        const hostId = hostMemberByGroup.get(scan.group_id);
+        for (const p of parts ?? []) {
+          if (p.collect_session_id !== scan.collect_session_id) continue;
+          if (hostId && p.member_id === hostId) continue;
+          const st = guestStats.get(scan.collect_session_id)!;
+          st.total += 1;
+          if (p.status === "submitted") st.submitted += 1;
+        }
+      }
+    }
+
+    const groupIds = [...new Set((scans ?? []).map((s) => s.group_id).filter(Boolean))] as string[];
+    const { data: groups } = groupIds.length
+      ? await db.from("groups").select("id, name").in("id", groupIds)
+      : { data: [] as { id: string; name: string }[] };
+    const groupName = new Map((groups ?? []).map((g) => [g.id, g.name]));
+
+    const bills = (scans ?? []).map((scan) => {
+      const stats = scan.collect_session_id
+        ? guestStats.get(scan.collect_session_id) ?? { total: 0, submitted: 0 }
+        : { total: 0, submitted: 0 };
+      return {
+        id: `collect-${scan.id}`,
+        receiptId: scan.id,
+        groupId: scan.group_id ?? "",
+        groupName: groupName.get(scan.group_id ?? "") ?? scan.merchant_name ?? "Bill",
+        label: scan.merchant_name ?? "Receipt",
+        amount: Number(scan.total) || 0,
+        currency: "USD",
+        status: "collecting",
+        payerMemberId: "",
+        receiverMemberId: "",
+        payerName: "",
+        receiverName: "You",
+        payUrl: null,
+        createdAt: scan.created_at,
+        paidAt: null,
+        lastNudgedAt: null,
+        isPayer: false,
+        isReceiver: true,
+        collectGuestCount: stats.total,
+        collectGuestsSubmitted: stats.submitted,
+      };
+    });
+
+    return NextResponse.json({
+      bills,
+      counts: { to_pay: 0, waiting_on: 0 },
+    });
   }
 
   let q = db

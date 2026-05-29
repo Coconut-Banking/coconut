@@ -71,21 +71,47 @@ export async function GET(
     const { invite_token, ...groupWithoutToken } = group as typeof group & { invite_token?: string };
     const maskedGroup = { ...groupWithoutToken, invite_token: invite_token ?? null };
 
-    // Stage 1: parallel fetch of members, splits, and settlements
-    const [membersResult, splitsResult, settlementsResult] = await Promise.all([
+    async function paginate<T>(
+      buildQuery: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }> & {
+        range?: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+      },
+      pageSize = 1000
+    ): Promise<T[]> {
+      const first = buildQuery();
+      if (typeof first.range !== "function") {
+        const { data } = await first;
+        return data ?? [];
+      }
+      const all: T[] = [];
+      let offset = 0;
+      for (;;) {
+        const q = offset === 0 ? first : buildQuery();
+        const { data, error } = await q.range!(offset, offset + pageSize - 1);
+        if (error || !data?.length) break;
+        all.push(...data);
+        if (data.length < pageSize) break;
+        offset += pageSize;
+      }
+      return all;
+    }
+
+    // Stage 1: parallel fetch of members, splits (paginated), and settlements
+    const [membersResult, splitsRaw, settlementsResult] = await Promise.all([
       db
         .from("group_members")
         .select("id, user_id, email, display_name, venmo_username, cashapp_cashtag, paypal_username")
         .eq("group_id", id),
-      db
-        .from("split_transactions")
-        .select(`
+      paginate(() =>
+        db
+          .from("split_transactions")
+          .select(`
           id, transaction_id, created_by, created_at, payer_member_id, amount, description,
           iso_currency_code, receipt_url, category, source,
           transactions(merchant_name, raw_name, amount, date, primary_category)
         `)
-        .eq("group_id", id)
-        .order("created_at", { ascending: false }),
+          .eq("group_id", id)
+          .order("created_at", { ascending: false })
+      ),
       db
         .from("settlements")
         .select("payer_member_id, receiver_member_id, amount, method, status, iso_currency_code")
@@ -94,7 +120,6 @@ export async function GET(
     ]);
 
     let { data: members } = membersResult;
-    const { data: splitsRaw } = splitsResult;
     const { data: settlements } = settlementsResult;
 
     // Owner email backfill (fire-and-forget DB write, sync member update)
@@ -145,7 +170,7 @@ export async function GET(
     }
 
     const seenTxIds = new Set<string>();
-    const splits = (splitsRaw ?? []).filter((s) => {
+    const splits = splitsRaw.filter((s) => {
       const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
       if (seenTxIds.has(k)) return false;
       seenTxIds.add(k);
@@ -156,25 +181,6 @@ export async function GET(
     const splitIdList = splits.map((s) => s.id);
     const txIds = splits.map((s) => s.transaction_id).filter(Boolean);
     const memberUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean) as string[];
-
-    async function paginate<T>(
-      buildQuery: () => PromiseLike<{ data: T[] | null; error: { message: string } | null }> & { range?: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
-      pageSize = 1000,
-    ): Promise<T[]> {
-      const first = buildQuery();
-      if (typeof first.range !== "function") { const { data } = await first; return data ?? []; }
-      const all: T[] = [];
-      let offset = 0;
-      for (;;) {
-        const q = offset === 0 ? first : buildQuery();
-        const { data, error } = await q.range!(offset, offset + pageSize - 1);
-        if (error || !data || data.length === 0) break;
-        all.push(...data);
-        if (data.length < pageSize) break;
-        offset += pageSize;
-      }
-      return all;
-    }
 
     const BATCH = 200;
     const sharesBatchPromises: Promise<{ split_transaction_id: string; member_id: string; amount: number }[]>[] = [];
@@ -439,17 +445,21 @@ export async function GET(
         const swToken = tokenRow?.access_token;
         const swGroupId = extId ? parseInt(extId, 10) : NaN;
 
-        // Fetch FRESH balance from Splitwise API (not stale cache) so
-        // settlements recorded in Splitwise are reflected immediately.
+        // Cache-first: return immediately; refresh Splitwise balances in background.
         type SwBalance = { currency_code: string; amount: string };
-        let liveBals: SwBalance[] = [];
+        type CachedGroupBalance = { external_id: string; balances: SwBalance[] };
+        const cachedGroups = (tokenRow?.cached_group_balances ?? null) as CachedGroupBalance[] | null;
+        let liveBals: SwBalance[] =
+          cachedGroups?.find((g) => g.external_id === extId)?.balances ?? [];
+
         if (swToken && Number.isFinite(swGroupId)) {
-          try {
-            const swGroup = await getSwGroup(swToken, swGroupId);
-            const swMe = swGroup.members.find((m) =>
-              (members ?? []).some((cm) => cm.email && cm.email === m.email)
-            );
-            if (swMe) {
+          void (async () => {
+            try {
+              const swGroup = await getSwGroup(swToken, swGroupId);
+              const swMe = swGroup.members.find((m) =>
+                (members ?? []).some((cm) => cm.email && cm.email === m.email)
+              );
+              if (!swMe) return;
               const byCur = new Map<string, number>();
               for (const d of swGroup.simplified_debts) {
                 const cur = d.currency_code ?? "USD";
@@ -457,33 +467,23 @@ export async function GET(
                 if (d.to === swMe.id) byCur.set(cur, (byCur.get(cur) ?? 0) + amt);
                 if (d.from === swMe.id) byCur.set(cur, (byCur.get(cur) ?? 0) - amt);
               }
-              liveBals = [...byCur.entries()].map(([currency_code, a]) => ({
+              const freshBals = [...byCur.entries()].map(([currency_code, a]) => ({
                 currency_code,
                 amount: a.toFixed(2),
               }));
+              const existingCache = (tokenRow?.cached_group_balances ?? []) as CachedGroupBalance[];
+              const updatedCache = existingCache.filter((g) => g.external_id !== extId);
+              updatedCache.push({ external_id: extId, balances: freshBals });
+              await getSupabaseAdmin()
+                .from("splitwise_tokens")
+                .update({ cached_group_balances: updatedCache } as Record<string, unknown>)
+                .eq("clerk_user_id", userId);
+            } catch (swErr) {
+              console.warn("[groups/id] background SW balance refresh failed:", swErr);
             }
-
-            // Update cache in background so summary stays fresh too
-            type CachedGroupBalance = { external_id: string; balances: SwBalance[] };
-            const existingCache = (tokenRow?.cached_group_balances ?? []) as CachedGroupBalance[];
-            const updatedCache = existingCache.filter((g) => g.external_id !== extId);
-            updatedCache.push({ external_id: extId, balances: liveBals });
-            void getSupabaseAdmin()
-              .from("splitwise_tokens")
-              .update({ cached_group_balances: updatedCache } as Record<string, unknown>)
-              .eq("clerk_user_id", userId)
-              .then(() => {});
-          } catch (swErr) {
-            console.warn("[groups/id] live SW balance fetch failed, falling back to cache:", swErr);
-          }
+          })();
         }
 
-        // Fall back to stale cache if live fetch failed
-        if (liveBals.length === 0) {
-          type CachedGroupBalance = { external_id: string; balances: SwBalance[] };
-          const cachedGroups = (tokenRow?.cached_group_balances ?? null) as CachedGroupBalance[] | null;
-          liveBals = cachedGroups?.find((g) => g.external_id === extId)?.balances ?? [];
-        }
         const cachedBals = liveBals;
 
         const myMember = (members ?? []).find((m) => m.user_id === userId);

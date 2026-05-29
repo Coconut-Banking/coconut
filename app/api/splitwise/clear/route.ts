@@ -132,13 +132,14 @@ export async function POST(req: NextRequest) {
   if (disconnectToken) {
     await db.from("splitwise_tokens").delete().eq("clerk_user_id", userId);
   } else {
-    // Clear cached balances even if keeping the token
+    // Clear cached balances and allow a fresh one-time import
     try {
       await db
         .from("splitwise_tokens")
         .update({
           cached_friend_balances: null,
           cached_group_balances: null,
+          import_completed_at: null,
         } as Record<string, unknown>)
         .eq("clerk_user_id", userId);
     } catch { /* column may not exist */ }

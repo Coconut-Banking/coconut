@@ -15,9 +15,14 @@ import {
   getExpenses,
   getCurrentUser,
   getFriends,
+  getSplitwiseConfig,
   type GetExpensesOptions,
   type SplitwiseGroup,
 } from "@/lib/splitwise";
+import {
+  getSplitwiseImportStatus,
+  splitwiseImportAlreadyCompletedMessage,
+} from "@/lib/splitwise-import-status";
 
 interface ImportStats {
   groups: number;
@@ -69,6 +74,15 @@ export async function POST(req: NextRequest) {
   const { dryRun, groupIds, expenseOptions } = parseImportOptions(body);
 
   const db = getSupabase();
+
+  const { clientId } = getSplitwiseConfig();
+  const importStatus = await getSplitwiseImportStatus(db, userId, !!clientId);
+  if (!dryRun && importStatus.importCompleted) {
+    return NextResponse.json(
+      { error: splitwiseImportAlreadyCompletedMessage(importStatus.importCompletedAt) },
+      { status: 409 }
+    );
+  }
 
   // 1. Get stored Splitwise token
   const { data: tokenRow } = await db
@@ -170,6 +184,17 @@ export async function POST(req: NextRequest) {
     if (!dryRun && (stats.expenses + stats.settlements) > 0) {
       revalidateTag(CACHE_TAGS.splitTransactions(userId), "max");
       revalidateTag(CACHE_TAGS.transactions(userId), "max");
+    }
+
+    if (
+      !dryRun &&
+      (stats.groups > 0 || stats.expenses > 0 || stats.settlements > 0)
+    ) {
+      await db
+        .from("splitwise_tokens")
+        .update({ import_completed_at: new Date().toISOString() })
+        .eq("clerk_user_id", userId)
+        .is("import_completed_at", null);
     }
 
     // Collect uninvited members (no user_id) for the invite prompt

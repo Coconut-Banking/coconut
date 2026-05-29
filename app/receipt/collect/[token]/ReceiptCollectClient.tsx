@@ -1,42 +1,64 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Item = { id: string; name: string; total_price: number };
 type Participant = { member_id: string; display_name: string; status: string };
+type Share = {
+  memberId: string;
+  displayName: string;
+  amount: number;
+  currency: string;
+  status: string;
+  payUrl: string | null;
+};
 
 export function ReceiptCollectClient({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<"collect" | "pay">("collect");
   const [merchantName, setMerchantName] = useState("");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [shares, setShares] = useState<Share[]>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [guestName, setGuestName] = useState("");
+  const [nameSearch, setNameSearch] = useState("");
   const [joining, setJoining] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch(`/api/receipt/collect/${encodeURIComponent(token)}`);
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error ?? "Link invalid");
-          return;
-        }
-        setMerchantName(data.merchantName ?? "Receipt");
-        setParticipants(data.participants ?? []);
-        setItems(data.items ?? []);
-      } catch {
-        setError("Could not load bill");
-      } finally {
-        setLoading(false);
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/receipt/collect/${encodeURIComponent(token)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Link invalid");
+        return;
       }
-    })();
+      setMerchantName(data.merchantName ?? "Receipt");
+      setParticipants(data.participants ?? []);
+      setPhase(data.phase === "pay" ? "pay" : "collect");
+      if (data.phase === "pay") {
+        setShares(data.shares ?? []);
+        setDone(false);
+      } else {
+        setItems(data.items ?? []);
+      }
+      setError(null);
+    } catch {
+      setError("Could not load bill");
+    } finally {
+      setLoading(false);
+    }
   }, [token]);
+
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 8000);
+    return () => clearInterval(t);
+  }, [load]);
 
   const toggleItem = (id: string) => {
     setSelected((prev) => {
@@ -67,12 +89,36 @@ export function ReceiptCollectClient({ token }: { token: string }) {
         return;
       }
       setDone(true);
+      void load();
     } catch {
       setError("Network error");
     } finally {
       setSubmitting(false);
     }
-  }, [memberId, selected, participants, token]);
+  }, [memberId, selected, participants, token, load]);
+
+  const listed = useMemo(() => {
+    const base = participants.filter(
+      (p) => p.display_name.toLowerCase() !== "you" || participants.length > 1,
+    );
+    const q = nameSearch.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter((p) => p.display_name.toLowerCase().includes(q));
+  }, [participants, nameSearch]);
+
+  const filteredShares = useMemo(() => {
+    const q = nameSearch.trim().toLowerCase();
+    if (!q) return shares;
+    return shares.filter((s) => s.displayName.toLowerCase().includes(q));
+  }, [shares, nameSearch]);
+
+  const myShare = memberId
+    ? shares.find((s) => s.memberId === memberId)
+    : shares.find(
+        (s) =>
+          nameSearch.trim() &&
+          s.displayName.toLowerCase() === nameSearch.trim().toLowerCase(),
+      );
 
   if (loading) {
     return (
@@ -82,10 +128,74 @@ export function ReceiptCollectClient({ token }: { token: string }) {
     );
   }
 
-  if (error && !memberId) {
+  if (error && !memberId && phase === "collect") {
     return (
       <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-sm">
         <p className="text-sm text-red-600">{error}</p>
+      </div>
+    );
+  }
+
+  if (phase === "pay") {
+    return (
+      <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+        <h1 className="text-xl font-bold text-[#1e2021]">{merchantName}</h1>
+        <p className="mt-1 text-sm text-gray-500">Find your name to pay your share</p>
+        <input
+          type="search"
+          value={nameSearch}
+          onChange={(e) => setNameSearch(e.target.value)}
+          placeholder="Search your name"
+          className="mt-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-[#1e2021]"
+        />
+        {myShare ? (
+          <div className="mt-4 rounded-xl border border-[#E3DBD8] bg-[#F5F3F2] p-4">
+            <p className="text-sm font-semibold text-[#1e2021]">{myShare.displayName}</p>
+            <p className="mt-1 text-2xl font-bold text-[#1e2021]">
+              ${myShare.amount.toFixed(2)}
+            </p>
+            {myShare.status === "paid" ? (
+              <p className="mt-2 text-sm font-medium text-green-700">Paid ✓</p>
+            ) : myShare.payUrl ? (
+              <a
+                href={myShare.payUrl}
+                className="mt-4 block w-full rounded-xl bg-[#1e2021] py-3 text-center text-sm font-semibold text-white"
+              >
+                Pay with Apple Pay or card
+              </a>
+            ) : (
+              <p className="mt-2 text-sm text-gray-500">Payment link not ready — refresh shortly.</p>
+            )}
+          </div>
+        ) : (
+          <ul className="mt-4 space-y-2">
+            {filteredShares.map((s) => (
+              <li key={s.memberId}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNameSearch(s.displayName);
+                    setMemberId(s.memberId);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl border border-gray-200 px-4 py-3 text-left text-sm hover:border-[#1e2021]"
+                >
+                  <span className="font-medium text-[#1e2021]">{s.displayName}</span>
+                  <span className="text-gray-600">
+                    ${s.amount.toFixed(2)}
+                    {s.status === "paid" ? " · Paid" : ""}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-4 w-full rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-[#1e2021]"
+        >
+          Refresh
+        </button>
       </div>
     );
   }
@@ -95,8 +205,15 @@ export function ReceiptCollectClient({ token }: { token: string }) {
       <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-sm">
         <h1 className="text-xl font-bold text-[#1e2021]">You&apos;re done</h1>
         <p className="mt-2 text-sm text-gray-500">
-          We&apos;ll notify you when it&apos;s time to pay your share.
+          Your items are saved. When the host finishes the bill, come back to this same link to pay.
         </p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-4 w-full rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-[#1e2021]"
+        >
+          Refresh for payment
+        </button>
       </div>
     );
   }
@@ -129,17 +246,19 @@ export function ReceiptCollectClient({ token }: { token: string }) {
   };
 
   if (!memberId) {
-    const listed = participants.filter(
-      (p) => p.display_name.toLowerCase() !== "you" || participants.length > 1,
-    );
     return (
       <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <h1 className="text-xl font-bold text-[#1e2021]">{merchantName}</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {listed.length > 0 ? "Pick your name" : "Enter your name to join"}
-        </p>
+        <p className="mt-1 text-sm text-gray-500">Search or pick your name, then tap your items</p>
+        <input
+          type="search"
+          value={nameSearch}
+          onChange={(e) => setNameSearch(e.target.value)}
+          placeholder="Search your name"
+          className="mt-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-[#1e2021]"
+        />
         {listed.length > 0 ? (
-          <div className="mt-6 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid grid-cols-2 gap-2">
             {listed.map((p) => (
               <button
                 key={p.member_id}
@@ -155,6 +274,7 @@ export function ReceiptCollectClient({ token }: { token: string }) {
           </div>
         ) : null}
         <div className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-[#F5F3F2] p-4">
+          <p className="text-xs text-gray-500">Or type your name if you don&apos;t see it</p>
           <input
             type="text"
             value={guestName}

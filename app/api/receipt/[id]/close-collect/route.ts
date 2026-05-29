@@ -79,8 +79,16 @@ export async function POST(
   for (const item of receipt.receipt_items ?? []) {
     const itemPrice = item.total_price || 0;
     const itemWithExtra = itemPrice * (1 + extraPercentage);
-    const assignments = item.receipt_assignments ?? [];
-    if (assignments.length === 0) continue;
+    let assignments = item.receipt_assignments ?? [];
+    // Unpicked items → host (admin) so finish isn't blocked when some guests skip.
+    if (assignments.length === 0) {
+      assignments = [
+        {
+          assignee_name: payerMember.display_name ?? "You",
+          member_id: payerMember.id,
+        },
+      ];
+    }
 
     const shareAmount = itemWithExtra / assignments.length;
     for (const assignment of assignments) {

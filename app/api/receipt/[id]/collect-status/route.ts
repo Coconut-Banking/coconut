@@ -38,7 +38,22 @@ export async function GET(
     .eq("collect_session_id", receipt.collect_session_id);
 
   const list = participants ?? [];
-  const submitted = list.filter((p) => p.status === "submitted").length;
+
+  let hostMemberId: string | null = null;
+  if (receipt.group_id) {
+    const { data: hostMember } = await db
+      .from("group_members")
+      .select("id")
+      .eq("group_id", receipt.group_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    hostMemberId = hostMember?.id ?? null;
+  }
+
+  const guests = hostMemberId
+    ? list.filter((p) => p.member_id !== hostMemberId)
+    : list;
+  const guestsSubmitted = guests.filter((p) => p.status === "submitted").length;
 
   return NextResponse.json({
     collecting: receipt.status === "collecting",
@@ -46,7 +61,10 @@ export async function GET(
     merchantName: receipt.merchant_name,
     sessionId: receipt.collect_session_id,
     participants: list,
-    submittedCount: submitted,
-    totalCount: list.length,
+    submittedCount: guestsSubmitted,
+    totalCount: guests.length,
+    guestsSubmitted,
+    guestCount: guests.length,
+    pendingGuests: Math.max(0, guests.length - guestsSubmitted),
   });
 }

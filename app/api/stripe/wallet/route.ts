@@ -8,6 +8,11 @@ import {
   computeWalletDisplay,
   fetchCoconutHeldForMembers,
 } from "@/lib/stripe-wallet-response";
+import {
+  connectFlagsFromStripeAccount,
+  fetchStripeConnectedAccountRow,
+  persistConnectAccountFlags,
+} from "@/lib/stripe-connect-status";
 
 /**
  * GET /api/stripe/wallet
@@ -18,17 +23,43 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getSupabase();
-  const { data: connectRow } = await db
-    .from("stripe_connected_accounts")
-    .select(
-      "stripe_account_id, charges_enabled, payouts_enabled, onboarding_complete, auto_payout_enabled, auto_payout_threshold_usd",
-    )
-    .eq("clerk_user_id", userId)
-    .maybeSingle();
+  const { data: connectRow } = await fetchStripeConnectedAccountRow(db, userId);
 
-  const chargesEnabled = Boolean(connectRow?.charges_enabled);
-  const payoutsEnabled = Boolean(connectRow?.payouts_enabled);
+  let autoPayoutEnabled: boolean | undefined;
+  let autoPayoutThresholdUsd: number | null | undefined;
+  if (connectRow?.stripe_account_id) {
+    const { data: payoutPrefs } = await db
+      .from("stripe_connected_accounts")
+      .select("auto_payout_enabled, auto_payout_threshold_usd")
+      .eq("stripe_account_id", connectRow.stripe_account_id)
+      .maybeSingle();
+    autoPayoutEnabled = payoutPrefs?.auto_payout_enabled;
+    autoPayoutThresholdUsd = payoutPrefs?.auto_payout_threshold_usd;
+  }
+
+  let chargesEnabled = Boolean(connectRow?.charges_enabled);
+  let payoutsEnabled = Boolean(connectRow?.payouts_enabled);
   const hasAccount = Boolean(connectRow?.stripe_account_id);
+
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (key && connectRow?.stripe_account_id) {
+    try {
+      const stripe = new Stripe(key);
+      const account = await stripe.accounts.retrieve(connectRow.stripe_account_id);
+      const flags = connectFlagsFromStripeAccount(account);
+      chargesEnabled = flags.charges_enabled;
+      payoutsEnabled = flags.payouts_enabled;
+      if (
+        flags.charges_enabled !== connectRow.charges_enabled ||
+        flags.payouts_enabled !== connectRow.payouts_enabled ||
+        flags.details_submitted !== connectRow.details_submitted
+      ) {
+        await persistConnectAccountFlags(db, connectRow.stripe_account_id, flags);
+      }
+    } catch (e) {
+      console.warn("[stripe/wallet] account sync failed:", e);
+    }
+  }
 
   const { data: memberRows } = await db
     .from("group_members")
@@ -43,7 +74,6 @@ export async function GET() {
   let stripePending: number | null = null;
   let balanceCurrency = currency.toLowerCase();
 
-  const key = process.env.STRIPE_SECRET_KEY;
   if (key && connectRow?.stripe_account_id && chargesEnabled) {
     try {
       const stripe = new Stripe(key);
@@ -68,8 +98,8 @@ export async function GET() {
     chargesEnabled,
     payoutsEnabled,
     hasAccount,
-    autoPayoutEnabled: connectRow?.auto_payout_enabled,
-    autoPayoutThresholdUsd: connectRow?.auto_payout_threshold_usd,
+    autoPayoutEnabled,
+    autoPayoutThresholdUsd,
   });
 
   return NextResponse.json(wallet, {

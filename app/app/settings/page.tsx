@@ -62,7 +62,13 @@ function SettingsContent() {
   const refreshingRef = useRef(false);
 
   // Splitwise import state
-  const [splitwiseStatus, setSplitwiseStatus] = useState<{ configured: boolean; connected: boolean } | null>(null);
+  const [splitwiseStatus, setSplitwiseStatus] = useState<{
+    configured: boolean;
+    connected: boolean;
+    importedSplitwiseGroupCount?: number;
+    importCompleted?: boolean;
+    importCompletedAt?: string | null;
+  } | null>(null);
   const [splitwiseImporting, setSplitwiseImporting] = useState(false);
   const [splitwiseResult, setSplitwiseResult] = useState<{ ok: boolean; stats?: { groups: number; members: number; expenses: number; settlements: number; skipped: number }; error?: string } | null>(null);
 
@@ -85,16 +91,36 @@ function SettingsContent() {
   }, [searchParams]);
 
   const startSplitwiseImport = async () => {
+    if (splitwiseStatus?.importCompleted) return;
     setSplitwiseImporting(true);
     setSplitwiseResult(null);
     try {
       const res = await fetch("/api/splitwise/import", { method: "POST" });
       const data = await res.json();
+      if (!res.ok) {
+        setSplitwiseResult({ ok: false, error: (data as { error?: string }).error ?? "Import failed" });
+        return;
+      }
       setSplitwiseResult(data);
+      const statusRes = await fetch("/api/splitwise/status");
+      if (statusRes.ok) setSplitwiseStatus(await statusRes.json());
     } catch {
       setSplitwiseResult({ ok: false, error: "Import failed. Please try again." });
     } finally {
       setSplitwiseImporting(false);
+    }
+  };
+
+  const formatImportDate = (iso: string | null | undefined) => {
+    if (!iso) return null;
+    try {
+      return new Date(iso).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return null;
     }
   };
 
@@ -1048,8 +1074,20 @@ function SettingsContent() {
                 {/* Splitwise Import */}
                 <div className="bg-white rounded-2xl border border-gray-100 p-6">
                   <h2 className="text-sm font-semibold text-gray-900 mb-1">Import from Splitwise</h2>
+                  {splitwiseStatus?.importCompleted ? (
+                    <p className="text-xs text-gray-500">
+                      Imported
+                      {formatImportDate(splitwiseStatus.importCompletedAt)
+                        ? ` on ${formatImportDate(splitwiseStatus.importCompletedAt)}`
+                        : ""}
+                      . {splitwiseStatus.importedSplitwiseGroupCount ?? 0} group
+                      {(splitwiseStatus.importedSplitwiseGroupCount ?? 0) !== 1 ? "s" : ""} — one-time
+                      import; balances are in Shared.
+                    </p>
+                  ) : (
+                  <>
                   <p className="text-xs text-gray-400 mb-5">
-                    Migrate your Splitwise groups, expenses, and settlements into Coconut.
+                    One-time import of your Splitwise groups and history. You can&apos;t sync again after import finishes.
                   </p>
 
                   {splitwiseResult && (
@@ -1113,6 +1151,8 @@ function SettingsContent() {
                         </button>
                       </div>
                     </div>
+                  )}
+                  </>
                   )}
                 </div>
 

@@ -185,6 +185,31 @@ const EMAIL_RECEIPT_PAGE = 1000;
 /**
  * Load all email_receipts rows for a user with transaction_id set (paginated).
  */
+/** Load email receipts only for visible transaction IDs (avoids full-user pagination on every tx fetch). */
+export async function fetchEmailReceiptsForTransactionIds(
+  db: SupabaseClient,
+  clerkUserId: string,
+  transactionIds: string[],
+  select: string
+): Promise<Record<string, unknown>[]> {
+  if (transactionIds.length === 0) return [];
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < transactionIds.length; i += EMAIL_RECEIPT_TX_IN_CHUNK) {
+    const chunk = transactionIds.slice(i, i + EMAIL_RECEIPT_TX_IN_CHUNK);
+    const { data, error } = await db
+      .from("email_receipts")
+      .select(select)
+      .eq("clerk_user_id", clerkUserId)
+      .in("transaction_id", chunk);
+    if (error) {
+      console.error("[email_receipts] chunked fetch failed:", error.message);
+      throw new Error(`email_receipts chunked fetch failed: ${error.message}`);
+    }
+    if (data?.length) out.push(...(data as unknown as Record<string, unknown>[]));
+  }
+  return out;
+}
+
 export async function fetchAllEmailReceiptsLinkedForUser(
   db: SupabaseClient,
   clerkUserId: string,

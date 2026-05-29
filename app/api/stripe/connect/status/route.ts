@@ -9,6 +9,7 @@ import {
   fetchStripeConnectedAccountRow,
   persistConnectAccountFlags,
 } from "@/lib/stripe-connect-status";
+import { fetchConnectPayoutBank } from "@/lib/stripe-connect-payout-bank";
 
 /**
  * GET /api/stripe/connect/status
@@ -67,6 +68,11 @@ export async function GET() {
         await persistConnectAccountFlags(db, row.stripe_account_id, flags);
       }
 
+      const payoutBank =
+        flags.payouts_enabled || flags.details_submitted
+          ? await fetchConnectPayoutBank(stripe, row.stripe_account_id)
+          : null;
+
       const cacheSeconds = flags.transferEligibility === "pending_review" ? 15 : 60;
       return NextResponse.json(
         {
@@ -78,6 +84,7 @@ export async function GET() {
           detailsSubmitted: flags.details_submitted,
           requiresVerification: flags.requiresVerification,
           transferEligibility: flags.transferEligibility,
+          payoutBank,
           createdAt: row.created_at,
         },
         { headers: { "Cache-Control": `private, max-age=${cacheSeconds}, stale-while-revalidate=120` } },

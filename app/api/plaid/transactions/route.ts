@@ -16,9 +16,12 @@ import {
 } from "@/lib/merchant-normalize-llm";
 import { CACHE_TAGS } from "@/lib/cached-queries";
 import {
-  fetchAllEmailReceiptsLinkedForUser,
+  fetchEmailReceiptsForTransactionIds,
   remapEmailReceiptsBeforeTxDedupeDelete,
 } from "@/lib/transaction-sync";
+import { queryInChunks } from "@/lib/db-in-chunks";
+
+const TX_LOOKUP_CHUNK = 150;
 
 export async function GET(request: NextRequest) {
   const session = await loadClerkAuth();
@@ -141,24 +144,52 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // All independent lookups in a single parallel batch.
+    // All independent lookups in a single parallel batch (chunk large IN lists).
     const adminDb = getSupabaseAdmin();
-    const txIds = bankOnly.map((tx) => tx.id);
+    const txIds = deduped.map((tx) => tx.id as string);
     const acctIds = [...new Set((deduped as { account_id?: string }[]).map((t) => t.account_id).filter(Boolean))];
 
-    const [{ data: inSplits }, receiptRows, { data: inSubscriptions }, acctRows, { data: activeSubs }] = await Promise.all([
-      db.from("split_transactions").select("transaction_id").in("transaction_id", txIds),
-      fetchAllEmailReceiptsLinkedForUser(
+    const [splitRows, receiptRows, subRows, acctRows, activeSubs] = await Promise.all([
+      queryInChunks(
+        txIds,
+        TX_LOOKUP_CHUNK,
+        async (chunk) => {
+          const { data } = await db
+            .from("split_transactions")
+            .select("transaction_id")
+            .in("transaction_id", chunk);
+          return (data ?? []) as { transaction_id: string }[];
+        },
+        (acc, batch) => acc.concat(batch),
+        [] as { transaction_id: string }[]
+      ),
+      fetchEmailReceiptsForTransactionIds(
         adminDb,
         effectiveUserId,
+        txIds,
         "id, transaction_id, merchant, raw_subject, merchant_type, merchant_details"
       ),
-      db.from("subscription_transactions").select("transaction_id").in("transaction_id", txIds),
+      queryInChunks(
+        txIds,
+        TX_LOOKUP_CHUNK,
+        async (chunk) => {
+          const { data } = await db
+            .from("subscription_transactions")
+            .select("transaction_id")
+            .in("transaction_id", chunk);
+          return (data ?? []) as { transaction_id: string }[];
+        },
+        (acc, batch) => acc.concat(batch),
+        [] as { transaction_id: string }[]
+      ),
       acctIds.length > 0
         ? db.from("accounts").select("id, plaid_account_id, name, nickname, mask").in("id", acctIds).then((r) => r.data ?? [])
         : Promise.resolve([] as { id: string; plaid_account_id: string; name: string; nickname: string | null; mask: string }[]),
-      db.from("subscriptions").select("normalized_merchant").eq("clerk_user_id", effectiveUserId).eq("status", "active"),
+      db.from("subscriptions").select("normalized_merchant").eq("clerk_user_id", effectiveUserId).eq("status", "active").then((r) => r.data ?? []),
     ]);
+
+    const inSplits = splitRows;
+    const inSubscriptions = subRows;
 
     const receiptMatchLineByTxId = new Map<string, string>();
     const receiptIdByTxId = new Map<string, string>();
@@ -184,7 +215,7 @@ export async function GET(request: NextRequest) {
     }
     const receiptTxIds = new Set(receiptMatchLineByTxId.keys());
     const splitTxIds = new Set(
-      (inSplits ?? []).map((r) => r.transaction_id as string).filter(Boolean)
+      inSplits.map((r) => r.transaction_id as string).filter(Boolean)
     );
 
     // Remap receipt maps for duplicates (in-memory only — fast)

@@ -55,11 +55,15 @@ async function linkMemberByEmail(userId: string) {
     return;
   }
 
-  await Promise.all(
-    candidates.map((member) =>
-      db.from("group_members").update({ user_id: userId }).eq("id", member.id)
-    )
-  );
+  const memberIds = candidates.map((m) => m.id);
+  const { error: linkErr } = await db
+    .from("group_members")
+    .update({ user_id: userId })
+    .in("id", memberIds);
+  if (linkErr) {
+    console.warn("[group-access] batch link failed:", linkErr.message);
+    return;
+  }
 
   console.log(
     `[group-access] linked ${candidates.length} member row(s) for ${email} (own groups only)`
