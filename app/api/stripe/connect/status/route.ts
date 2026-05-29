@@ -82,7 +82,8 @@ export async function GET() {
         },
         { headers: { "Cache-Control": `private, max-age=${cacheSeconds}, stale-while-revalidate=120` } },
       );
-    } catch {
+    } catch (e) {
+      console.error("[stripe-connect] status sync from Stripe failed:", e);
       // Fall through to DB values if Stripe call fails
     }
   }

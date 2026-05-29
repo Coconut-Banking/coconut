@@ -51,11 +51,16 @@ export const TRANSFER_ELIGIBILITY_LABELS: Record<
 };
 
 export function stripeAccountRequiresVerification(account: {
+  details_submitted?: boolean | null;
   requirements?: { past_due?: string[] | null; currently_due?: string[] | null } | null;
 }): boolean {
   const pastDue = account.requirements?.past_due ?? [];
+  if (pastDue.length > 0) return true;
+  // After the user confirms onboarding, Stripe often keeps items in currently_due
+  // while reviewing — that is not "action needed" in the app.
+  if (account.details_submitted) return false;
   const currentlyDue = account.requirements?.currently_due ?? [];
-  return pastDue.length > 0 || currentlyDue.length > 0;
+  return currentlyDue.length > 0;
 }
 
 /** Fields written by account.updated webhook and synced on GET /connect/status. */

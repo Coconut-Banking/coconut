@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeTransferEligibility } from "../stripe-connect-status";
+import {
+  computeTransferEligibility,
+  connectFlagsFromStripeAccount,
+} from "../stripe-connect-status";
 
 describe("computeTransferEligibility", () => {
   it("returns none without account", () => {
@@ -38,7 +41,7 @@ describe("computeTransferEligibility", () => {
     ).toBe("pending_review");
   });
 
-  it("returns action_required when verification due", () => {
+  it("returns action_required when past-due requirements exist", () => {
     expect(
       computeTransferEligibility({
         hasAccount: true,
@@ -48,5 +51,19 @@ describe("computeTransferEligibility", () => {
         requiresVerification: true,
       }),
     ).toBe("action_required");
+  });
+
+  it("treats post-submit currently_due as pending review, not action required", () => {
+    const flags = connectFlagsFromStripeAccount({
+      details_submitted: true,
+      charges_enabled: false,
+      payouts_enabled: false,
+      requirements: {
+        currently_due: ["individual.verification.document"],
+        past_due: [],
+      },
+    });
+    expect(flags.transferEligibility).toBe("pending_review");
+    expect(flags.requiresVerification).toBe(false);
   });
 });
