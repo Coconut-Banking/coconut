@@ -6,6 +6,8 @@ import { getSupabase } from "@/lib/supabase";
 import {
   computeTransferEligibility,
   connectFlagsFromStripeAccount,
+  fetchStripeConnectedAccountRow,
+  persistConnectAccountFlags,
 } from "@/lib/stripe-connect-status";
 
 /**
@@ -19,13 +21,7 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getSupabase();
-  const { data: row } = await db
-    .from("stripe_connected_accounts")
-    .select(
-      "stripe_account_id, onboarding_complete, charges_enabled, payouts_enabled, details_submitted, created_at",
-    )
-    .eq("clerk_user_id", userId)
-    .maybeSingle();
+  const { data: row } = await fetchStripeConnectedAccountRow(db, userId);
 
   const cacheHeaders = { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } };
 
@@ -68,10 +64,7 @@ export async function GET() {
         dbPatch.payouts_enabled !== row.payouts_enabled ||
         dbPatch.details_submitted !== row.details_submitted
       ) {
-        await db
-          .from("stripe_connected_accounts")
-          .update(dbPatch)
-          .eq("stripe_account_id", row.stripe_account_id);
+        await persistConnectAccountFlags(db, row.stripe_account_id, flags);
       }
 
       const cacheSeconds = flags.transferEligibility === "pending_review" ? 15 : 60;

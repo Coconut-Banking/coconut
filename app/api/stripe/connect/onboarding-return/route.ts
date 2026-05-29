@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
-import { connectFlagsFromStripeAccount } from "@/lib/stripe-connect-status";
+import {
+  connectFlagsFromStripeAccount,
+  persistConnectAccountFlags,
+} from "@/lib/stripe-connect-status";
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
@@ -21,15 +24,7 @@ export async function GET(req: NextRequest) {
       const db = getSupabase();
 
       const flags = connectFlagsFromStripeAccount(account);
-      await db
-        .from("stripe_connected_accounts")
-        .update({
-          onboarding_complete: flags.onboarding_complete,
-          charges_enabled: flags.charges_enabled,
-          payouts_enabled: flags.payouts_enabled,
-          details_submitted: flags.details_submitted,
-        })
-        .eq("stripe_account_id", accountId);
+      await persistConnectAccountFlags(db, accountId, flags);
     } catch (e) {
       console.error("[stripe-connect] onboarding-return sync error:", e);
     }

@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 /** User-facing Connect transfer / payout eligibility (Settings, wallet). */
 export type TransferEligibility =
   | "none"
@@ -82,4 +84,65 @@ export function connectFlagsFromStripeAccount(account: {
     requiresVerification,
     transferEligibility,
   };
+}
+
+export type ConnectAccountFlags = ReturnType<typeof connectFlagsFromStripeAccount>;
+
+function isMissingDetailsSubmittedColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "42703" || /details_submitted/i.test(error.message ?? "");
+}
+
+/** Persists Connect flags; retries without details_submitted if migration not applied yet. */
+export async function persistConnectAccountFlags(
+  db: SupabaseClient,
+  stripeAccountId: string,
+  flags: ConnectAccountFlags,
+) {
+  const patch = {
+    onboarding_complete: flags.onboarding_complete,
+    charges_enabled: flags.charges_enabled,
+    payouts_enabled: flags.payouts_enabled,
+    details_submitted: flags.details_submitted,
+  };
+  let { error } = await db
+    .from("stripe_connected_accounts")
+    .update(patch)
+    .eq("stripe_account_id", stripeAccountId);
+  if (isMissingDetailsSubmittedColumn(error)) {
+    const { details_submitted: _omit, ...withoutDetails } = patch;
+    ({ error } = await db
+      .from("stripe_connected_accounts")
+      .update(withoutDetails)
+      .eq("stripe_account_id", stripeAccountId));
+  }
+  return { error };
+}
+
+const CONNECT_ROW_SELECT =
+  "stripe_account_id, onboarding_complete, charges_enabled, payouts_enabled, details_submitted, created_at";
+const CONNECT_ROW_SELECT_LEGACY =
+  "stripe_account_id, onboarding_complete, charges_enabled, payouts_enabled, created_at";
+
+/** Load Connect row; falls back if details_submitted column is not migrated yet. */
+export async function fetchStripeConnectedAccountRow(
+  db: SupabaseClient,
+  clerkUserId: string,
+) {
+  let result = await db
+    .from("stripe_connected_accounts")
+    .select(CONNECT_ROW_SELECT)
+    .eq("clerk_user_id", clerkUserId)
+    .maybeSingle();
+  if (isMissingDetailsSubmittedColumn(result.error)) {
+    result = await db
+      .from("stripe_connected_accounts")
+      .select(CONNECT_ROW_SELECT_LEGACY)
+      .eq("clerk_user_id", clerkUserId)
+      .maybeSingle();
+    if (result.data) {
+      result.data = { ...result.data, details_submitted: false };
+    }
+  }
+  return result;
 }

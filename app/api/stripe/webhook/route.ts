@@ -5,7 +5,10 @@ import { recordStripeSettlement } from "@/lib/stripe-settlement-record";
 import { resolveUserAutoPayoutSettings, tryAutoPayoutForAccount } from "@/lib/stripe-auto-payout";
 import { markPaymentRequestPaid } from "@/lib/payment-requests";
 import { notifyUsers } from "@/lib/push-sender";
-import { connectFlagsFromStripeAccount } from "@/lib/stripe-connect-status";
+import {
+  connectFlagsFromStripeAccount,
+  persistConnectAccountFlags,
+} from "@/lib/stripe-connect-status";
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -184,15 +187,7 @@ export async function POST(req: NextRequest) {
     const db = getSupabase();
     const flags = connectFlagsFromStripeAccount(account);
 
-    const { error } = await db
-      .from("stripe_connected_accounts")
-      .update({
-        onboarding_complete: flags.onboarding_complete,
-        charges_enabled: flags.charges_enabled,
-        payouts_enabled: flags.payouts_enabled,
-        details_submitted: flags.details_submitted,
-      })
-      .eq("stripe_account_id", account.id);
+    const { error } = await persistConnectAccountFlags(db, account.id, flags);
 
     if (error) {
       console.error("[stripe-webhook] connect account update failed:", error);
