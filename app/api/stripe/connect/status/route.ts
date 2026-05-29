@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { getSupabase } from "@/lib/supabase";
+import {
+  computeTransferEligibility,
+  connectFlagsFromStripeAccount,
+} from "@/lib/stripe-connect-status";
 
 /**
  * GET /api/stripe/connect/status
@@ -17,7 +21,9 @@ export async function GET() {
   const db = getSupabase();
   const { data: row } = await db
     .from("stripe_connected_accounts")
-    .select("stripe_account_id, onboarding_complete, charges_enabled, payouts_enabled, created_at")
+    .select(
+      "stripe_account_id, onboarding_complete, charges_enabled, payouts_enabled, details_submitted, created_at",
+    )
     .eq("clerk_user_id", userId)
     .maybeSingle();
 
@@ -29,6 +35,15 @@ export async function GET() {
       onboardingComplete: false,
       chargesEnabled: false,
       payoutsEnabled: false,
+      detailsSubmitted: false,
+      requiresVerification: false,
+      transferEligibility: computeTransferEligibility({
+        hasAccount: false,
+        chargesEnabled: false,
+        payoutsEnabled: false,
+        detailsSubmitted: false,
+        requiresVerification: false,
+      }),
     }, cacheHeaders);
   }
 
@@ -39,37 +54,54 @@ export async function GET() {
     try {
       const stripe = new Stripe(key);
       const account = await stripe.accounts.retrieve(row.stripe_account_id);
-      const chargesEnabled = account.charges_enabled ?? false;
-      const payoutsEnabled = account.payouts_enabled ?? false;
-      const onboardingComplete = chargesEnabled;
-      const pastDue = account.requirements?.past_due ?? [];
-      const currentlyDue = account.requirements?.currently_due ?? [];
-      const requiresVerification = pastDue.length > 0 || currentlyDue.length > 0;
+      const flags = connectFlagsFromStripeAccount(account);
 
+      const dbPatch = {
+        onboarding_complete: flags.onboarding_complete,
+        charges_enabled: flags.charges_enabled,
+        payouts_enabled: flags.payouts_enabled,
+        details_submitted: flags.details_submitted,
+      };
       if (
-        onboardingComplete !== row.onboarding_complete ||
-        chargesEnabled !== row.charges_enabled ||
-        payoutsEnabled !== row.payouts_enabled
+        dbPatch.onboarding_complete !== row.onboarding_complete ||
+        dbPatch.charges_enabled !== row.charges_enabled ||
+        dbPatch.payouts_enabled !== row.payouts_enabled ||
+        dbPatch.details_submitted !== row.details_submitted
       ) {
         await db
           .from("stripe_connected_accounts")
-          .update({ onboarding_complete: onboardingComplete, charges_enabled: chargesEnabled, payouts_enabled: payoutsEnabled })
+          .update(dbPatch)
           .eq("stripe_account_id", row.stripe_account_id);
       }
 
-      return NextResponse.json({
-        hasAccount: true,
-        accountId: row.stripe_account_id,
-        onboardingComplete,
-        chargesEnabled,
-        payoutsEnabled,
-        requiresVerification,
-        createdAt: row.created_at,
-      });
+      const cacheSeconds = flags.transferEligibility === "pending_review" ? 15 : 60;
+      return NextResponse.json(
+        {
+          hasAccount: true,
+          accountId: row.stripe_account_id,
+          onboardingComplete: flags.onboarding_complete,
+          chargesEnabled: flags.charges_enabled,
+          payoutsEnabled: flags.payouts_enabled,
+          detailsSubmitted: flags.details_submitted,
+          requiresVerification: flags.requiresVerification,
+          transferEligibility: flags.transferEligibility,
+          createdAt: row.created_at,
+        },
+        { headers: { "Cache-Control": `private, max-age=${cacheSeconds}, stale-while-revalidate=120` } },
+      );
     } catch {
       // Fall through to DB values if Stripe call fails
     }
   }
+
+  const detailsSubmitted = Boolean(row.details_submitted);
+  const transferEligibility = computeTransferEligibility({
+    hasAccount: true,
+    chargesEnabled: row.charges_enabled,
+    payoutsEnabled: row.payouts_enabled,
+    detailsSubmitted,
+    requiresVerification: false,
+  });
 
   return NextResponse.json({
     hasAccount: true,
@@ -77,6 +109,9 @@ export async function GET() {
     onboardingComplete: row.onboarding_complete,
     chargesEnabled: row.charges_enabled,
     payoutsEnabled: row.payouts_enabled,
+    detailsSubmitted,
+    requiresVerification: false,
+    transferEligibility,
     createdAt: row.created_at,
   }, cacheHeaders);
 }

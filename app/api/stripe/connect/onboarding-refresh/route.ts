@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 <body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
 <p>Redirecting back to Coconut…</p>
 <script>
-  window.location.href = ${JSON.stringify(scheme)} + "://stripe-connect-return?status=refresh&account_id=${accountId}";
+  window.location.href = ${JSON.stringify(scheme)} + "://stripe-connect-return?stripe_connect=refresh&account_id=${accountId}";
   setTimeout(function() { window.close(); }, 2000);
 </script>
 </body></html>`;

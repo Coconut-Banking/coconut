@@ -5,6 +5,7 @@ import { recordStripeSettlement } from "@/lib/stripe-settlement-record";
 import { resolveUserAutoPayoutSettings, tryAutoPayoutForAccount } from "@/lib/stripe-auto-payout";
 import { markPaymentRequestPaid } from "@/lib/payment-requests";
 import { notifyUsers } from "@/lib/push-sender";
+import { connectFlagsFromStripeAccount } from "@/lib/stripe-connect-status";
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -181,15 +182,15 @@ export async function POST(req: NextRequest) {
   if (event.type === "account.updated") {
     const account = event.data.object as Stripe.Account;
     const db = getSupabase();
+    const flags = connectFlagsFromStripeAccount(account);
 
-    // charges_enabled is sufficient for routing payments — payouts_enabled may stay false
-    // in test mode (no real bank) but funds still route correctly to the connected account.
     const { error } = await db
       .from("stripe_connected_accounts")
       .update({
-        onboarding_complete: account.charges_enabled ?? false,
-        charges_enabled: account.charges_enabled ?? false,
-        payouts_enabled: account.payouts_enabled ?? false,
+        onboarding_complete: flags.onboarding_complete,
+        charges_enabled: flags.charges_enabled,
+        payouts_enabled: flags.payouts_enabled,
+        details_submitted: flags.details_submitted,
       })
       .eq("stripe_account_id", account.id);
 
@@ -198,8 +199,10 @@ export async function POST(req: NextRequest) {
     } else {
       console.log("[stripe-webhook] connect account updated", {
         accountId: account.id,
-        charges_enabled: account.charges_enabled,
-        payouts_enabled: account.payouts_enabled,
+        transferEligibility: flags.transferEligibility,
+        charges_enabled: flags.charges_enabled,
+        payouts_enabled: flags.payouts_enabled,
+        details_submitted: flags.details_submitted,
       });
     }
   }
