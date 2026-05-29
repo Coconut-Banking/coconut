@@ -223,6 +223,67 @@ export async function createPayLinkCheckoutSession(
   }
 }
 
+export async function createPayLinkPaymentIntent(
+  stripe: Stripe,
+  payload: PayLinkPayload,
+  opts?: { paymentRequestId?: string },
+): Promise<{ clientSecret: string; paymentIntentId: string }> {
+  const amountResult = await resolvePayLinkAmount(payload);
+  if (!amountResult.ok) {
+    throw new PayLinkCheckoutError(amountResult.error, amountResult.status);
+  }
+
+  const amountCents = Math.round(amountResult.amount * 100);
+  const currency = payload.currency.toLowerCase();
+  const destinationAccountId = await lookupDestinationAccount(payload.receiverMemberId);
+
+  const metadata: Record<string, string> = {
+    group_id: payload.groupId,
+    payer_member_id: payload.payerMemberId,
+    receiver_member_id: payload.receiverMemberId,
+    source: "payment_link",
+    ...(opts?.paymentRequestId ? { payment_request_id: opts.paymentRequestId } : {}),
+  };
+
+  const baseParams: Stripe.PaymentIntentCreateParams = {
+    amount: amountCents,
+    currency,
+    metadata,
+    automatic_payment_methods: { enabled: true },
+  };
+
+  const create = async (withTransfer: boolean) => {
+    const params: Stripe.PaymentIntentCreateParams = { ...baseParams };
+    if (withTransfer && destinationAccountId) {
+      params.transfer_data = { destination: destinationAccountId };
+    }
+    return stripe.paymentIntents.create(params);
+  };
+
+  try {
+    const pi = await create(Boolean(destinationAccountId));
+    if (!pi.client_secret) {
+      throw new PayLinkCheckoutError("Payment intent missing client secret", 500);
+    }
+    return { clientSecret: pi.client_secret, paymentIntentId: pi.id };
+  } catch (e) {
+    if (e instanceof PayLinkCheckoutError) throw e;
+    if (
+      destinationAccountId &&
+      e instanceof Stripe.errors.StripeError &&
+      e.message.includes("transfer")
+    ) {
+      const pi = await create(false);
+      if (!pi.client_secret) {
+        throw new PayLinkCheckoutError("Payment intent missing client secret", 500);
+      }
+      return { clientSecret: pi.client_secret, paymentIntentId: pi.id };
+    }
+    const msg = e instanceof Stripe.errors.StripeError ? e.message : "Payment failed";
+    throw new PayLinkCheckoutError(msg, 500);
+  }
+}
+
 export class PayLinkCheckoutError extends Error {
   status: number;
   constructor(message: string, status: number) {

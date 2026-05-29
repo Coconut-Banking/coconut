@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { InlineBillPay } from "@/components/pay/InlineBillPay";
+import { tokenFromPayUrl } from "@/lib/pay-url-token";
 
 type Item = { id: string; name: string; total_price: number };
 type Participant = { member_id: string; display_name: string; status: string };
@@ -14,6 +17,9 @@ type Share = {
 };
 
 export function ReceiptCollectClient({ token }: { token: string }) {
+  const searchParams = useSearchParams();
+  const urlPaid = searchParams.get("paid") === "1" || searchParams.get("redirect_status") === "succeeded";
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"collect" | "pay">("collect");
@@ -120,6 +126,8 @@ export function ReceiptCollectClient({ token }: { token: string }) {
           s.displayName.toLowerCase() === nameSearch.trim().toLowerCase(),
       );
 
+  const myPayToken = myShare?.payUrl ? tokenFromPayUrl(myShare.payUrl) : null;
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-sm">
@@ -154,15 +162,16 @@ export function ReceiptCollectClient({ token }: { token: string }) {
             <p className="mt-1 text-2xl font-bold text-[#1e2021]">
               ${myShare.amount.toFixed(2)}
             </p>
-            {myShare.status === "paid" ? (
+            {myShare.status === "paid" || urlPaid ? (
               <p className="mt-2 text-sm font-medium text-green-700">Paid ✓</p>
             ) : myShare.payUrl ? (
-              <a
-                href={myShare.payUrl}
-                className="mt-4 block w-full rounded-xl bg-[#1e2021] py-3 text-center text-sm font-semibold text-white"
-              >
-                Pay with Apple Pay or card
-              </a>
+              <div className="mt-4">
+                {myPayToken ? (
+                  <InlineBillPay token={myPayToken} onPaid={() => void load()} />
+                ) : (
+                  <p className="text-sm text-gray-500">Payment link not ready — refresh shortly.</p>
+                )}
+              </div>
             ) : (
               <p className="mt-2 text-sm text-gray-500">Payment link not ready — refresh shortly.</p>
             )}

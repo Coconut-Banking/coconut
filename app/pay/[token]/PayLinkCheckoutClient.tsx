@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
+import { InlineBillPay } from "@/components/pay/InlineBillPay";
 
 type PayPreview = {
   amount: number;
@@ -25,13 +26,15 @@ export function PayLinkCheckoutClient({
   initialCancelled: boolean;
 }) {
   const searchParams = useSearchParams();
-  const paid = initialPaid || searchParams.get("paid") === "1";
-  const cancelled = initialCancelled || searchParams.get("cancelled") === "1";
+  const paid =
+    initialPaid ||
+    searchParams.get("paid") === "1" ||
+    searchParams.get("redirect_status") === "succeeded";
 
   const [preview, setPreview] = useState<PayPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [justPaid, setJustPaid] = useState(false);
 
   useEffect(() => {
     let cancelledReq = false;
@@ -54,24 +57,6 @@ export function PayLinkCheckoutClient({
     return () => {
       cancelledReq = true;
     };
-  }, [token]);
-
-  const startCheckout = useCallback(async () => {
-    setCheckoutLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/pay/${encodeURIComponent(token)}/checkout`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok || !data.url) {
-        setError(data.error ?? "Could not start checkout");
-        return;
-      }
-      window.location.href = data.url as string;
-    } catch {
-      setError("Could not start checkout");
-    } finally {
-      setCheckoutLoading(false);
-    }
   }, [token]);
 
   const formatMoney = (amount: number, currency: string) =>
@@ -102,7 +87,7 @@ export function PayLinkCheckoutClient({
     );
   }
 
-  if (paid) {
+  if (paid || justPaid) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -135,7 +120,7 @@ export function PayLinkCheckoutClient({
       className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm"
     >
       <p className="text-center text-xs font-semibold uppercase tracking-wider text-gray-400">
-        Pay with Apple Pay or card
+        Your share
       </p>
       <p className="mt-3 text-center text-sm text-gray-600">
         {preview.payerName} → {preview.receiverName}
@@ -145,7 +130,7 @@ export function PayLinkCheckoutClient({
       </p>
       <p className="mt-1 text-center text-xs text-gray-400">{preview.groupName}</p>
 
-      {cancelled ? (
+      {initialCancelled ? (
         <p className="mt-4 text-center text-sm text-amber-700">Payment cancelled — you can try again.</p>
       ) : null}
 
@@ -154,18 +139,10 @@ export function PayLinkCheckoutClient({
           {preview.notPayableReason}
         </p>
       ) : (
-        <>
-          {error ? <p className="mt-4 text-center text-sm text-red-600">{error}</p> : null}
-          <button
-            type="button"
-            onClick={startCheckout}
-            disabled={checkoutLoading}
-            className="mt-8 w-full rounded-xl bg-[#1e2021] py-3.5 text-base font-semibold text-white transition hover:bg-[#161819] disabled:opacity-60"
-          >
-            {checkoutLoading ? "Opening secure checkout…" : "Continue to pay"}
-          </button>
+        <div className="mt-8">
+          <InlineBillPay token={token} onPaid={() => setJustPaid(true)} />
           <p className="mt-4 text-center text-xs text-gray-400">
-            Secure checkout by Stripe · Apple Pay available in Safari
+            Tap Apple Pay below — stays on this page, no redirect
           </p>
           <a
             href={`coconut://pay/${encodeURIComponent(token)}`}
@@ -173,7 +150,7 @@ export function PayLinkCheckoutClient({
           >
             Open in Coconut app
           </a>
-        </>
+        </div>
       )}
     </motion.div>
   );

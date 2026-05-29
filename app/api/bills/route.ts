@@ -213,6 +213,7 @@ export async function GET(req: NextRequest) {
     lastNudgedAt: r.last_nudged_at,
     isPayer: memberIds.includes(r.payer_member_id),
     isReceiver: memberIds.includes(r.receiver_member_id),
+    receiptId: r.receipt_scan_id ?? undefined,
   }));
 
   const [{ count: toPayCount }, { count: waitingCount }] = await Promise.all([

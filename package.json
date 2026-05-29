@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.39.0",
+    "@stripe/react-stripe-js": "^6.4.0",
+    "@stripe/stripe-js": "^9.7.0",
     "@supabase/supabase-js": "^2.98.0",
     "googleapis": "^171.4.0",
     "heic-convert": "^2.1.0",
