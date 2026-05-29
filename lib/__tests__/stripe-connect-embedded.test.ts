@@ -5,6 +5,7 @@ describe("buildAccountSessionComponents", () => {
   it("enables onboarding only for onboarding mode", () => {
     const components = buildAccountSessionComponents("onboarding");
     expect(components.account_onboarding?.enabled).toBe(true);
+    expect(components.account_onboarding?.features).toBeUndefined();
     expect(components.payouts).toBeUndefined();
   });
 

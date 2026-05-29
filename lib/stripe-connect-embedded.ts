@@ -9,12 +9,9 @@ export function isConnectEmbeddedEnabled(): boolean {
 export function buildAccountSessionComponents(
   mode: ConnectEmbeddedMode,
 ): Stripe.AccountSessionCreateParams.Components {
-  const onboarding = {
-    enabled: true as const,
-    features: {
-      disable_stripe_user_authentication: true,
-    },
-  };
+  // Express accounts (see stripe-connect-account.ts) cannot use
+  // disable_stripe_user_authentication — only Custom accounts with platform-owned KYC.
+  const onboarding = { enabled: true as const };
 
   const payouts = { enabled: true as const };
   const payments = {
