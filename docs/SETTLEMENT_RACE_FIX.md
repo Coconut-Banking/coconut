@@ -26,12 +26,12 @@ The API route still calls `getMaxSettlementAllowed` first for a fast rejection; 
 
 ## Apply in Supabase
 
-Run in order:
+Run in order (you applied `20260601` + `20260602`; **still run `20260603` for Stripe/Tap to Pay**):
 
 ```text
 supabase/migrations/20260601_settlements_external_reference_unique.sql
 supabase/migrations/20260602_settlement_balance_cap_rpc.sql
-supabase/migrations/20260603_stripe_settlement_cap_rpc.sql
+supabase/migrations/20260603_stripe_settlement_cap_rpc.sql   ← required for Stripe path
 ```
 
 ## Verify

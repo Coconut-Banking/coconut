@@ -12,7 +12,13 @@ function parseRpcRow(
   }
   const row = result as RpcSettlementRow;
   if (typeof row.error === "string") {
-    const status = row.error === "external_reference required" ? 400 : 500;
+    const status =
+      row.error === "external_reference required" ||
+      row.error === "Already settled between these members in this currency" ||
+      row.error === "Amount too small" ||
+      row.error === "Invalid amount"
+        ? 400
+        : 500;
     return { ok: false, status, error: row.error };
   }
   if (typeof row.id !== "string") {

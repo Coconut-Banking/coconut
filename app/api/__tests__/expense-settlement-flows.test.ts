@@ -17,6 +17,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
+import { computePairwiseBalance } from "@/lib/split-balances";
+import { splitTransactionDedupeKey } from "@/lib/split-transaction-helpers";
 
 const TEST_USER_ID = "test_user_flows";
 
@@ -57,6 +59,81 @@ function nextId(prefix: string) {
 }
 
 type MockListResult = { data: Record<string, unknown>[]; error: null };
+
+/** Mirrors get_pairwise_settlement_max / getMaxSettlementAllowed for mock RPC cap. */
+function mockPairwiseSettlementMax(
+  groupId: string,
+  receiverMemberId: string,
+  payerMemberId: string,
+  currency = "USD",
+): number {
+  const group = db.groups.find((g) => g.id === groupId);
+  const isSwGroup =
+    (group as { source?: string } | undefined)?.source === "splitwise" &&
+    !!(group as { external_id?: string } | undefined)?.external_id;
+
+  const filtered = (db.split_transactions ?? []).filter((s) => {
+    if ((s as { group_id?: string }).group_id !== groupId) return false;
+    if (isSwGroup && (s as { source?: string | null }).source === "splitwise") return false;
+    return true;
+  });
+
+  const seenKeys = new Set<string>();
+  const splits = filtered.filter((s) => {
+    const k = splitTransactionDedupeKey(s as { id: string; transaction_id?: string | null });
+    if (seenKeys.has(k)) return false;
+    seenKeys.add(k);
+    return true;
+  });
+
+  const splitCurrencyById = new Map(
+    splits.map((s) => [
+      s.id as string,
+      String((s as { iso_currency_code?: string }).iso_currency_code ?? "USD").toUpperCase(),
+    ]),
+  );
+
+  const sharesBySplitId = new Map<string, Array<{ member_id: string; amount: number }>>();
+  for (const sh of db.split_shares ?? []) {
+    const splitId = sh.split_transaction_id as string;
+    const list = sharesBySplitId.get(splitId);
+    const row = { member_id: sh.member_id as string, amount: Number(sh.amount) };
+    if (list) list.push(row);
+    else sharesBySplitId.set(splitId, [row]);
+  }
+
+  const nativeSettlements = (db.settlements ?? []).filter((s) => {
+    if ((s as { group_id?: string }).group_id !== groupId) return false;
+    if ((s as { status?: string }).status !== "completed") return false;
+    if (isSwGroup && (s as { method?: string }).method === "splitwise") return false;
+    return true;
+  });
+
+  const pairwiseSplits = splits.map((s) => ({
+    id: s.id as string,
+    payerMemberId: (s as { payer_member_id?: string | null }).payer_member_id ?? null,
+  }));
+
+  const pairwiseSettlements = nativeSettlements.map((s) => ({
+    payer_member_id: s.payer_member_id as string,
+    receiver_member_id: s.receiver_member_id as string,
+    amount: Number(s.amount),
+    currency: String((s as { iso_currency_code?: string }).iso_currency_code ?? "USD").toUpperCase(),
+  }));
+
+  return Math.max(
+    0,
+    computePairwiseBalance(
+      receiverMemberId,
+      payerMemberId,
+      pairwiseSplits,
+      sharesBySplitId,
+      pairwiseSettlements,
+      splitCurrencyById,
+      currency.toUpperCase(),
+    ),
+  );
+}
 
 function rpcHandler(
   fnName: string,
@@ -247,13 +324,38 @@ function rpcHandler(
       }
     }
 
+    const maxAmount = mockPairwiseSettlementMax(
+      groupId,
+      receiverMemberId,
+      payerMemberId,
+      currency,
+    );
+
+    if (maxAmount < 0.01) {
+      return {
+        data: {
+          error: "Already settled between these members in this currency",
+          max_amount: maxAmount,
+        },
+        error: null,
+      };
+    }
+
+    const insertAmount = Math.min(Math.round(amount * 100) / 100, maxAmount);
+    if (insertAmount < 0.01) {
+      return {
+        data: { error: "Amount too small", max_amount: maxAmount },
+        error: null,
+      };
+    }
+
     const settId = nextId("set");
     db.settlements.push({
       id: settId,
       group_id: groupId,
       payer_member_id: payerMemberId,
       receiver_member_id: receiverMemberId,
-      amount,
+      amount: insertAmount,
       iso_currency_code: currency,
       status: "completed",
       method: fnName === "insert_stripe_settlement_checked" ? "stripe" : "manual",
@@ -261,7 +363,7 @@ function rpcHandler(
       ...(externalRef ? { external_reference: externalRef } : {}),
     });
 
-    return { data: { id: settId, amount }, error: null };
+    return { data: { id: settId, amount: insertAmount }, error: null };
   }
 
   return { data: null, error: { message: `Unknown RPC: ${fnName}` } };
@@ -561,6 +663,28 @@ async function fetchSummary(opts: { contacts?: boolean } = {}) {
     : "http://localhost/api/groups/summary";
   const { GET } = await import("@/app/api/groups/summary/route");
   const res = await GET(new NextRequest(url));
+  return { status: res.status, data: await res.json() };
+}
+
+async function postSettlement(
+  groupId: string,
+  payerMemberId: string,
+  receiverMemberId: string,
+  amount: number,
+) {
+  const { POST } = await import("@/app/api/settlements/route");
+  const res = await POST(
+    new NextRequest("http://localhost/api/settlements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        groupId,
+        payerMemberId,
+        receiverMemberId,
+        amount,
+      }),
+    }),
+  );
   return { status: res.status, data: await res.json() };
 }
 
@@ -937,31 +1061,46 @@ describe("expense & settlement flows", () => {
     });
   });
 
-  // ── Flow 10: Settle more than owed is capped ──
+  // ── Flow 10: Settlement cap via API (race-safe RPC mock) ──
 
-  describe("Flow 10: over-settlement produces correct net", () => {
-    it("over-paying flips the balance direction", async () => {
+  describe("Flow 10: settlement cap via POST /api/settlements", () => {
+    it("caps over-payment to remaining debt", async () => {
       const gid = addGroup("Overpay");
       const me = addMember(gid, "Me", { userId: TEST_USER_ID });
       const alice = addMember(gid, "Alice");
 
-      // I pay $100, split equally → I'm owed $50
       addExpenseDirectly(gid, me, 100, [
         { memberId: me, amount: 50 },
         { memberId: alice, amount: 50 },
       ]);
 
-      // Alice "settles" $70 (more than owed)
-      addSettlementDirectly(gid, alice, me, 70);
+      const res = await postSettlement(gid, alice, me, 70);
+      expect(res.status).toBe(200);
+      expect(res.data.amount).toBe(50);
 
       const detail = await fetchGroupDetail(gid);
       const balances = detail.data.balances as Array<{ memberId: string; total: number }>;
-
-      // Me: 100 - 50 - 70 = -20 (now I owe Alice!)
-      // Alice: 0 - 50 + 70 = 20
-      expect(balances.find((b) => b.memberId === me)?.total).toBe(-20);
-      expect(balances.find((b) => b.memberId === alice)?.total).toBe(20);
+      expect(balances.find((b) => b.memberId === me)?.total ?? 0).toBe(0);
+      expect(balances.find((b) => b.memberId === alice)?.total ?? 0).toBe(0);
       expect(sumBalances(balances)).toBe(0);
+    });
+
+    it("rejects duplicate full settle (double-tap)", async () => {
+      const gid = addGroup("Double tap");
+      const me = addMember(gid, "Me", { userId: TEST_USER_ID });
+      const alice = addMember(gid, "Alice");
+
+      addExpenseDirectly(gid, me, 100, [
+        { memberId: me, amount: 50 },
+        { memberId: alice, amount: 50 },
+      ]);
+
+      const first = await postSettlement(gid, alice, me, 50);
+      expect(first.status).toBe(200);
+
+      const second = await postSettlement(gid, alice, me, 50);
+      expect(second.status).toBe(400);
+      expect(second.data.error).toMatch(/Already settled|Nothing left/i);
     });
   });
 

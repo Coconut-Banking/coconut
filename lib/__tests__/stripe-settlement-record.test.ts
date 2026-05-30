@@ -65,7 +65,7 @@ describe("recordStripeSettlement", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.status).toBe(500);
+      expect(result.status).toBe(400);
       expect(result.error).toContain("Already settled");
     }
   });
