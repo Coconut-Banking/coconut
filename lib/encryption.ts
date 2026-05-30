@@ -4,10 +4,19 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
+export function isProductionEncryptionRequired(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
 function getKey(): Buffer {
-  const key = process.env.TOKEN_ENCRYPTION_KEY;
+  const key = process.env.TOKEN_ENCRYPTION_KEY?.trim();
   if (!key) {
-    // In development without a key, return plaintext (don't break local dev)
+    if (isProductionEncryptionRequired()) {
+      throw new Error(
+        "TOKEN_ENCRYPTION_KEY is required in production. Generate with: openssl rand -hex 32",
+      );
+    }
+    // Local dev without a key: plaintext passthrough (do not use in production)
     return Buffer.alloc(0);
   }
   // Support both raw hex keys and base64 keys
@@ -20,17 +29,11 @@ function getKey(): Buffer {
 
 /**
  * Encrypt a plaintext string. Returns base64-encoded ciphertext with IV and auth tag prepended.
- * If no encryption key is configured, returns the plaintext as-is (for local development).
+ * Without TOKEN_ENCRYPTION_KEY, returns plaintext (local development only).
  */
-let warnedMissingKey = false;
-
 export function encryptToken(plaintext: string): string {
   const key = getKey();
   if (key.length === 0) {
-    if (process.env.NODE_ENV === "production" && !warnedMissingKey) {
-      console.warn("[encryption] WARNING: TOKEN_ENCRYPTION_KEY is not set — tokens are stored in plaintext. Set this env var to enable AES-256-GCM encryption.");
-      warnedMissingKey = true;
-    }
     return plaintext;
   }
 

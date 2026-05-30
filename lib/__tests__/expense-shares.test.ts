@@ -4,6 +4,10 @@ import {
   computeTwoWayShares,
   validateCustomShares,
   toCents,
+  computePercentShares,
+  computeSharesByRatio,
+  allocateCrossGroupSettlementPayments,
+  sumShareAmountsCents,
 } from "../expense-shares";
 
 describe("toCents", () => {
@@ -160,5 +164,43 @@ describe("validateCustomShares", () => {
       { memberId: "B", amount: 0.2 },
     ]);
     expect(result.valid).toBe(true);
+  });
+});
+
+describe("computePercentShares", () => {
+  it("sums to total for 3-way split", () => {
+    const shares = computePercentShares(10, [
+      { memberId: "a", percent: 33.3 },
+      { memberId: "b", percent: 33.3 },
+      { memberId: "c", percent: 33.4 },
+    ]);
+    expect(sumShareAmountsCents(shares)).toBe(1000);
+  });
+});
+
+describe("computeSharesByRatio", () => {
+  it("sums to total for 2:1:1 ratio", () => {
+    const shares = computeSharesByRatio(40, [
+      { memberId: "a", weight: 2 },
+      { memberId: "b", weight: 1 },
+      { memberId: "c", weight: 1 },
+    ]);
+    expect(sumShareAmountsCents(shares)).toBe(4000);
+    expect(shares[0].amount).toBe(20);
+  });
+});
+
+describe("allocateCrossGroupSettlementPayments", () => {
+  it("never exceeds bucket caps", () => {
+    const buckets = [
+      { groupId: "g1", payerMemberId: "p", receiverMemberId: "r", amountOwed: 7.5, currency: "USD" },
+      { groupId: "g2", payerMemberId: "p", receiverMemberId: "r", amountOwed: 12.5, currency: "USD" },
+    ];
+    const out = allocateCrossGroupSettlementPayments(10, buckets);
+    for (const row of out) {
+      const cap = buckets.find((b) => b.groupId === row.groupId)!.amountOwed;
+      expect(row.payAmount).toBeLessThanOrEqual(cap);
+    }
+    expect(sumShareAmountsCents(out.map((x) => ({ amount: x.payAmount })))).toBe(1000);
   });
 });

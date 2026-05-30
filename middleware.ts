@@ -15,6 +15,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/gmail/callback",
   "/api/demo",
   "/api/telegram-webhook",
+  "/api/health",
   // Splitwise redirects here from their site — Safari has no Clerk cookie; user id comes from signed OAuth state.
   "/api/splitwise/callback",
   // Mobile app handoff — returns HTML that meta-refreshes to the custom scheme deep link.

@@ -8,11 +8,15 @@ const SKIP_AUTH =
   process.env.NODE_ENV !== "production" &&
   process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 
-const CLERK_DISABLED = process.env.NEXT_PUBLIC_CLERK_DISABLED === "true";
+const CLERK_DISABLED =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_CLERK_DISABLED === "true";
 
 const BYPASS_AUTH = SKIP_AUTH || CLERK_DISABLED;
 
-export type PlaidStatus = "checking" | "linked" | "unlinked";
+const PLAID_STATUS_TIMEOUT_MS = 12_000;
+
+export type PlaidStatus = "checking" | "linked" | "unlinked" | "error";
 export const PlaidStatusContext = createContext<PlaidStatus>("checking");
 export const usePlaidStatus = () => useContext(PlaidStatusContext);
 
@@ -33,16 +37,25 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (BYPASS_AUTH || !isLoaded || !isSignedIn) return;
     let cancelled = false;
+    let resolved = false;
     const timeout = setTimeout(() => {
-      if (!cancelled) setPlaidStatus("unlinked");
-    }, 5000);
+      if (!cancelled && !resolved) setPlaidStatus("error");
+    }, PLAID_STATUS_TIMEOUT_MS);
     fetch("/api/plaid/status")
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          if (!cancelled) setPlaidStatus("error");
+          return null;
+        }
+        return res.json() as Promise<{ linked?: boolean }>;
+      })
       .then((data) => {
-        if (!cancelled) setPlaidStatus(data.linked ? "linked" : "unlinked");
+        if (cancelled || data == null) return;
+        resolved = true;
+        setPlaidStatus(data.linked ? "linked" : "unlinked");
       })
       .catch(() => {
-        if (!cancelled) setPlaidStatus("unlinked");
+        if (!cancelled) setPlaidStatus("error");
       })
       .finally(() => clearTimeout(timeout));
     return () => {
@@ -51,7 +64,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     };
   }, [isLoaded, isSignedIn]);
 
-  // Redirect unlinked users to /connect (effect, not blocking render)
+  // Redirect only when Plaid confirms no bank link (not on network errors)
   useEffect(() => {
     if (plaidStatus === "unlinked") {
       router.replace("/connect");

@@ -7,16 +7,18 @@ import { getSupabaseForUser } from "@/lib/supabase";
 import { fetchAllEmailReceiptsLinkedForUser } from "@/lib/transaction-sync";
 import { extractKeywords, normalizeMerchant, scoreCandidates, merchantsMatch } from "@/lib/receipt-matcher";
 import { RECEIPT_MATCH } from "@/lib/config";
+import { debugEndpointDisabledResponse } from "@/lib/debug-guard";
 
 /**
  * GET /api/debug/receipt-match-verify
  *
- * Diagnostic endpoint that compares what the email-receipts page sees
- * (admin client) vs what the transactions page sees (user-scoped client).
- *
- * DELETE THIS AFTER DEBUGGING.
+ * Diagnostic: compares admin vs user-scoped receipt visibility.
+ * Requires ENABLE_DEBUG_ENDPOINTS=true (disabled in production).
  */
 export async function GET() {
+  const disabled = debugEndpointDisabledResponse();
+  if (disabled) return disabled;
+
   const session = await loadClerkAuth();
   if (!session.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

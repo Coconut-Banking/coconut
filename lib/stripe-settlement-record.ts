@@ -1,11 +1,29 @@
 import { getSupabase } from "./supabase";
-import { getMaxSettlementAllowed } from "./group-balances";
 
 export type StripeSettlementSource = "terminal" | "payment_link";
 
+type RpcSettlementRow = Record<string, unknown>;
+
+function parseRpcRow(
+  result: unknown,
+): { ok: true; row: RpcSettlementRow } | { ok: false; status: number; error: string } {
+  if (result == null || typeof result !== "object" || Array.isArray(result)) {
+    return { ok: false, status: 500, error: "Unexpected RPC response" };
+  }
+  const row = result as RpcSettlementRow;
+  if (typeof row.error === "string") {
+    const status = row.error === "external_reference required" ? 400 : 500;
+    return { ok: false, status, error: row.error };
+  }
+  if (typeof row.id !== "string") {
+    return { ok: false, status: 500, error: "Missing settlement id" };
+  }
+  return { ok: true, row };
+}
+
 /**
  * Record a completed Stripe payment as a settlement.
- * Idempotent via external_reference. Caps amount to max allowed balance.
+ * Idempotent via external_reference. Amount capped under advisory lock (race-safe).
  */
 export async function recordStripeSettlement(params: {
   groupId: string;
@@ -18,49 +36,45 @@ export async function recordStripeSettlement(params: {
 }): Promise<{ ok: true; amountRecorded: number } | { ok: false; status: number; error: string }> {
   const db = getSupabase();
   const currency = params.currency.toUpperCase();
+  const requestedAmount = Math.round(params.amount * 100) / 100;
 
-  const { data: existing } = await db
-    .from("settlements")
-    .select("id")
-    .eq("external_reference", params.externalReference)
-    .maybeSingle();
-
-  if (existing) return { ok: true, amountRecorded: 0 };
-
-  const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
-    params.groupId,
-    params.payerMemberId,
-    params.receiverMemberId,
-    currency,
-  );
-
-  if (!allowed || maxAmount <= 0) {
-    console.error(`[stripe-settlement] not allowed (${params.source}):`, { allowed, maxAmount, reason });
-    return { ok: false, status: 500, error: "Settlement validation failed" };
-  }
-
-  const amountToInsert = Math.min(params.amount, maxAmount);
-  const { error } = await db.from("settlements").insert({
-    group_id: params.groupId,
-    payer_member_id: params.payerMemberId,
-    receiver_member_id: params.receiverMemberId,
-    amount: Math.round(amountToInsert * 100) / 100,
-    method: "stripe",
-    status: "completed",
-    external_reference: params.externalReference,
-    iso_currency_code: currency,
+  const { data: result, error: rpcErr } = await db.rpc("insert_stripe_settlement_checked", {
+    p_group_id: params.groupId,
+    p_payer_member_id: params.payerMemberId,
+    p_receiver_member_id: params.receiverMemberId,
+    p_amount: requestedAmount,
+    p_currency: currency,
+    p_external_reference: params.externalReference,
   });
 
-  if (error) {
-    console.error(`[stripe-settlement] insert failed (${params.source}):`, error);
+  if (rpcErr) {
+    console.error(`[stripe-settlement] RPC failed (${params.source}):`, rpcErr.message);
     return { ok: false, status: 500, error: "DB insert failed" };
   }
 
+  const parsed = parseRpcRow(result);
+  if (!parsed.ok) {
+    console.error(`[stripe-settlement] not allowed (${params.source}):`, parsed.error);
+    return { ok: false, status: parsed.status, error: parsed.error };
+  }
+
+  const { row } = parsed;
+  if (row.already_exists === true) {
+    return { ok: true, amountRecorded: 0 };
+  }
+
+  const recorded =
+    typeof row.amount === "number"
+      ? row.amount
+      : typeof row.amount === "string"
+        ? Number(row.amount)
+        : requestedAmount;
+
   console.log(`[stripe-settlement] recorded (${params.source})`, {
     group_id: params.groupId,
-    amount: amountToInsert,
+    amount: recorded,
     ref: params.externalReference,
   });
 
-  return { ok: true, amountRecorded: amountToInsert };
+  return { ok: true, amountRecorded: Number.isFinite(recorded) ? recorded : requestedAmount };
 }

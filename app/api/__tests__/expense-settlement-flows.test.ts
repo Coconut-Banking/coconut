@@ -219,18 +219,33 @@ function rpcHandler(
     return { data: { updated: true }, error: null };
   }
 
-  if (fnName === "insert_settlement_checked") {
+  if (fnName === "insert_settlement_checked" || fnName === "insert_stripe_settlement_checked") {
     const groupId = params.p_group_id as string;
-    const userId = params.p_clerk_user_id as string;
     const payerMemberId = params.p_payer_member_id as string;
     const receiverMemberId = params.p_receiver_member_id as string;
     const amount = Number(params.p_amount);
     const currency = (params.p_currency as string) || "USD";
+    const externalRef = params.p_external_reference as string | undefined;
 
-    const myMember = db.group_members.find(
-      (m) => m.group_id === groupId && m.user_id === userId
-    );
-    if (!myMember) return { data: { error: "Not in group" }, error: null };
+    if (fnName === "insert_settlement_checked") {
+      const userId = params.p_clerk_user_id as string;
+      const myMember = db.group_members.find(
+        (m) => m.group_id === groupId && m.user_id === userId
+      );
+      if (!myMember) return { data: { error: "Forbidden" }, error: null };
+    }
+
+    if (externalRef) {
+      const existing = db.settlements.find(
+        (s) => (s as { external_reference?: string }).external_reference === externalRef
+      );
+      if (existing) {
+        return {
+          data: { ...existing, already_exists: true },
+          error: null,
+        };
+      }
+    }
 
     const settId = nextId("set");
     db.settlements.push({
@@ -241,12 +256,12 @@ function rpcHandler(
       amount,
       iso_currency_code: currency,
       status: "completed",
-      method: "manual",
+      method: fnName === "insert_stripe_settlement_checked" ? "stripe" : "manual",
       created_at: new Date().toISOString(),
-      created_by: userId,
+      ...(externalRef ? { external_reference: externalRef } : {}),
     });
 
-    return { data: { id: settId }, error: null };
+    return { data: { id: settId, amount }, error: null };
   }
 
   return { data: null, error: { message: `Unknown RPC: ${fnName}` } };

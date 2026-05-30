@@ -55,14 +55,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const amountToInsert = Math.min(Math.round(amount * 100) / 100, maxAmount);
+  const requestedAmount = Math.round(amount * 100) / 100;
 
+  // JS pre-check for fast 400; RPC re-computes under advisory lock (race-safe cap).
   const { data: result, error: rpcErr } = await db.rpc("insert_settlement_checked", {
     p_clerk_user_id: userId,
     p_group_id: groupId,
     p_payer_member_id: payerMemberId,
     p_receiver_member_id: receiverMemberId,
-    p_amount: amountToInsert,
+    p_amount: requestedAmount,
     p_method: method,
     p_currency: currency,
   });
@@ -85,7 +86,29 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (typeof row.error === "string") {
+    const maxAmount =
+      typeof row.max_amount === "number"
+        ? row.max_amount
+        : typeof row.max_amount === "string"
+          ? Number(row.max_amount)
+          : undefined;
+    return NextResponse.json(
+      {
+        error: row.error,
+        ...(maxAmount !== undefined && Number.isFinite(maxAmount) ? { maxAmount } : {}),
+      },
+      { status: 400 },
+    );
+  }
+
   const settlementId = row.id;
+  const recordedAmount =
+    typeof row.amount === "number"
+      ? row.amount
+      : typeof row.amount === "string"
+        ? Number(row.amount)
+        : requestedAmount;
   if (typeof settlementId !== "string") {
     console.error("[settlements] insert_settlement_checked: missing id");
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
@@ -108,7 +131,7 @@ export async function POST(req: NextRequest) {
       void notifyGroupMembers(
         groupId,
         "Settlement recorded",
-        `${name} recorded a settlement of ${formatCurrency(amountToInsert, currency)}`,
+        `${name} recorded a settlement of ${formatCurrency(recordedAmount, currency)}`,
         userId,
         { type: "settlement", groupId, settlementId }
       );
