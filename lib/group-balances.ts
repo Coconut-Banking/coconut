@@ -13,6 +13,11 @@ export interface MaxSettlementResult {
   reason?: string;
 }
 
+export type MaxSettlementOptions = {
+  /** Include Splitwise-imported rows (for pay links when native-only filter finds nothing). */
+  includeSplitwiseImports?: boolean;
+};
+
 /**
  * Returns the maximum settlement amount allowed from payer to receiver in a given currency.
  * Rejects/caps to prevent over-settling (e.g. from duplicate "Mark paid" clicks).
@@ -21,7 +26,8 @@ export async function getMaxSettlementAllowed(
   groupId: string,
   payerMemberId: string,
   receiverMemberId: string,
-  currency = "USD"
+  currency = "USD",
+  options?: MaxSettlementOptions,
 ): Promise<MaxSettlementResult> {
   const cur = normalizeSplitCurrency(currency);
   const db = getSupabase();
@@ -46,9 +52,10 @@ export async function getMaxSettlementAllowed(
     .eq("group_id", groupId);
 
   // For SW groups, exclude imported splits to avoid double-counting with the SW cache
-  const filtered = isSwGroup
-    ? (splitsRaw ?? []).filter((s) => (s as { source?: string | null }).source !== "splitwise")
-    : (splitsRaw ?? []);
+  const filtered =
+    isSwGroup && !options?.includeSplitwiseImports
+      ? (splitsRaw ?? []).filter((s) => (s as { source?: string | null }).source !== "splitwise")
+      : (splitsRaw ?? []);
 
   const seenKeys = new Set<string>();
   const splits = filtered.filter((s) => {

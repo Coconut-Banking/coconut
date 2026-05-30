@@ -50,16 +50,51 @@ export async function assertUserCanCreatePayLink(
   return { ok: true };
 }
 
-export async function resolvePayLinkAmount(
+async function resolvePayLinkMaxAmount(
   payload: PayLinkPayload,
-): Promise<{ ok: true; amount: number } | { ok: false; status: number; error: string }> {
-  const currency = payload.currency.toUpperCase();
-  const { maxAmount, allowed, reason } = await getMaxSettlementAllowed(
+  currency: string,
+): Promise<{ maxAmount: number; allowed: boolean; reason?: string }> {
+  let result = await getMaxSettlementAllowed(
     payload.groupId,
     payload.payerMemberId,
     payload.receiverMemberId,
     currency,
   );
+
+  if (!result.allowed && result.reason === "No expenses in this group") {
+    result = await getMaxSettlementAllowed(
+      payload.groupId,
+      payload.payerMemberId,
+      payload.receiverMemberId,
+      currency,
+      { includeSplitwiseImports: true },
+    );
+  }
+
+  if (!result.allowed || result.maxAmount <= 0) {
+    const db = getSupabase();
+    const { data: rpcMax, error: rpcErr } = await db.rpc("get_pairwise_settlement_max", {
+      p_group_id: payload.groupId,
+      p_receiver_member_id: payload.receiverMemberId,
+      p_payer_member_id: payload.payerMemberId,
+      p_currency: currency,
+    });
+    if (!rpcErr) {
+      const cap = Number(rpcMax);
+      if (Number.isFinite(cap) && cap >= 0.01) {
+        return { maxAmount: cap, allowed: true };
+      }
+    }
+  }
+
+  return result;
+}
+
+export async function resolvePayLinkAmount(
+  payload: PayLinkPayload,
+): Promise<{ ok: true; amount: number } | { ok: false; status: number; error: string }> {
+  const currency = payload.currency.toUpperCase();
+  const { maxAmount, allowed, reason } = await resolvePayLinkMaxAmount(payload, currency);
 
   if (!allowed || maxAmount <= 0) {
     return { ok: false, status: 400, error: reason ?? "Nothing left to settle" };
