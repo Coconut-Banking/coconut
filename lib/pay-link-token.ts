@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { getAppUrl } from "./app-url";
+import { resolveLinkSigningKey } from "./link-signing-key";
 
 /** Signed pay-link payload — no server-side storage required. */
 export type PayLinkPayload = {
@@ -18,16 +19,10 @@ export type PayLinkPayload = {
 export const PAY_LINK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function getHmacKey(): string {
-  const key =
-    process.env.PAY_LINK_SIGNING_KEY ||
-    process.env.TOKEN_ENCRYPTION_KEY ||
-    process.env.CLERK_SECRET_KEY;
-  if (!key) {
-    throw new Error(
-      "PAY_LINK_SIGNING_KEY (or TOKEN_ENCRYPTION_KEY / CLERK_SECRET_KEY) must be set",
-    );
-  }
-  return key;
+  return resolveLinkSigningKey(process.env.PAY_LINK_SIGNING_KEY, [
+    "TOKEN_ENCRYPTION_KEY",
+    "CLERK_SECRET_KEY",
+  ]);
 }
 
 function signPayload(encoded: string): string {

@@ -4,7 +4,7 @@ vi.mock("@/lib/demo", () => ({
   getEffectiveUserId: vi.fn().mockResolvedValue("user_test_123"),
 }));
 vi.mock("@/lib/rate-limit", () => ({
-  rateLimit: vi.fn().mockReturnValue({ success: true }),
+  rateLimitAsync: vi.fn().mockResolvedValue({ success: true, remaining: 19 }),
 }));
 vi.mock("@/lib/search-engine", () => ({
   search: vi.fn().mockResolvedValue({

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
-const REVENUECAT_WEBHOOK_SECRET = process.env.REVENUECAT_WEBHOOK_SECRET ?? "";
+function getWebhookSecret(): string | undefined {
+  const secret = process.env.REVENUECAT_WEBHOOK_SECRET?.trim();
+  return secret || undefined;
+}
 
 /**
  * POST /api/webhooks/revenuecat
@@ -14,14 +17,20 @@ const REVENUECAT_WEBHOOK_SECRET = process.env.REVENUECAT_WEBHOOK_SECRET ?? "";
  *   - EXPIRATION, CANCELLATION, BILLING_ISSUE → tier = "free"
  *
  * See: https://www.revenuecat.com/docs/integrations/webhooks
+ *
+ * Optional: set REVENUECAT_WEBHOOK_SECRET when Pro subscriptions are enabled.
+ * Without it, events are acknowledged but tier is not updated (app stays free-tier).
  */
 export async function POST(req: NextRequest) {
-  if (REVENUECAT_WEBHOOK_SECRET) {
-    const authHeader = req.headers.get("authorization") ?? "";
-    if (authHeader !== `Bearer ${REVENUECAT_WEBHOOK_SECRET}`) {
-      console.warn("[revenuecat-webhook] Invalid auth header");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const webhookSecret = getWebhookSecret();
+  if (!webhookSecret) {
+    return NextResponse.json({ ok: true, subscriptions: "disabled" });
+  }
+
+  const authHeader = req.headers.get("authorization") ?? "";
+  if (authHeader !== `Bearer ${webhookSecret}`) {
+    console.warn("[revenuecat-webhook] Invalid auth header");
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let body: any;

@@ -5,6 +5,7 @@ import { getEffectiveUserId } from "@/lib/demo";
 import { getSupabase } from "@/lib/supabase";
 import { getAllPlaidTokensForUser } from "@/lib/transaction-sync";
 import { getPlaidClient } from "@/lib/plaid-client";
+import { debugEndpointDisabledResponse } from "@/lib/debug-guard";
 
 const PLAID_CLIENT_ID = process.env.PLAID_CLIENT_ID;
 const PLAID_SANDBOX_SECRET = process.env.PLAID_SANDBOX_SECRET;
@@ -30,9 +31,8 @@ function createPlaidClientForEnv(env: "sandbox" | "production"): PlaidApi | null
  * GET /api/plaid/debug
  */
 export async function GET() {
-  if (process.env.ENABLE_DEBUG_ENDPOINTS !== "true") {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const disabled = debugEndpointDisabledResponse();
+  if (disabled) return disabled;
   const effectiveUserId = await getEffectiveUserId();
   if (!effectiveUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

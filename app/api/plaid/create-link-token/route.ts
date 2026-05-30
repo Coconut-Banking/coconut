@@ -5,7 +5,7 @@ import { getPlaidConfig } from "@/lib/plaid";
 import { Products, CountryCode } from "plaid";
 import { getEffectiveUserId } from "@/lib/demo";
 import { SYNC } from "@/lib/config";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAsync } from "@/lib/rate-limit";
 import { NextRequest } from "next/server";
 
 type CreateLinkBody = {
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sign in to connect your bank", trace_id: traceId }, { status: 401 });
   }
 
-  const rl = rateLimit(`plaid-link:${effectiveUserId}`, 30, 60_000);
+  const rl = await rateLimitAsync(`plaid-link:${effectiveUserId}`, 30, 60_000);
   if (!rl.success) {
     console.warn("[plaid][create-link-token] rate_limited", { trace_id: traceId, user_id: effectiveUserId });
     return NextResponse.json({ error: "Too many requests", trace_id: traceId }, { status: 429 });

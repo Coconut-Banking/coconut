@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { search } from "@/lib/search-engine";
 import { getEffectiveUserId } from "@/lib/demo";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimitAsync } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const [effectiveUserId, body] = await Promise.all([
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const rl = rateLimit(`nl-search:${effectiveUserId}`, 20, 60_000);
+  const rl = await rateLimitAsync(`nl-search:${effectiveUserId}`, 20, 60_000);
   if (!rl.success) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

@@ -23,7 +23,12 @@ fi
 
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
-  if [[ "$f" == docs/* ]] || [[ "$f" == .github/* ]] || [[ "$f" == supabase/migrations/* ]] || [[ "$f" == *.md ]]; then
+  # Never skip when schema migrations change — deploy so ops know to apply SQL in Supabase.
+  if [[ "$f" == supabase/migrations/* ]]; then
+    echo "Migration changed: $f — running build"
+    exit 1
+  fi
+  if [[ "$f" == docs/* ]] || [[ "$f" == .github/* ]] || [[ "$f" == *.md ]]; then
     continue
   fi
   exit 1

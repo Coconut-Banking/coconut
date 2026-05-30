@@ -1,16 +1,16 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { debugEndpointDisabledResponse } from "@/lib/debug-guard";
 
 /**
  * GET /api/debug/me
  * Returns your Clerk user ID when authenticated.
- * Disabled in production builds.
+ * Requires ENABLE_DEBUG_ENDPOINTS=true.
  */
 export async function GET() {
-  if (process.env.ENABLE_DEBUG_ENDPOINTS !== "true") {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const disabled = debugEndpointDisabledResponse();
+  if (disabled) return disabled;
   const { userId } = await auth();
   return NextResponse.json(
     { userId: userId ?? null },
