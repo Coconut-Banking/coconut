@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
 
   // Look up the receiver's Stripe Connected Account for direct payouts
   let destinationAccountId: string | null = null;
-  if (body.receiverMemberId) {
+  if (body.receiverMemberId && body.groupId && body.payerMemberId) {
     const { data: receiverMember } = await db
       .from("group_members")
       .select("user_id")
