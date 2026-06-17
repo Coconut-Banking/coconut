@@ -13,11 +13,12 @@ import { matchKnownSubscription } from "./known-subscriptions";
 
 export async function deleteExcludedSubscriptions(clerkUserId: string): Promise<number> {
   const db = getSupabase();
-  const { data: rows } = await db
+  const { data: rows, error } = await db
     .from("subscriptions")
     .select("id, merchant_name, primary_category")
     .eq("clerk_user_id", clerkUserId)
     .eq("status", "active");
+  if (error) throw new Error(`Failed to load subscriptions: ${error.message}`);
   if (!rows?.length) return 0;
   const toDelete = rows.filter((r) =>
     shouldExcludeAsSubscription(r.primary_category, r.merchant_name ?? "", "")
