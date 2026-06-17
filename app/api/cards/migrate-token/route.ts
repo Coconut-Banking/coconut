@@ -55,7 +55,7 @@ export async function POST() {
   // Load the card tool session — must have a plaid token and must not already be migrated
   const { data: cardSession, error: sessionError } = await db
     .from("card_tool_sessions")
-    .select("id, plaid_access_token, plaid_item_id, converted_to_clerk_user_id, expires_at")
+    .select("id, plaid_access_token, plaid_item_id, converted_to_clerk_user_id, expires_at, clerk_user_id")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -69,6 +69,7 @@ export async function POST() {
     plaid_item_id: string | null;
     converted_to_clerk_user_id: string | null;
     expires_at: string;
+    clerk_user_id: string | null;
   };
 
   // Nothing to migrate — session has no Plaid token (manual-entry or coconut path)
@@ -84,6 +85,14 @@ export async function POST() {
   // Session expired
   if (new Date(cs.expires_at) < new Date()) {
     return NextResponse.json({ ok: false, reason: "session_expired" });
+  }
+
+  // Ownership check: sessions created by an authenticated Coconut user have
+  // clerk_user_id set and must only be migrated by that same user.
+  // Sessions created unauthenticated (analyze-plaid) have clerk_user_id = NULL
+  // and are intentionally claimable by any user who holds the cookie.
+  if (cs.clerk_user_id !== null && cs.clerk_user_id !== effectiveUserId) {
+    return NextResponse.json({ ok: false, reason: "session_not_owned" }, { status: 403 });
   }
 
   // Decrypt the stored token
