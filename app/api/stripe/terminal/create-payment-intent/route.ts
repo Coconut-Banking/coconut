@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   }
 
   const amount = Number(body.amount);
-  console.log(`[terminal] create-payment-intent: raw body.amount=${body.amount} parsed=${amount} key_prefix=${key.slice(0,10)}`);
+  console.log(`[terminal] create-payment-intent: raw body.amount=${body.amount} parsed=${amount}`);
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "Valid amount required" }, { status: 400 });
   }
@@ -51,6 +51,9 @@ export async function POST(req: NextRequest) {
   const stripeAcctPromise = stripe.accounts.retrieve().catch(() => null);
 
   const metadata: Record<string, string> = {};
+
+  // Look up the receiver's Stripe Connected Account for direct payouts
+  let destinationAccountId: string | null = null;
 
   if (body.groupId && body.payerMemberId && body.receiverMemberId) {
     const allowed = await canAccessGroup(userId, body.groupId);
@@ -75,11 +78,8 @@ export async function POST(req: NextRequest) {
     metadata.payer_member_id = body.payerMemberId;
     metadata.receiver_member_id = body.receiverMemberId;
     metadata.source = "terminal";
-  }
 
-  // Look up the receiver's Stripe Connected Account for direct payouts
-  let destinationAccountId: string | null = null;
-  if (body.receiverMemberId) {
+    // Connected Account lookup only runs after group auth has passed
     const { data: receiverMember } = await db
       .from("group_members")
       .select("user_id")
